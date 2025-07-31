@@ -43,6 +43,17 @@ This document tracks the day-by-day evolution, decisions, challenges, and techni
   - *Decision Point:* Whether to use basic `pypdf`/`python-docx` or advanced LangChain/LlamaIndex loaders.
   - *Resolution:* Decided to use minimal dependencies for MVP, then upgrade after validating limitations and core pipeline stability.
   - *Note:* Follows iterative product best practices.
+    
+- **Problem:** Push rejected due to remote changes (e.g., DEVLOG.md added via GitHub website) not present in local repo.
+- **Diagnosis:** GitHub now blocks pushes if your local branch does not contain all remote commits, to prevent accidental overwrites.
+- **Solution:** 
+  - Ran `git pull` to fetch and merge remote changes.
+  - Resolved with a fast-forward merge (no conflicts).
+  - Ran `git push` again, which succeeded.
+- **Additional Learning:**
+  - PAT (Personal Access Token) now required for pushing to GitHub via HTTPS; password authentication no longer supported.
+  - Credential caching (via Windows Credential Manager) simplifies repeated pushes.
+- **Reflection:** Good real-world lesson in keeping local and remote in sync, and on new GitHub authentication standards.
 
 ## Resume Parser Milestone
 
