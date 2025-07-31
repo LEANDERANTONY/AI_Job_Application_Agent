@@ -44,4 +44,16 @@ This document tracks the day-by-day evolution, decisions, challenges, and techni
   - *Resolution:* Decided to use minimal dependencies for MVP, then upgrade after validating limitations and core pipeline stability.
   - *Note:* Follows iterative product best practices.
 
+## Resume Parser Milestone
+
+- **Module Complete:** Integrated basic resume parsing module using `pypdf` and `python-docx`.
+- **Result:** App now parses and previews uploaded resumes (PDF or DOCX) directly in the UI.
+- **Testing:** Successfully extracted text from several sample resumes.
+- **Challenges Noted:** 
+  - Simple formatting works well; complex layouts (tables, multi-columns) may have extraction issues.
+  - Some scanned/image-based PDFs are not supported by pypdf (needs OCR in future).
+- **Next Steps:** 
+  - Gather more sample resumes to identify edge cases.
+  - Plan future upgrade to LangChain/LlamaIndex loaders for richer extraction after MVP.
 ---
+
