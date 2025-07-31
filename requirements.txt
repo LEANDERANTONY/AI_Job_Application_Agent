@@ -1,1 +1,7 @@
+streamlit
+langchain
+openai
+pypdf
+python-docx
+requests
 
