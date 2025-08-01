@@ -11,7 +11,7 @@ This document tracks the day-by-day evolution, decisions, challenges, and techni
 - Built initial Streamlit UI skeleton with navigation for all main features.
 - **Decision:** Chose MVP-first approach for rapid progress; keep dependencies minimal early.
 
-## Setup Challenges & Key Decisions
+### Setup Challenges & Key Decisions
 
 - **Virtual Environment Activation Blocked in PowerShell**
   - *Challenge:* Windows PowerShell blocked venv activation due to script execution policy.
@@ -34,7 +34,7 @@ This document tracks the day-by-day evolution, decisions, challenges, and techni
   - PAT (Personal Access Token) now required for pushing to GitHub via HTTPS; password authentication no longer supported.
   - Credential caching (via Windows Credential Manager) simplifies repeated pushes.
 
-## Resume Parser Milestone
+### Resume Parser Milestone
 
 - **Module Complete:** Integrated basic resume parsing module using `pypdf` and `python-docx`.
 - **Result:** App now parses and previews uploaded resumes (PDF or DOCX) directly in the UI.
