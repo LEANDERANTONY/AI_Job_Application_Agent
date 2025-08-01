@@ -44,5 +44,41 @@ This document tracks the day-by-day evolution, decisions, challenges, and techni
   - Some scanned/image-based PDFs are not supported by pypdf (needs OCR in future).
 - **Next Steps:** 
   - Plan future upgrade to LangChain/LlamaIndex loaders for richer extraction after MVP.
----
+
+## Day 2: Sample File Integration & Unified File Parsing
+
+### 📂 Sample JD + Resume Support  
+Implemented support for preloaded demo job descriptions and resumes to aid testing and UX polish.
+
+- **Demo JD Integration**  
+  - Added `static/demo_jds/` directory  
+  - Loaded `.pdf`, `.docx`, `.txt` files dynamically using `os.listdir()`  
+  - Dropdown added to "Manual JD Input" tab for selecting demo JDs  
+
+- **Demo Resume Integration**  
+  - Created `static/demo_resumes/` folder  
+  - Added sample selection in "Upload Resume" tab with same logic
+
+### 🔁 Unified File Parsing (Uploads + Disk)  
+**Challenge:** Streamlit’s uploaded files provide `.type`, but files opened with `open()` do not.  
+**Fix:** Added `mimetypes.guess_type()` fallback to support both upload and local file parsing.
+
+- Updated `parse_jd_file()` and `parse_resume()` to handle:
+  - `application/pdf` via `pypdf`
+  - `application/msword` and `docx` via `python-docx`
+  - `text/plain` with `.decode("utf-8")`
+
+### JD Parser Milestone  
+- JD Text Cleanup + Info Extraction  
+- Added `clean_text()` to normalize whitespace, strip symbols  
+- Added `extract_job_details()` to extract:
+  - Job title (assumed as first line)
+  - Location (via regex)
+  - Experience (e.g., “2+ years”)
+  - Matched hard and soft skills from predefined lists
+
+### 🧪 Testing  
+- Verified JD/resume parsing via both upload and demo selection  
+- Confirmed all supported formats worked as expected  
+- Graceful handling of unsupported types added  
 
