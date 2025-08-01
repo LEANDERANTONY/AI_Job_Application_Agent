@@ -1,0 +1,15 @@
+Data Scientist - Predictive Modeling
+
+Location: Bangalore, India
+
+We are looking for a Data Scientist with 3+ years of experience in machine learning, predictive analytics, and data engineering.
+
+Responsibilities:
+- Build and validate predictive models using Python and scikit-learn
+- Work with SQL databases and big data frameworks
+- Collaborate with cross-functional teams
+
+Skills:
+- Python, SQL, Pandas, NumPy
+- Scikit-learn, XGBoost, TensorFlow (optional)
+- Excellent problem-solving and communication skills
