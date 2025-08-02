@@ -4,4 +4,9 @@ openai
 pypdf
 python-docx
 requests
+pandas
+tiktoken
+langchain-openai
+chromadb   
+
 

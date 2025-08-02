@@ -82,3 +82,61 @@ Implemented support for preloaded demo job descriptions and resumes to aid testi
 - Confirmed all supported formats worked as expected  
 - Graceful handling of unsupported types added  
 
+## Day 3: LinkedIn Integration, JD Flow Fixes, Session Caching
+
+### 🔗 LinkedIn Profile Import Support  
+Implemented user-friendly option to upload LinkedIn exported data (`.zip`) for resume generation and tailoring.
+
+- **UI Additions**  
+  - New tab: “Build from LinkedIn”
+  - Streamlit instructions with step-by-step export guide
+  - Video tutorial link added
+
+- **LinkedIn Parser Module**
+  - `linkedin_parser.py` reads and extracts:
+    - `Profile.csv`: name, headline, location
+    - `Skills.csv`, `Education.csv`, `Experience.csv`, `Publications.csv`, `Job Preferences.csv`
+  - Flexible: handles missing files or partial data gracefully
+  - Preview output shown via `st.expander()`, organized by section
+
+- **Design Decision**  
+  - Due to LinkedIn API restrictions, opted for offline `.zip` upload
+  - Direct API access not feasible without violating ToS
+
+---
+
+### 📌 JD Upload Flow Bugfix  
+**Problem:** When redirected to JD input from LinkedIn/Resume tabs, uploaded file was not processed (due to `st.file_uploader` behavior on rerun).
+
+**Fix:**  
+- Introduced session variable `uploaded_jd_file` to persist file across reruns.
+- Ensured JD is parsed from session if available on render.
+- Reorganized JD section logic:
+  - File upload processed *before* demo/sample selector.
+  - Parsing order: upload → demo → paste box.
+- Added placeholder button to proceed to LLM resume generation (to be implemented).
+
+---
+
+### 💾 Session-State Caching for All Inputs  
+**Goal:** Maintain parsed data across navigation tabs.
+
+**Changes:**
+- `st.session_state["linkedin_data"]` stores parsed profile data.
+- `st.session_state["resume_data"]` stores resume text + type.
+- JD already used `uploaded_jd_file`, now generalized for all flows.
+
+### 🧭 Navigation State & Rerun Fixes  
+**Challenge:** When a user clicks “I have a JD” from LinkedIn or Resume tab, the app must redirect and persist state.
+
+**Fixes:**
+- Introduced `redirect_to` and `current_menu` in `st.session_state`.
+- `current_menu` now used to maintain current view.
+- Rerun triggered *after* all logic to avoid Streamlit re-render issues.
+
+**Code Placement Fix:**
+```python
+# Bottom of script
+if "redirect_to" in st.session_state:
+    st.session_state["current_menu"] = st.session_state.pop("redirect_to")
+    st.rerun()
