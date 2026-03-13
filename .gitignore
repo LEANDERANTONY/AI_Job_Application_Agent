@@ -208,3 +208,42 @@ __marimo__/
 
 # Streamlit cache and config
 .streamlit/
+
+# Keep tracked templates, ignore real local secrets
+!.streamlit/
+!.streamlit/*.example
+!.streamlit/*.example.toml
+
+# Local secret files and credentials
+openai_key.txt
+github_token.txt
+github_oauth_client_id.txt
+github_oauth_client_secret.txt
+github_oauth_redirect_uri.txt
+*.pem
+*.key
+*.crt
+secrets.toml
+.streamlit/secrets.toml
+
+# Local databases and caches
+*.sqlite
+*.sqlite3
+*.db
+chroma/
+chroma_db/
+analysis_cache/
+analysis_cache.sqlite3
+
+# User-provided uploads and generated artifacts
+uploads/
+user_data/
+tmp/
+tmp_*/
+artifacts/
+exports/
+reports/
+
+# Local/private sample resumes
+static/demo_resume/*
+!static/demo_resume/.gitkeep
