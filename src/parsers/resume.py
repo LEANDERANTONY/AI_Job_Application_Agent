@@ -1,7 +1,6 @@
 from io import BytesIO
 
 import docx
-import streamlit as st
 from pypdf import PdfReader
 
 from src.errors import ParsingError
@@ -29,7 +28,6 @@ def _extract_text_from_docx(file_bytes):
     return "\n".join(paragraph for paragraph in paragraphs if paragraph).strip()
 
 
-@st.cache_data(show_spinner="Parsing resume...")
 def _parse_resume_bytes(file_bytes, file_type, source):
     if file_type == "application/pdf":
         text = _extract_text_from_pdf(file_bytes)

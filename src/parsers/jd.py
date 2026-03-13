@@ -2,47 +2,14 @@ import re
 from io import BytesIO
 
 import docx
-import streamlit as st
 from pypdf import PdfReader
 
 from src.errors import ParsingError
 from src.parsers.common import decode_text, detect_file_type, read_file_bytes
+from src.taxonomy import HARD_SKILL_KEYWORDS, SOFT_SKILL_KEYWORDS
+from src.utils import match_keywords
 
 
-SKILL_KEYWORDS = [
-    "Python",
-    "SQL",
-    "Machine Learning",
-    "Data Analysis",
-    "Deep Learning",
-    "NLP",
-    "AWS",
-    "Excel",
-    "TensorFlow",
-    "PyTorch",
-    "Power BI",
-    "Docker",
-    "Kubernetes",
-]
-
-SOFT_SKILL_KEYWORDS = [
-    "communication",
-    "teamwork",
-    "problem-solving",
-    "leadership",
-    "adaptability",
-    "time management",
-    "collaboration",
-    "critical thinking",
-]
-
-
-def _unique_matches(text, keywords):
-    lowered_text = text.lower()
-    return [keyword for keyword in keywords if keyword.lower() in lowered_text]
-
-
-@st.cache_data(show_spinner="Parsing uploaded job description...")
 def _parse_jd_bytes(file_bytes, file_type):
     if file_type == "text/plain":
         text = decode_text(file_bytes)
@@ -77,7 +44,6 @@ def parse_jd_text(file):
     return _parse_jd_bytes(file_bytes, file_type)
 
 
-@st.cache_data(show_spinner="Cleaning job description...")
 def clean_text(text):
     normalized_lines = []
     for raw_line in text.replace("\r", "\n").replace("\xa0", " ").splitlines():
@@ -88,7 +54,6 @@ def clean_text(text):
     return "\n".join(normalized_lines)
 
 
-@st.cache_data(show_spinner="Extracting job info...")
 def extract_job_details(text):
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     title = lines[0] if lines else "Unknown Role"
@@ -112,7 +77,6 @@ def extract_job_details(text):
         "experience_required": experience_match.group(1).strip()
         if experience_match
         else None,
-        "skills": _unique_matches(body_text, SKILL_KEYWORDS),
-        "soft_skills": _unique_matches(body_text, SOFT_SKILL_KEYWORDS),
+        "skills": match_keywords(body_text, HARD_SKILL_KEYWORDS),
+        "soft_skills": match_keywords(body_text, SOFT_SKILL_KEYWORDS),
     }
-

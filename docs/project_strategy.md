@@ -416,15 +416,17 @@ Goals:
 
 These are the next practical engineering steps for this repository.
 
-1. Apply the GitHub-agent style system to this Streamlit app while preserving the sidebar.
-2. Add `src/schemas.py` for candidate, job, fit, and tailored-output models.
-3. Add `src/errors.py` for typed application failures.
-4. Refactor `app.py` so it becomes a thin UI layer over services.
-5. Build the first orchestrated feature:
-   - resume or LinkedIn input
-   - job description input
-   - fit analysis
-   - tailored resume output
+1. Add `src/report_builder.py` so current deterministic and agent outputs can be rendered into a stable recruiter-facing package.
+2. Add export support, starting with Markdown and structured text download.
+3. Improve the review layer so revision requests can feed back into another tailoring pass cleanly.
+4. Align the local Python version with the planned Streamlit deployment runtime.
+5. Prepare the first hosted Streamlit MVP before extracting FastAPI.
+
+Current progress:
+
+- `src/report_builder.py` implemented
+- Markdown and PDF export implemented
+- next meaningful work is review-loop refinement and deployment hardening
 
 ## Decision Summary
 
@@ -437,4 +439,3 @@ The current agreed direction is:
 - keep final output structure deterministic
 - delay FastAPI, Redis, Docker, and Next.js until the workflow and service boundaries are stable
 - write the core logic so those platforms can be added later without a rewrite
-

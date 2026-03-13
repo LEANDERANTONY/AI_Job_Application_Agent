@@ -29,12 +29,22 @@ The more complete strategy document lives in [docs/project_strategy.md](docs/pro
   - review
 - Add an orchestrator entrypoint for end-to-end runs
 
+Status:
+- Core workflow foundation implemented
+- Deterministic and supervised workflow layers implemented
+- Next work in sequence is review-loop refinement and deployment hardening
+
 ## Phase 4: Deterministic Reports and Exports
 
 - Add `src/report_builder.py`
 - Render structured fit and tailoring results in deterministic sections
 - Add Markdown export first
 - Add PDF export once the report structure is stable
+
+Status:
+- Deterministic report assembly implemented
+- Markdown and PDF export implemented
+- PDF refinement and template polish remain future work
 
 ## Phase 5: Streamlit MVP Deployment
 

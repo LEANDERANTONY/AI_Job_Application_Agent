@@ -21,13 +21,26 @@ The repository now follows the same product-style structure as the GitHub Portfo
   - experience requirement
   - hard skills
   - soft skills
+  - must-have and nice-to-have requirement lines
 - Upload a LinkedIn data export ZIP and normalize it into candidate-profile data
+- Merge resume and LinkedIn signals into one working candidate profile
+- Generate a deterministic fit snapshot against the active job description
+- Produce first-pass resume-tailoring guidance from grounded profile and JD signals
+- Run a supervised specialist-agent workflow on demand:
+  - profile
+  - job
+  - fit
+  - tailoring
+  - review
+- Use OpenAI when configured, with deterministic fallback when it is not
+- Build a deterministic application package from the current workflow state
+- Download the package as Markdown or PDF
 - Persist parsed and normalized inputs across Streamlit navigation with session state
 - Run on a modular structure with UI, parser, and service layers already separated
 
 ## Current Status
 
-The app is still in MVP form. The parsing and intake flows are working; the tailoring and job-application automation layers are the next implementation step.
+The app is still in MVP form, but the first usable application pipeline now exists. Resume parsing, LinkedIn import, JD structuring, deterministic fit analysis, first-pass tailoring guidance, supervised specialist-agent orchestration, and package export are working. The next implementation step is tightening the report/review loop and deployment readiness.
 
 ## Strategy
 
@@ -49,7 +62,14 @@ AI_Job_Application_Agent/
 |- src/
 |  |- config.py
 |  |- errors.py
+|  |- exporters.py
+|  |- openai_service.py
+|  |- prompts.py
+|  |- report_builder.py
 |  |- schemas.py
+|  |- taxonomy.py
+|  |- utils.py
+|  |- agents/
 |  |- parsers/
 |  |- services/
 |  |- ui/
@@ -57,9 +77,9 @@ AI_Job_Application_Agent/
 |  |- linkedin_parser.py
 |  `- resume_parser.py
 |- tests/
-|  |- test_jd_parser.py
-|  |- test_linkedin_parser.py
-|  `- test_resume_parser.py
+|  |- parser tests
+|  |- service tests
+|  `- orchestrator tests
 `- docs/
    |- architecture.md
    `- adr/
@@ -77,32 +97,39 @@ The phase-based roadmap is documented in [ROADMAP.md](ROADMAP.md).
 
 ## Setup
 
-### 1. Create and activate a virtual environment
+### 1. Create and sync the uv environment
 
 ```powershell
-python -m venv venv
-venv\Scripts\activate
+uv sync --group dev
 ```
 
-### 2. Install dependencies
+### 2. Activate the environment
 
 ```powershell
-pip install -r requirements.txt
+.venv\Scripts\activate
 ```
 
-### 3. Optional configuration
+### 3. Install Chromium for polished PDF export
+
+```powershell
+uv run python -m playwright install chromium
+```
+
+PDF export uses Playwright/Chromium first and falls back to ReportLab if the browser backend is unavailable.
+
+### 4. Optional configuration
 
 Environment variables can be stored in [`.env.example`](.env.example):
 
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 
-The current app does not yet require OpenAI to run the parsing flows, but these settings are reserved for upcoming tailoring features.
+The current app does not require OpenAI for parsing or deterministic analysis. If `OPENAI_API_KEY` is present, the supervised workflow will use the configured model. If not, it will fall back to deterministic output.
 
 ## Run the App
 
 ```powershell
-streamlit run app.py
+uv run streamlit run app.py
 ```
 
 Then:
@@ -110,10 +137,12 @@ Then:
 1. Upload a resume or import LinkedIn data
 2. Open `Manual JD Input`
 3. Upload or paste a job description
-4. Review the extracted signals
+4. Review the extracted signals, fit snapshot, and tailoring guidance
+5. Run the supervised workflow for agent-refined output and review notes
+6. Download the assembled application package as Markdown or PDF
 
 ## Testing
 
 ```powershell
-python -m pytest
+uv run pytest
 ```

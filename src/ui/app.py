@@ -43,9 +43,9 @@ def main():
         )
     with cols[2]:
         render_metric_card(
-            "Agent Workflow",
-            "Next",
-            "Fit analysis and tailoring are the next build step.",
+            "Application Package",
+            "Ready",
+            "The JD flow now supports supervised orchestration plus Markdown and TXT package export.",
         )
 
     render_evolution_note()

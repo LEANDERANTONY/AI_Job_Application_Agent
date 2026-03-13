@@ -55,9 +55,8 @@ def render_evolution_note():
             """
 1. Collect and normalize candidate inputs.
 2. Structure the target job description.
-3. Add supervised agent orchestration for fit analysis and tailoring.
-4. Render deterministic recruiter-facing output.
-5. Deploy in Streamlit first, then extract a backend when the workflow stabilizes.
+3. Run supervised agent orchestration on top of the deterministic baseline.
+4. Render recruiter-facing output and export it cleanly.
+5. Harden deployment for Streamlit first, then extract a backend when the workflow stabilizes.
 """
         )
-

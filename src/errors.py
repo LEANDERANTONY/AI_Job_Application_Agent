@@ -17,3 +17,7 @@ class InputValidationError(AppError):
 
 class AgentExecutionError(AppError):
     """Reserved for future supervised-agent execution failures."""
+
+
+class ExportError(AppError):
+    """Raised when a report export cannot be generated safely."""

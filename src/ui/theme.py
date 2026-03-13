@@ -121,7 +121,7 @@ def apply_theme():
                 color: var(--ink) !important;
                 border-color: rgba(20, 32, 51, 0.14) !important;
             }
-            .stButton > button, .stFormSubmitButton > button {
+            .stButton > button, .stFormSubmitButton > button, .stDownloadButton > button {
                 background: var(--accent-strong) !important;
                 color: #f8fafc !important;
                 border: 1px solid var(--accent-strong) !important;
@@ -138,4 +138,3 @@ def apply_theme():
         ).strip(),
         unsafe_allow_html=True,
     )
-
