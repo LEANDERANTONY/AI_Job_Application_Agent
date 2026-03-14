@@ -1,13 +1,18 @@
 import re
 from io import BytesIO
+import logging
 
 import docx
 from pypdf import PdfReader
 
 from src.errors import ParsingError
+from src.logging_utils import get_logger, log_event
 from src.parsers.common import decode_text, detect_file_type, read_file_bytes
 from src.taxonomy import HARD_SKILL_KEYWORDS, SOFT_SKILL_KEYWORDS
 from src.utils import match_keywords
+
+
+LOGGER = get_logger(__name__)
 
 
 def _parse_jd_bytes(file_bytes, file_type):
@@ -39,9 +44,23 @@ def _parse_jd_bytes(file_bytes, file_type):
 
 
 def parse_jd_text(file):
-    file_type = detect_file_type(file)
-    file_bytes = read_file_bytes(file)
-    return _parse_jd_bytes(file_bytes, file_type)
+    file_name = getattr(file, "name", "uploaded")
+    try:
+        file_type = detect_file_type(file)
+        file_bytes = read_file_bytes(file)
+        return _parse_jd_bytes(file_bytes, file_type)
+    except ParsingError as error:
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            "job_description_parse_failed",
+            "Job description parsing failed.",
+            file_name=file_name,
+            file_type=locals().get("file_type"),
+            file_size_bytes=len(locals().get("file_bytes", b"")),
+            error_type=type(error).__name__,
+        )
+        raise
 
 
 def clean_text(text):

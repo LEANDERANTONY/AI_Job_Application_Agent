@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-007
 
 ## Context
 
@@ -17,4 +17,5 @@ Accept user-uploaded LinkedIn data export ZIP files instead of scraping or attem
 - The app stays inside a safer product boundary.
 - Users retain control over what profile data they share with the app.
 - The workflow adds friction because users must export their data before upload.
+- This decision is no longer active product scope because the export-based flow added too much intake friction for the MVP.
 

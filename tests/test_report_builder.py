@@ -5,6 +5,7 @@ from src.schemas import (
     JobAgentOutput,
     ProfileAgentOutput,
     ReviewAgentOutput,
+    StrategyAgentOutput,
     TailoringAgentOutput,
 )
 from src.services.fit_service import build_fit_analysis
@@ -111,6 +112,12 @@ def test_build_application_report_includes_agent_sections_when_available():
             highlighted_skills=["Python", "SQL", "Docker"],
             cover_letter_themes=["Hands-on delivery fit."],
         ),
+        strategy=StrategyAgentOutput(
+            recruiter_positioning="Position the candidate as an implementation-first ML engineer.",
+            cover_letter_talking_points=["Lead with production API delivery evidence."],
+            interview_preparation_themes=["Production delivery"],
+            portfolio_project_emphasis=["Highlight shipped ML API work."],
+        ),
         review=ReviewAgentOutput(
             approved=True,
             grounding_issues=[],
@@ -130,4 +137,5 @@ def test_build_application_report_includes_agent_sections_when_available():
     assert "Review Status: Approved" in report.markdown
     assert "Applied AI engineer with grounded delivery evidence" in report.markdown
     assert "Built production ML APIs using Python and Docker." in report.markdown
+    assert "Position the candidate as an implementation-first ML engineer." in report.markdown
     assert "Grounded output." in report.plain_text

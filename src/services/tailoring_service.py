@@ -26,8 +26,6 @@ def _build_professional_summary(
         )
 
     evidence = []
-    if candidate_profile.linkedin_profile and candidate_profile.linkedin_profile.headline:
-        evidence.append(candidate_profile.linkedin_profile.headline)
     if candidate_profile.experience:
         latest_experience = candidate_profile.experience[0]
         if latest_experience.title or latest_experience.organization:

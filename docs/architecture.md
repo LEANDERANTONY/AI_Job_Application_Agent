@@ -10,8 +10,6 @@ The app helps a candidate prepare stronger application inputs by:
 
 - parsing an uploaded resume
 - parsing a job description from file upload, sample input, or pasted text
-- importing a LinkedIn data export archive
-- merging candidate signals from resume and LinkedIn
 - scoring baseline fit against a target role
 - generating deterministic tailoring guidance
 - running a supervised specialist-agent workflow on demand
@@ -23,20 +21,17 @@ The current codebase is structured to support the next phase: resume tailoring, 
 ## High-Level Flow
 
 1. The user opens the Streamlit app.
-2. The user chooses one of four UI flows:
+2. The user chooses one of three UI flows:
    - resume upload
-   - LinkedIn import
    - job search placeholder
    - manual job-description input
 3. Resume files are parsed into normalized text.
-4. LinkedIn ZIP exports are normalized into profile, education, skills, preferences, and experience data.
-5. Job descriptions are parsed, cleaned, and reduced into structured requirements.
-6. Resume and LinkedIn candidate sources are merged into a single candidate profile when both exist.
-7. Deterministic services generate a fit snapshot and a first tailoring draft.
-8. A supervised agent workflow can be triggered explicitly from the JD screen.
-9. A report builder assembles the current workflow state into a deterministic application package.
-10. Parsed outputs are stored in `st.session_state` so data survives page switches.
-11. The UI renders extracted previews, fit insights, tailoring guidance, agent-review output, and download actions.
+4. Job descriptions are parsed, cleaned, and reduced into structured requirements.
+5. Deterministic services generate a fit snapshot and a first tailoring draft.
+6. A supervised agent workflow can be triggered explicitly from the JD screen.
+7. A report builder assembles the current workflow state into a deterministic application package.
+8. Parsed outputs are stored in `st.session_state` so data survives page switches.
+9. The UI renders extracted previews, fit insights, tailoring guidance, agent-review output, strategy guidance, and download actions.
 
 ## Main Modules
 
@@ -63,21 +58,19 @@ Owns raw file ingestion and low-level extraction:
 
 - resume parsing
 - job-description parsing
-- LinkedIn export parsing
 - file validation and defensive parsing behavior
 
 Compatibility wrappers remain at:
 
 - `src/resume_parser.py`
 - `src/jd_parser.py`
-- `src/linkedin_parser.py`
 
 ### `src/services/`
 
 Owns deterministic normalization and non-UI workflow helpers:
 
-- candidate profile creation from parsed sources
-- candidate-profile merging and context building
+- candidate profile creation from resume input
+- candidate-context building for analysis and prompting
 - job-description normalization into shared schemas
 - fit scoring against job requirements
 - deterministic resume-tailoring guidance
@@ -158,8 +151,6 @@ Tracked state includes:
 - `current_menu`
 - `resume_document`
 - `candidate_profile_resume`
-- `linkedin_data`
-- `candidate_profile_linkedin`
 - `candidate_profile`
 - `job_description_raw`
 - `job_description_source`
@@ -177,7 +168,6 @@ The repo now includes focused tests under `tests/` for:
 
 - resume parsing
 - job-description parsing
-- LinkedIn export parsing
 - profile normalization
 - job normalization
 - fit scoring
@@ -193,7 +183,8 @@ These tests are intentionally fast and file-light so they can run in local devel
 The next meaningful expansion is the delivery hardening layer for:
 
 - richer recruiter-facing package structure
-- revision loops driven by review-agent feedback
+- deployment readiness for Streamlit hosting
+- additional UX polish around the supervised workflow and exported package
 - deployment readiness for Streamlit hosting
 - later API exposure of the same orchestration entrypoint through FastAPI
 

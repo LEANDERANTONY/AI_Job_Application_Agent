@@ -9,6 +9,7 @@ from src.schemas import (
     JobAgentOutput,
     JobDescription,
     ProfileAgentOutput,
+    StrategyAgentOutput,
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
@@ -108,6 +109,8 @@ def build_tailoring_agent_prompt(
     tailored_draft: TailoredResumeDraft,
     profile_output: ProfileAgentOutput,
     fit_output: FitAgentOutput,
+    previous_tailoring_output: TailoringAgentOutput = None,
+    revision_requests: Any = None,
 ) -> Dict[str, Any]:
     contract = {
         "professional_summary": "3-4 sentence tailored summary using only grounded claims",
@@ -124,11 +127,18 @@ def build_tailoring_agent_prompt(
             _json_block("Profile Agent Output", profile_output),
             _json_block("Fit Agent Output", fit_output),
         ]
+        + (
+            [_json_block("Previous Tailoring Output", previous_tailoring_output)]
+            if previous_tailoring_output
+            else []
+        )
+        + ([ _json_block("Revision Requests", revision_requests)] if revision_requests else [])
     )
     return {
         "system": (
             "You are the Tailoring Agent. Improve the deterministic draft without inventing facts. "
             "If evidence is weak, write conservatively and note transferable alignment instead of exaggerating. "
+            "When revision requests are provided, treat them as mandatory constraints and revise the prior tailoring output rather than repeating the same wording. "
             + _build_contract(contract)
         ),
         "user": user_prompt,
@@ -142,6 +152,7 @@ def build_review_agent_prompt(
     fit_analysis: FitAnalysis,
     tailored_draft: TailoredResumeDraft,
     tailoring_output: TailoringAgentOutput,
+    strategy_output: StrategyAgentOutput = None,
 ) -> Dict[str, Any]:
     contract = {
         "approved": "boolean approval flag",
@@ -157,11 +168,47 @@ def build_review_agent_prompt(
             _json_block("Deterministic Tailored Draft", tailored_draft),
             _json_block("Tailoring Agent Output", tailoring_output),
         ]
+        + ([_json_block("Strategy Agent Output", strategy_output)] if strategy_output else [])
     )
     return {
         "system": (
             "You are the Review Agent. Your job is to reject embellishment and unsupported claims. "
             "Approve only if the wording stays grounded in the source profile and deterministic analysis. "
+            + _build_contract(contract)
+        ),
+        "user": user_prompt,
+        "expected_keys": list(contract.keys()),
+    }
+
+
+def build_strategy_agent_prompt(
+    candidate_profile: CandidateProfile,
+    job_description: JobDescription,
+    fit_analysis: FitAnalysis,
+    profile_output: ProfileAgentOutput,
+    fit_output: FitAgentOutput,
+    tailoring_output: TailoringAgentOutput,
+) -> Dict[str, Any]:
+    contract = {
+        "recruiter_positioning": "2-3 sentence recruiter-facing positioning guidance grounded in the inputs",
+        "cover_letter_talking_points": "array of 2-4 grounded cover-letter talking points",
+        "interview_preparation_themes": "array of 2-4 interview themes to prepare with evidence",
+        "portfolio_project_emphasis": "array of 2-4 portfolio or project emphasis suggestions grounded in the candidate profile",
+    }
+    user_prompt = "\n\n".join(
+        [
+            _json_block("Candidate Profile", candidate_profile),
+            _json_block("Job Description", job_description),
+            _json_block("Deterministic Fit Analysis", fit_analysis),
+            _json_block("Profile Agent Output", profile_output),
+            _json_block("Fit Agent Output", fit_output),
+            _json_block("Tailoring Agent Output", tailoring_output),
+        ]
+    )
+    return {
+        "system": (
+            "You are the Application Strategy Agent. Convert grounded fit and tailoring signals into downstream application guidance. "
+            "Do not invent projects, experience, technologies, or recruiter claims that are not supported by the source profile. "
             + _build_contract(contract)
         ),
         "user": user_prompt,

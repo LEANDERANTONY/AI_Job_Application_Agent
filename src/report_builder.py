@@ -249,6 +249,29 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
                 "No cover letter themes produced.",
             ),
             "",
+            "### Application Strategy",
+            agent_result.strategy.recruiter_positioning
+            if agent_result.strategy
+            else "No recruiter positioning produced.",
+            "",
+            "#### Cover Letter Talking Points",
+            _render_markdown_list(
+                agent_result.strategy.cover_letter_talking_points if agent_result.strategy else [],
+                "No cover letter talking points produced.",
+            ),
+            "",
+            "#### Interview Preparation Themes",
+            _render_markdown_list(
+                agent_result.strategy.interview_preparation_themes if agent_result.strategy else [],
+                "No interview preparation themes produced.",
+            ),
+            "",
+            "#### Portfolio / Project Emphasis",
+            _render_markdown_list(
+                agent_result.strategy.portfolio_project_emphasis if agent_result.strategy else [],
+                "No portfolio or project emphasis produced.",
+            ),
+            "",
             "### Review Notes",
             "#### Grounding Issues",
             _render_markdown_list(

@@ -1,6 +1,7 @@
 import streamlit as st
 
 from src.errors import AppError, InputValidationError, ParsingError
+from src.logging_utils import configure_logging, get_logger, log_event
 from src.ui.components import (
     render_evolution_note,
     render_footer,
@@ -11,13 +12,16 @@ from src.ui.navigation import render_sidebar
 from src.ui.pages import (
     render_job_description_page,
     render_job_search_page,
-    render_linkedin_page,
     render_resume_page,
 )
 from src.ui.theme import apply_theme
 
 
+LOGGER = get_logger(__name__)
+
+
 def main():
+    configure_logging()
     st.set_page_config(
         page_title="AI Job Application Agent",
         page_icon="AI",
@@ -37,9 +41,9 @@ def main():
         )
     with cols[1]:
         render_metric_card(
-            "LinkedIn Import",
+            "Job Description Intake",
             "Ready",
-            "ZIP-based profile ingestion is available now.",
+            "File upload, sample loading, and pasted text are supported.",
         )
     with cols[2]:
         render_metric_card(
@@ -53,8 +57,6 @@ def main():
     try:
         if menu == "Upload Resume":
             render_resume_page()
-        elif menu == "Build from LinkedIn":
-            render_linkedin_page()
         elif menu == "Job Search":
             render_job_search_page()
         elif menu == "Manual JD Input":
@@ -62,10 +64,33 @@ def main():
         else:
             raise InputValidationError("Unknown navigation target.")
     except ParsingError as error:
+        log_event(
+            LOGGER,
+            40,
+            "ui_parsing_error",
+            "Parsing error reached UI boundary.",
+            error_type=type(error).__name__,
+            details=error.details,
+        )
         st.error(error.user_message)
     except AppError as error:
+        log_event(
+            LOGGER,
+            30,
+            "ui_app_error",
+            "Application error reached UI boundary.",
+            error_type=type(error).__name__,
+            details=error.details,
+        )
         st.warning(error.user_message)
     except Exception as error:
+        log_event(
+            LOGGER,
+            40,
+            "ui_unhandled_error",
+            "Unhandled exception reached UI boundary.",
+            error_type=type(error).__name__,
+        )
         st.error(str(error))
 
     render_footer()

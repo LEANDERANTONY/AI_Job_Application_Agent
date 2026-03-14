@@ -30,9 +30,7 @@ class ProfileAgent:
     def _fallback(candidate_profile: CandidateProfile) -> ProfileAgentOutput:
         top_skills = candidate_profile.skills[:4]
         headline_parts = []
-        if candidate_profile.linkedin_profile and candidate_profile.linkedin_profile.headline:
-            headline_parts.append(candidate_profile.linkedin_profile.headline)
-        elif candidate_profile.full_name:
+        if candidate_profile.full_name:
             headline_parts.append("Candidate profile for " + candidate_profile.full_name)
         else:
             headline_parts.append("Candidate profile ready for tailoring")
@@ -61,7 +59,7 @@ class ProfileAgent:
         if not candidate_profile.full_name:
             cautions.append("Candidate name was not inferred from the current inputs.")
         if not candidate_profile.experience:
-            cautions.append("Experience evidence is limited without LinkedIn or explicit resume extraction.")
+            cautions.append("Experience evidence is limited in the current resume input.")
 
         return ProfileAgentOutput(
             positioning_headline=" | ".join(unique_strings(headline_parts, limit=2)),

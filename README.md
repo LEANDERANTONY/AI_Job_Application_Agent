@@ -2,7 +2,7 @@
 
 [License: MIT](LICENSE)
 
-AI Job Application Agent is a Streamlit app for preparing stronger job applications through resume parsing, job-description analysis, and LinkedIn export ingestion.
+AI Job Application Agent is a Streamlit app for preparing stronger job applications through resume parsing, job-description analysis, fit review, tailored output, and export.
 
 The repository now follows the same product-style structure as the GitHub Portfolio Reviewer Agent:
 
@@ -22,8 +22,6 @@ The repository now follows the same product-style structure as the GitHub Portfo
   - hard skills
   - soft skills
   - must-have and nice-to-have requirement lines
-- Upload a LinkedIn data export ZIP and normalize it into candidate-profile data
-- Merge resume and LinkedIn signals into one working candidate profile
 - Generate a deterministic fit snapshot against the active job description
 - Produce first-pass resume-tailoring guidance from grounded profile and JD signals
 - Run a supervised specialist-agent workflow on demand:
@@ -31,6 +29,7 @@ The repository now follows the same product-style structure as the GitHub Portfo
   - job
   - fit
   - tailoring
+  - strategy
   - review
 - Use OpenAI when configured, with deterministic fallback when it is not
 - Build a deterministic application package from the current workflow state
@@ -40,7 +39,7 @@ The repository now follows the same product-style structure as the GitHub Portfo
 
 ## Current Status
 
-The app is still in MVP form, but the first usable application pipeline now exists. Resume parsing, LinkedIn import, JD structuring, deterministic fit analysis, first-pass tailoring guidance, supervised specialist-agent orchestration, and package export are working. The next implementation step is tightening the report/review loop and deployment readiness.
+The app is still in MVP form, but the first usable application pipeline now exists. Resume parsing, JD structuring, deterministic fit analysis, first-pass tailoring guidance, supervised specialist-agent orchestration, bounded review-driven revision, and package export are working. The current product scope is intentionally narrower: resume plus JD in, grounded application package out.
 
 ## Strategy
 
@@ -74,7 +73,6 @@ AI_Job_Application_Agent/
 |  |- services/
 |  |- ui/
 |  |- jd_parser.py
-|  |- linkedin_parser.py
 |  `- resume_parser.py
 |- tests/
 |  |- parser tests
@@ -134,11 +132,11 @@ uv run streamlit run app.py
 
 Then:
 
-1. Upload a resume or import LinkedIn data
+1. Upload a resume
 2. Open `Manual JD Input`
 3. Upload or paste a job description
 4. Review the extracted signals, fit snapshot, and tailoring guidance
-5. Run the supervised workflow for agent-refined output and review notes
+5. Run the supervised workflow for agent-refined output, review notes, and strategy guidance
 6. Download the assembled application package as Markdown or PDF
 
 ## Testing

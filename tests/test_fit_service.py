@@ -1,48 +1,25 @@
 from src.schemas import ResumeDocument
 from src.services.fit_service import build_fit_analysis
 from src.services.job_service import build_job_description_from_text
-from src.services.profile_service import (
-    build_candidate_profile_from_linkedin_data,
-    build_candidate_profile_from_resume,
-    merge_candidate_profiles,
-)
+from src.services.profile_service import build_candidate_profile_from_resume
 
 
 def test_build_fit_analysis_scores_grounded_match():
-    resume_profile = build_candidate_profile_from_resume(
+    candidate_profile = build_candidate_profile_from_resume(
         ResumeDocument(
             text=(
                 "Leander Antony\n"
                 "Chennai, India\n"
                 "Python SQL Docker communication\n"
-                "Built machine learning pipelines and production apps."
+                "3 years of machine learning experience.\n"
+                "Built machine learning pipelines and production apps.\n"
+                "ML Engineer at Example Labs\n"
+                "Led communication across teams while shipping ML services."
             ),
             filetype="TXT",
             source="uploaded",
         )
     )
-    linkedin_profile = build_candidate_profile_from_linkedin_data(
-        {
-            "summary": {
-                "name": "Leander Antony",
-                "headline": "Machine Learning Engineer",
-                "location": "Chennai",
-                "summary": "Builds applied AI systems.",
-            },
-            "skills": ["Python", "SQL", "Docker"],
-            "experience": [
-                {
-                    "title": "ML Engineer",
-                    "company": "Example Labs",
-                    "location": "Chennai",
-                    "description": "Led communication across teams while shipping ML services.",
-                    "start": {"year": 2022},
-                    "end": {"year": 2025},
-                }
-            ],
-        }
-    )
-    candidate_profile = merge_candidate_profiles(resume_profile, linkedin_profile)
     job_description = build_job_description_from_text(
         "Machine Learning Engineer\n"
         "Location: Chennai, India\n"

@@ -175,3 +175,12 @@ This document tracks notable implementation milestones and technical decisions.
 - Verified the hardened codebase with:
   - `uv run pytest`
   - `uv run python -m compileall app.py src tests`
+
+## Day 11: Scope Tightening Around Resume + JD Workflow
+
+- Removed LinkedIn import from the active product and codebase.
+- Simplified candidate-profile handling so the working profile comes directly from resume parsing.
+- Deleted LinkedIn parser modules and their test coverage.
+- Updated UI navigation and copy to reflect the narrower, lower-friction intake flow.
+- Added an ADR documenting why LinkedIn export ingestion was removed from the product scope.
+- Verified the removal pass with targeted search, compile checks, and focused tests.

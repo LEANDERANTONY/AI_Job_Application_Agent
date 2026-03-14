@@ -66,6 +66,12 @@ class FakeOpenAIService:
                 "cover_letter_themes": ["Strong implementation fit."],
             },
             {
+                "recruiter_positioning": "Position the candidate as a grounded implementation-focused ML engineer.",
+                "cover_letter_talking_points": ["Lead with production application delivery evidence."],
+                "interview_preparation_themes": ["Production delivery", "Cross-team communication"],
+                "portfolio_project_emphasis": ["Highlight productized ML work using Python and Docker."],
+            },
+            {
                 "approved": True,
                 "grounding_issues": [],
                 "revision_requests": [],
@@ -91,6 +97,142 @@ class FailingOpenAIService:
     @staticmethod
     def run_json_prompt(system_prompt, user_prompt, expected_keys=None, **kwargs):
         raise AgentExecutionError("boom")
+
+
+class FakeRevisionLoopOpenAIService:
+    def __init__(self):
+        self.model = "fake-model"
+        self._responses = [
+            {
+                "positioning_headline": "Applied AI engineer with grounded product delivery evidence",
+                "evidence_highlights": ["Python", "Docker", "Production applications"],
+                "strengths": ["Hands-on Python delivery", "Usable resume evidence"],
+                "cautions": ["AWS is not evidenced directly"],
+            },
+            {
+                "requirement_summary": "Production ML role with strong implementation expectations.",
+                "priority_skills": ["Python", "SQL", "Docker", "AWS"],
+                "must_have_themes": ["Production ML systems", "Communication"],
+                "messaging_guidance": ["Mirror delivery language from the JD."],
+            },
+            {
+                "fit_summary": "Strong fit overall with one visible cloud gap.",
+                "top_matches": ["Python", "SQL", "Docker"],
+                "key_gaps": ["AWS"],
+                "interview_themes": ["Production delivery", "Cross-team communication"],
+            },
+            {
+                "professional_summary": "Initial summary with unsupported AWS emphasis.",
+                "rewritten_bullets": ["Led AWS-native production deployments for ML services."],
+                "highlighted_skills": ["Python", "SQL", "AWS"],
+                "cover_letter_themes": ["Strong cloud fit."],
+            },
+            {
+                "recruiter_positioning": "Initial recruiter positioning with unsupported AWS depth.",
+                "cover_letter_talking_points": ["Emphasize AWS-native production ownership."],
+                "interview_preparation_themes": ["Cloud architecture leadership"],
+                "portfolio_project_emphasis": ["Feature AWS-heavy production work."],
+            },
+            {
+                "approved": False,
+                "grounding_issues": ["AWS claim is stronger than the source profile supports."],
+                "revision_requests": ["Remove unsupported AWS delivery claims and keep the summary grounded."],
+                "final_notes": ["Needs a more conservative rewrite."],
+            },
+            {
+                "professional_summary": "Revised grounded summary for the role.",
+                "rewritten_bullets": ["Built production applications using Python and Docker."],
+                "highlighted_skills": ["Python", "SQL", "Docker"],
+                "cover_letter_themes": ["Strong implementation fit."],
+            },
+            {
+                "recruiter_positioning": "Revised grounded implementation-focused positioning.",
+                "cover_letter_talking_points": ["Lead with delivery evidence in Python and Docker."],
+                "interview_preparation_themes": ["Production delivery", "Grounded communication"],
+                "portfolio_project_emphasis": ["Highlight production applications that show end-to-end delivery."],
+            },
+            {
+                "approved": True,
+                "grounding_issues": [],
+                "revision_requests": [],
+                "final_notes": ["Grounded after revision."],
+            },
+        ]
+
+    @staticmethod
+    def is_available():
+        return True
+
+    def run_json_prompt(self, system_prompt, user_prompt, expected_keys=None, **kwargs):
+        return self._responses.pop(0)
+
+
+class FakeNeverApprovedOpenAIService:
+    def __init__(self):
+        self.model = "fake-model"
+        self._responses = [
+            {
+                "positioning_headline": "Applied AI engineer with grounded product delivery evidence",
+                "evidence_highlights": ["Python", "Docker", "Production applications"],
+                "strengths": ["Hands-on Python delivery", "Usable resume evidence"],
+                "cautions": ["AWS is not evidenced directly"],
+            },
+            {
+                "requirement_summary": "Production ML role with strong implementation expectations.",
+                "priority_skills": ["Python", "SQL", "Docker", "AWS"],
+                "must_have_themes": ["Production ML systems", "Communication"],
+                "messaging_guidance": ["Mirror delivery language from the JD."],
+            },
+            {
+                "fit_summary": "Strong fit overall with one visible cloud gap.",
+                "top_matches": ["Python", "SQL", "Docker"],
+                "key_gaps": ["AWS"],
+                "interview_themes": ["Production delivery", "Cross-team communication"],
+            },
+            {
+                "professional_summary": "First pass summary.",
+                "rewritten_bullets": ["First pass bullet."],
+                "highlighted_skills": ["Python", "AWS"],
+                "cover_letter_themes": ["First pass theme."],
+            },
+            {
+                "recruiter_positioning": "First pass positioning.",
+                "cover_letter_talking_points": ["First pass talking point."],
+                "interview_preparation_themes": ["First pass interview theme."],
+                "portfolio_project_emphasis": ["First pass portfolio emphasis."],
+            },
+            {
+                "approved": False,
+                "grounding_issues": ["Unsupported claim remains."],
+                "revision_requests": ["Remove unsupported claim."],
+                "final_notes": ["Needs revision."],
+            },
+            {
+                "professional_summary": "Second pass summary.",
+                "rewritten_bullets": ["Second pass bullet."],
+                "highlighted_skills": ["Python"],
+                "cover_letter_themes": ["Second pass theme."],
+            },
+            {
+                "recruiter_positioning": "Second pass positioning.",
+                "cover_letter_talking_points": ["Second pass talking point."],
+                "interview_preparation_themes": ["Second pass interview theme."],
+                "portfolio_project_emphasis": ["Second pass portfolio emphasis."],
+            },
+            {
+                "approved": False,
+                "grounding_issues": ["Unsupported claim remains."],
+                "revision_requests": ["Remove unsupported claim."],
+                "final_notes": ["Still needs revision."],
+            },
+        ]
+
+    @staticmethod
+    def is_available():
+        return True
+
+    def run_json_prompt(self, system_prompt, user_prompt, expected_keys=None, **kwargs):
+        return self._responses.pop(0)
 
 
 def test_orchestrator_runs_in_deterministic_fallback_mode():
@@ -119,6 +261,11 @@ def test_orchestrator_uses_openai_service_when_available():
     assert result.tailoring.rewritten_bullets == [
         "Built production applications using Python and Docker."
     ]
+    assert result.strategy.recruiter_positioning == (
+        "Position the candidate as a grounded implementation-focused ML engineer."
+    )
+    assert len(result.review_history) == 1
+    assert result.review_history[0].pass_index == 1
 
 
 def test_orchestrator_falls_back_if_ai_execution_fails():
@@ -129,3 +276,33 @@ def test_orchestrator_falls_back_if_ai_execution_fails():
     assert result.mode == "deterministic_fallback"
     assert result.model == "fallback"
     assert result.review.final_notes
+
+
+def test_orchestrator_retries_tailoring_when_review_rejects():
+    orchestrator = ApplicationOrchestrator(openai_service=FakeRevisionLoopOpenAIService())
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    assert result.mode == "openai"
+    assert result.review.approved is True
+    assert result.tailoring.professional_summary == "Revised grounded summary for the role."
+    assert result.strategy.recruiter_positioning == "Revised grounded implementation-focused positioning."
+    assert len(result.review_history) == 2
+    assert result.review_history[0].review.approved is False
+    assert result.review_history[1].review.approved is True
+
+
+def test_orchestrator_stops_after_max_revision_passes():
+    orchestrator = ApplicationOrchestrator(
+        openai_service=FakeNeverApprovedOpenAIService(),
+        max_revision_passes=1,
+    )
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    assert result.mode == "openai"
+    assert result.review.approved is False
+    assert result.tailoring.professional_summary == "Second pass summary."
+    assert result.strategy.recruiter_positioning == "Second pass positioning."
+    assert len(result.review_history) == 2
+    assert result.review_history[-1].pass_index == 2

@@ -1,16 +1,16 @@
 import streamlit as st
 
+from src.ui.state import CURRENT_MENU, get_current_menu
+
 
 MENU_OPTIONS = [
     "Upload Resume",
-    "Build from LinkedIn",
     "Job Search",
     "Manual JD Input",
 ]
 
 MENU_COPY = {
     "Upload Resume": "Parse a resume and keep it ready for tailoring.",
-    "Build from LinkedIn": "Import a LinkedIn archive into a structured candidate profile.",
     "Job Search": "Placeholder for job-source integrations and matching.",
     "Manual JD Input": "Load a target role and extract structured requirements.",
 }
@@ -31,12 +31,11 @@ def render_sidebar():
             unsafe_allow_html=True,
         )
         st.title("Navigation")
-        if "current_menu" not in st.session_state:
-            st.session_state["current_menu"] = MENU_OPTIONS[0]
+        get_current_menu(MENU_OPTIONS[0])
         menu = st.radio(
             "Go to:",
             MENU_OPTIONS,
-            key="current_menu",
+            key=CURRENT_MENU,
             label_visibility="collapsed",
         )
         st.caption(MENU_COPY[menu])

@@ -137,8 +137,6 @@ def build_fit_analysis(
         strengths.append(
             f"Soft-skill evidence found for {', '.join(matched_soft_skills[:3])}."
         )
-    if candidate_profile.linkedin_profile:
-        strengths.append("Structured LinkedIn experience is available to ground tailoring.")
     if candidate_profile.resume_text:
         strengths.append("Resume text is available for evidence extraction and wording reuse.")
     strengths = dedupe_strings(strengths[:4])
@@ -167,8 +165,8 @@ def build_fit_analysis(
         recommendations.append(
             "Add grounded project or work evidence for: " + ", ".join(missing_hard_skills[:4]) + "."
         )
-    if not candidate_profile.linkedin_profile:
-        recommendations.append("Import LinkedIn data to add structured experience and preferences.")
+    if not candidate_profile.experience:
+        recommendations.append("Add clearer work-experience evidence to the resume before exporting recruiter-facing output.")
     if not candidate_profile.full_name:
         recommendations.append("Confirm candidate identity details before generating recruiter-facing output.")
     if not job_requirements.hard_skills:

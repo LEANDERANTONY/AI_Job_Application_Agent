@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 
 @dataclass
@@ -22,33 +22,11 @@ class WorkExperience:
 
 
 @dataclass
-class JobPreferences:
-    preferred_titles: List[str] = field(default_factory=list)
-    raw_preferences: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class LinkedInProfile:
-    full_name: str
-    headline: str = ""
-    location: str = ""
-    summary: str = ""
-    skills: List[str] = field(default_factory=list)
-    experience: List[WorkExperience] = field(default_factory=list)
-    education: List[EducationEntry] = field(default_factory=list)
-    certifications: List[str] = field(default_factory=list)
-    projects: List[Dict[str, Any]] = field(default_factory=list)
-    publications: List[Dict[str, Any]] = field(default_factory=list)
-    preferences: JobPreferences = field(default_factory=JobPreferences)
-
-
-@dataclass
 class CandidateProfile:
     full_name: str = ""
     location: str = ""
     source: str = ""
     resume_text: str = ""
-    linkedin_profile: Optional[LinkedInProfile] = None
     skills: List[str] = field(default_factory=list)
     experience: List[WorkExperience] = field(default_factory=list)
     education: List[EducationEntry] = field(default_factory=list)
@@ -138,11 +116,27 @@ class TailoringAgentOutput:
 
 
 @dataclass
+class StrategyAgentOutput:
+    recruiter_positioning: str
+    cover_letter_talking_points: List[str] = field(default_factory=list)
+    interview_preparation_themes: List[str] = field(default_factory=list)
+    portfolio_project_emphasis: List[str] = field(default_factory=list)
+
+
+@dataclass
 class ReviewAgentOutput:
     approved: bool
     grounding_issues: List[str] = field(default_factory=list)
     revision_requests: List[str] = field(default_factory=list)
     final_notes: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ReviewPassResult:
+    pass_index: int
+    tailoring: TailoringAgentOutput
+    strategy: StrategyAgentOutput
+    review: ReviewAgentOutput
 
 
 @dataclass
@@ -154,6 +148,8 @@ class AgentWorkflowResult:
     fit: FitAgentOutput
     tailoring: TailoringAgentOutput
     review: ReviewAgentOutput
+    strategy: Optional[StrategyAgentOutput] = None
+    review_history: List[ReviewPassResult] = field(default_factory=list)
 
 
 @dataclass

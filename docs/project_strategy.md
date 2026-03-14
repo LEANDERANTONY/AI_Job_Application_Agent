@@ -4,14 +4,13 @@ This document captures the current architectural decisions for the AI Job Applic
 
 ## Current Product Position
 
-The app is currently an intake-focused MVP with four user-facing workflows:
+The app is currently an intake-focused MVP with three user-facing workflows:
 
 - upload and parse a resume
-- import a LinkedIn data export
 - search jobs placeholder
 - upload or paste a job description
 
-The existing implementation is intentionally lightweight. It proves the candidate-input and job-input flows before adding heavier orchestration, model calls, persistence, and production infrastructure.
+The existing implementation is intentionally lightweight. It proves the resume-input and job-input flows before adding heavier orchestration, model calls, persistence, and production infrastructure.
 
 ## Reference Pattern
 
@@ -29,7 +28,7 @@ What we are intentionally not copying exactly:
 
 - the no-sidebar layout rule
 
-Unlike the GitHub agent, this app has multiple workflows rather than one primary flow. A sidebar is appropriate here because it improves navigation between resume intake, LinkedIn import, JD parsing, and later application workflows.
+Unlike the GitHub agent, this app has multiple workflows rather than one primary flow. A sidebar is appropriate here because it improves navigation between resume intake, JD parsing, and later application workflows.
 
 ## UI Decisions
 
@@ -47,7 +46,7 @@ We will deploy the first public version with Streamlit because it is the fastest
 The app should retain a sidebar because:
 
 - the product has multiple user tasks
-- users may move between resume, LinkedIn, JD, and job-search flows
+- users may move between resume, JD, and job-search flows
 - a linear top-down-only interface would make navigation worse for this domain
 
 ### Reuse the GitHub agent visual system
@@ -65,10 +64,10 @@ The main difference is navigation model, not visual identity.
 ## Current Architecture
 
 The app currently has three working ingestion modules:
+The app currently has two working ingestion modules:
 
 - `src/resume_parser.py`
 - `src/jd_parser.py`
-- `src/linkedin_parser.py`
 
 And one UI shell:
 
@@ -110,7 +109,7 @@ Owns workflow control:
 
 #### `Profile Agent`
 
-Builds a normalized candidate profile from resume and LinkedIn inputs:
+Builds a normalized candidate profile from resume inputs:
 
 - skills
 - experience
@@ -191,8 +190,7 @@ src/
 |- report_builder.py
 |- parsers/
 |  |- resume_parser.py
-|  |- jd_parser.py
-|  \- linkedin_parser.py
+|  \- jd_parser.py
 |- services/
 |  |- profile_service.py
 |  |- job_service.py
@@ -340,7 +338,6 @@ Status:
 
 - resume parsing works
 - JD parsing works
-- LinkedIn import works
 - tests cover the parser layer
 
 ### Phase 1: product shell and domain models

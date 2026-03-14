@@ -15,7 +15,7 @@ The more complete strategy document lives in [docs/project_strategy.md](docs/pro
 
 - Introduce `src/schemas.py` for candidate, job, fit, and tailored-output objects
 - Introduce `src/errors.py` for typed failures
-- Normalize resume, LinkedIn, and JD outputs into shared internal models
+- Normalize resume and JD outputs into shared internal models
 
 ## Phase 3: Build the First Real Agent Workflow
 
@@ -32,7 +32,8 @@ The more complete strategy document lives in [docs/project_strategy.md](docs/pro
 Status:
 - Core workflow foundation implemented
 - Deterministic and supervised workflow layers implemented
-- Next work in sequence is review-loop refinement and deployment hardening
+- Review-loop refinement implemented
+- Next work in sequence is deployment hardening and product polish
 
 ## Phase 4: Deterministic Reports and Exports
 

@@ -4,6 +4,7 @@ from src.schemas import (
     FitAnalysis,
     JobDescription,
     ReviewAgentOutput,
+    StrategyAgentOutput,
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
@@ -23,6 +24,7 @@ class ReviewAgent:
         fit_analysis: FitAnalysis,
         tailored_draft: TailoredResumeDraft,
         tailoring_output: TailoringAgentOutput,
+        strategy_output: StrategyAgentOutput = None,
     ) -> ReviewAgentOutput:
         if self._openai_service and self._openai_service.is_available():
             prompt = build_review_agent_prompt(
@@ -31,6 +33,7 @@ class ReviewAgent:
                 fit_analysis,
                 tailored_draft,
                 tailoring_output,
+                strategy_output,
             )
             payload = self._openai_service.run_json_prompt(
                 prompt["system"],
@@ -47,13 +50,14 @@ class ReviewAgent:
                 ),
                 final_notes=coerce_string_list(payload.get("final_notes"), limit=3),
             )
-        return self._fallback(candidate_profile, fit_analysis, tailoring_output)
+        return self._fallback(candidate_profile, fit_analysis, tailoring_output, strategy_output)
 
     @staticmethod
     def _fallback(
         candidate_profile: CandidateProfile,
         fit_analysis: FitAnalysis,
         tailoring_output: TailoringAgentOutput,
+        strategy_output: StrategyAgentOutput = None,
     ) -> ReviewAgentOutput:
         candidate_text = build_candidate_context_text(candidate_profile).lower()
         output_text = " ".join(
@@ -61,6 +65,10 @@ class ReviewAgent:
                 tailoring_output.professional_summary,
                 " ".join(tailoring_output.rewritten_bullets),
                 " ".join(tailoring_output.cover_letter_themes),
+                strategy_output.recruiter_positioning if strategy_output else "",
+                " ".join(strategy_output.cover_letter_talking_points) if strategy_output else "",
+                " ".join(strategy_output.interview_preparation_themes) if strategy_output else "",
+                " ".join(strategy_output.portfolio_project_emphasis) if strategy_output else "",
             ]
         ).lower()
         grounding_issues = []

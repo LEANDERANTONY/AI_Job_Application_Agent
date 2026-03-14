@@ -1,5 +1,6 @@
 import html
 import hashlib
+import logging
 import re
 from io import BytesIO
 
@@ -7,10 +8,12 @@ from markdown_it import MarkdownIt
 from markdown_it.tree import SyntaxTreeNode
 
 from src.errors import ExportError
+from src.logging_utils import get_logger, log_event
 from src.schemas import ApplicationReport
 
 
 _MARKDOWN = MarkdownIt("commonmark", {"html": False})
+LOGGER = get_logger(__name__)
 
 
 def export_markdown_bytes(report: ApplicationReport) -> bytes:
@@ -22,7 +25,20 @@ def export_text_bytes(report: ApplicationReport) -> bytes:
 
 
 def export_pdf_bytes(report: ApplicationReport) -> bytes:
-    return generate_pdf(report.markdown, title=report.title).getvalue()
+    try:
+        return generate_pdf(report.markdown, title=report.title).getvalue()
+    except ExportError as error:
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            "pdf_export_failed",
+            "PDF export failed.",
+            report_title=report.title,
+            filename_stem=report.filename_stem,
+            error_type=type(error).__name__,
+            details=error.details,
+        )
+        raise
 
 
 def _paragraph_text(text):
@@ -553,10 +569,26 @@ def _generate_pdf_with_playwright(text, title):
 def generate_pdf(text, title="AI Job Application Package"):
     try:
         return _generate_pdf_with_playwright(text, title)
-    except Exception:
+    except Exception as playwright_error:
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            "pdf_export_playwright_failed",
+            "Playwright PDF export failed; attempting ReportLab fallback.",
+            title=title,
+            error_type=type(playwright_error).__name__,
+        )
         try:
             return _generate_pdf_with_reportlab(text, title)
         except Exception as error:
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "pdf_export_reportlab_failed",
+                "ReportLab PDF export failed after Playwright fallback.",
+                title=title,
+                error_type=type(error).__name__,
+            )
             raise ExportError(
                 "PDF export failed. Try downloading the Markdown package instead.",
                 details=str(error),

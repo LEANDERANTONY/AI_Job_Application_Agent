@@ -1,48 +1,36 @@
-import hashlib
-import json
-from dataclasses import asdict
-
 import streamlit as st
 
-from src.agents.orchestrator import ApplicationOrchestrator
-from src.config import DEMO_JOB_DESCRIPTION_DIR, DEMO_RESUME_DIR, list_demo_files
+from src.config import (
+    DEMO_JOB_DESCRIPTION_DIR,
+    DEMO_RESUME_DIR,
+    list_demo_files,
+)
 from src.errors import ExportError
-from src.exporters import export_markdown_bytes, export_pdf_bytes
-from src.openai_service import OpenAIService
-from src.parsers.jd import parse_jd_text
-from src.parsers.linkedin import parse_linkedin_payload
-from src.parsers.resume import parse_resume_document
-from src.report_builder import build_application_report
+from src.exporters import export_markdown_bytes
 from src.schemas import (
     AgentWorkflowResult,
     ApplicationReport,
     CandidateProfile,
-    FitAnalysis,
     TailoredResumeDraft,
 )
-from src.services.fit_service import build_fit_analysis
-from src.services.job_service import build_job_description_from_text
-from src.services.profile_service import (
-    build_candidate_profile_from_linkedin_data,
-    build_candidate_profile_from_resume,
-    merge_candidate_profiles,
-)
-from src.services.tailoring_service import build_tailored_resume_draft
 from src.ui.components import render_metric_card, render_section_head
-
-
-def _load_sample_resume(filename):
-    with (DEMO_RESUME_DIR / filename).open("rb") as file_handle:
-        return parse_resume_document(file_handle, source=f"sample:{filename}")
-
-
-def _load_sample_jd(filename):
-    with (DEMO_JOB_DESCRIPTION_DIR / filename).open("rb") as file_handle:
-        return parse_jd_text(file_handle)
+from src.ui.state import set_current_menu
+from src.ui.workflow import (
+    build_application_report_view_model,
+    build_job_workflow_view_model,
+    get_active_candidate_profile,
+    get_cached_pdf_package,
+    get_resume_page_state,
+    prepare_pdf_package,
+    resolve_job_description_input,
+    run_supervised_workflow,
+    use_sample_resume,
+    use_uploaded_resume,
+)
 
 
 def _go_to(menu_name):
-    st.session_state["current_menu"] = menu_name
+    set_current_menu(menu_name)
     st.rerun()
 
 
@@ -55,38 +43,46 @@ def _render_list(title, items, empty_state):
         st.caption(empty_state)
 
 
-def _workflow_signature(candidate_profile, job_description, fit_analysis, tailored_draft):
-    payload = {
-        "candidate_profile": asdict(candidate_profile),
-        "job_description": asdict(job_description),
-        "fit_analysis": asdict(fit_analysis),
-        "tailored_draft": asdict(tailored_draft),
-    }
-    raw = json.dumps(payload, sort_keys=True, default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+def _format_usage_ratio(used, limit):
+    if limit is None:
+        return str(used)
+    return "{used}/{limit}".format(used=used, limit=limit)
 
 
-def _report_signature(report):
-    raw = json.dumps(
-        {
-            "title": report.title,
-            "summary": report.summary,
-            "markdown": report.markdown,
-        },
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+def _render_openai_usage(usage):
+    cols = st.columns(3)
+    with cols[0]:
+        render_metric_card(
+            "AI Session Calls",
+            _format_usage_ratio(usage["request_count"], usage.get("max_calls")),
+            "Counts all OpenAI agent calls made in this browser session.",
+        )
+    with cols[1]:
+        render_metric_card(
+            "AI Session Tokens",
+            _format_usage_ratio(usage["total_tokens"], usage.get("max_total_tokens")),
+            "Tracks cumulative token usage across supervised workflow runs.",
+        )
+    with cols[2]:
+        budget_reached = (
+            usage.get("remaining_calls") == 0
+            or usage.get("remaining_total_tokens") == 0
+        )
+        render_metric_card(
+            "Budget Status",
+            "Reached" if budget_reached else "Within Budget",
+            "Raise the configured session budget or start a new session if the guard blocks AI calls.",
+        )
 
-
-def _get_active_candidate_profile():
-    merged_profile = merge_candidate_profiles(
-        st.session_state.get("candidate_profile_resume"),
-        st.session_state.get("candidate_profile_linkedin"),
-    )
-    if merged_profile:
-        st.session_state["candidate_profile"] = merged_profile
-    return merged_profile
+    last_metadata = usage.get("last_response_metadata") or {}
+    if last_metadata:
+        st.caption(
+            "Last AI response: {tokens} tokens, finish reason `{finish_reason}`, response id `{response_id}`.".format(
+                tokens=last_metadata.get("total_tokens", 0),
+                finish_reason=last_metadata.get("finish_reason") or "unknown",
+                response_id=last_metadata.get("response_id") or "n/a",
+            )
+        )
 
 
 def _render_resume_metrics(resume_document):
@@ -101,7 +97,7 @@ def _render_profile_snapshot(candidate_profile: CandidateProfile):
         render_metric_card(
             "Profile Source",
             candidate_profile.source or "Unknown",
-            "Resume and LinkedIn signals are merged when both exist.",
+            "Profile data currently comes from the resume workflow.",
         )
     with cols[1]:
         render_metric_card(
@@ -113,7 +109,7 @@ def _render_profile_snapshot(candidate_profile: CandidateProfile):
         render_metric_card(
             "Experience Entries",
             str(len(candidate_profile.experience)),
-            "Structured experience is strongest when LinkedIn is imported.",
+            "Structured experience depends on what the current resume exposes.",
         )
 
     with st.expander("Normalized Candidate Snapshot", expanded=False):
@@ -135,105 +131,26 @@ def render_resume_page():
         "Parse an existing resume and keep it ready for tailoring.",
     )
     resume_files = list_demo_files(DEMO_RESUME_DIR, (".pdf", ".docx", ".txt"))
-    resume_document = st.session_state.get("resume_document")
+    resume_document, candidate_profile_resume = get_resume_page_state()
     left_col, right_col = st.columns([1.1, 1.2])
     with left_col:
         selected_resume = st.selectbox("Try a sample resume", ["None", *resume_files])
         if selected_resume != "None":
-            resume_document = _load_sample_resume(selected_resume)
-            st.session_state["resume_document"] = resume_document
-            st.session_state["candidate_profile_resume"] = build_candidate_profile_from_resume(
-                resume_document
-            )
+            resume_document, candidate_profile_resume = use_sample_resume(selected_resume)
         uploaded_file = st.file_uploader(
             "Or upload your own resume file",
             type=["pdf", "docx", "txt"],
         )
         if uploaded_file is not None:
-            resume_document = parse_resume_document(uploaded_file)
-            st.session_state["resume_document"] = resume_document
-            st.session_state["candidate_profile_resume"] = build_candidate_profile_from_resume(
-                resume_document
-            )
+            resume_document, candidate_profile_resume = use_uploaded_resume(uploaded_file)
     with right_col:
         _render_resume_metrics(resume_document)
     if resume_document:
         st.success(f"{resume_document.filetype} resume parsed successfully.")
-        _render_profile_snapshot(st.session_state["candidate_profile_resume"])
+        _render_profile_snapshot(candidate_profile_resume)
         st.text_area("Extracted Resume Text", resume_document.text, height=320)
         if st.button("I have a job description"):
             _go_to("Manual JD Input")
-
-
-def render_linkedin_page():
-    render_section_head(
-        "LinkedIn Import",
-        "Import a LinkedIn export and normalize it into candidate profile data.",
-    )
-    st.markdown(
-        """
-LinkedIn does not allow direct profile import by URL for this use case.
-
-1. Visit https://www.linkedin.com/mypreferences/d/download-my-data
-2. Select "Download larger data archive"
-3. Download the ZIP file from the email LinkedIn sends you
-4. Upload that ZIP file here
-"""
-    )
-    uploaded_zip = st.file_uploader("Upload LinkedIn data export (.zip)", type="zip")
-    if uploaded_zip is not None:
-        parsed = parse_linkedin_payload(uploaded_zip)
-        st.session_state["linkedin_data"] = parsed
-        st.session_state["candidate_profile_linkedin"] = build_candidate_profile_from_linkedin_data(
-            parsed
-        )
-        st.success("LinkedIn profile parsed successfully.")
-
-    parsed = st.session_state.get("linkedin_data")
-    if not parsed:
-        return
-
-    cols = st.columns(3)
-    with cols[0]:
-        render_metric_card(
-            "Skills Parsed",
-            str(len(parsed.get("skills", []))),
-            "Top-level skill entries from the export.",
-        )
-    with cols[1]:
-        render_metric_card(
-            "Experience Entries",
-            str(len(parsed.get("experience", []))),
-            "Position history recovered from the archive.",
-        )
-    with cols[2]:
-        render_metric_card(
-            "Education Entries",
-            str(len(parsed.get("education", []))),
-            "Education rows currently available for reuse.",
-        )
-
-    with st.expander("Preview Extracted Profile", expanded=True):
-        summary = parsed.get("summary", {})
-        st.markdown(f"- **Name:** {summary.get('name', 'Not provided')}")
-        st.markdown(f"- **Headline:** {summary.get('headline', 'Not provided')}")
-        st.markdown(f"- **Location:** {summary.get('location', 'Not provided')}")
-        st.markdown(
-            f"- **Top Skills:** {', '.join(parsed.get('skills', [])[:5]) or 'Not provided'}"
-        )
-        st.caption(
-            "Candidate profile object is now prepared for downstream fit analysis and tailoring."
-        )
-
-    _render_profile_snapshot(st.session_state["candidate_profile_linkedin"])
-
-    left_col, right_col = st.columns(2)
-    with left_col:
-        if st.button("I have a job description", key="linkedin_to_jd"):
-            _go_to("Manual JD Input")
-    with right_col:
-        if st.button("Generate Resume From LinkedIn", key="linkedin_generate_resume"):
-            st.info("This becomes part of the first orchestrated agent workflow.")
 
 
 def render_job_search_page():
@@ -428,6 +345,28 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
             "No cover letter themes produced.",
         )
 
+    with st.expander("Application Strategy", expanded=False):
+        st.markdown("**Recruiter Positioning**")
+        if agent_result.strategy and agent_result.strategy.recruiter_positioning:
+            st.write(agent_result.strategy.recruiter_positioning)
+        else:
+            st.caption("No recruiter positioning produced.")
+        _render_list(
+            "Cover Letter Talking Points",
+            agent_result.strategy.cover_letter_talking_points if agent_result.strategy else [],
+            "No cover letter talking points produced.",
+        )
+        _render_list(
+            "Interview Preparation Themes",
+            agent_result.strategy.interview_preparation_themes if agent_result.strategy else [],
+            "No interview preparation themes produced.",
+        )
+        _render_list(
+            "Portfolio / Project Emphasis",
+            agent_result.strategy.portfolio_project_emphasis if agent_result.strategy else [],
+            "No portfolio or project emphasis produced.",
+        )
+
     with st.expander("Review Notes", expanded=True):
         st.markdown("**Tailored Professional Summary**")
         st.write(agent_result.tailoring.professional_summary)
@@ -446,6 +385,35 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
             agent_result.review.final_notes,
             "No final notes produced.",
         )
+
+    if agent_result.review_history:
+        with st.expander("Revision Pass History", expanded=False):
+            for pass_result in agent_result.review_history:
+                status = "Approved" if pass_result.review.approved else "Needs Revision"
+                st.markdown(
+                    "**Pass {index}: {status}**".format(
+                        index=pass_result.pass_index,
+                        status=status,
+                    )
+                )
+                st.write(pass_result.tailoring.professional_summary)
+                _render_list(
+                    "Revision Requests",
+                    pass_result.review.revision_requests,
+                    "No revisions requested on this pass.",
+                )
+                _render_list(
+                    "Grounding Issues",
+                    pass_result.review.grounding_issues,
+                    "No grounding issues detected on this pass.",
+                )
+                if pass_result.strategy:
+                    _render_list(
+                        "Interview Preparation Themes",
+                        pass_result.strategy.interview_preparation_themes,
+                        "No interview themes produced on this pass.",
+                    )
+                st.markdown("---")
 
 
 def _render_report_package(report: ApplicationReport, agent_result: AgentWorkflowResult = None):
@@ -483,11 +451,6 @@ def _render_report_package(report: ApplicationReport, agent_result: AgentWorkflo
             label_visibility="collapsed",
         )
 
-    signature = _report_signature(report)
-    if st.session_state.get("application_report_signature") != signature:
-        st.session_state["application_report_signature"] = signature
-        st.session_state.pop("application_report_pdf_bytes", None)
-
     download_col, pdf_col = st.columns(2)
     with download_col:
         st.download_button(
@@ -498,17 +461,17 @@ def _render_report_package(report: ApplicationReport, agent_result: AgentWorkflo
             key="download_markdown_package",
         )
     with pdf_col:
-        if st.session_state.get("application_report_pdf_bytes") is None:
+        if get_cached_pdf_package() is None:
             if st.button("Prepare PDF Package", key="prepare_pdf_package"):
                 try:
                     with st.spinner("Generating PDF package..."):
-                        st.session_state["application_report_pdf_bytes"] = export_pdf_bytes(report)
+                        prepare_pdf_package(report)
                 except ExportError as error:
                     st.warning(error.user_message)
         else:
             st.download_button(
                 "Download PDF Package",
-                data=st.session_state["application_report_pdf_bytes"],
+                data=get_cached_pdf_package(),
                 file_name=report.filename_stem + ".pdf",
                 mime="application/pdf",
                 key="download_pdf_package",
@@ -521,35 +484,26 @@ def render_job_description_page():
         "Load a target role and convert it into structured requirements.",
     )
     demo_files = list_demo_files(DEMO_JOB_DESCRIPTION_DIR, (".txt", ".pdf", ".docx"))
-    jd_text = st.session_state.get("job_description_raw", "")
-    jd_source = st.session_state.get("job_description_source", "Session cache")
 
     left_col, right_col = st.columns([1.1, 1.2])
     with left_col:
         uploaded_jd = st.file_uploader("Upload Job Description", type=["pdf", "docx", "txt"])
         selected_sample = st.selectbox("Try a sample job description", ["None", *demo_files])
-        if uploaded_jd is not None:
-            jd_text = parse_jd_text(uploaded_jd)
-            jd_source = "Uploaded file"
-        elif selected_sample != "None":
-            jd_text = _load_sample_jd(selected_sample)
-            jd_source = f"Sample file: {selected_sample}"
     with right_col:
         pasted_text = st.text_area("Or paste the job description here", height=240)
-        if pasted_text.strip():
-            jd_text = pasted_text
-            jd_source = "Pasted text"
 
-    if jd_text:
-        st.session_state["job_description_raw"] = jd_text
-        st.session_state["job_description_source"] = jd_source
+    jd_text, jd_source = resolve_job_description_input(
+        uploaded_jd=uploaded_jd,
+        selected_sample=selected_sample,
+        pasted_text=pasted_text,
+    )
 
     st.caption(f"JD Source: {jd_source if jd_text else 'None'}")
-    if not jd_text:
+    workflow_view_model = build_job_workflow_view_model(jd_text, jd_source)
+    if not workflow_view_model.job_description:
         return
 
-    job_description = build_job_description_from_text(jd_text)
-    st.session_state["job_description"] = job_description
+    job_description = workflow_view_model.job_description
 
     cols = st.columns(3)
     with cols[0]:
@@ -607,69 +561,46 @@ def render_job_description_page():
             <h4>Why this matters</h4>
             <p>
                 This structured job object is the input that the later fit-analysis and tailoring
-                agents will compare against your resume or LinkedIn-derived candidate profile.
+                agents will compare against your resume-derived candidate profile.
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    candidate_profile = _get_active_candidate_profile()
+    candidate_profile = workflow_view_model.candidate_profile
     if not candidate_profile:
         st.info(
-            "Load a resume or LinkedIn export first. Once candidate data exists, this page will render a fit snapshot and tailored resume guidance."
+            "Load a resume first. Once candidate data exists, this page will render a fit snapshot and tailored resume guidance."
         )
         return
 
-    fit_analysis = build_fit_analysis(candidate_profile, job_description)
-    tailored_draft = build_tailored_resume_draft(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-    )
-    st.session_state["fit_analysis"] = fit_analysis
-    st.session_state["tailored_resume_draft"] = tailored_draft
+    fit_analysis = workflow_view_model.fit_analysis
+    tailored_draft = workflow_view_model.tailored_draft
     _render_fit_snapshot(candidate_profile, fit_analysis, tailored_draft)
 
-    signature = _workflow_signature(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-        tailored_draft,
-    )
-    if st.session_state.get("agent_workflow_signature") != signature:
-        st.session_state.pop("agent_workflow_result", None)
-        st.session_state["agent_workflow_signature"] = signature
-
     st.markdown("---")
-    mode_label = "AI-assisted" if OpenAIService().is_available() else "Fallback-ready"
+    ai_session = workflow_view_model.ai_session
     st.caption(
         "Run the supervised workflow explicitly to avoid accidental model calls on every rerun."
     )
-    if st.button("Run supervised agent workflow", key="run_supervised_workflow"):
-        orchestrator = ApplicationOrchestrator()
-        st.session_state["agent_workflow_result"] = orchestrator.run(
-            candidate_profile,
-            job_description,
-            fit_analysis,
-            tailored_draft,
+    _render_openai_usage(ai_session.usage)
+    if ai_session.budget_reached and ai_session.openai_service.is_available():
+        st.warning(
+            "The AI session budget has been reached. Running the supervised workflow now will stay in deterministic fallback mode until the session resets or the budget is raised."
         )
+    if st.button("Run supervised agent workflow", key="run_supervised_workflow"):
+        workflow_view_model = run_supervised_workflow(workflow_view_model)
 
-    agent_result = st.session_state.get("agent_workflow_result")
+    agent_result = workflow_view_model.agent_result
     if agent_result:
         _render_agent_workflow_result(agent_result)
     else:
         st.info(
-            "{mode} workflow is ready. Run it to generate profile positioning, fit narrative, tailored wording, and review notes.".format(
-                mode=mode_label
+            "{mode} workflow is ready. Run it to generate profile positioning, fit narrative, application strategy guidance, tailored wording, and review notes.".format(
+                mode=ai_session.mode_label
             )
         )
 
-    report = build_application_report(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-        tailored_draft,
-        agent_result=agent_result,
-    )
+    report = build_application_report_view_model(workflow_view_model)
     _render_report_package(report, agent_result=agent_result)

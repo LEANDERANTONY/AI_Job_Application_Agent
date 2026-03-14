@@ -10,6 +10,17 @@ OPENAI_KEY_PATH = BASE_DIR / "openai_key.txt"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
 
+def _load_int_env(name: str, default=None):
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    return int(raw_value)
+
+
+OPENAI_MAX_CALLS_PER_SESSION = _load_int_env("OPENAI_MAX_CALLS_PER_SESSION", 24)
+OPENAI_MAX_TOKENS_PER_SESSION = _load_int_env("OPENAI_MAX_TOKENS_PER_SESSION", 120000)
+
+
 def _load_text_file(path: Path):
     if path.exists():
         return path.read_text(encoding="utf-8").strip()

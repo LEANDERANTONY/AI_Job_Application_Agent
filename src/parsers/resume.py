@@ -1,11 +1,16 @@
 from io import BytesIO
+import logging
 
 import docx
 from pypdf import PdfReader
 
 from src.errors import ParsingError
+from src.logging_utils import get_logger, log_event
 from src.parsers.common import decode_text, detect_file_type, read_file_bytes
 from src.schemas import ResumeDocument
+
+
+LOGGER = get_logger(__name__)
 
 
 def _extract_text_from_pdf(file_bytes):
@@ -51,7 +56,22 @@ def _parse_resume_bytes(file_bytes, file_type, source):
 
 
 def parse_resume_document(file, source="uploaded"):
-    file_type = detect_file_type(file)
-    file_bytes = read_file_bytes(file)
-    return _parse_resume_bytes(file_bytes, file_type, source)
+    file_name = getattr(file, "name", source)
+    try:
+        file_type = detect_file_type(file)
+        file_bytes = read_file_bytes(file)
+        return _parse_resume_bytes(file_bytes, file_type, source)
+    except ParsingError as error:
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            "resume_parse_failed",
+            "Resume parsing failed.",
+            source=source,
+            file_name=file_name,
+            file_type=locals().get("file_type"),
+            file_size_bytes=len(locals().get("file_bytes", b"")),
+            error_type=type(error).__name__,
+        )
+        raise
 
