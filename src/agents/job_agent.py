@@ -15,6 +15,7 @@ class JobAgent:
                 prompt["system"],
                 prompt["user"],
                 expected_keys=prompt["expected_keys"],
+                task_name="job",
             )
             return JobAgentOutput(
                 requirement_summary=coerce_string(payload.get("requirement_summary")),

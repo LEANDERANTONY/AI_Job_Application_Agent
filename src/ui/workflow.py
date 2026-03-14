@@ -10,17 +10,19 @@ from src.config import (
     OPENAI_MAX_CALLS_PER_SESSION,
     OPENAI_MAX_TOKENS_PER_SESSION,
 )
-from src.exporters import export_pdf_bytes
+from src.exporters import export_markdown_bytes, export_pdf_bytes, export_zip_bundle_bytes
 from src.openai_service import OpenAIService
 from src.parsers.jd import parse_jd_text
 from src.parsers.resume import parse_resume_document
 from src.report_builder import build_application_report
+from src.resume_builder import build_tailored_resume_artifact
 from src.schemas import (
     AgentWorkflowResult,
     ApplicationReport,
     CandidateProfile,
     FitAnalysis,
     JobDescription,
+    TailoredResumeArtifact,
     TailoredResumeDraft,
 )
 from src.services.fit_service import build_fit_analysis
@@ -34,17 +36,23 @@ from src.ui.state import (
     JOB_DESCRIPTION_SOURCE,
     RESUME_DOCUMENT,
     get_cached_pdf_bytes,
+    get_cached_export_bundle_bytes,
+    get_cached_tailored_resume_pdf_bytes,
     get_openai_session_usage,
     get_state,
+    get_tailored_resume_theme,
     reset_agent_workflow_if_signature_changed,
     set_active_candidate_profile,
     set_agent_workflow_result,
     set_cached_pdf_bytes,
+    set_cached_export_bundle_bytes,
+    set_cached_tailored_resume_pdf_bytes,
     set_openai_session_usage,
     store_fit_outputs,
     store_job_description_inputs,
     store_resume_intake,
     sync_report_signature,
+    sync_tailored_resume_signature,
 )
 
 
@@ -64,6 +72,7 @@ class JobWorkflowViewModel:
     candidate_profile: Optional[CandidateProfile] = None
     fit_analysis: Optional[FitAnalysis] = None
     tailored_draft: Optional[TailoredResumeDraft] = None
+    tailored_resume_artifact: Optional[TailoredResumeArtifact] = None
     agent_result: Optional[AgentWorkflowResult] = None
     ai_session: Optional[AISessionViewModel] = None
 
@@ -198,6 +207,15 @@ def build_job_workflow_view_model(jd_text, jd_source):
     view_model.fit_analysis = fit_analysis
     view_model.tailored_draft = tailored_draft
     view_model.agent_result = get_state(AGENT_WORKFLOW_RESULT)
+    selected_theme = get_tailored_resume_theme()
+    view_model.tailored_resume_artifact = build_tailored_resume_artifact(
+        candidate_profile,
+        job_description,
+        fit_analysis,
+        tailored_draft,
+        agent_result=view_model.agent_result,
+        theme=selected_theme,
+    )
     view_model.ai_session = build_ai_session_view_model()
     return view_model
 
@@ -239,6 +257,26 @@ def build_application_report_view_model(view_model: JobWorkflowViewModel):
     return report
 
 
+def build_tailored_resume_artifact_view_model(view_model: JobWorkflowViewModel):
+    if not (
+        view_model.candidate_profile
+        and view_model.job_description
+        and view_model.fit_analysis
+        and view_model.tailored_draft
+    ):
+        return None
+    artifact = build_tailored_resume_artifact(
+        view_model.candidate_profile,
+        view_model.job_description,
+        view_model.fit_analysis,
+        view_model.tailored_draft,
+        agent_result=view_model.agent_result,
+        theme=get_tailored_resume_theme(),
+    )
+    sync_tailored_resume_signature(_report_signature(artifact))
+    return artifact
+
+
 def prepare_pdf_package(report: ApplicationReport):
     pdf_bytes = export_pdf_bytes(report)
     set_cached_pdf_bytes(pdf_bytes)
@@ -247,3 +285,38 @@ def prepare_pdf_package(report: ApplicationReport):
 
 def get_cached_pdf_package():
     return get_cached_pdf_bytes()
+
+
+def prepare_tailored_resume_pdf_package(artifact: TailoredResumeArtifact):
+    pdf_bytes = export_pdf_bytes(artifact)
+    set_cached_tailored_resume_pdf_bytes(pdf_bytes)
+    return pdf_bytes
+
+
+def get_cached_tailored_resume_pdf_package():
+    return get_cached_tailored_resume_pdf_bytes()
+
+
+def prepare_export_bundle_package(
+    report: ApplicationReport,
+    artifact: TailoredResumeArtifact,
+):
+    report_pdf_bytes = export_pdf_bytes(report)
+    tailored_resume_pdf_bytes = export_pdf_bytes(artifact)
+    set_cached_pdf_bytes(report_pdf_bytes)
+    set_cached_tailored_resume_pdf_bytes(tailored_resume_pdf_bytes)
+
+    bundle_bytes = export_zip_bundle_bytes(
+        {
+            report.filename_stem + ".md": export_markdown_bytes(report),
+            report.filename_stem + ".pdf": report_pdf_bytes,
+            artifact.filename_stem + ".md": export_markdown_bytes(artifact),
+            artifact.filename_stem + ".pdf": tailored_resume_pdf_bytes,
+        }
+    )
+    set_cached_export_bundle_bytes(bundle_bytes)
+    return bundle_bytes
+
+
+def get_cached_export_bundle_package():
+    return get_cached_export_bundle_bytes()

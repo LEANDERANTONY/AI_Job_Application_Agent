@@ -15,6 +15,7 @@ class ProfileAgent:
                 prompt["system"],
                 prompt["user"],
                 expected_keys=prompt["expected_keys"],
+                task_name="profile",
             )
             return ProfileAgentOutput(
                 positioning_headline=coerce_string(payload.get("positioning_headline")),

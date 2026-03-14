@@ -11,6 +11,7 @@ from src.services.tailoring_service import build_tailored_resume_draft
 from .fit_agent import FitAgent
 from .job_agent import JobAgent
 from .profile_agent import ProfileAgent
+from .resume_generation_agent import ResumeGenerationAgent
 from .review_agent import ReviewAgent
 from .strategy_agent import StrategyAgent
 from .tailoring_agent import TailoringAgent
@@ -42,6 +43,11 @@ class ApplicationOrchestrator:
             )
 
         if self._openai_service.is_available():
+            policy_label = (
+                self._openai_service.describe_model_policy()
+                if hasattr(self._openai_service, "describe_model_policy")
+                else self._openai_service.model
+            )
             try:
                 return self._run_pipeline(
                     candidate_profile,
@@ -50,7 +56,7 @@ class ApplicationOrchestrator:
                     tailored_draft,
                     openai_service=self._openai_service,
                     mode="openai",
-                    model_name=self._openai_service.model,
+                    model_name=policy_label,
                     max_revision_passes=self._max_revision_passes,
                 )
             except AgentExecutionError:
@@ -59,7 +65,7 @@ class ApplicationOrchestrator:
                     logging.WARNING,
                     "orchestrator_openai_fallback",
                     "OpenAI orchestration failed; falling back to deterministic mode.",
-                    model=self._openai_service.model,
+                    model=policy_label,
                     max_revision_passes=self._max_revision_passes,
                 )
                 if not self._allow_fallback:
@@ -95,6 +101,7 @@ class ApplicationOrchestrator:
         tailoring_output = None
         strategy_output = None
         review_output = None
+        resume_generation_output = None
 
         def run_agent_step(agent_name, runner, **context):
             started_at = time.perf_counter()
@@ -199,6 +206,20 @@ class ApplicationOrchestrator:
             if review_output.approved:
                 break
 
+        resume_generation_output = run_agent_step(
+            "resume_generation",
+            lambda: ResumeGenerationAgent(openai_service).run(
+                candidate_profile,
+                job_description,
+                fit_analysis,
+                tailored_draft,
+                tailoring_output,
+                strategy_output,
+                review_output,
+            ),
+            review_approved=review_output.approved if review_output else False,
+        )
+
         log_event(
             LOGGER,
             logging.INFO,
@@ -219,5 +240,6 @@ class ApplicationOrchestrator:
             tailoring=tailoring_output,
             strategy=strategy_output,
             review=review_output,
+            resume_generation=resume_generation_output,
             review_history=review_history,
         )

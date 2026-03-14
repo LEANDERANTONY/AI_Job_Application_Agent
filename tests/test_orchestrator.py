@@ -77,6 +77,13 @@ class FakeOpenAIService:
                 "revision_requests": [],
                 "final_notes": ["Grounded output."],
             },
+            {
+                "professional_summary": "Final tailored summary for the generated resume.",
+                "highlighted_skills": ["Python", "SQL", "Docker"],
+                "experience_bullets": ["Built production applications using Python and Docker."],
+                "section_order": ["Professional Summary", "Core Skills", "Professional Experience", "Education"],
+                "template_hint": "classic_ats",
+            },
         ]
 
     @staticmethod
@@ -157,6 +164,13 @@ class FakeRevisionLoopOpenAIService:
                 "revision_requests": [],
                 "final_notes": ["Grounded after revision."],
             },
+            {
+                "professional_summary": "Resume-ready grounded summary for the role.",
+                "highlighted_skills": ["Python", "SQL", "Docker"],
+                "experience_bullets": ["Built production applications using Python and Docker."],
+                "section_order": ["Professional Summary", "Core Skills", "Professional Experience", "Education"],
+                "template_hint": "classic_ats",
+            },
         ]
 
     @staticmethod
@@ -225,6 +239,13 @@ class FakeNeverApprovedOpenAIService:
                 "revision_requests": ["Remove unsupported claim."],
                 "final_notes": ["Still needs revision."],
             },
+            {
+                "professional_summary": "Second pass final resume summary.",
+                "highlighted_skills": ["Python"],
+                "experience_bullets": ["Second pass bullet."],
+                "section_order": ["Professional Summary", "Core Skills", "Professional Experience", "Education"],
+                "template_hint": "classic_ats",
+            },
         ]
 
     @staticmethod
@@ -264,6 +285,7 @@ def test_orchestrator_uses_openai_service_when_available():
     assert result.strategy.recruiter_positioning == (
         "Position the candidate as a grounded implementation-focused ML engineer."
     )
+    assert result.resume_generation.professional_summary == "Final tailored summary for the generated resume."
     assert len(result.review_history) == 1
     assert result.review_history[0].pass_index == 1
 
@@ -287,6 +309,7 @@ def test_orchestrator_retries_tailoring_when_review_rejects():
     assert result.review.approved is True
     assert result.tailoring.professional_summary == "Revised grounded summary for the role."
     assert result.strategy.recruiter_positioning == "Revised grounded implementation-focused positioning."
+    assert result.resume_generation.professional_summary == "Resume-ready grounded summary for the role."
     assert len(result.review_history) == 2
     assert result.review_history[0].review.approved is False
     assert result.review_history[1].review.approved is True
@@ -304,5 +327,6 @@ def test_orchestrator_stops_after_max_revision_passes():
     assert result.review.approved is False
     assert result.tailoring.professional_summary == "Second pass summary."
     assert result.strategy.recruiter_positioning == "Second pass positioning."
+    assert result.resume_generation.professional_summary == "Second pass final resume summary."
     assert len(result.review_history) == 2
     assert result.review_history[-1].pass_index == 2

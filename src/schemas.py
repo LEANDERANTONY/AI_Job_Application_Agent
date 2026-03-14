@@ -42,6 +42,23 @@ class ResumeDocument:
 
 
 @dataclass
+class ResumeHeader:
+    full_name: str = ""
+    location: str = ""
+    contact_lines: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ResumeExperienceEntry:
+    title: str
+    organization: str = ""
+    location: str = ""
+    start: str = ""
+    end: str = ""
+    bullets: List[str] = field(default_factory=list)
+
+
+@dataclass
 class JobRequirements:
     hard_skills: List[str] = field(default_factory=list)
     soft_skills: List[str] = field(default_factory=list)
@@ -124,6 +141,15 @@ class StrategyAgentOutput:
 
 
 @dataclass
+class ResumeGenerationAgentOutput:
+    professional_summary: str
+    highlighted_skills: List[str] = field(default_factory=list)
+    experience_bullets: List[str] = field(default_factory=list)
+    section_order: List[str] = field(default_factory=list)
+    template_hint: str = "classic_ats"
+
+
+@dataclass
 class ReviewAgentOutput:
     approved: bool
     grounding_issues: List[str] = field(default_factory=list)
@@ -149,6 +175,7 @@ class AgentWorkflowResult:
     tailoring: TailoringAgentOutput
     review: ReviewAgentOutput
     strategy: Optional[StrategyAgentOutput] = None
+    resume_generation: Optional[ResumeGenerationAgentOutput] = None
     review_history: List[ReviewPassResult] = field(default_factory=list)
 
 
@@ -159,3 +186,36 @@ class ApplicationReport:
     summary: str
     markdown: str
     plain_text: str
+
+
+@dataclass
+class TailoredResumeArtifact:
+    title: str
+    filename_stem: str
+    summary: str
+    markdown: str
+    plain_text: str
+    theme: str = "classic_ats"
+    header: ResumeHeader = field(default_factory=ResumeHeader)
+    target_role: str = ""
+    professional_summary: str = ""
+    highlighted_skills: List[str] = field(default_factory=list)
+    experience_entries: List[ResumeExperienceEntry] = field(default_factory=list)
+    education_entries: List[EducationEntry] = field(default_factory=list)
+    certifications: List[str] = field(default_factory=list)
+    change_log: List[str] = field(default_factory=list)
+    validation_notes: List[str] = field(default_factory=list)
+
+
+@dataclass
+class AssistantResponse:
+    answer: str
+    sources: List[str] = field(default_factory=list)
+    suggested_follow_ups: List[str] = field(default_factory=list)
+
+
+@dataclass
+class AssistantTurn:
+    mode: str
+    question: str
+    response: AssistantResponse

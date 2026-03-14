@@ -2,6 +2,7 @@ import html
 import hashlib
 import logging
 import re
+import zipfile
 from io import BytesIO
 
 from markdown_it import MarkdownIt
@@ -9,7 +10,7 @@ from markdown_it.tree import SyntaxTreeNode
 
 from src.errors import ExportError
 from src.logging_utils import get_logger, log_event
-from src.schemas import ApplicationReport
+from src.schemas import ApplicationReport, TailoredResumeArtifact
 
 
 _MARKDOWN = MarkdownIt("commonmark", {"html": False})
@@ -26,7 +27,9 @@ def export_text_bytes(report: ApplicationReport) -> bytes:
 
 def export_pdf_bytes(report: ApplicationReport) -> bytes:
     try:
-        return generate_pdf(report.markdown, title=report.title).getvalue()
+        theme = getattr(report, "theme", None)
+        document_kind = "tailored_resume" if isinstance(report, TailoredResumeArtifact) else "report"
+        return generate_pdf(report.markdown, title=report.title, theme=theme, document_kind=document_kind).getvalue()
     except ExportError as error:
         log_event(
             LOGGER,
@@ -39,6 +42,14 @@ def export_pdf_bytes(report: ApplicationReport) -> bytes:
             details=error.details,
         )
         raise
+
+
+def export_zip_bundle_bytes(file_map: dict[str, bytes]) -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for filename, payload in file_map.items():
+            archive.writestr(filename, payload)
+    return buffer.getvalue()
 
 
 def _paragraph_text(text):
@@ -213,6 +224,64 @@ def _build_report_html(text, title="AI Job Application Package"):
   <main class="report-shell">
     {body}
   </main>
+</body>
+</html>
+""".format(title=safe_title, body=body_html)
+
+
+def _build_resume_html(text, title="Tailored Resume", theme="classic_ats"):
+        body_html = _MARKDOWN.render(text or "")
+        safe_title = html.escape(title or "Tailored Resume")
+
+        if theme == "modern_professional":
+                return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>{title}</title>
+    <style>
+        @page {{ size: A4; margin: 14mm 14mm 16mm 14mm; }}
+        * {{ box-sizing: border-box; }}
+        body {{ margin: 0; font-family: Georgia, "Times New Roman", serif; color: #1f2937; background: #eef2f7; font-size: 10.3pt; line-height: 1.52; }}
+        .resume-shell {{ background: #ffffff; padding: 22px 24px 18px; border-top: 10px solid #0f766e; }}
+        h1 {{ font-size: 24pt; letter-spacing: 0.02em; margin: 0 0 6px; text-transform: uppercase; }}
+        h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: 0.18em; color: #0f766e; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #cbd5e1; }}
+        h3 {{ font-size: 11pt; margin: 12px 0 4px; color: #111827; }}
+        p {{ margin: 0 0 8px; }}
+        ul {{ margin: 0 0 10px 1rem; padding: 0; }}
+        li {{ margin: 0 0 4px; }}
+        strong {{ color: #0f172a; }}
+    </style>
+</head>
+<body>
+    <main class="resume-shell">{body}</main>
+</body>
+</html>
+""".format(title=safe_title, body=body_html)
+
+        return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>{title}</title>
+    <style>
+        @page {{ size: A4; margin: 12mm 12mm 14mm 12mm; }}
+        * {{ box-sizing: border-box; }}
+        body {{ margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111827; background: #ffffff; font-size: 10pt; line-height: 1.45; }}
+        .resume-shell {{ padding: 10px 4px; }}
+        h1 {{ font-size: 22pt; margin: 0 0 6px; letter-spacing: -0.01em; }}
+        h2 {{ font-size: 11pt; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.12em; border-bottom: 1px solid #111827; padding-bottom: 3px; }}
+        h3 {{ font-size: 10.5pt; margin: 10px 0 4px; }}
+        p {{ margin: 0 0 8px; }}
+        ul {{ margin: 0 0 8px 1rem; padding: 0; }}
+        li {{ margin: 0 0 3px; }}
+        strong {{ color: #000000; }}
+    </style>
+</head>
+<body>
+    <main class="resume-shell">{body}</main>
 </body>
 </html>
 """.format(title=safe_title, body=body_html)
@@ -529,10 +598,14 @@ def _generate_pdf_with_reportlab(text, title):
     return buffer
 
 
-def _generate_pdf_with_playwright(text, title):
+def _generate_pdf_with_playwright(text, title, theme=None, document_kind="report"):
     from playwright.sync_api import sync_playwright
 
-    html_document = _build_report_html(text, title=title)
+    html_document = (
+        _build_resume_html(text, title=title, theme=theme or "classic_ats")
+        if document_kind == "tailored_resume"
+        else _build_report_html(text, title=title)
+    )
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -566,9 +639,9 @@ def _generate_pdf_with_playwright(text, title):
     return BytesIO(pdf_bytes)
 
 
-def generate_pdf(text, title="AI Job Application Package"):
+def generate_pdf(text, title="AI Job Application Package", theme=None, document_kind="report"):
     try:
-        return _generate_pdf_with_playwright(text, title)
+        return _generate_pdf_with_playwright(text, title, theme=theme, document_kind=document_kind)
     except Exception as playwright_error:
         log_event(
             LOGGER,

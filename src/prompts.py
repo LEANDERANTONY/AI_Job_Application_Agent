@@ -9,6 +9,7 @@ from src.schemas import (
     JobAgentOutput,
     JobDescription,
     ProfileAgentOutput,
+    ReviewAgentOutput,
     StrategyAgentOutput,
     TailoredResumeDraft,
     TailoringAgentOutput,
@@ -18,6 +19,10 @@ from src.schemas import (
 def _to_serializable(value: Any):
     if is_dataclass(value):
         return asdict(value)
+    if isinstance(value, dict):
+        return {key: _to_serializable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_serializable(item) for item in value]
     return value
 
 
@@ -209,6 +214,101 @@ def build_strategy_agent_prompt(
         "system": (
             "You are the Application Strategy Agent. Convert grounded fit and tailoring signals into downstream application guidance. "
             "Do not invent projects, experience, technologies, or recruiter claims that are not supported by the source profile. "
+            + _build_contract(contract)
+        ),
+        "user": user_prompt,
+        "expected_keys": list(contract.keys()),
+    }
+
+
+def build_resume_generation_agent_prompt(
+    candidate_profile: CandidateProfile,
+    job_description: JobDescription,
+    fit_analysis: FitAnalysis,
+    tailored_draft: TailoredResumeDraft,
+    tailoring_output: TailoringAgentOutput,
+    strategy_output: StrategyAgentOutput = None,
+    review_output: ReviewAgentOutput = None,
+) -> Dict[str, Any]:
+    contract = {
+        "professional_summary": "2-4 sentence final summary for the tailored resume using only grounded claims",
+        "highlighted_skills": "array of 4-8 skills to surface in the tailored resume",
+        "experience_bullets": "array of 3-6 grounded experience bullets for the tailored resume",
+        "section_order": "array describing preferred section order for the resume",
+        "template_hint": "preferred template hint such as classic_ats or modern_professional",
+    }
+    user_prompt = "\n\n".join(
+        [
+            _json_block("Candidate Profile", candidate_profile),
+            _json_block("Job Description", job_description),
+            _json_block("Deterministic Fit Analysis", fit_analysis),
+            _json_block("Deterministic Tailored Draft", tailored_draft),
+            _json_block("Tailoring Agent Output", tailoring_output),
+        ]
+        + ([_json_block("Strategy Agent Output", strategy_output)] if strategy_output else [])
+        + ([_json_block("Review Agent Output", review_output)] if review_output else [])
+    )
+    return {
+        "system": (
+            "You are the Resume Generation Agent. Produce the final tailored resume content from grounded upstream analysis. "
+            "You may rewrite, reorder, and emphasize, but you must not invent employers, achievements, dates, metrics, or unsupported skills. "
+            "Keep the output ATS-safe and recruiter-readable. "
+            + _build_contract(contract)
+        ),
+        "user": user_prompt,
+        "expected_keys": list(contract.keys()),
+    }
+
+
+def build_product_help_assistant_prompt(
+    app_context: Dict[str, Any],
+    question: str,
+    history: Any = None,
+) -> Dict[str, Any]:
+    contract = {
+        "answer": "short, direct answer explaining how to use the product or what a feature does",
+        "sources": "array of 1-3 relevant product areas or screens used for the answer",
+        "suggested_follow_ups": "array of 0-3 follow-up questions the user may want to ask next",
+    }
+    user_prompt = "\n\n".join(
+        [
+            _json_block("Product Context", app_context),
+            _json_block("User Question", {"question": question}),
+        ]
+        + ([_json_block("Recent History", history[-4:])] if history else [])
+    )
+    return {
+        "system": (
+            "You are the Product Help Assistant for an AI job application app. "
+            "Explain the current product behavior clearly and only describe features that are actually available in the provided context. "
+            + _build_contract(contract)
+        ),
+        "user": user_prompt,
+        "expected_keys": list(contract.keys()),
+    }
+
+
+def build_application_qa_assistant_prompt(
+    workflow_context: Dict[str, Any],
+    question: str,
+    history: Any = None,
+) -> Dict[str, Any]:
+    contract = {
+        "answer": "grounded answer about the user's resume, JD, report, or tailored resume",
+        "sources": "array of 1-4 workflow artifacts or signals used for the answer",
+        "suggested_follow_ups": "array of 0-3 useful next questions or actions",
+    }
+    user_prompt = "\n\n".join(
+        [
+            _json_block("Workflow Context", workflow_context),
+            _json_block("User Question", {"question": question}),
+        ]
+        + ([_json_block("Recent History", history[-4:])] if history else [])
+    )
+    return {
+        "system": (
+            "You are the Application Q&A Assistant. Answer only from the provided workflow context. "
+            "Do not invent facts about the candidate, JD, or outputs. If evidence is weak, say so directly. "
             + _build_contract(contract)
         ),
         "user": user_prompt,

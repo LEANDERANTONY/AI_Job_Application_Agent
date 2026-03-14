@@ -1,7 +1,10 @@
 from unittest.mock import patch
 
 from src.errors import ExportError
-from src.exporters import _build_report_html, export_markdown_bytes, export_pdf_bytes
+import zipfile
+from io import BytesIO
+
+from src.exporters import _build_report_html, export_markdown_bytes, export_pdf_bytes, export_zip_bundle_bytes
 from src.report_builder import build_application_report
 from src.schemas import ResumeDocument, WorkExperience
 from src.services.fit_service import build_fit_analysis
@@ -87,3 +90,17 @@ def test_export_pdf_bytes_raises_export_error_when_both_backends_fail(
         assert False, "Expected ExportError"
     except ExportError:
         assert True
+
+
+def test_export_zip_bundle_bytes_packages_all_files():
+    bundle_bytes = export_zip_bundle_bytes(
+        {
+            "resume.md": b"resume content",
+            "report.md": b"report content",
+        }
+    )
+
+    with zipfile.ZipFile(BytesIO(bundle_bytes), "r") as archive:
+        names = sorted(archive.namelist())
+        assert names == ["report.md", "resume.md"]
+        assert archive.read("resume.md") == b"resume content"

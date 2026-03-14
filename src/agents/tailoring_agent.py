@@ -42,6 +42,7 @@ class TailoringAgent:
                 prompt["system"],
                 prompt["user"],
                 expected_keys=prompt["expected_keys"],
+                task_name="tailoring",
             )
             return TailoringAgentOutput(
                 professional_summary=coerce_string(payload.get("professional_summary")),

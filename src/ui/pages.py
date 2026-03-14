@@ -1,5 +1,6 @@
 import streamlit as st
 
+from src.assistant_service import AssistantService
 from src.config import (
     DEMO_JOB_DESCRIPTION_DIR,
     DEMO_RESUME_DIR,
@@ -7,21 +8,37 @@ from src.config import (
 )
 from src.errors import ExportError
 from src.exporters import export_markdown_bytes
+from src.resume_diff import build_resume_diff, build_resume_diff_metrics
+from src.resume_builder import RESUME_THEMES
 from src.schemas import (
     AgentWorkflowResult,
+    AssistantTurn,
     ApplicationReport,
     CandidateProfile,
+    FitAnalysis,
+    TailoredResumeArtifact,
     TailoredResumeDraft,
 )
 from src.ui.components import render_metric_card, render_section_head
-from src.ui.state import set_current_menu
+from src.ui.state import (
+    TAILORED_RESUME_THEME,
+    append_assistant_turn,
+    clear_assistant_history,
+    get_assistant_history,
+    set_current_menu,
+)
 from src.ui.workflow import (
     build_application_report_view_model,
+    build_tailored_resume_artifact_view_model,
     build_job_workflow_view_model,
+    get_cached_export_bundle_package,
     get_active_candidate_profile,
     get_cached_pdf_package,
+    get_cached_tailored_resume_pdf_package,
     get_resume_page_state,
     prepare_pdf_package,
+    prepare_export_bundle_package,
+    prepare_tailored_resume_pdf_package,
     resolve_job_description_input,
     run_supervised_workflow,
     use_sample_resume,
@@ -49,19 +66,31 @@ def _format_usage_ratio(used, limit):
     return "{used}/{limit}".format(used=used, limit=limit)
 
 
+def _format_remaining_capacity(remaining, limit):
+    if limit is None or remaining is None:
+        return "Unlimited"
+    return str(remaining)
+
+
 def _render_openai_usage(usage):
     cols = st.columns(3)
     with cols[0]:
         render_metric_card(
-            "AI Session Calls",
-            _format_usage_ratio(usage["request_count"], usage.get("max_calls")),
-            "Counts all OpenAI agent calls made in this browser session.",
+            "Workflow Runs Left",
+            _format_remaining_capacity(
+                usage.get("remaining_calls"),
+                usage.get("max_calls"),
+            ),
+            "Estimated assisted runs still available in this browser session.",
         )
     with cols[1]:
         render_metric_card(
-            "AI Session Tokens",
-            _format_usage_ratio(usage["total_tokens"], usage.get("max_total_tokens")),
-            "Tracks cumulative token usage across supervised workflow runs.",
+            "Session Capacity Left",
+            _format_remaining_capacity(
+                usage.get("remaining_total_tokens"),
+                usage.get("max_total_tokens"),
+            ),
+            "Remaining assisted capacity before the app falls back to the deterministic path.",
         )
     with cols[2]:
         budget_reached = (
@@ -69,18 +98,17 @@ def _render_openai_usage(usage):
             or usage.get("remaining_total_tokens") == 0
         )
         render_metric_card(
-            "Budget Status",
-            "Reached" if budget_reached else "Within Budget",
-            "Raise the configured session budget or start a new session if the guard blocks AI calls.",
+            "Assisted Mode",
+            "Limit Reached" if budget_reached else "Available",
+            "If the limit is reached, the workflow remains available in the deterministic fallback mode.",
         )
 
     last_metadata = usage.get("last_response_metadata") or {}
     if last_metadata:
         st.caption(
-            "Last AI response: {tokens} tokens, finish reason `{finish_reason}`, response id `{response_id}`.".format(
+            "Latest assisted step used {tokens} tokens and finished with status `{status}`.".format(
                 tokens=last_metadata.get("total_tokens", 0),
-                finish_reason=last_metadata.get("finish_reason") or "unknown",
-                response_id=last_metadata.get("response_id") or "n/a",
+                status=last_metadata.get("status") or "unknown",
             )
         )
 
@@ -151,6 +179,7 @@ def render_resume_page():
         st.text_area("Extracted Resume Text", resume_document.text, height=320)
         if st.button("I have a job description"):
             _go_to("Manual JD Input")
+    _render_assistant_panel("Upload Resume")
 
 
 def render_job_search_page():
@@ -170,6 +199,7 @@ def render_job_search_page():
             "Planned",
             "Real provider integrations come after fit analysis and tailoring are stable.",
         )
+    _render_assistant_panel("Job Search")
 
 
 def _render_fit_snapshot(
@@ -478,6 +508,289 @@ def _render_report_package(report: ApplicationReport, agent_result: AgentWorkflo
             )
 
 
+def _render_export_bundle_actions(
+    artifact: TailoredResumeArtifact,
+    report: ApplicationReport,
+):
+    st.markdown("---")
+    render_section_head(
+        "Combined Export",
+        "Download the tailored resume and strategy report together in one bundle.",
+    )
+
+    cols = st.columns(3)
+    with cols[0]:
+        render_metric_card(
+            "Resume Only",
+            "Available",
+            "Use the tailored resume section if you only want the generated resume artifact.",
+        )
+    with cols[1]:
+        render_metric_card(
+            "Report Only",
+            "Available",
+            "Use the application package section if you only want the report artifact.",
+        )
+    with cols[2]:
+        render_metric_card(
+            "Both Together",
+            "ZIP Bundle",
+            "Generates one archive containing markdown and PDF versions of both outputs.",
+        )
+
+    cached_bundle = get_cached_export_bundle_package()
+    if cached_bundle is None:
+        if st.button("Prepare Combined Export Bundle", key="prepare_export_bundle"):
+            try:
+                with st.spinner("Preparing report and tailored resume bundle..."):
+                    prepare_export_bundle_package(report, artifact)
+            except ExportError as error:
+                st.warning(error.user_message)
+    else:
+        bundle_name = "{name}.zip".format(
+            name=artifact.filename_stem.replace("-tailored-resume", "-application-bundle")
+        )
+        st.download_button(
+            "Download Combined Export Bundle",
+            data=cached_bundle,
+            file_name=bundle_name,
+            mime="application/zip",
+            key="download_export_bundle",
+        )
+
+
+def _render_assistant_panel(current_page, workflow_view_model=None, artifact=None, report=None):
+    st.markdown("---")
+    render_section_head(
+        "Ask The Assistant",
+        "Use product help for navigation questions or ask grounded questions about the current resume and report.",
+    )
+
+    mode_options = ["product_help"]
+    if workflow_view_model and workflow_view_model.candidate_profile and workflow_view_model.job_description:
+        mode_options.append("application_qa")
+
+    page_slug = current_page.lower().replace(" ", "_")
+    mode_labels = {
+        "product_help": "Using the App",
+        "application_qa": "About My Resume",
+    }
+    mode = st.radio(
+        "Assistant Mode",
+        mode_options,
+        horizontal=True,
+        key="assistant_mode_{page}".format(page=page_slug),
+        format_func=lambda value: mode_labels[value],
+    )
+
+    history = get_assistant_history(mode)
+    for turn in history:
+        with st.chat_message("user"):
+            st.write(turn.question)
+        with st.chat_message("assistant"):
+            st.write(turn.response.answer)
+            if turn.response.sources:
+                st.caption("Sources: " + ", ".join(turn.response.sources))
+
+    question = st.text_input(
+        "Ask a question",
+        key="assistant_question_{page}_{mode}".format(page=page_slug, mode=mode),
+        placeholder=(
+            "Ask how to use the app..."
+            if mode == "product_help"
+            else "Ask about your resume, JD, or report..."
+        ),
+    )
+    ask_col, clear_col = st.columns(2)
+    with ask_col:
+        ask_clicked = st.button(
+            "Ask Assistant",
+            key="ask_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
+        )
+    with clear_col:
+        clear_clicked = st.button(
+            "Clear Chat",
+            key="clear_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
+        )
+
+    if clear_clicked:
+        clear_assistant_history(mode)
+        st.rerun()
+
+    if ask_clicked and question.strip():
+        openai_service = None
+        if workflow_view_model and workflow_view_model.ai_session:
+            openai_service = workflow_view_model.ai_session.openai_service
+        assistant = AssistantService(openai_service=openai_service)
+        if mode == "product_help":
+            response = assistant.answer_product_help(
+                question,
+                current_page=current_page,
+                history=history,
+                app_context={
+                    "available_pages": ["Upload Resume", "Job Search", "Manual JD Input"],
+                    "has_resume": bool(workflow_view_model and workflow_view_model.candidate_profile),
+                    "has_job_description": bool(workflow_view_model and workflow_view_model.job_description),
+                    "has_tailored_resume": bool(artifact),
+                    "has_report": bool(report),
+                },
+            )
+        else:
+            response = assistant.answer_application_qa(
+                question,
+                workflow_view_model,
+                report=report,
+                artifact=artifact,
+                history=history,
+            )
+        append_assistant_turn(
+            mode,
+            AssistantTurn(mode=mode, question=question.strip(), response=response),
+        )
+        st.rerun()
+
+
+def _render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_result: AgentWorkflowResult = None):
+    st.markdown("---")
+    render_section_head(
+        "Tailored Resume Draft",
+        "A grounded, JD-aligned resume artifact the candidate can use directly or refine manually.",
+    )
+
+    theme_options = list(RESUME_THEMES.keys())
+    selected_theme = st.selectbox(
+        "Resume Template",
+        theme_options,
+        index=theme_options.index(artifact.theme) if artifact.theme in theme_options else 0,
+        key=TAILORED_RESUME_THEME,
+        format_func=lambda value: RESUME_THEMES[value]["label"],
+    )
+    if selected_theme != artifact.theme:
+        st.rerun()
+
+    cols = st.columns(3)
+    with cols[0]:
+        render_metric_card(
+            "Resume Mode",
+            "Agent-Enhanced" if agent_result else "Deterministic",
+            "Uses the current workflow outputs to generate a recruiter-facing tailored resume draft.",
+        )
+    with cols[1]:
+        render_metric_card(
+            "Template",
+            RESUME_THEMES.get(artifact.theme, {"label": artifact.theme})["label"],
+            RESUME_THEMES.get(artifact.theme, {"tagline": "Theme controls the deterministic layout and section rhythm of the export."})["tagline"],
+        )
+    with cols[2]:
+        render_metric_card(
+            "Validation Notes",
+            str(len(artifact.validation_notes)),
+            artifact.summary,
+        )
+
+    left_col, right_col = st.columns(2)
+    with left_col:
+        _render_list(
+            "Change Summary",
+            artifact.change_log,
+            "No change summary available.",
+        )
+    with right_col:
+        _render_list(
+            "Validation Notes",
+            artifact.validation_notes,
+            "No validation notes available.",
+        )
+
+    original_resume_text = artifact.header.full_name and artifact.header.full_name or ""
+    original_resume_text = get_active_candidate_profile().resume_text if get_active_candidate_profile() else ""
+    diff_metrics = build_resume_diff_metrics(original_resume_text, artifact.markdown)
+
+    metric_cols = st.columns(4)
+    with metric_cols[0]:
+        render_metric_card(
+            "Original Lines",
+            str(diff_metrics["original_line_count"]),
+            "Line count from the current parsed resume text.",
+        )
+    with metric_cols[1]:
+        render_metric_card(
+            "Tailored Lines",
+            str(diff_metrics["tailored_line_count"]),
+            "Line count in the generated tailored resume artifact.",
+        )
+    with metric_cols[2]:
+        render_metric_card(
+            "Added / Removed",
+            "{added}/{removed}".format(
+                added=diff_metrics["added_lines"],
+                removed=diff_metrics["removed_lines"],
+            ),
+            "Simple diff count to show how much content shifted.",
+        )
+    with metric_cols[3]:
+        render_metric_card(
+            "Similarity",
+            "{ratio}%".format(ratio=diff_metrics["similarity_ratio"]),
+            "Text-level similarity between the original input and tailored output.",
+        )
+
+    with st.expander("Preview Tailored Resume", expanded=True):
+        st.text_area(
+            "Tailored Resume Preview",
+            artifact.markdown,
+            height=420,
+            label_visibility="collapsed",
+        )
+
+    with st.expander("Compare Original vs Tailored Resume", expanded=False):
+        original_col, tailored_col = st.columns(2)
+        with original_col:
+            st.markdown("**Original Resume Text**")
+            st.text_area(
+                "Original Resume Text",
+                original_resume_text,
+                height=360,
+                label_visibility="collapsed",
+            )
+        with tailored_col:
+            st.markdown("**Tailored Resume Text**")
+            st.text_area(
+                "Tailored Resume Text",
+                artifact.markdown,
+                height=360,
+                label_visibility="collapsed",
+            )
+        st.markdown("**Unified Diff**")
+        st.code(build_resume_diff(original_resume_text, artifact.markdown), language="diff")
+
+    download_col, pdf_col = st.columns(2)
+    with download_col:
+        st.download_button(
+            "Download Tailored Resume Markdown",
+            data=export_markdown_bytes(artifact),
+            file_name=artifact.filename_stem + ".md",
+            mime="text/markdown",
+            key="download_tailored_resume_markdown",
+        )
+    with pdf_col:
+        if get_cached_tailored_resume_pdf_package() is None:
+            if st.button("Prepare Tailored Resume PDF", key="prepare_tailored_resume_pdf"):
+                try:
+                    with st.spinner("Generating tailored resume PDF..."):
+                        prepare_tailored_resume_pdf_package(artifact)
+                except ExportError as error:
+                    st.warning(error.user_message)
+        else:
+            st.download_button(
+                "Download Tailored Resume PDF",
+                data=get_cached_tailored_resume_pdf_package(),
+                file_name=artifact.filename_stem + ".pdf",
+                mime="application/pdf",
+                key="download_tailored_resume_pdf",
+            )
+
+
 def render_job_description_page():
     render_section_head(
         "Job Description Intake",
@@ -582,12 +895,12 @@ def render_job_description_page():
     st.markdown("---")
     ai_session = workflow_view_model.ai_session
     st.caption(
-        "Run the supervised workflow explicitly to avoid accidental model calls on every rerun."
+        "Run the supervised workflow explicitly to avoid unnecessary model-backed usage on every rerun."
     )
     _render_openai_usage(ai_session.usage)
     if ai_session.budget_reached and ai_session.openai_service.is_available():
         st.warning(
-            "The AI session budget has been reached. Running the supervised workflow now will stay in deterministic fallback mode until the session resets or the budget is raised."
+            "The session usage limit has been reached. Running the supervised workflow now will stay in deterministic fallback mode until the session resets or the limit is raised."
         )
     if st.button("Run supervised agent workflow", key="run_supervised_workflow"):
         workflow_view_model = run_supervised_workflow(workflow_view_model)
@@ -602,5 +915,15 @@ def render_job_description_page():
             )
         )
 
+    tailored_resume_artifact = build_tailored_resume_artifact_view_model(workflow_view_model)
+    _render_tailored_resume_artifact(tailored_resume_artifact, agent_result=agent_result)
+
     report = build_application_report_view_model(workflow_view_model)
     _render_report_package(report, agent_result=agent_result)
+    _render_export_bundle_actions(tailored_resume_artifact, report)
+    _render_assistant_panel(
+        "Manual JD Input",
+        workflow_view_model=workflow_view_model,
+        artifact=tailored_resume_artifact,
+        report=report,
+    )

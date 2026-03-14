@@ -16,21 +16,27 @@ class FakeCompletions:
 
 class FakeClient:
     def __init__(self, responses):
-        self.chat = SimpleNamespace(completions=FakeCompletions(responses))
+        self.responses = FakeCompletions(responses)
 
 
 def _build_response(content, *, response_id="resp_1", prompt_tokens=10, completion_tokens=5):
     return SimpleNamespace(
         id=response_id,
+        status="completed",
+        output_text=content,
         usage=SimpleNamespace(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
+            input_tokens=prompt_tokens,
+            output_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
+            output_tokens_details=SimpleNamespace(reasoning_tokens=0),
         ),
-        choices=[
+        output=[
             SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(content=content),
+                type="message",
+                role="assistant",
+                content=[
+                    SimpleNamespace(type="output_text", text=content),
+                ],
             )
         ],
     )
@@ -56,6 +62,7 @@ def test_openai_service_tracks_usage_across_requests():
     assert usage["completion_tokens"] == 14
     assert usage["total_tokens"] == 41
     assert usage["last_response_metadata"]["response_id"] == "resp_2"
+    assert usage["model_usage"][service.default_model]["request_count"] == 2
 
 
 def test_openai_service_blocks_when_call_budget_is_reached():

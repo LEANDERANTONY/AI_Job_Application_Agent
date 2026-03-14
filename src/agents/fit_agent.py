@@ -35,6 +35,7 @@ class FitAgent:
                 prompt["system"],
                 prompt["user"],
                 expected_keys=prompt["expected_keys"],
+                task_name="fit",
             )
             return FitAgentOutput(
                 fit_summary=coerce_string(payload.get("fit_summary")),

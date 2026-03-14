@@ -39,6 +39,7 @@ class ReviewAgent:
                 prompt["system"],
                 prompt["user"],
                 expected_keys=prompt["expected_keys"],
+                task_name="review",
             )
             return ReviewAgentOutput(
                 approved=coerce_bool(payload.get("approved")),

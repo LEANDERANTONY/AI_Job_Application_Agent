@@ -14,6 +14,12 @@ AGENT_WORKFLOW_SIGNATURE = "agent_workflow_signature"
 AGENT_WORKFLOW_RESULT = "agent_workflow_result"
 APPLICATION_REPORT_SIGNATURE = "application_report_signature"
 APPLICATION_REPORT_PDF_BYTES = "application_report_pdf_bytes"
+TAILORED_RESUME_SIGNATURE = "tailored_resume_signature"
+TAILORED_RESUME_PDF_BYTES = "tailored_resume_pdf_bytes"
+TAILORED_RESUME_THEME = "tailored_resume_theme"
+EXPORT_BUNDLE_BYTES = "export_bundle_bytes"
+PRODUCT_HELP_CHAT_HISTORY = "product_help_chat_history"
+APPLICATION_QA_CHAT_HISTORY = "application_qa_chat_history"
 OPENAI_SESSION_USAGE = "openai_session_usage"
 
 
@@ -99,6 +105,7 @@ def sync_report_signature(signature):
     if get_state(APPLICATION_REPORT_SIGNATURE) != signature:
         set_state(APPLICATION_REPORT_SIGNATURE, signature)
         pop_state(APPLICATION_REPORT_PDF_BYTES, None)
+        pop_state(EXPORT_BUNDLE_BYTES, None)
 
 
 def get_cached_pdf_bytes():
@@ -107,3 +114,55 @@ def get_cached_pdf_bytes():
 
 def set_cached_pdf_bytes(pdf_bytes):
     return set_state(APPLICATION_REPORT_PDF_BYTES, pdf_bytes)
+
+
+def sync_tailored_resume_signature(signature):
+    if get_state(TAILORED_RESUME_SIGNATURE) != signature:
+        set_state(TAILORED_RESUME_SIGNATURE, signature)
+        pop_state(TAILORED_RESUME_PDF_BYTES, None)
+        pop_state(EXPORT_BUNDLE_BYTES, None)
+
+
+def get_cached_tailored_resume_pdf_bytes():
+    return get_state(TAILORED_RESUME_PDF_BYTES)
+
+
+def set_cached_tailored_resume_pdf_bytes(pdf_bytes):
+    return set_state(TAILORED_RESUME_PDF_BYTES, pdf_bytes)
+
+
+def get_tailored_resume_theme(default_theme="classic_ats"):
+    return ensure_state(TAILORED_RESUME_THEME, default_theme)
+
+
+def set_tailored_resume_theme(theme_name):
+    return set_state(TAILORED_RESUME_THEME, theme_name)
+
+
+def get_cached_export_bundle_bytes():
+    return get_state(EXPORT_BUNDLE_BYTES)
+
+
+def set_cached_export_bundle_bytes(bundle_bytes):
+    return set_state(EXPORT_BUNDLE_BYTES, bundle_bytes)
+
+
+def _assistant_history_key(mode_name):
+    return {
+        "product_help": PRODUCT_HELP_CHAT_HISTORY,
+        "application_qa": APPLICATION_QA_CHAT_HISTORY,
+    }.get(mode_name, PRODUCT_HELP_CHAT_HISTORY)
+
+
+def get_assistant_history(mode_name):
+    return ensure_state(_assistant_history_key(mode_name), [])
+
+
+def append_assistant_turn(mode_name, turn):
+    history = list(get_assistant_history(mode_name))
+    history.append(turn)
+    return set_state(_assistant_history_key(mode_name), history)
+
+
+def clear_assistant_history(mode_name):
+    return set_state(_assistant_history_key(mode_name), [])

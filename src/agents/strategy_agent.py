@@ -38,6 +38,7 @@ class StrategyAgent:
                 prompt["system"],
                 prompt["user"],
                 expected_keys=prompt["expected_keys"],
+                task_name="strategy",
             )
             return StrategyAgentOutput(
                 recruiter_positioning=coerce_string(payload.get("recruiter_positioning")),
