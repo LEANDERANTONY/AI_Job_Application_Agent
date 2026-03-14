@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from openai import OpenAI
 
@@ -28,6 +28,8 @@ class OpenAIService:
         client=None,
         usage_budget=None,
         starting_usage=None,
+        usage_event_recorder: Optional[Callable[[dict], None]] = None,
+        quota_checker: Optional[Callable[[], None]] = None,
     ):
         self._api_key = api_key if api_key is not None else load_openai_key(required=False)
         self.default_model = model or OPENAI_MODEL_DEFAULT
@@ -54,6 +56,8 @@ class OpenAIService:
                 for name, values in starting_usage["model_usage"].items()
             }
         self._last_response_metadata = {}
+        self._usage_event_recorder = usage_event_recorder
+        self._quota_checker = quota_checker
         if self._client is None and self._api_key:
             self._client = OpenAI(api_key=self._api_key)
 
@@ -84,6 +88,8 @@ class OpenAIService:
         }
 
     def _enforce_budget(self):
+        if self._quota_checker is not None:
+            self._quota_checker()
         max_calls = self._usage_budget.get("max_calls")
         max_total_tokens = self._usage_budget.get("max_total_tokens")
         if max_calls is not None and self._usage_totals["request_count"] >= max_calls:
@@ -245,6 +251,18 @@ class OpenAIService:
             session_request_count=self._usage_totals["request_count"],
             session_total_tokens=self._usage_totals["total_tokens"],
         )
+        self._record_usage_event(
+            {
+                "task_name": task_name or "",
+                "model_name": resolved_model,
+                "request_count": 1,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "response_id": getattr(response, "id", None) or "",
+                "status": status or "",
+            }
+        )
 
         content = self._extract_output_text(response)
         try:
@@ -264,6 +282,24 @@ class OpenAIService:
                 details=", ".join(missing_keys),
             )
         return payload
+
+    def _record_usage_event(self, payload: dict):
+        if self._usage_event_recorder is None:
+            return
+        try:
+            self._usage_event_recorder(dict(payload))
+        except Exception as exc:
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                "openai_usage_persist_failed",
+                "OpenAI usage event could not be persisted.",
+                error_type=type(exc).__name__,
+                details=str(exc),
+                task_name=payload.get("task_name"),
+                model=payload.get("model_name"),
+                response_id=payload.get("response_id"),
+            )
 
     @staticmethod
     def _get_field(value, field_name, default=None):

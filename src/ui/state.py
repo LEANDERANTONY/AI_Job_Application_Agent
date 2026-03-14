@@ -21,6 +21,17 @@ EXPORT_BUNDLE_BYTES = "export_bundle_bytes"
 PRODUCT_HELP_CHAT_HISTORY = "product_help_chat_history"
 APPLICATION_QA_CHAT_HISTORY = "application_qa_chat_history"
 OPENAI_SESSION_USAGE = "openai_session_usage"
+AUTH_ACCESS_TOKEN = "auth_access_token"
+AUTH_REFRESH_TOKEN = "auth_refresh_token"
+AUTH_USER = "auth_user"
+AUTH_ERROR = "auth_error"
+AUTH_PKCE_CODE_VERIFIER = "auth_pkce_code_verifier"
+APP_USER_RECORD = "app_user_record"
+DAILY_QUOTA_STATUS = "daily_quota_status"
+WORKFLOW_HISTORY = "workflow_history"
+ARTIFACT_HISTORY = "artifact_history"
+ACTIVE_WORKFLOW_RUN = "active_workflow_run"
+HISTORY_SELECTED_WORKFLOW_RUN_ID = "history_selected_workflow_run_id"
 
 
 def get_state(key, default=None):
@@ -69,6 +80,114 @@ def get_openai_session_usage(default_max_calls, default_max_total_tokens):
 
 def set_openai_session_usage(usage):
     return set_state(OPENAI_SESSION_USAGE, usage)
+
+
+def get_auth_tokens():
+    return get_state(AUTH_ACCESS_TOKEN), get_state(AUTH_REFRESH_TOKEN)
+
+
+def set_authenticated_session(auth_session):
+    set_state(AUTH_ACCESS_TOKEN, auth_session.access_token)
+    set_state(AUTH_REFRESH_TOKEN, auth_session.refresh_token)
+    set_state(AUTH_USER, auth_session.user)
+    pop_state(AUTH_ERROR, None)
+    return auth_session.user
+
+
+def get_authenticated_user():
+    return get_state(AUTH_USER)
+
+
+def is_authenticated():
+    return get_authenticated_user() is not None
+
+
+def clear_authenticated_session():
+    pop_state(AUTH_ACCESS_TOKEN, None)
+    pop_state(AUTH_REFRESH_TOKEN, None)
+    pop_state(APP_USER_RECORD, None)
+    pop_state(DAILY_QUOTA_STATUS, None)
+    pop_state(WORKFLOW_HISTORY, None)
+    pop_state(ARTIFACT_HISTORY, None)
+    pop_state(ACTIVE_WORKFLOW_RUN, None)
+    pop_state(HISTORY_SELECTED_WORKFLOW_RUN_ID, None)
+    return pop_state(AUTH_USER, None)
+
+
+def set_auth_error(message):
+    if message:
+        return set_state(AUTH_ERROR, message)
+    return pop_state(AUTH_ERROR, None)
+
+
+def get_auth_error():
+    return get_state(AUTH_ERROR)
+
+
+def get_auth_pkce_code_verifier():
+    return get_state(AUTH_PKCE_CODE_VERIFIER)
+
+
+def set_auth_pkce_code_verifier(code_verifier):
+    if code_verifier:
+        return set_state(AUTH_PKCE_CODE_VERIFIER, code_verifier)
+    return pop_state(AUTH_PKCE_CODE_VERIFIER, None)
+
+
+def get_app_user_record():
+    return get_state(APP_USER_RECORD)
+
+
+def set_app_user_record(app_user_record):
+    if app_user_record is None:
+        return pop_state(APP_USER_RECORD, None)
+    return set_state(APP_USER_RECORD, app_user_record)
+
+
+def get_daily_quota_status():
+    return get_state(DAILY_QUOTA_STATUS)
+
+
+def set_daily_quota_status(daily_quota_status):
+    if daily_quota_status is None:
+        return pop_state(DAILY_QUOTA_STATUS, None)
+    return set_state(DAILY_QUOTA_STATUS, daily_quota_status)
+
+
+def get_workflow_history():
+    return get_state(WORKFLOW_HISTORY, [])
+
+
+def set_workflow_history(workflow_history):
+    return set_state(WORKFLOW_HISTORY, workflow_history or [])
+
+
+def get_artifact_history():
+    return get_state(ARTIFACT_HISTORY, [])
+
+
+def set_artifact_history(artifact_history):
+    return set_state(ARTIFACT_HISTORY, artifact_history or [])
+
+
+def get_active_workflow_run():
+    return get_state(ACTIVE_WORKFLOW_RUN)
+
+
+def set_active_workflow_run(workflow_run):
+    if workflow_run is None:
+        return pop_state(ACTIVE_WORKFLOW_RUN, None)
+    return set_state(ACTIVE_WORKFLOW_RUN, workflow_run)
+
+
+def get_selected_history_workflow_run_id():
+    return get_state(HISTORY_SELECTED_WORKFLOW_RUN_ID)
+
+
+def set_selected_history_workflow_run_id(workflow_run_id):
+    if workflow_run_id is None:
+        return pop_state(HISTORY_SELECTED_WORKFLOW_RUN_ID, None)
+    return set_state(HISTORY_SELECTED_WORKFLOW_RUN_ID, str(workflow_run_id))
 
 
 def store_resume_intake(resume_document, candidate_profile_resume):

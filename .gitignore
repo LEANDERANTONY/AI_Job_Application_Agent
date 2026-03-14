@@ -170,6 +170,7 @@ cython_debug/
 
 # Local planning notes
 improvements.md
+docs/supabase-setup-checklist.md
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

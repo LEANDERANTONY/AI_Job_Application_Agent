@@ -219,3 +219,71 @@ class AssistantTurn:
     mode: str
     question: str
     response: AssistantResponse
+
+
+@dataclass
+class AppUserRecord:
+    id: str
+    email: str = ""
+    display_name: str = ""
+    avatar_url: str = ""
+    created_at: str = ""
+    last_seen_at: str = ""
+    plan_tier: str = "free"
+    account_status: str = "active"
+
+
+@dataclass
+class UsageEventRecord:
+    user_id: str
+    task_name: str = ""
+    model_name: str = ""
+    request_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    response_id: str = ""
+    status: str = ""
+    created_at: str = ""
+
+
+@dataclass
+class DailyQuotaStatus:
+    user_id: str
+    plan_tier: str = "free"
+    request_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    max_calls: Optional[int] = None
+    max_total_tokens: Optional[int] = None
+    remaining_calls: Optional[int] = None
+    remaining_total_tokens: Optional[int] = None
+    quota_exhausted: bool = False
+    window_start: str = ""
+    window_end: str = ""
+
+
+@dataclass
+class WorkflowRunRecord:
+    id: str
+    user_id: str
+    job_title: str = ""
+    fit_score: int = 0
+    review_approved: bool = False
+    model_policy: str = ""
+    workflow_signature: str = ""
+    workflow_snapshot_json: str = ""
+    report_payload_json: str = ""
+    tailored_resume_payload_json: str = ""
+    created_at: str = ""
+
+
+@dataclass
+class ArtifactRecord:
+    id: str
+    workflow_run_id: str
+    artifact_type: str = ""
+    filename_stem: str = ""
+    storage_path: str = ""
+    created_at: str = ""

@@ -91,3 +91,37 @@ def test_openai_service_blocks_when_token_budget_is_reached():
         service.run_json_prompt("system", "user", expected_keys=["approved"])
 
     assert "session token budget" in error.value.user_message.lower()
+
+
+def test_openai_service_records_usage_event_after_successful_request():
+    client = FakeClient([_build_response('{"approved": true}', response_id="resp_3", prompt_tokens=9, completion_tokens=4)])
+    captured = []
+    service = OpenAIService(client=client, usage_event_recorder=lambda payload: captured.append(payload))
+
+    payload = service.run_json_prompt("system", "user", expected_keys=["approved"], task_name="review")
+
+    assert payload["approved"] is True
+    assert captured == [
+        {
+            "task_name": "review",
+            "model_name": service._resolve_model(task_name="review"),
+            "request_count": 1,
+            "prompt_tokens": 9,
+            "completion_tokens": 4,
+            "total_tokens": 13,
+            "response_id": "resp_3",
+            "status": "completed",
+        }
+    ]
+
+
+def test_openai_service_does_not_fail_when_usage_event_recording_breaks():
+    client = FakeClient([_build_response('{"approved": true}')])
+    service = OpenAIService(
+        client=client,
+        usage_event_recorder=lambda payload: (_ for _ in ()).throw(RuntimeError("db offline")),
+    )
+
+    payload = service.run_json_prompt("system", "user", expected_keys=["approved"])
+
+    assert payload["approved"] is True

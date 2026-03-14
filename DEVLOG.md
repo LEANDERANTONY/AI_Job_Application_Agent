@@ -184,3 +184,95 @@ This document tracks notable implementation milestones and technical decisions.
 - Updated UI navigation and copy to reflect the narrower, lower-friction intake flow.
 - Added an ADR documenting why LinkedIn export ingestion was removed from the product scope.
 - Verified the removal pass with targeted search, compile checks, and focused tests.
+
+## Day 12: Review-Driven Iteration, Strategy, and Observability
+
+- Added a bounded review-revision loop in the orchestrator so rejected tailoring output is revised before finalizing the workflow result.
+- Added the `StrategyAgent` and integrated it into the supervised workflow.
+- Added structured JSON logging for workflow and OpenAI request lifecycle events.
+- Added session-level OpenAI usage tracking and budget guards.
+- Refactored Streamlit state access behind `src/ui/state.py` and moved UI workflow orchestration into `src/ui/workflow.py`.
+- Verified the architecture pass with:
+  - `uv run pytest`
+  - `uv run python -m compileall app.py src tests`
+
+## Day 13: Tailored Resume Artifact and Export Expansion
+
+- Added a dedicated `ResumeGenerationAgent` after review in the supervised pipeline.
+- Added `src/resume_builder.py` to build a direct-use tailored resume artifact from grounded workflow state.
+- Added resume themes:
+  - `classic_ats`
+  - `modern_professional`
+- Extended export support so both report and tailored resume can be exported as Markdown and PDF.
+- Added a combined ZIP export bundle for the resume and report together.
+- Added resume diff support in `src/resume_diff.py` and exposed original-vs-tailored comparison in the UI.
+- Verified the new artifact and export flow with:
+  - `uv run pytest`
+  - `uv run python -m compileall app.py src tests`
+
+## Day 14: Grounded Assistant, Model Routing, and Responses API Migration
+
+- Added a shared two-mode assistant panel with:
+  - `Using the App`
+  - `About My Resume`
+- Implemented the assistant as one service with explicit grounded modes instead of creating more orchestrator agents.
+- Added per-task model routing so high-trust tasks can use stronger models while lower-risk tasks stay on cheaper tiers.
+- Migrated the OpenAI wrapper from Chat Completions to the Responses API.
+- Extended usage tracking to retain per-model totals internally while keeping only session-capacity messaging in the UI.
+- Added the model sizing and routing reference in `docs/model-latency-and-cost-estimates.md`.
+- Added Google sign-in architecture planning in `docs/google-signin-implementation-plan.md`.
+- Added ADRs for:
+  - the two-mode assistant decision
+  - Google sign-in via Supabase as the persistent identity direction
+- Verified the current integrated state with:
+  - `uv run pytest`
+  - successful commit and push to `origin/main`
+
+## Day 15: Google Sign-In Foundation
+
+- Added `src/auth_service.py` as a Supabase-backed auth wrapper for:
+  - Google OAuth start
+  - auth-code exchange
+  - session restore
+  - sign-out
+- Added Supabase auth configuration in `src/config.py` and example environment variables for local setup.
+- Extended `src/ui/state.py` with authenticated user, token, and auth-error state helpers.
+- Bootstrapped auth callback handling and session restoration in the Streamlit app shell.
+- Added a sidebar account panel for sign-in and sign-out.
+- Gated the AI-assisted workflow behind authenticated account state while keeping deterministic resume and JD flows available without login.
+- Added focused auth tests and verified the integration with:
+  - `uv run pytest`
+
+Persistent per-user usage storage, saved artifact history, and quotas are intentionally left for later Supabase-backed phases.
+
+## Day 16: Persistent App User Record
+
+- Added `src/user_store.py` to sync a lightweight `app_users` record after Google sign-in and on session restore.
+- Added `AppUserRecord` to the shared schema layer for plan-tier and account-status state.
+- Extended config and environment examples for the `app_users` table name and default account metadata.
+- Updated the sidebar account panel to surface persisted plan and account status when the sync succeeds.
+- Kept login resilient: auth still works even if the Supabase table or RLS policy is not ready yet.
+
+## Day 17: External Usage Persistence on Supabase Postgres
+
+- Added `src/usage_store.py` to persist assisted usage events in Supabase Postgres for authenticated users.
+- Extended `src/openai_service.py` with an optional usage-event callback so persistence stays transport-agnostic.
+- Wired authenticated usage-event recording from `src/ui/workflow.py` without leaking Streamlit concerns into the service layer.
+- Added the `usage_events` SQL schema and RLS policies in `docs/supabase-usage-events.sql`.
+- Kept assisted requests resilient: usage persistence failures are logged but do not break the user-facing AI response.
+
+## Day 18: Daily Quotas From Persisted Usage
+
+- Added `src/quota_service.py` to compute per-user daily assisted limits from persisted `usage_events`.
+- Extended `src/usage_store.py` with daily usage aggregation for the current UTC day.
+- Wired quota checks into `src/openai_service.py` as a preflight hook so assisted requests stop cleanly when the daily cap is exhausted.
+- Updated the JD workflow UI to show daily remaining assisted capacity alongside the existing session-level view.
+- Added plan-tier daily quota configuration through environment variables for free and paid tiers.
+
+## Day 19: Workflow History and Artifact Metadata
+
+- Added `src/history_store.py` to persist authenticated workflow runs and artifact metadata in Supabase Postgres.
+- Wired supervised workflow completion to create `workflow_runs` records.
+- Wired export preparation to create `artifacts` records for generated PDFs and ZIP bundles.
+- Added recent workflow and artifact history to the sidebar account panel.
+- Added Supabase schema and RLS setup in `docs/supabase-workflow-history.sql`.

@@ -42,8 +42,59 @@ def _load_int_env(name: str, default=None):
     return int(raw_value)
 
 
+def _load_bool_env(name: str, default: bool = False):
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 OPENAI_MAX_CALLS_PER_SESSION = _load_int_env("OPENAI_MAX_CALLS_PER_SESSION", 24)
 OPENAI_MAX_TOKENS_PER_SESSION = _load_int_env("OPENAI_MAX_TOKENS_PER_SESSION", 120000)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
+SUPABASE_AUTH_REDIRECT_URL = os.getenv(
+    "SUPABASE_AUTH_REDIRECT_URL",
+    os.getenv("APP_BASE_URL", "http://localhost:8501"),
+).strip()
+AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW = _load_bool_env(
+    "AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW", True
+)
+SUPABASE_APP_USERS_TABLE = os.getenv("SUPABASE_APP_USERS_TABLE", "app_users").strip()
+SUPABASE_USAGE_EVENTS_TABLE = os.getenv(
+    "SUPABASE_USAGE_EVENTS_TABLE", "usage_events"
+).strip()
+SUPABASE_WORKFLOW_RUNS_TABLE = os.getenv(
+    "SUPABASE_WORKFLOW_RUNS_TABLE", "workflow_runs"
+).strip()
+SUPABASE_ARTIFACTS_TABLE = os.getenv(
+    "SUPABASE_ARTIFACTS_TABLE", "artifacts"
+).strip()
+AUTH_DEFAULT_PLAN_TIER = os.getenv("AUTH_DEFAULT_PLAN_TIER", "free").strip()
+AUTH_DEFAULT_ACCOUNT_STATUS = os.getenv(
+    "AUTH_DEFAULT_ACCOUNT_STATUS", "active"
+).strip()
+FREE_TIER_MAX_CALLS_PER_DAY = _load_int_env("FREE_TIER_MAX_CALLS_PER_DAY", 12)
+FREE_TIER_MAX_TOKENS_PER_DAY = _load_int_env("FREE_TIER_MAX_TOKENS_PER_DAY", 60000)
+PAID_TIER_MAX_CALLS_PER_DAY = _load_int_env("PAID_TIER_MAX_CALLS_PER_DAY", 80)
+PAID_TIER_MAX_TOKENS_PER_DAY = _load_int_env("PAID_TIER_MAX_TOKENS_PER_DAY", 400000)
+
+
+def get_daily_quota_for_plan(plan_tier: str):
+    normalized_plan = (plan_tier or AUTH_DEFAULT_PLAN_TIER).strip().lower()
+    if normalized_plan in {"admin", "internal"}:
+        return {"max_calls": None, "max_total_tokens": None, "plan_tier": normalized_plan}
+    if normalized_plan in {"paid", "pro", "plus"}:
+        return {
+            "max_calls": PAID_TIER_MAX_CALLS_PER_DAY,
+            "max_total_tokens": PAID_TIER_MAX_TOKENS_PER_DAY,
+            "plan_tier": normalized_plan,
+        }
+    return {
+        "max_calls": FREE_TIER_MAX_CALLS_PER_DAY,
+        "max_total_tokens": FREE_TIER_MAX_TOKENS_PER_DAY,
+        "plan_tier": normalized_plan,
+    }
 
 
 def _load_text_file(path: Path):
@@ -74,6 +125,14 @@ def describe_openai_model_policy(default_model: str = None):
     if len(models) == 1:
         return models[0]
     return "routed({models})".format(models=", ".join(models))
+
+
+def is_supabase_auth_configured():
+    return bool(SUPABASE_URL and SUPABASE_ANON_KEY)
+
+
+def assisted_workflow_requires_login():
+    return AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW
 
 
 def list_demo_files(directory: Path, suffixes):

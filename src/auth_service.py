@@ -1,0 +1,211 @@
+from dataclasses import dataclass
+from typing import Any, Optional
+
+from src.config import (
+    SUPABASE_ANON_KEY,
+    SUPABASE_AUTH_REDIRECT_URL,
+    SUPABASE_URL,
+)
+from src.errors import AppError
+from src.ui.state import get_auth_pkce_code_verifier, set_auth_pkce_code_verifier
+
+try:
+    from supabase import create_client
+    from supabase.lib.client_options import SyncClientOptions as ClientOptions
+except ImportError:
+    create_client = None
+    ClientOptions = None
+
+
+@dataclass
+class AuthUser:
+    user_id: str
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+@dataclass
+class AuthSession:
+    access_token: str
+    refresh_token: str
+    user: AuthUser
+
+
+class StreamlitSessionStorage:
+    def get_item(self, key: str):
+        if key.endswith("-code-verifier"):
+            return get_auth_pkce_code_verifier()
+        return None
+
+    def set_item(self, key: str, value: str):
+        if key.endswith("-code-verifier"):
+            set_auth_pkce_code_verifier(value)
+
+    def remove_item(self, key: str):
+        if key.endswith("-code-verifier"):
+            set_auth_pkce_code_verifier(None)
+
+
+class AuthService:
+    def __init__(
+        self,
+        supabase_url: str = SUPABASE_URL,
+        supabase_anon_key: str = SUPABASE_ANON_KEY,
+        redirect_url: str = SUPABASE_AUTH_REDIRECT_URL,
+    ):
+        self.supabase_url = (supabase_url or "").strip()
+        self.supabase_anon_key = (supabase_anon_key or "").strip()
+        self.redirect_url = (redirect_url or "").strip()
+
+    def is_configured(self):
+        return bool(self.supabase_url and self.supabase_anon_key)
+
+    def get_google_sign_in_url(self):
+        client = self._create_client()
+        response = client.auth.sign_in_with_oauth(
+            {
+                "provider": "google",
+                "options": {"redirect_to": self.redirect_url},
+            }
+        )
+        url = self._extract_oauth_url(response)
+        if not url:
+            raise AppError("Unable to start Google sign-in right now.")
+        return url
+
+    def exchange_code_for_session(self, auth_code: str):
+        client = self._create_client()
+        try:
+            response = client.auth.exchange_code_for_session({"auth_code": auth_code})
+        except TypeError:
+            response = client.auth.exchange_code_for_session(auth_code)
+        return self._build_auth_session(response)
+
+    def restore_session(self, access_token: str, refresh_token: str):
+        client = self.create_authenticated_client(access_token, refresh_token)
+        response = client.auth.get_session()
+        return self._build_auth_session(response)
+
+    def sign_out(self, access_token: str, refresh_token: str):
+        client = self.create_authenticated_client(access_token, refresh_token)
+        client.auth.sign_out()
+
+    def create_authenticated_client(self, access_token: str, refresh_token: str):
+        client = self._create_client()
+        try:
+            client.auth.set_session(access_token, refresh_token)
+        except TypeError:
+            client.auth.set_session(
+                {"access_token": access_token, "refresh_token": refresh_token}
+            )
+        return client
+
+    def _create_client(self):
+        if not self.is_configured():
+            raise AppError(
+                "Google sign-in is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY first."
+            )
+        if create_client is None or ClientOptions is None:
+            raise AppError(
+                "Supabase support is not installed. Add the supabase package to enable Google sign-in."
+            )
+        return create_client(
+            self.supabase_url,
+            self.supabase_anon_key,
+            options=ClientOptions(
+                flow_type="pkce",
+                auto_refresh_token=False,
+                persist_session=False,
+                storage=StreamlitSessionStorage(),
+            ),
+        )
+
+    @staticmethod
+    def _extract_oauth_url(response: Any):
+        candidates = [
+            response,
+            getattr(response, "data", None),
+        ]
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            if isinstance(candidate, dict) and candidate.get("url"):
+                return candidate["url"]
+            url = getattr(candidate, "url", None)
+            if url:
+                return url
+        return None
+
+    def _build_auth_session(self, response: Any):
+        session = self._extract_session(response)
+        user = self._extract_user(response, session)
+
+        access_token = getattr(session, "access_token", None)
+        refresh_token = getattr(session, "refresh_token", None)
+        if not access_token or not refresh_token or user is None:
+            raise AppError("Unable to complete Google sign-in right now.")
+
+        return AuthSession(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=AuthUser(
+                user_id=str(getattr(user, "id", "") or self._get_mapping_value(user, "id", "")),
+                email=getattr(user, "email", None) or self._get_mapping_value(user, "email"),
+                display_name=self._extract_display_name(user),
+                avatar_url=self._extract_avatar_url(user),
+            ),
+        )
+
+    @staticmethod
+    def _extract_session(response: Any):
+        candidates = [
+            response if getattr(response, "access_token", None) else None,
+            getattr(response, "session", None),
+            getattr(getattr(response, "data", None), "session", None),
+            AuthService._get_mapping_value(response, "session"),
+            AuthService._get_mapping_value(getattr(response, "data", None), "session"),
+        ]
+        for candidate in candidates:
+            if candidate is not None:
+                return candidate
+        return None
+
+    @staticmethod
+    def _extract_user(response: Any, session: Any):
+        candidates = [
+            getattr(response, "user", None),
+            getattr(getattr(response, "data", None), "user", None),
+            getattr(session, "user", None),
+            AuthService._get_mapping_value(response, "user"),
+            AuthService._get_mapping_value(getattr(response, "data", None), "user"),
+            AuthService._get_mapping_value(session, "user"),
+        ]
+        for candidate in candidates:
+            if candidate is not None:
+                return candidate
+        return None
+
+    @staticmethod
+    def _extract_display_name(user: Any):
+        metadata = getattr(user, "user_metadata", None) or AuthService._get_mapping_value(
+            user, "user_metadata", {}
+        )
+        if not isinstance(metadata, dict):
+            return None
+        return metadata.get("full_name") or metadata.get("name")
+
+    @staticmethod
+    def _extract_avatar_url(user: Any):
+        metadata = getattr(user, "user_metadata", None) or AuthService._get_mapping_value(
+            user, "user_metadata", {}
+        )
+        if not isinstance(metadata, dict):
+            return None
+        return metadata.get("avatar_url") or metadata.get("picture")
+
+    @staticmethod
+    def _get_mapping_value(value: Any, key: str, default=None):
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return default
