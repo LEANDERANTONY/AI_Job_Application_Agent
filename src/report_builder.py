@@ -1,4 +1,3 @@
-import re
 from typing import Iterable, Optional
 
 from src.schemas import (
@@ -9,31 +8,19 @@ from src.schemas import (
     JobDescription,
     TailoredResumeDraft,
 )
+from src.utils import markdown_to_text, render_markdown_list, safe_join_strings, slugify_text
 
 
 def _slugify(value: str) -> str:
-    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", (value or "").strip().lower()).strip("-")
-    return normalized or "application-package"
+    return slugify_text(value, fallback="application-package")
 
 
 def _safe_join(values: Iterable[str], fallback: str = "N/A", limit: Optional[int] = None) -> str:
-    cleaned = []
-    seen = set()
-    for value in values:
-        normalized = str(value or "").strip()
-        if normalized and normalized.lower() not in seen:
-            cleaned.append(normalized)
-            seen.add(normalized.lower())
-    if limit is not None:
-        cleaned = cleaned[:limit]
-    return ", ".join(cleaned) if cleaned else fallback
+    return safe_join_strings(values, fallback=fallback, limit=limit)
 
 
 def _render_markdown_list(items: Iterable[str], empty_state: str) -> str:
-    cleaned = [str(item or "").strip() for item in items if str(item or "").strip()]
-    if not cleaned:
-        return "- {empty}".format(empty=empty_state)
-    return "\n".join("- {item}".format(item=item) for item in cleaned)
+    return render_markdown_list(items, empty_state)
 
 
 def _build_title(candidate_profile: CandidateProfile, job_description: JobDescription) -> str:
@@ -315,11 +302,7 @@ def _build_next_actions(
 
 
 def _markdown_to_text(markdown: str) -> str:
-    text = re.sub(r"^#{1,6}\s*", "", markdown, flags=re.MULTILINE)
-    text = text.replace("#### ", "").replace("### ", "").replace("## ", "").replace("# ", "")
-    text = re.sub(r"^- ", "* ", text, flags=re.MULTILINE)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    return markdown_to_text(markdown, bullet_marker="*")
 
 
 def build_application_report(

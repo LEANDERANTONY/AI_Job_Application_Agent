@@ -1,3 +1,6 @@
+import pytest
+
+from src.errors import InputValidationError
 from src.services.job_service import build_job_description_from_text
 
 
@@ -20,3 +23,25 @@ def test_build_job_description_from_text_extracts_requirement_signals():
     assert job_description.requirements.soft_skills == ["communication"]
     assert job_description.requirements.must_haves
     assert job_description.requirements.nice_to_haves == ["Nice to have: AWS exposure."]
+
+
+def test_build_job_description_from_text_rejects_blank_input():
+    with pytest.raises(InputValidationError):
+        build_job_description_from_text("   ")
+
+
+def test_build_job_description_from_text_deduplicates_requirement_lines():
+    raw_text = (
+        "Backend Engineer\n"
+        "Required: Python and SQL.\n"
+        "Required: Python and SQL.\n"
+        "Must have production API experience.\n"
+        "Must have production API experience.\n"
+    )
+
+    job_description = build_job_description_from_text(raw_text)
+
+    assert job_description.requirements.must_haves == [
+        "Required: Python and SQL.",
+        "Must have production API experience.",
+    ]

@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from src.schemas import CandidateProfile, FitAnalysis, JobDescription
@@ -21,7 +21,7 @@ def _extract_year_from_token(token) -> Optional[int]:
 def _infer_candidate_experience_years(candidate_profile: CandidateProfile) -> Optional[float]:
     total_years = 0.0
     found_duration = False
-    current_year = datetime.utcnow().year
+    current_year = datetime.now(timezone.utc).year
 
     for experience in candidate_profile.experience:
         start_year = _extract_year_from_token(experience.start)

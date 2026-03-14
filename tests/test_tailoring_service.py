@@ -46,3 +46,33 @@ def test_build_tailored_resume_draft_returns_grounded_sections():
     assert tailored_draft.highlighted_skills[:3] == ["Python", "SQL", "Docker"]
     assert tailored_draft.priority_bullets
     assert any("AWS" in step for step in tailored_draft.gap_mitigation_steps)
+
+
+def test_build_tailored_resume_draft_handles_candidates_without_experience_entries():
+    candidate_profile = build_candidate_profile_from_resume(
+        ResumeDocument(
+            text=(
+                "Leander Antony\n"
+                "Chennai, India\n"
+                "Python SQL communication\n"
+                "Built internal automation projects."
+            ),
+            filetype="TXT",
+            source="uploaded",
+        )
+    )
+    job_description = build_job_description_from_text(
+        "Data Analyst\nRequired: Python, SQL, Tableau, communication."
+    )
+    fit_analysis = build_fit_analysis(candidate_profile, job_description)
+
+    tailored_draft = build_tailored_resume_draft(
+        candidate_profile,
+        job_description,
+        fit_analysis,
+    )
+
+    assert "verified project and work evidence" in tailored_draft.professional_summary
+    assert tailored_draft.priority_bullets == [
+        "Create impact bullets that prove hands-on use of Python, SQL."
+    ]

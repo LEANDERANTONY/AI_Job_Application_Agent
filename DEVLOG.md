@@ -312,3 +312,16 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Added compatibility inspection so unsupported or malformed saved payloads fail visibly in the History page instead of silently producing incorrect downloads.
 - Clarified quota UX by separating account-level daily quota messaging from browser-session safeguards.
 - Made the History page more explicit that browsing old runs is read-only and does not retarget new exports away from the current active workflow run.
+
+## Day 24: Pre-Deployment Hardening and Hosting Decision
+
+- Split the remaining large UI workflow and page boundaries behind stable facades while preserving the public entrypoints.
+- Extracted duplicated builder helpers into shared utilities and centralized UI-side `AuthService` access.
+- Cleaned the remaining pre-launch hygiene items:
+  - removed unused helper code
+  - consolidated duplicate string-list normalization logic
+  - replaced `datetime.utcnow()` with a timezone-aware UTC clock path
+  - documented the ReportLab `md5` compatibility patch
+- Expanded boundary coverage for fit, job, tailoring, strategy, and logging modules.
+- Added `.streamlit/config.toml` and reworked deployment docs so the app can be deployed before Supabase is provisioned.
+- Chose **Streamlit Community Cloud** as the first deployment target while keeping the existing Playwright/Chromium-first PDF path and retaining ReportLab as the runtime fallback.

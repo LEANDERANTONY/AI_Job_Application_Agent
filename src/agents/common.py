@@ -1,5 +1,7 @@
 from typing import Iterable, List
 
+from src.utils import dedupe_strings
+
 
 def coerce_string(value, default=""):
     if value is None:
@@ -10,25 +12,11 @@ def coerce_string(value, default=""):
 def coerce_string_list(value, limit=None):
     if not isinstance(value, list):
         return []
-    cleaned = []
-    seen = set()
-    for item in value:
-        normalized = str(item or "").strip()
-        if normalized and normalized.lower() not in seen:
-            cleaned.append(normalized)
-            seen.add(normalized.lower())
-    return cleaned[:limit] if limit is not None else cleaned
+    return dedupe_strings(value, limit=limit)
 
 
 def unique_strings(values: Iterable[str], limit=None) -> List[str]:
-    cleaned = []
-    seen = set()
-    for value in values:
-        normalized = str(value or "").strip()
-        if normalized and normalized.lower() not in seen:
-            cleaned.append(normalized)
-            seen.add(normalized.lower())
-    return cleaned[:limit] if limit is not None else cleaned
+    return dedupe_strings(values, limit=limit)
 
 
 def coerce_bool(value):

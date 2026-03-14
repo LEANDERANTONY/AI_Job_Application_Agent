@@ -2,6 +2,7 @@ import html
 import hashlib
 import logging
 import re
+import warnings
 import zipfile
 from io import BytesIO
 
@@ -384,23 +385,32 @@ def _parse_markdown_blocks(text):
 
 
 def _generate_pdf_with_reportlab(text, title):
-    from reportlab.lib import colors
-    from reportlab.lib.enums import TA_LEFT
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.platypus import (
-        HRFlowable,
-        Paragraph,
-        Preformatted,
-        SimpleDocTemplate,
-        Spacer,
-    )
-    from reportlab.pdfbase import pdfdoc
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"the load_module\(\) method is deprecated and slated for removal in Python 3.12; use exec_module\(\) instead",
+            category=DeprecationWarning,
+        )
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_LEFT
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.platypus import (
+            HRFlowable,
+            Paragraph,
+            Preformatted,
+            SimpleDocTemplate,
+            Spacer,
+        )
+        from reportlab.pdfbase import pdfdoc
 
     def md5_compat(*args, **kwargs):
         kwargs.pop("usedforsecurity", None)
         return hashlib.md5(*args, **kwargs)
 
+    # Older ReportLab builds still call into pdfdoc.md5 with a
+    # usedforsecurity kwarg shape that hashlib.md5 does not accept consistently
+    # across runtimes, so we normalize it here for the fallback backend.
     pdfdoc.md5 = md5_compat
 
     styles = getSampleStyleSheet()

@@ -1,31 +1,22 @@
-import hashlib
-import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Optional
 
 from src.agents.orchestrator import ApplicationOrchestrator
 from src.config import (
     AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW,
-    DEMO_JOB_DESCRIPTION_DIR,
-    DEMO_RESUME_DIR,
     OPENAI_MAX_CALLS_PER_SESSION,
     OPENAI_MAX_TOKENS_PER_SESSION,
 )
 from src.errors import AgentExecutionError, AppError, InputValidationError
-from src.exporters import export_markdown_bytes, export_pdf_bytes, export_zip_bundle_bytes
 from src.openai_service import OpenAIService
-from src.parsers.jd import parse_jd_text
-from src.parsers.resume import parse_resume_document
+from src.quota_service import QuotaService
 from src.report_builder import build_application_report
 from src.resume_builder import build_tailored_resume_artifact
-from src.auth_service import AuthService
-from src.history_store import HistoryStore
-from src.quota_service import QuotaService
 from src.schemas import (
     AgentWorkflowResult,
-    DailyQuotaStatus,
     ApplicationReport,
     CandidateProfile,
+    DailyQuotaStatus,
     FitAnalysis,
     JobDescription,
     TailoredResumeArtifact,
@@ -33,46 +24,37 @@ from src.schemas import (
 )
 from src.services.fit_service import build_fit_analysis
 from src.services.job_service import build_job_description_from_text
-from src.services.profile_service import build_candidate_profile_from_resume
 from src.services.tailoring_service import build_tailored_resume_draft
 from src.usage_store import UsageStore
+from src.ui import workflow_exports, workflow_history, workflow_intake
+from src.ui.auth import get_auth_service
 from src.ui.state import (
     AGENT_WORKFLOW_RESULT,
-    CANDIDATE_PROFILE_RESUME,
-    JOB_DESCRIPTION_RAW,
-    JOB_DESCRIPTION_SOURCE,
-    RESUME_DOCUMENT,
     get_app_user_record,
-    get_artifact_history,
     get_auth_tokens,
-    get_active_workflow_run,
-    get_cached_pdf_bytes,
-    get_cached_export_bundle_bytes,
-    get_cached_tailored_resume_pdf_bytes,
     get_daily_quota_status,
     get_openai_session_usage,
-    get_selected_history_workflow_run_id,
     get_state,
     get_tailored_resume_theme,
     reset_agent_workflow_if_signature_changed,
-    set_active_candidate_profile,
-    set_active_workflow_run,
     set_agent_workflow_result,
-    set_artifact_history,
-    set_cached_pdf_bytes,
-    set_cached_export_bundle_bytes,
-    set_cached_tailored_resume_pdf_bytes,
     set_daily_quota_status,
-    set_selected_history_workflow_run_id,
     set_openai_session_usage,
-    set_workflow_history,
     store_fit_outputs,
     store_job_description_inputs,
-    store_resume_intake,
     sync_report_signature,
     sync_tailored_resume_signature,
 )
 from src.ui.state import is_authenticated
+from src.ui.workflow_payloads import (
+    WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT,
+    WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT,
+    WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
+    WORKFLOW_HISTORY_PAYLOAD_VERSION,
+    get_saved_workflow_payload_status,
+)
+from src.ui.workflow_signatures import report_signature as _report_signature
+from src.ui.workflow_signatures import workflow_signature as _workflow_signature
 
 
 @dataclass
@@ -97,226 +79,12 @@ class JobWorkflowViewModel:
     ai_session: Optional[AISessionViewModel] = None
 
 
-WORKFLOW_HISTORY_PAYLOAD_VERSION = 1
-WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT = "workflow_snapshot"
-WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT = "application_report"
-WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME = "tailored_resume_artifact"
-
-
 def _load_sample_resume(filename):
-    with (DEMO_RESUME_DIR / filename).open("rb") as file_handle:
-        return parse_resume_document(file_handle, source=f"sample:{filename}")
+    return workflow_intake._load_sample_resume(filename)
 
 
 def _load_sample_jd(filename):
-    with (DEMO_JOB_DESCRIPTION_DIR / filename).open("rb") as file_handle:
-        return parse_jd_text(file_handle)
-
-
-def _workflow_signature(candidate_profile, job_description, fit_analysis, tailored_draft):
-    payload = {
-        "candidate_profile": asdict(candidate_profile),
-        "job_description": asdict(job_description),
-        "fit_analysis": asdict(fit_analysis),
-        "tailored_draft": asdict(tailored_draft),
-    }
-    raw = json.dumps(payload, sort_keys=True, default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def _report_signature(report):
-    raw = json.dumps(
-        {
-            "title": report.title,
-            "summary": report.summary,
-            "markdown": report.markdown,
-        },
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def _versioned_payload(payload_kind: str, payload_data: dict):
-    return json.dumps(
-        {
-            "version": WORKFLOW_HISTORY_PAYLOAD_VERSION,
-            "kind": payload_kind,
-            "data": payload_data,
-        },
-        sort_keys=True,
-        default=str,
-    )
-
-
-def _json_payload(payload_kind: str, value):
-    return _versioned_payload(payload_kind, asdict(value))
-
-
-def _workflow_snapshot_json(view_model: "JobWorkflowViewModel"):
-    payload = {
-        "candidate_profile": asdict(view_model.candidate_profile),
-        "job_description": asdict(view_model.job_description),
-        "fit_analysis": asdict(view_model.fit_analysis),
-        "tailored_draft": asdict(view_model.tailored_draft),
-        "agent_result": asdict(view_model.agent_result) if view_model.agent_result else None,
-    }
-    return _versioned_payload(WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT, payload)
-
-
-def _inspect_saved_payload(raw_payload: str, expected_kind: str):
-    if not raw_payload:
-        return {
-            "present": False,
-            "supported": False,
-            "version": None,
-            "label": "Unavailable",
-            "message": "No saved payload is available for this artifact.",
-            "data": None,
-            "storage": "missing",
-        }
-
-    try:
-        payload = json.loads(raw_payload)
-    except (TypeError, json.JSONDecodeError) as exc:
-        return {
-            "present": True,
-            "supported": False,
-            "version": None,
-            "label": "Malformed",
-            "message": "This saved workflow payload is malformed and cannot be regenerated safely.",
-            "data": None,
-            "storage": "malformed",
-            "details": str(exc),
-        }
-
-    if not isinstance(payload, dict):
-        return {
-            "present": True,
-            "supported": False,
-            "version": None,
-            "label": "Malformed",
-            "message": "This saved workflow payload is malformed and cannot be regenerated safely.",
-            "data": None,
-            "storage": "malformed",
-        }
-
-    if "version" in payload and "data" in payload:
-        try:
-            version = int(payload.get("version", 0) or 0)
-        except (TypeError, ValueError):
-            version = -1
-        payload_kind = str(payload.get("kind", "") or "")
-        payload_data = payload.get("data")
-        if payload_kind and payload_kind != expected_kind:
-            return {
-                "present": True,
-                "supported": False,
-                "version": version,
-                "label": "Kind Mismatch",
-                "message": "This saved workflow payload does not match the expected artifact type.",
-                "data": None,
-                "storage": "versioned",
-            }
-        if version != WORKFLOW_HISTORY_PAYLOAD_VERSION:
-            return {
-                "present": True,
-                "supported": False,
-                "version": version,
-                "label": "Unsupported",
-                "message": (
-                    "This saved workflow run uses payload version v{version}, but the app currently "
-                    "supports only v{current}."
-                ).format(version=version, current=WORKFLOW_HISTORY_PAYLOAD_VERSION),
-                "data": None,
-                "storage": "versioned",
-            }
-        if not isinstance(payload_data, dict):
-            return {
-                "present": True,
-                "supported": False,
-                "version": version,
-                "label": "Malformed",
-                "message": "This saved workflow payload is malformed and cannot be regenerated safely.",
-                "data": None,
-                "storage": "versioned",
-            }
-        return {
-            "present": True,
-            "supported": True,
-            "version": version,
-            "label": "v{version} Current".format(version=version),
-            "message": "This saved run uses the current versioned payload envelope for deterministic historical regeneration.",
-            "data": payload_data,
-            "storage": "versioned",
-        }
-
-    return {
-        "present": True,
-        "supported": True,
-        "version": 0,
-        "label": "Legacy v0",
-        "message": "This saved run predates explicit payload versioning. Historical downloads still use the legacy-compatible reader.",
-        "data": payload,
-        "storage": "legacy",
-    }
-
-
-def get_saved_workflow_payload_status(workflow_run: Optional[object]):
-    if workflow_run is None:
-        return {
-            "label": "Unavailable",
-            "supported": False,
-            "message": "No workflow run is selected.",
-        }
-
-    inspections = []
-    for raw_payload, expected_kind in (
-        (getattr(workflow_run, "workflow_snapshot_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT),
-        (getattr(workflow_run, "report_payload_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT),
-        (getattr(workflow_run, "tailored_resume_payload_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME),
-    ):
-        inspection = _inspect_saved_payload(raw_payload, expected_kind)
-        if inspection["present"]:
-            inspections.append(inspection)
-
-    if not inspections:
-        return {
-            "label": "Unavailable",
-            "supported": False,
-            "message": "This workflow run does not have any saved regeneration payloads.",
-        }
-
-    unsupported = next((inspection for inspection in inspections if not inspection["supported"]), None)
-    if unsupported is not None:
-        version = unsupported.get("version")
-        label = unsupported["label"]
-        if version not in (None, "") and label == "Unsupported":
-            label = "v{version} Unsupported".format(version=version)
-        return {
-            "label": label,
-            "supported": False,
-            "message": unsupported["message"],
-        }
-
-    versions = {inspection["version"] for inspection in inspections}
-    if versions == {WORKFLOW_HISTORY_PAYLOAD_VERSION}:
-        return {
-            "label": "v{version} Current".format(version=WORKFLOW_HISTORY_PAYLOAD_VERSION),
-            "supported": True,
-            "message": "This saved run uses the current versioned payload envelope for deterministic historical regeneration.",
-        }
-    if versions == {0}:
-        return {
-            "label": "Legacy v0",
-            "supported": True,
-            "message": "This saved run predates explicit payload versioning. Historical downloads remain available through the legacy-compatible reader.",
-        }
-    return {
-        "label": "Mixed Compatibility",
-        "supported": True,
-        "message": "This saved run mixes legacy and current saved payload envelopes. Historical downloads remain available through compatible readers.",
-    }
+    return workflow_intake._load_sample_jd(filename)
 
 
 def refresh_daily_quota_status():
@@ -327,7 +95,7 @@ def refresh_daily_quota_status():
         set_daily_quota_status(None)
         return None
 
-    auth_service = AuthService()
+    auth_service = get_auth_service()
     usage_store = UsageStore(auth_service)
     if not usage_store.is_configured():
         return daily_quota
@@ -347,46 +115,27 @@ def refresh_daily_quota_status():
 
 
 def get_resume_page_state():
-    return get_state(RESUME_DOCUMENT), get_state(CANDIDATE_PROFILE_RESUME)
+    return workflow_intake.get_resume_page_state()
 
 
 def use_sample_resume(filename):
-    resume_document = _load_sample_resume(filename)
-    candidate_profile_resume = build_candidate_profile_from_resume(resume_document)
-    store_resume_intake(resume_document, candidate_profile_resume)
-    return resume_document, candidate_profile_resume
+    return workflow_intake.use_sample_resume(filename)
 
 
 def use_uploaded_resume(uploaded_file):
-    resume_document = parse_resume_document(uploaded_file)
-    candidate_profile_resume = build_candidate_profile_from_resume(resume_document)
-    store_resume_intake(resume_document, candidate_profile_resume)
-    return resume_document, candidate_profile_resume
+    return workflow_intake.use_uploaded_resume(uploaded_file)
 
 
 def get_active_candidate_profile():
-    candidate_profile = get_state(CANDIDATE_PROFILE_RESUME)
-    if candidate_profile:
-        set_active_candidate_profile(candidate_profile)
-    return candidate_profile
+    return workflow_intake.get_active_candidate_profile()
 
 
 def resolve_job_description_input(uploaded_jd=None, selected_sample="None", pasted_text=""):
-    jd_text = get_state(JOB_DESCRIPTION_RAW, "")
-    jd_source = get_state(JOB_DESCRIPTION_SOURCE, "Session cache")
-
-    if uploaded_jd is not None:
-        jd_text = parse_jd_text(uploaded_jd)
-        jd_source = "Uploaded file"
-    elif selected_sample != "None":
-        jd_text = _load_sample_jd(selected_sample)
-        jd_source = f"Sample file: {selected_sample}"
-
-    if pasted_text.strip():
-        jd_text = pasted_text
-        jd_source = "Pasted text"
-
-    return jd_text, jd_source
+    return workflow_intake.resolve_job_description_input(
+        uploaded_jd=uploaded_jd,
+        selected_sample=selected_sample,
+        pasted_text=pasted_text,
+    )
 
 
 def build_ai_session_view_model():
@@ -400,21 +149,25 @@ def build_ai_session_view_model():
     auth_user_record = get_app_user_record()
     access_token, refresh_token = get_auth_tokens()
     if auth_user_record is not None and access_token and refresh_token:
-        auth_service = AuthService()
+        auth_service = get_auth_service()
         usage_store = UsageStore(auth_service)
         if usage_store.is_configured():
             if daily_quota and daily_quota.quota_exhausted:
+
                 def quota_checker():
                     raise AgentExecutionError(
                         "Your daily assisted usage limit has been reached. Try again tomorrow or upgrade your plan tier."
                     )
+
             else:
+
                 def quota_checker():
                     refreshed_quota = refresh_daily_quota_status()
                     if refreshed_quota and refreshed_quota.quota_exhausted:
                         raise AgentExecutionError(
                             "Your daily assisted usage limit has been reached. Try again tomorrow or upgrade your plan tier."
                         )
+
             def usage_event_recorder(event_payload):
                 usage_store.record_usage_event(
                     access_token,
@@ -424,6 +177,7 @@ def build_ai_session_view_model():
                         "user_id": auth_user_record.id,
                     },
                 )
+
     openai_service = OpenAIService(
         usage_budget={
             "max_calls": usage.get("max_calls"),
@@ -475,192 +229,36 @@ def build_job_workflow_view_model(jd_text, jd_source):
     view_model.fit_analysis = fit_analysis
     view_model.tailored_draft = tailored_draft
     view_model.agent_result = get_state(AGENT_WORKFLOW_RESULT)
-    selected_theme = get_tailored_resume_theme()
     view_model.tailored_resume_artifact = build_tailored_resume_artifact(
         candidate_profile,
         job_description,
         fit_analysis,
         tailored_draft,
         agent_result=view_model.agent_result,
-        theme=selected_theme,
+        theme=get_tailored_resume_theme(),
     )
     view_model.ai_session = build_ai_session_view_model()
     return view_model
 
 
 def _persist_workflow_run(view_model: JobWorkflowViewModel):
-    auth_user_record = get_app_user_record()
-    access_token, refresh_token = get_auth_tokens()
-    if auth_user_record is None or not access_token or not refresh_token:
-        return None
-
-    history_store = HistoryStore(AuthService())
-    if not history_store.is_configured():
-        return None
-
-    report = build_application_report(
-        view_model.candidate_profile,
-        view_model.job_description,
-        view_model.fit_analysis,
-        view_model.tailored_draft,
-        agent_result=view_model.agent_result,
-    )
-    tailored_resume_artifact = build_tailored_resume_artifact(
-        view_model.candidate_profile,
-        view_model.job_description,
-        view_model.fit_analysis,
-        view_model.tailored_draft,
-        agent_result=view_model.agent_result,
-        theme=get_tailored_resume_theme(),
-    )
-
-    workflow_run = history_store.create_workflow_run(
-        access_token,
-        refresh_token,
-        {
-            "user_id": auth_user_record.id,
-            "job_title": view_model.job_description.title if view_model.job_description else "",
-            "fit_score": view_model.fit_analysis.overall_score if view_model.fit_analysis else 0,
-            "review_approved": bool(view_model.agent_result and view_model.agent_result.review.approved),
-            "model_policy": view_model.agent_result.model if view_model.agent_result else "",
-            "workflow_signature": _workflow_signature(
-                view_model.candidate_profile,
-                view_model.job_description,
-                view_model.fit_analysis,
-                view_model.tailored_draft,
-            ),
-            "workflow_snapshot_json": _workflow_snapshot_json(view_model),
-            "report_payload_json": _json_payload(WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT, report),
-            "tailored_resume_payload_json": _json_payload(
-                WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
-                tailored_resume_artifact,
-            ),
-        },
-    )
-    set_selected_history_workflow_run_id(workflow_run.id)
-    set_active_workflow_run(workflow_run)
-    refresh_authenticated_history(str(workflow_run.id))
-    return workflow_run
+    return workflow_history.persist_workflow_run(view_model)
 
 
 def _persist_artifact_record(artifact_type: str, filename_stem: str, storage_path: str = ""):
-    active_workflow_run = get_active_workflow_run()
-    access_token, refresh_token = get_auth_tokens()
-    if active_workflow_run is None or not access_token or not refresh_token:
-        return get_artifact_history()
-
-    history_store = HistoryStore(AuthService())
-    if not history_store.is_configured():
-        return get_artifact_history()
-
-    history_store.create_artifact_record(
-        access_token,
-        refresh_token,
-        {
-            "workflow_run_id": active_workflow_run.id,
-            "artifact_type": artifact_type,
-            "filename_stem": filename_stem,
-            "storage_path": storage_path,
-        },
-    )
-    artifacts = history_store.list_recent_artifacts(
-        access_token,
-        refresh_token,
-        active_workflow_run.id,
-    )
-    set_artifact_history(artifacts)
-    return artifacts
+    return workflow_history.persist_artifact_record(artifact_type, filename_stem, storage_path)
 
 
 def refresh_authenticated_history(selected_workflow_run_id: Optional[str] = None):
-    auth_user_record = get_app_user_record()
-    access_token, refresh_token = get_auth_tokens()
-    if auth_user_record is None or not access_token or not refresh_token:
-        set_workflow_history([])
-        set_artifact_history([])
-        set_selected_history_workflow_run_id(None)
-        return [], []
-
-    history_store = HistoryStore(AuthService())
-    if not history_store.is_configured():
-        return [], []
-
-    workflow_runs = history_store.list_recent_workflow_runs(
-        access_token,
-        refresh_token,
-        auth_user_record.id,
-        limit=10,
-    )
-    set_workflow_history(workflow_runs)
-
-    selected_id = str(
-        selected_workflow_run_id
-        or get_selected_history_workflow_run_id()
-        or getattr(get_active_workflow_run(), "id", "")
-        or ""
-    )
-    selected_workflow_run = None
-    if selected_id:
-        selected_workflow_run = next(
-            (workflow_run for workflow_run in workflow_runs if str(workflow_run.id) == selected_id),
-            None,
-        )
-    if selected_workflow_run is None and workflow_runs:
-        selected_workflow_run = workflow_runs[0]
-
-    if selected_workflow_run is None:
-        set_selected_history_workflow_run_id(None)
-        set_artifact_history([])
-        return workflow_runs, []
-
-    set_selected_history_workflow_run_id(selected_workflow_run.id)
-    artifacts = history_store.list_recent_artifacts(
-        access_token,
-        refresh_token,
-        str(selected_workflow_run.id),
-        limit=20,
-    )
-    set_artifact_history(artifacts)
-    return workflow_runs, artifacts
+    return workflow_history.refresh_authenticated_history(selected_workflow_run_id)
 
 
 def build_saved_report_from_workflow_run(workflow_run: Optional[object]):
-    if workflow_run is None or not getattr(workflow_run, "report_payload_json", ""):
-        return None
-    inspection = _inspect_saved_payload(
-        workflow_run.report_payload_json,
-        WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT,
-    )
-    if not inspection["supported"]:
-        return None
-    payload = inspection["data"] or {}
-    return ApplicationReport(
-        title=str(payload.get("title", "Saved Application Report") or "Saved Application Report"),
-        filename_stem=str(payload.get("filename_stem", "saved-application-report") or "saved-application-report"),
-        summary=str(payload.get("summary", "") or ""),
-        markdown=str(payload.get("markdown", "") or ""),
-        plain_text=str(payload.get("plain_text", "") or ""),
-    )
+    return workflow_history.build_saved_report_from_workflow_run(workflow_run)
 
 
 def build_saved_tailored_resume_from_workflow_run(workflow_run: Optional[object]):
-    if workflow_run is None or not getattr(workflow_run, "tailored_resume_payload_json", ""):
-        return None
-    inspection = _inspect_saved_payload(
-        workflow_run.tailored_resume_payload_json,
-        WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
-    )
-    if not inspection["supported"]:
-        return None
-    payload = inspection["data"] or {}
-    return TailoredResumeArtifact(
-        title=str(payload.get("title", "Saved Tailored Resume") or "Saved Tailored Resume"),
-        filename_stem=str(payload.get("filename_stem", "saved-tailored-resume") or "saved-tailored-resume"),
-        summary=str(payload.get("summary", "") or ""),
-        markdown=str(payload.get("markdown", "") or ""),
-        plain_text=str(payload.get("plain_text", "") or ""),
-        theme=str(payload.get("theme", "classic_ats") or "classic_ats"),
-    )
+    return workflow_history.build_saved_tailored_resume_from_workflow_run(workflow_run)
 
 
 def run_supervised_workflow(view_model: JobWorkflowViewModel):
@@ -731,61 +329,27 @@ def build_tailored_resume_artifact_view_model(view_model: JobWorkflowViewModel):
 
 
 def prepare_pdf_package(report: ApplicationReport):
-    pdf_bytes = export_pdf_bytes(report)
-    set_cached_pdf_bytes(pdf_bytes)
-    _persist_artifact_record(
-        "application_report_pdf",
-        report.filename_stem,
-        report.filename_stem + ".pdf",
-    )
-    return pdf_bytes
+    return workflow_exports.prepare_pdf_package(report)
 
 
 def get_cached_pdf_package():
-    return get_cached_pdf_bytes()
+    return workflow_exports.get_cached_pdf_package()
 
 
 def prepare_tailored_resume_pdf_package(artifact: TailoredResumeArtifact):
-    pdf_bytes = export_pdf_bytes(artifact)
-    set_cached_tailored_resume_pdf_bytes(pdf_bytes)
-    _persist_artifact_record(
-        "tailored_resume_pdf",
-        artifact.filename_stem,
-        artifact.filename_stem + ".pdf",
-    )
-    return pdf_bytes
+    return workflow_exports.prepare_tailored_resume_pdf_package(artifact)
 
 
 def get_cached_tailored_resume_pdf_package():
-    return get_cached_tailored_resume_pdf_bytes()
+    return workflow_exports.get_cached_tailored_resume_pdf_package()
 
 
 def prepare_export_bundle_package(
     report: ApplicationReport,
     artifact: TailoredResumeArtifact,
 ):
-    report_pdf_bytes = export_pdf_bytes(report)
-    tailored_resume_pdf_bytes = export_pdf_bytes(artifact)
-    set_cached_pdf_bytes(report_pdf_bytes)
-    set_cached_tailored_resume_pdf_bytes(tailored_resume_pdf_bytes)
-
-    bundle_bytes = export_zip_bundle_bytes(
-        {
-            report.filename_stem + ".md": export_markdown_bytes(report),
-            report.filename_stem + ".pdf": report_pdf_bytes,
-            artifact.filename_stem + ".md": export_markdown_bytes(artifact),
-            artifact.filename_stem + ".pdf": tailored_resume_pdf_bytes,
-        }
-    )
-    set_cached_export_bundle_bytes(bundle_bytes)
-    bundle_stem = artifact.filename_stem.replace("-tailored-resume", "-application-bundle")
-    _persist_artifact_record(
-        "application_bundle_zip",
-        bundle_stem,
-        bundle_stem + ".zip",
-    )
-    return bundle_bytes
+    return workflow_exports.prepare_export_bundle_package(report, artifact)
 
 
 def get_cached_export_bundle_package():
-    return get_cached_export_bundle_bytes()
+    return workflow_exports.get_cached_export_bundle_package()

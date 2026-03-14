@@ -1,6 +1,5 @@
 import streamlit as st
 
-from src.auth_service import AuthService
 from src.errors import AppError, InputValidationError, ParsingError
 from src.logging_utils import configure_logging, get_logger, log_event
 from src.user_store import AppUserStore
@@ -25,6 +24,7 @@ from src.ui.state import (
     set_auth_error,
     set_authenticated_session,
 )
+from src.ui.auth import get_auth_service
 from src.ui.theme import apply_theme
 from src.ui.workflow import refresh_authenticated_history
 
@@ -48,7 +48,7 @@ def _clear_auth_query_params():
 
 
 def _initialize_auth():
-    auth_service = AuthService()
+    auth_service = get_auth_service()
     user_store = AppUserStore(auth_service)
     auth_error = _query_param_value("error_description") or _query_param_value("error")
     auth_code = _query_param_value("code")

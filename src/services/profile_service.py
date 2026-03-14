@@ -65,11 +65,6 @@ def _collect_resume_signals(
     return signals
 
 
-def _safe_payload_list(payload: dict, key: str) -> List:
-    value = payload.get(key, [])
-    return value if isinstance(value, list) else []
-
-
 def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> CandidateProfile:
     if not isinstance(resume_document, ResumeDocument):
         raise TypeError("resume_document must be a ResumeDocument instance.")

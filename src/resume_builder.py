@@ -12,7 +12,13 @@ from src.schemas import (
     TailoredResumeArtifact,
     TailoredResumeDraft,
 )
-from src.utils import dedupe_strings
+from src.utils import (
+    dedupe_strings,
+    markdown_to_text,
+    render_markdown_list,
+    safe_join_strings,
+    slugify_text,
+)
 
 
 RESUME_THEMES = {
@@ -28,35 +34,19 @@ RESUME_THEMES = {
 
 
 def _slugify(value: str) -> str:
-    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", (value or "").strip().lower()).strip("-")
-    return normalized or "tailored-resume"
+    return slugify_text(value, fallback="tailored-resume")
 
 
 def _safe_join(values: Iterable[str], fallback: str = "N/A", limit: Optional[int] = None) -> str:
-    cleaned = []
-    seen = set()
-    for value in values:
-        normalized = str(value or "").strip()
-        if normalized and normalized.lower() not in seen:
-            cleaned.append(normalized)
-            seen.add(normalized.lower())
-    if limit is not None:
-        cleaned = cleaned[:limit]
-    return ", ".join(cleaned) if cleaned else fallback
+    return safe_join_strings(values, fallback=fallback, limit=limit)
 
 
 def _render_markdown_list(items: Iterable[str], empty_state: str) -> str:
-    cleaned = [str(item or "").strip() for item in items if str(item or "").strip()]
-    if not cleaned:
-        return "- {empty}".format(empty=empty_state)
-    return "\n".join("- {item}".format(item=item) for item in cleaned)
+    return render_markdown_list(items, empty_state)
 
 
 def _markdown_to_text(markdown: str) -> str:
-    text = re.sub(r"^#{1,6}\s*", "", markdown, flags=re.MULTILINE)
-    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    return markdown_to_text(markdown, strip_bold=True)
 
 
 def _normalize_date_token(token) -> str:

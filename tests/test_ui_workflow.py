@@ -9,13 +9,14 @@ from src.schemas import (
     ResumeDocument,
     WorkflowRunRecord,
 )
+from src.ui import workflow_history, workflow_intake
 from src.ui import workflow
 
 
 def test_resolve_job_description_input_prefers_pasted_text(monkeypatch):
-    monkeypatch.setattr(workflow, "get_state", lambda key, default=None: default)
-    monkeypatch.setattr(workflow, "parse_jd_text", lambda uploaded_jd: "uploaded text")
-    monkeypatch.setattr(workflow, "_load_sample_jd", lambda filename: "sample text")
+    monkeypatch.setattr(workflow_intake, "get_state", lambda key, default=None: default)
+    monkeypatch.setattr(workflow_intake, "parse_jd_text", lambda uploaded_jd: "uploaded text")
+    monkeypatch.setattr(workflow_intake, "_load_sample_jd", lambda filename: "sample text")
 
     jd_text, jd_source = workflow.resolve_job_description_input(
         uploaded_jd=object(),
@@ -32,14 +33,14 @@ def test_use_sample_resume_stores_resume_and_profile(monkeypatch):
     candidate_profile = CandidateProfile(full_name="Leander Antony")
     stored = {}
 
-    monkeypatch.setattr(workflow, "_load_sample_resume", lambda filename: resume_document)
+    monkeypatch.setattr(workflow_intake, "_load_sample_resume", lambda filename: resume_document)
     monkeypatch.setattr(
-        workflow,
+        workflow_intake,
         "build_candidate_profile_from_resume",
         lambda document: candidate_profile,
     )
     monkeypatch.setattr(
-        workflow,
+        workflow_intake,
         "store_resume_intake",
         lambda document, profile: stored.update({"document": document, "profile": profile}),
     )
@@ -127,15 +128,15 @@ def test_refresh_authenticated_history_selects_requested_run(monkeypatch):
             captured["artifact_request"] = (access_token, refresh_token, workflow_run_id, limit)
             return artifacts
 
-    monkeypatch.setattr(workflow, "get_app_user_record", lambda: type("AppUser", (), {"id": "user-123"})())
-    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
-    monkeypatch.setattr(workflow, "get_selected_history_workflow_run_id", lambda: None)
-    monkeypatch.setattr(workflow, "get_active_workflow_run", lambda: None)
-    monkeypatch.setattr(workflow, "AuthService", lambda: object())
-    monkeypatch.setattr(workflow, "HistoryStore", lambda auth_service: FakeHistoryStore())
-    monkeypatch.setattr(workflow, "set_workflow_history", lambda rows: captured.update({"workflow_runs": rows}))
-    monkeypatch.setattr(workflow, "set_selected_history_workflow_run_id", lambda run_id: captured.update({"selected_run_id": run_id}))
-    monkeypatch.setattr(workflow, "set_artifact_history", lambda rows: captured.update({"artifacts": rows}))
+    monkeypatch.setattr(workflow_history, "get_app_user_record", lambda: type("AppUser", (), {"id": "user-123"})())
+    monkeypatch.setattr(workflow_history, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
+    monkeypatch.setattr(workflow_history, "get_selected_history_workflow_run_id", lambda: None)
+    monkeypatch.setattr(workflow_history, "get_active_workflow_run", lambda: None)
+    monkeypatch.setattr(workflow_history, "get_auth_service", lambda: object())
+    monkeypatch.setattr(workflow_history, "HistoryStore", lambda auth_service: FakeHistoryStore())
+    monkeypatch.setattr(workflow_history, "set_workflow_history", lambda rows: captured.update({"workflow_runs": rows}))
+    monkeypatch.setattr(workflow_history, "set_selected_history_workflow_run_id", lambda run_id: captured.update({"selected_run_id": run_id}))
+    monkeypatch.setattr(workflow_history, "set_artifact_history", lambda rows: captured.update({"artifacts": rows}))
 
     resolved_runs, resolved_artifacts = workflow.refresh_authenticated_history("run-2")
 
@@ -148,11 +149,11 @@ def test_refresh_authenticated_history_selects_requested_run(monkeypatch):
 def test_refresh_authenticated_history_clears_state_without_auth(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr(workflow, "get_app_user_record", lambda: None)
-    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: (None, None))
-    monkeypatch.setattr(workflow, "set_workflow_history", lambda rows: captured.update({"workflow_runs": rows}))
-    monkeypatch.setattr(workflow, "set_artifact_history", lambda rows: captured.update({"artifacts": rows}))
-    monkeypatch.setattr(workflow, "set_selected_history_workflow_run_id", lambda run_id: captured.update({"selected_run_id": run_id}))
+    monkeypatch.setattr(workflow_history, "get_app_user_record", lambda: None)
+    monkeypatch.setattr(workflow_history, "get_auth_tokens", lambda: (None, None))
+    monkeypatch.setattr(workflow_history, "set_workflow_history", lambda rows: captured.update({"workflow_runs": rows}))
+    monkeypatch.setattr(workflow_history, "set_artifact_history", lambda rows: captured.update({"artifacts": rows}))
+    monkeypatch.setattr(workflow_history, "set_selected_history_workflow_run_id", lambda run_id: captured.update({"selected_run_id": run_id}))
 
     resolved_runs, resolved_artifacts = workflow.refresh_authenticated_history()
 
@@ -238,7 +239,7 @@ def test_refresh_daily_quota_status_uses_quota_service(monkeypatch):
         lambda: type("AppUser", (), {"id": "user-123", "plan_tier": "free"})(),
     )
     monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
-    monkeypatch.setattr(workflow, "AuthService", lambda: object())
+    monkeypatch.setattr(workflow, "get_auth_service", lambda: object())
     monkeypatch.setattr(workflow, "UsageStore", FakeUsageStore)
     monkeypatch.setattr(workflow, "QuotaService", FakeQuotaService)
     monkeypatch.setattr(

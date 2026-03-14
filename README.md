@@ -142,9 +142,27 @@ uv run python -m playwright install chromium
 
 PDF export uses Playwright/Chromium first and falls back to ReportLab if the browser backend is unavailable.
 
+Deployment decision: keep the same Playwright-first PDF path used in the GitHub agent project and carry ReportLab as a resilience fallback rather than as the intended primary output path.
+
 ### 4. Optional configuration
 
 Environment variables can be stored in [`.env.example`](.env.example):
+
+Required for a minimal deploy:
+
+- none
+
+Required only for AI-assisted features:
+
+- `OPENAI_API_KEY`
+
+Required only after you create a Supabase project and want authenticated features:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_AUTH_REDIRECT_URL`
+
+Optional runtime and routing settings:
 
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL_DEFAULT`
@@ -152,6 +170,9 @@ Environment variables can be stored in [`.env.example`](.env.example):
 - `OPENAI_MODEL_MID_TIER`
 - `OPENAI_MODEL_PRODUCT_HELP`
 - `OPENAI_MODEL_APPLICATION_QA`
+- `OPENAI_MAX_CALLS_PER_SESSION`
+- `OPENAI_MAX_TOKENS_PER_SESSION`
+- `APP_BASE_URL`
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_AUTH_REDIRECT_URL`
@@ -168,6 +189,10 @@ Environment variables can be stored in [`.env.example`](.env.example):
 - `PAID_TIER_MAX_TOKENS_PER_DAY`
 
 The current app does not require OpenAI for parsing or deterministic analysis. If `OPENAI_API_KEY` is present, assisted workflow and assistant features will use the configured routed models. If not, they will fall back to deterministic behavior where supported.
+
+The current app also does not require Supabase for a first hosted deploy. If Supabase is not configured yet, the app can still run the non-authenticated product shell and deterministic workflow. Google sign-in, persisted history, artifact tracking, and account-level quotas remain inactive until Supabase is configured.
+
+If you plan to deploy before creating Supabase, set `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW=false` so the AI-assisted workflow button is not blocked by the missing login layer. Once Supabase exists, turn it back on if you want assisted usage tied to authenticated accounts.
 
 To enable Google sign-in, configure Supabase Auth with the Google provider and set:
 
@@ -198,6 +223,14 @@ New saved workflow payloads are written through a versioned JSON envelope, while
 This keeps storage cheap: the app stores structured workflow payloads and metadata in Postgres, regenerates PDFs on demand, and avoids storing large binary artifacts unless that tradeoff becomes necessary later.
 
 If `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW` is left at its default value of `true`, the AI-assisted workflow button is disabled until the user signs in. Resume parsing and deterministic JD analysis remain available without login.
+
+## Deployment Notes
+
+- [`.streamlit/config.toml`](.streamlit/config.toml) is now included for a hosted Streamlit deployment baseline.
+- Chosen first deployment target: Streamlit Community Cloud.
+- Keep Playwright/Chromium enabled on that target, matching the existing GitHub agent deployment pattern.
+- ReportLab remains the automatic fallback if the browser backend is unavailable at runtime.
+- A later Docker move is still optional, but it is no longer required for the preferred PDF path.
 
 ## Run the App
 
