@@ -276,3 +276,32 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Wired export preparation to create `artifacts` records for generated PDFs and ZIP bundles.
 - Added recent workflow and artifact history to the sidebar account panel.
 - Added Supabase schema and RLS setup in `docs/supabase-workflow-history.sql`.
+
+## Day 20: History Page and Supabase Bootstrap
+
+- Added a dedicated `History` page in the Streamlit navigation.
+- Centralized authenticated history refresh so sign-in and session restore load the same recent workflow and artifact state.
+- Added `docs/supabase-bootstrap.sql` as a one-shot setup path for `app_users`, `usage_events`, `workflow_runs`, and `artifacts`.
+- Updated README setup guidance to reflect the working Supabase-backed auth, quota, and history path.
+
+## Day 21: Saved-Run Regeneration and History-State Separation
+
+- Extended `workflow_runs` to persist saved reconstruction payloads:
+  - `workflow_signature`
+  - `workflow_snapshot_json`
+  - `report_payload_json`
+  - `tailored_resume_payload_json`
+- Added historical regeneration helpers so saved reports, tailored resumes, PDFs, and ZIP bundles can be rebuilt from persisted payloads without re-running OpenAI.
+- Separated history selection state from the active current workflow run so new exports do not attach to an older historical run by mistake.
+- Added additive Supabase migration support in `docs/supabase-workflow-history-payloads-migration.sql`.
+- Verified the history-regeneration path with focused tests and a passing full suite.
+
+## Day 22: Documentation Re-Baselining
+
+- Rewrote the architecture, strategy, roadmap, and README narrative so the published repo matches the implemented product.
+- Documented the current operating model more clearly:
+  - Streamlit-first UI shell
+  - supervised specialist-agent workflow
+  - Supabase-backed auth, quotas, and history
+  - saved-payload historical regeneration instead of blob storage
+- Cleaned up stale product-copy references that still described persistence and history as future work.

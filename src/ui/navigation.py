@@ -135,7 +135,7 @@ def render_sidebar(auth_service):
             <div class="sidebar-card">
                 <div class="sidebar-kicker">Current Focus</div>
                 <div style="font-size:0.92rem; color:#cbd5e1;">
-                    Parser hardening, modular UI, and preparation for the first real agent workflow.
+                    Deployment hardening, authenticated history, and reliable export regeneration.
                 </div>
             </div>
             """,

@@ -195,7 +195,7 @@ def main():
         render_metric_card(
             "Application Package",
             "Ready",
-            "The JD flow now supports supervised orchestration plus Markdown and TXT package export.",
+            "The JD flow now supports supervised orchestration plus Markdown, PDF, and ZIP export.",
         )
 
     render_evolution_note()

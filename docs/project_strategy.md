@@ -4,13 +4,14 @@ This document captures the current architectural decisions for the AI Job Applic
 
 ## Current Product Position
 
-The app is currently an intake-focused MVP with three user-facing workflows:
+The app is currently a Streamlit-first authenticated workflow product with four user-facing flows:
 
 - upload and parse a resume
 - search jobs placeholder
-- upload or paste a job description
+- upload or paste a job description and run the supervised workflow
+- review authenticated history and regenerate saved downloads
 
-The existing implementation is intentionally lightweight. It proves the resume-input and job-input flows before adding heavier orchestration, model calls, persistence, and production infrastructure.
+The product is still an MVP, but it is no longer parser-only. It already includes supervised agent orchestration, tailored resume generation, deterministic report assembly, export packaging, Google sign-in, persisted usage tracking, plan-based daily quotas, and authenticated workflow history.
 
 ## Reference Pattern
 
@@ -34,24 +35,26 @@ Unlike the GitHub agent, this app has multiple workflows rather than one primary
 
 ### Keep Streamlit for the first deployed version
 
-We will deploy the first public version with Streamlit because it is the fastest path to:
+We are still keeping Streamlit for the first serious deployed version because it is the fastest path to:
 
 - validate the application workflow
-- iterate on parsing and tailoring
+- iterate on parsing, tailoring, and review loops
 - ship a working demo quickly
 - keep the engineering surface manageable
+
+That decision is still holding up even after adding auth, quotas, and history, because the business logic already lives outside the page layer.
 
 ### Keep the sidebar
 
 The app should retain a sidebar because:
 
 - the product has multiple user tasks
-- users may move between resume, JD, and job-search flows
+- users may move between resume, JD, history, and job-search flows
 - a linear top-down-only interface would make navigation worse for this domain
 
-### Reuse the GitHub agent visual system
+### Reuse the GitHub agent visual system selectively
 
-The AI Job Application Agent should still borrow the GitHub agent's design language:
+The AI Job Application Agent should still borrow the GitHub agent's design language where it helps:
 
 - dark navy page background
 - white cards and shells
@@ -59,40 +62,49 @@ The AI Job Application Agent should still borrow the GitHub agent's design langu
 - product-like layout and spacing
 - structured result panels rather than raw text dumps
 
-The main difference is navigation model, not visual identity.
+The main difference is navigation model and workflow complexity, not the basic product-shell direction.
 
 ## Current Architecture
 
-The app currently has three working ingestion modules:
-The app currently has two working ingestion modules:
+The app now has a layered architecture with clear separation between UI, deterministic domain logic, orchestration, assistance, and persistence.
 
-- `src/resume_parser.py`
-- `src/jd_parser.py`
+### The main runtime layers today
 
-And one UI shell:
-
-- `app.py`
-
-This is enough for the current MVP, but it is not yet an agentic or production-ready architecture.
+- `src/ui/`: Streamlit pages, navigation, state helpers, and the UI workflow boundary
+- `src/parsers/`: defensive file and text ingestion
+- `src/services/`: deterministic normalization, fit analysis, and tailoring logic
+- `src/agents/`: supervised specialist-agent pipeline with review passes and resume generation
+- `src/openai_service.py` and `src/assistant_service.py`: model access, routing, usage tracking, and conversational help
+- `src/auth_service.py` plus store modules: authenticated persistence for users, usage, workflows, and artifacts
+- builders/exporters: deterministic report and resume assembly plus export generation
 
 ### What the app is today
 
 - Streamlit UI with sidebar navigation
-- deterministic parsing and extraction
-- session-state persistence for a single user session
-- parser-focused unit tests
+- deterministic parsing, normalization, and fit analysis
+- supervised specialist-agent workflow with bounded review-driven revision
+- deterministic report and tailored-resume builders
+- Markdown, PDF, and ZIP export flows
+- two-mode grounded in-app assistant
+- Google sign-in via Supabase
+- persisted user, usage, workflow, and artifact records
+- plan-based daily assisted quotas
+- saved-run history regeneration without re-running OpenAI
+- broad test coverage across parsing, services, orchestration, exports, auth, persistence, and UI workflow state
 
 ### What the app is not yet
 
-- a multi-agent system
-- a backend/API platform
-- a multi-user persistent product
-- a report/export engine
-- a job-application automation pipeline
+- a job-board integration or automated application submission system
+- an async worker platform with queues and retries
+- an object-storage-backed artifact retention system
+- a public multi-client API platform
+- a separate production frontend beyond Streamlit
+
+The architecture is therefore backend-ready, but not yet fully platform-extracted.
 
 ## Target Agent Architecture
 
-We want a genuine but controlled multi-agent design.
+We want a genuine but controlled multi-agent design, and that is already the active pattern in the codebase.
 
 The correct pattern is not an unconstrained swarm. The correct pattern is a supervised pipeline of specialist agents that exchange structured objects and feed a deterministic final output layer.
 
@@ -105,7 +117,8 @@ Owns workflow control:
 - determines which specialist runs next
 - tracks run state
 - validates prerequisites
-- assembles the overall application package
+- enforces bounded review passes
+- hands the final state to deterministic builders
 
 #### `Profile Agent`
 
@@ -167,87 +180,50 @@ Acts as the quality gate:
 - catches drift or hallucinated resume content
 - validates schema completeness before final rendering
 
+#### `Resume Generation Agent`
+
+Produces the final tailored resume artifact after review approval or the final allowed revision pass.
+
 ### Key design rule
 
 Agents should not exchange unstructured prose as the main system contract.
 
 They should exchange typed internal objects, and the final report should be assembled deterministically in code.
 
-## Planned Core Modules
+That rule now also applies to persistence: authenticated history stores structured payload JSON so historical exports can be reconstructed deterministically.
 
-The next architecture step is to evolve from parser-only modules to a full service and agent layout.
+## Operating Principles
 
-### Planned `src/` structure
-
-```text
-src/
-|- __init__.py
-|- config.py
-|- errors.py
-|- schemas.py
-|- prompts.py
-|- openai_service.py
-|- report_builder.py
-|- parsers/
-|  |- resume_parser.py
-|  \- jd_parser.py
-|- services/
-|  |- profile_service.py
-|  |- job_service.py
-|  |- fit_service.py
-|  |- tailoring_service.py
-|  \- job_sources_service.py
-\- agents/
-   |- orchestrator.py
-   |- profile_agent.py
-   |- job_agent.py
-   |- fit_agent.py
-   |- tailoring_agent.py
-   |- strategy_agent.py
-   \- review_agent.py
-```
-
-### Module responsibilities
-
-- `app.py`
-  Streamlit UI only
-- `schemas.py`
-  typed shared models
-- `errors.py`
-  typed application errors
-- `prompts.py`
-  centralized prompt templates
-- `openai_service.py`
-  model calls only
-- `services/*`
-  deterministic domain logic and normalization
-- `agents/*`
-  controlled LLM-specialist orchestration
-- `report_builder.py`
-  deterministic final output assembly
+- Keep deterministic builders at the boundary of anything user-downloadable.
+- Use model calls only for bounded, explicitly triggered assisted steps.
+- Keep Streamlit-specific state management in `src/ui/` and keep domain logic transport-agnostic.
+- Persist only the minimum useful authenticated history needed for exact historical regeneration.
+- Prefer Postgres payloads over blob storage until product needs justify object storage.
+- Treat quotas and usage accounting as product controls, not as ad hoc logging.
 
 ## Streamlit-First Delivery Strategy
 
-We are intentionally not starting with a full production backend stack.
+We are intentionally not extracting to a separate backend yet.
 
-### Why
+### Why this is still the right choice
 
-Starting with `FastAPI + Redis + Postgres + React/Next.js + Docker` would add too much platform complexity before the product workflow is validated.
+The project already has:
 
-For this app, the correct order is:
+- authenticated users
+- persisted usage and quotas
+- workflow history
+- supervised orchestration
+- deterministic export assembly
 
-1. finish the core job-application workflow
-2. stabilize the domain models and agent contracts
-3. then extract the backend boundary
+But it still has only one real client: the Streamlit app. Extracting to `FastAPI + worker + separate frontend` before multi-client or async needs appear would add more platform work than product value.
 
-### What we should do now
+### What we should keep doing now
 
-- keep Streamlit as the deployable frontend
-- move business logic out of `app.py`
-- make Streamlit call service and agent entrypoints
-- keep the core logic transport-agnostic so FastAPI can wrap it later
-
-This gives us a backend-ready codebase without forcing a premature platform split.
+- keep Streamlit as the active product shell
+- continue pushing business logic into services, builders, and stores
+- harden the hosted deployment path
+- tighten history payload compatibility and migration safety
+- only introduce new infrastructure when the product actually needs it
 
 ## Backend and Frontend Migration Plan
 
@@ -255,89 +231,100 @@ This gives us a backend-ready codebase without forcing a premature platform spli
 
 FastAPI should be introduced when at least one of these becomes important:
 
-- multi-user accounts and saved history
-- external client access beyond Streamlit
-- background jobs for long-running tailoring, scraping, or exports
-- stronger auth and data boundaries
-- frontend independence from Streamlit
+- another client besides Streamlit needs the same workflow entrypoints
+- background jobs are needed for long-running exports or application workflows
+- admin or operational tooling needs a stable API boundary
+- tighter service-level auth and data isolation is needed beyond the current app shell
 
 ### When Redis becomes worth it
 
 Redis should be introduced only when we need:
 
 - queued background jobs
-- shared cache across processes
 - task retries
-- async worker coordination
+- shared cache across processes
+- worker coordination
 
-Redis is not required for the current MVP.
+Redis is still unnecessary for the current product.
 
-### When Docker becomes worth it
+### When object storage becomes worth it
 
-Docker is optional for the current Streamlit deployment.
+Object storage should be introduced only when the product truly needs to retain or share large binary files.
 
-It becomes useful once we run:
+Right now the cheaper and simpler model is:
 
-- a standalone FastAPI app
-- worker processes
-- Postgres/Redis-backed local development
-- environment parity between local and production
+- keep metadata plus saved workflow payloads in Postgres
+- regenerate PDFs and ZIP bundles on demand
+- avoid storing large binaries unless retention or external sharing becomes mandatory
 
 ### Frontend target later
 
-If we move beyond Streamlit, the recommended frontend target is `Next.js`, not a raw React SPA.
+If the app outgrows Streamlit, the recommended frontend target remains `Next.js`, not a raw React SPA.
 
 Why:
 
 - built-in routing
 - strong deployment story
-- easier auth and full-stack patterns
-- better production ergonomics for a product UI
+- easier auth integration
+- better ergonomics for a product UI with history and account state
 
 ### Transitional architecture
 
 The migration path should be:
 
-1. Streamlit app calls local services directly
-2. same services get wrapped by FastAPI endpoints
-3. Streamlit can remain as a demo or internal client
-4. Next.js becomes the public-facing frontend later
+1. Streamlit remains the active product shell.
+2. Existing services and stores become the stable backend boundary.
+3. FastAPI wraps those boundaries only when a second client or async execution is needed.
+4. A Next.js frontend becomes worthwhile only after that API boundary exists.
 
-This avoids rewriting the business logic twice.
+This still avoids rewriting the business logic twice.
 
 ## Hosting Strategy
 
-### Phase 1: initial public deployment
+### Phase 1: current hosted target
 
 - Streamlit Community Cloud or an equivalent Streamlit-friendly host
+- Supabase for auth and Postgres persistence
 
-This is enough for the first public MVP if:
-
-- the app remains mostly session-based
-- workloads are modest
-- the main goal is validation and portfolio/demo use
+This remains sufficient while the product is single-client and workloads are moderate.
 
 ### Phase 2: backend-backed deployment
 
-When we introduce a separate backend:
+When a separate backend becomes justified:
 
 - frontend: Vercel or another Next.js host
-- backend: Render, Railway, Fly.io, or another container/API host
+- backend: Render, Railway, Fly.io, or another API/container host
 - database: managed Postgres
-- cache/queue: managed Redis
+- queue/cache: managed Redis only if async work demands it
 
-This is the better architecture for a production-grade application.
+## Re-Baselined Timeline
 
-## Timeline
+The timeline below is an implementation sequence from the current product state, not a calendar promise.
 
-The timeline below is an implementation sequence, not a calendar promise. It should be treated as a phased plan.
+### Completed foundation
 
-### Phase 0: current baseline
+- Streamlit product shell with sidebar navigation
+- typed schemas and deterministic services
+- supervised specialist-agent workflow with review loop
+- tailored resume and report builders
+- Markdown, PDF, and ZIP export paths
+- grounded assistant and task-aware model routing
+- Google sign-in via Supabase
+- persisted users, usage events, daily quotas, workflow history, and artifact metadata
+- historical regeneration from saved run payloads
 
-Status:
+### Current focus
 
-- resume parsing works
-- JD parsing works
+- deployment hardening for a real hosted environment
+- README and architecture alignment
+- safer long-term history payload compatibility
+
+### Next meaningful expansion
+
+- payload versioning for saved workflow records
+- better history and quota UX polish
+- optional object storage only if binary retention becomes necessary
+- backend extraction only when multiple clients or async work make it worthwhile
 - tests cover the parser layer
 
 ### Phase 1: product shell and domain models

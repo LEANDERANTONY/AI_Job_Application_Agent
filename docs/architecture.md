@@ -13,25 +13,33 @@ The app helps a candidate prepare stronger application inputs by:
 - scoring baseline fit against a target role
 - generating deterministic tailoring guidance
 - running a supervised specialist-agent workflow on demand
-- assembling an exportable application package
-- keeping extracted data available across Streamlit navigation
+- generating a tailored resume artifact and application report
+- exporting those artifacts as Markdown, PDF, or ZIP
+- gating assisted workflow execution behind authenticated account state when configured
+- persisting usage, workflow history, and artifact metadata for authenticated users
+- regenerating historical downloads from saved workflow payloads
 
-The current codebase is structured to support the next phase: resume tailoring, job matching, and application workflow orchestration.
+The current codebase is structured as a Streamlit-first product shell around backend-ready domain, orchestration, auth, and persistence layers.
 
 ## High-Level Flow
 
 1. The user opens the Streamlit app.
-2. The user chooses one of three UI flows:
+2. The user chooses one of four UI flows:
    - resume upload
    - job search placeholder
    - manual job-description input
+   - authenticated history
 3. Resume files are parsed into normalized text.
 4. Job descriptions are parsed, cleaned, and reduced into structured requirements.
 5. Deterministic services generate a fit snapshot and a first tailoring draft.
-6. A supervised agent workflow can be triggered explicitly from the JD screen.
-7. A report builder assembles the current workflow state into a deterministic application package.
-8. Parsed outputs are stored in `st.session_state` so data survives page switches.
-9. The UI renders extracted previews, fit insights, tailoring guidance, agent-review output, strategy guidance, and download actions.
+6. If assisted workflow is enabled, Google sign-in restores or creates authenticated account state through Supabase Auth.
+7. A supervised agent workflow can be triggered explicitly from the JD screen.
+8. The orchestrator runs specialist agents, bounded review passes, and final resume generation through the routed OpenAI service when available, with deterministic fallback where supported.
+9. Builders assemble the current workflow state into a deterministic application report and tailored resume artifact.
+10. Export helpers produce Markdown, PDF, and ZIP bytes for the current session.
+11. For authenticated users, usage events, workflow runs, and artifact metadata are persisted in Supabase Postgres.
+12. The History page reconstructs saved reports and resumes from stored payload JSON rather than from current in-session inputs.
+13. Streamlit state keeps current-session inputs and view state available across reruns and navigation.
 
 ## Main Modules
 
@@ -51,6 +59,9 @@ Owns the Streamlit UI shell:
 - styling and visual components
 - page-level render functions
 - session-driven flow transitions
+- authenticated account panel and History page rendering
+
+`src/ui/workflow.py` is the main boundary layer between Streamlit state and the transport-agnostic services, builders, stores, and orchestrator.
 
 ### `src/parsers/`
 
@@ -75,6 +86,8 @@ Owns deterministic normalization and non-UI workflow helpers:
 - fit scoring against job requirements
 - deterministic resume-tailoring guidance
 
+These services are pure business-logic components and do not depend on Streamlit.
+
 ### `src/report_builder.py`
 
 Owns deterministic final report assembly from:
@@ -85,12 +98,19 @@ Owns deterministic final report assembly from:
 - deterministic tailoring output
 - optional supervised agent output
 
+The report builder produces the exact payload later reused for authenticated historical report regeneration.
+
+### `src/resume_builder.py`
+
+Owns deterministic final tailored-resume assembly from the active workflow state and selected resume theme.
+
 ### `src/exporters.py`
 
-Owns lightweight export helpers for the application package:
+Owns lightweight export helpers for the application package and tailored resume:
 
 - Markdown bytes
 - PDF bytes
+- ZIP bundle bytes
 - Playwright/Chromium as the primary PDF backend
 - ReportLab as the fallback PDF backend
 
@@ -102,7 +122,9 @@ Owns the supervised orchestration layer:
 - job agent
 - fit agent
 - tailoring agent
+- strategy agent
 - review agent
+- resume generation agent
 - orchestrator that coordinates them
 
 The agent layer can use OpenAI when configured and falls back to deterministic output when it is not.
@@ -113,15 +135,42 @@ Owns centralized grounded prompt builders for the specialist agents.
 
 ### `src/openai_service.py`
 
-Owns the thin OpenAI client wrapper used by the orchestration layer.
+Owns the thin OpenAI client wrapper used by the orchestration and assistant layers.
+
+Responsibilities include:
+
+- task-aware model routing
+- Responses API calls
+- session usage tracking
+- optional persisted usage-event callbacks
+- optional daily-quota preflight checks
+
+### `src/assistant_service.py`
+
+Owns the two-mode grounded assistant used in the UI:
+
+- product-help mode (`Using the App`)
+- grounded resume/application Q&A mode (`About My Resume`)
+
+This stays separate from the supervised workflow agents because it serves conversational assistance rather than structured workflow output.
+
+### Persistence and Auth Modules
+
+- `src/auth_service.py`: Supabase Auth wrapper for Google OAuth, code exchange, session restore, and sign-out
+- `src/user_store.py`: syncs lightweight `app_users` records
+- `src/usage_store.py`: persists authenticated assisted usage events
+- `src/quota_service.py`: computes daily quota state from persisted usage
+- `src/history_store.py`: persists and loads workflow runs plus artifact metadata
 
 ### `src/config.py`
 
 Owns project paths and environment-backed configuration:
 
 - static asset directories
-- OpenAI model default
-- optional OpenAI key loading
+- model routing configuration
+- auth and Supabase table configuration
+- plan-based daily quota defaults
+- feature flags such as assisted-workflow login requirements
 
 ### `src/schemas.py`
 
@@ -135,8 +184,11 @@ Owns shared typed models for:
 - job requirements
 - fit analyses
 - tailoring drafts
+- tailored resume artifacts
+- application reports
 - agent outputs
 - orchestrated workflow results
+- auth and persistence records
 
 ### `src/errors.py`
 
@@ -144,9 +196,12 @@ Owns shared typed application errors used across UI, parsing, and future orchest
 
 ## State Model
 
-The app currently relies on `st.session_state` for lightweight workflow persistence.
+The runtime uses a split state model:
 
-Tracked state includes:
+- `st.session_state` for current-session UI and workflow state
+- Supabase Postgres for authenticated cross-session persistence
+
+Current-session state includes:
 
 - `current_menu`
 - `resume_document`
@@ -159,8 +214,26 @@ Tracked state includes:
 - `tailored_resume_draft`
 - `agent_workflow_signature`
 - `agent_workflow_result`
+- cached export bytes and signatures
+- assistant conversation history
+- selected history workflow-run id
+- authenticated session tokens and synced app-user snapshot
 
-This is appropriate for a single-user Streamlit MVP. If the app later adds user accounts or long-running workflows, state should move into a persistent store.
+Persistent authenticated state includes:
+
+- `app_users`
+- `usage_events`
+- `workflow_runs`
+- `artifacts`
+
+`workflow_runs` now stores lightweight reconstruction payloads:
+
+- `workflow_signature`
+- `workflow_snapshot_json`
+- `report_payload_json`
+- `tailored_resume_payload_json`
+
+That split is deliberate. Current in-progress work stays fast and local to Streamlit reruns, while account-bound history and quota enforcement live in Supabase.
 
 ## Testing Model
 
@@ -175,17 +248,27 @@ The repo now includes focused tests under `tests/` for:
 - orchestrator behavior
 - report building
 - export formatting
+- auth and quota behavior
+- history persistence and saved-payload reconstruction
+- UI workflow state behavior
 
 These tests are intentionally fast and file-light so they can run in local development and CI without large fixtures.
 
+## Current Constraints
+
+- The `Job Search` page is still a placeholder rather than a real provider integration.
+- Historical downloads are regenerated from saved payloads, but there is not yet an explicit payload-versioning contract for backward compatibility.
+- Large binary artifacts are not stored in object storage; the app currently prefers cheap Postgres metadata plus on-demand regeneration.
+- Streamlit remains the only runtime client even though the service boundaries are backend-ready.
+
 ## Next Architecture Step
 
-The next meaningful expansion is the delivery hardening layer for:
+The next meaningful expansion is delivery hardening and persistence maturation rather than another new core workflow. The main targets are:
 
-- richer recruiter-facing package structure
-- deployment readiness for Streamlit hosting
-- additional UX polish around the supervised workflow and exported package
-- deployment readiness for Streamlit hosting
-- later API exposure of the same orchestration entrypoint through FastAPI
+- deployment hardening for a real hosted Streamlit environment
+- payload versioning for saved workflow reconstruction
+- additional UX polish around history, quotas, and exported package review
+- optional object storage only if binary artifact retention becomes a product requirement
+- later API exposure of the same orchestration entrypoint through FastAPI once multiple clients or async work justify it
 
-That logic should continue to live outside the UI layer, primarily in `src/report_builder.py`, the existing agent modules, and future backend wrappers.
+That work should continue to live outside the UI layer, primarily in the existing stores, builders, orchestration modules, and future backend wrappers.

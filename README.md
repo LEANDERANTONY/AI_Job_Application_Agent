@@ -8,7 +8,7 @@ The repository now follows the same product-style structure as the GitHub Portfo
 
 - `app.py` as the Streamlit entrypoint
 - `src/` for application logic
-- `tests/` for parser coverage
+- `tests/` for parser, service, orchestration, UI, and persistence coverage
 - `docs/` for architecture and ADRs
 
 ## Current Features
@@ -42,6 +42,7 @@ The repository now follows the same product-style structure as the GitHub Portfo
 - Build an application package / strategy report from the current workflow state
 - Download the tailored resume and the report as Markdown or PDF
 - Download both artifacts together as a ZIP bundle
+- Save authenticated workflow history and regenerate historical downloads from saved run payloads without re-running OpenAI
 - Ask a built-in two-mode assistant for:
   - product help (`Using the App`)
   - grounded application Q&A (`About My Resume`)
@@ -53,14 +54,14 @@ The repository now follows the same product-style structure as the GitHub Portfo
 
 ## Current Status
 
-The app is still in MVP form, but the product is now materially stronger than the initial deterministic prototype. Resume parsing, JD structuring, deterministic fit analysis, supervised specialist-agent orchestration, bounded review-driven revision, tailored resume generation, report generation, preview-before-download flows, export packaging, model-aware assisted routing, grounded in-app assistance, Google sign-in, persisted usage tracking, daily quotas, and workflow history are all working.
+The app is still an MVP, but it is now a coherent authenticated workflow product rather than only a deterministic prototype. Resume parsing, JD structuring, deterministic fit analysis, supervised specialist-agent orchestration, bounded review-driven revision, tailored resume generation, report generation, preview-before-download flows, export packaging, model-aware assisted routing, grounded in-app assistance, Google sign-in, persisted usage tracking, daily quotas, and workflow history are all working.
 
 The active product scope is intentionally focused:
 
 - resume plus JD in
 - grounded tailored resume plus application package out
 
-Google sign-in is now integrated alongside persisted per-user usage tracking, plan-based daily quotas, and saved workflow and artifact history backed by Supabase Postgres.
+Google sign-in is integrated alongside persisted per-user usage tracking, plan-based daily quotas, and saved workflow and artifact history backed by Supabase Postgres. Historical resume and report downloads are regenerated from the saved run payloads, while any new resume or JD input produces a new workflow run instead of reusing stale artifacts.
 
 ## Strategy
 
@@ -70,9 +71,9 @@ That document captures:
 
 - why we are keeping Streamlit first
 - why this app keeps a sidebar unlike the GitHub agent
-- the planned multi-agent architecture
-- how the code should evolve toward FastAPI and Next.js later
-- the phased implementation timeline
+- how the current supervised workflow, auth, quotas, and history layers fit together
+- where the real architecture boundaries are today and where backend extraction becomes worth it later
+- the re-baselined implementation roadmap from the current product state
 
 ## Architecture
 
@@ -192,6 +193,8 @@ The app now enforces authenticated daily assisted limits from persisted usage. F
 
 Authenticated assisted runs now also persist lightweight history metadata plus saved run payloads in Supabase. The sidebar account panel surfaces a recent snapshot, and the dedicated History page lets the user inspect saved runs, inspect linked artifacts, and regenerate historical downloads from the saved run content instead of the current in-session inputs.
 
+This keeps storage cheap: the app stores structured workflow payloads and metadata in Postgres, regenerates PDFs on demand, and avoids storing large binary artifacts unless that tradeoff becomes necessary later.
+
 If `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW` is left at its default value of `true`, the AI-assisted workflow button is disabled until the user signs in. Resume parsing and deterministic JD analysis remain available without login.
 
 ## Run the App
@@ -212,6 +215,7 @@ Then:
 8. Compare the original resume against the tailored output if needed
 9. Use the assistant panel for product help or grounded application Q&A
 10. Download the resume, the report, or the combined export bundle
+11. Open `History` to revisit authenticated workflow runs and regenerate saved downloads
 
 ## Testing
 
