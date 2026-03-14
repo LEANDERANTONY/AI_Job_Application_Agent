@@ -193,6 +193,8 @@ The app now enforces authenticated daily assisted limits from persisted usage. F
 
 Authenticated assisted runs now also persist lightweight history metadata plus saved run payloads in Supabase. The sidebar account panel surfaces a recent snapshot, and the dedicated History page lets the user inspect saved runs, inspect linked artifacts, and regenerate historical downloads from the saved run content instead of the current in-session inputs.
 
+New saved workflow payloads are written through a versioned JSON envelope, while the reader remains backward-compatible with the earlier unversioned payload format.
+
 This keeps storage cheap: the app stores structured workflow payloads and metadata in Postgres, regenerates PDFs on demand, and avoids storing large binary artifacts unless that tradeoff becomes necessary later.
 
 If `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW` is left at its default value of `true`, the AI-assisted workflow button is disabled until the user signs in. Resume parsing and deterministic JD analysis remain available without login.

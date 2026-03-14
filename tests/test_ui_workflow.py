@@ -167,8 +167,8 @@ def test_build_saved_documents_from_workflow_run_payloads():
     workflow_run = WorkflowRunRecord(
         id="run-1",
         user_id="user-123",
-        report_payload_json='{"title": "Saved Report", "filename_stem": "saved-report", "summary": "summary", "markdown": "# Report", "plain_text": "Report"}',
-        tailored_resume_payload_json='{"title": "Saved Resume", "filename_stem": "saved-resume", "summary": "summary", "markdown": "# Resume", "plain_text": "Resume", "theme": "modern_professional"}',
+        report_payload_json='{"version": 1, "kind": "application_report", "data": {"title": "Saved Report", "filename_stem": "saved-report", "summary": "summary", "markdown": "# Report", "plain_text": "Report"}}',
+        tailored_resume_payload_json='{"version": 1, "kind": "tailored_resume_artifact", "data": {"title": "Saved Resume", "filename_stem": "saved-resume", "summary": "summary", "markdown": "# Resume", "plain_text": "Resume", "theme": "modern_professional"}}',
     )
 
     saved_report = workflow.build_saved_report_from_workflow_run(workflow_run)
@@ -178,3 +178,76 @@ def test_build_saved_documents_from_workflow_run_payloads():
     assert saved_report.filename_stem == "saved-report"
     assert saved_resume.title == "Saved Resume"
     assert saved_resume.theme == "modern_professional"
+
+
+def test_build_saved_documents_supports_legacy_payloads():
+    workflow_run = WorkflowRunRecord(
+        id="run-legacy",
+        user_id="user-123",
+        report_payload_json='{"title": "Legacy Report", "filename_stem": "legacy-report", "summary": "summary", "markdown": "# Report", "plain_text": "Report"}',
+        tailored_resume_payload_json='{"title": "Legacy Resume", "filename_stem": "legacy-resume", "summary": "summary", "markdown": "# Resume", "plain_text": "Resume", "theme": "classic_ats"}',
+    )
+
+    status = workflow.get_saved_workflow_payload_status(workflow_run)
+    saved_report = workflow.build_saved_report_from_workflow_run(workflow_run)
+    saved_resume = workflow.build_saved_tailored_resume_from_workflow_run(workflow_run)
+
+    assert status["supported"] is True
+    assert status["label"] == "Legacy v0"
+    assert saved_report.filename_stem == "legacy-report"
+    assert saved_resume.filename_stem == "legacy-resume"
+
+
+def test_saved_payload_status_blocks_unsupported_future_version():
+    workflow_run = WorkflowRunRecord(
+        id="run-future",
+        user_id="user-123",
+        report_payload_json='{"version": 99, "kind": "application_report", "data": {"title": "Future Report"}}',
+    )
+
+    status = workflow.get_saved_workflow_payload_status(workflow_run)
+
+    assert status["supported"] is False
+    assert status["label"] == "v99 Unsupported"
+    assert workflow.build_saved_report_from_workflow_run(workflow_run) is None
+
+
+def test_refresh_daily_quota_status_uses_quota_service(monkeypatch):
+    daily_quota = type("DailyQuota", (), {"quota_exhausted": False, "plan_tier": "free"})()
+
+    class FakeUsageStore:
+        def __init__(self, auth_service):
+            self.auth_service = auth_service
+
+        def is_configured(self):
+            return True
+
+    class FakeQuotaService:
+        def __init__(self, auth_service, usage_store):
+            self.auth_service = auth_service
+            self.usage_store = usage_store
+
+        def get_daily_quota_status(self, access_token, refresh_token, user_id, plan_tier):
+            return daily_quota
+
+    captured = {}
+    monkeypatch.setattr(workflow, "get_daily_quota_status", lambda: None)
+    monkeypatch.setattr(
+        workflow,
+        "get_app_user_record",
+        lambda: type("AppUser", (), {"id": "user-123", "plan_tier": "free"})(),
+    )
+    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
+    monkeypatch.setattr(workflow, "AuthService", lambda: object())
+    monkeypatch.setattr(workflow, "UsageStore", FakeUsageStore)
+    monkeypatch.setattr(workflow, "QuotaService", FakeQuotaService)
+    monkeypatch.setattr(
+        workflow,
+        "set_daily_quota_status",
+        lambda value: captured.update({"daily_quota": value}),
+    )
+
+    result = workflow.refresh_daily_quota_status()
+
+    assert result is daily_quota
+    assert captured["daily_quota"] is daily_quota

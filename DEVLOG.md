@@ -305,3 +305,10 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
   - Supabase-backed auth, quotas, and history
   - saved-payload historical regeneration instead of blob storage
 - Cleaned up stale product-copy references that still described persistence and history as future work.
+
+## Day 23: Payload Versioning and History UX Tightening
+
+- Wrapped new saved workflow payloads in a versioned JSON envelope while keeping the historical reader backward-compatible with the earlier unversioned payload format.
+- Added compatibility inspection so unsupported or malformed saved payloads fail visibly in the History page instead of silently producing incorrect downloads.
+- Clarified quota UX by separating account-level daily quota messaging from browser-session safeguards.
+- Made the History page more explicit that browsing old runs is read-only and does not retarget new exports away from the current active workflow run.

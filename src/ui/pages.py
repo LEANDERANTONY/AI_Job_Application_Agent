@@ -25,9 +25,11 @@ from src.ui.state import (
     TAILORED_RESUME_THEME,
     append_assistant_turn,
     clear_assistant_history,
+    get_active_workflow_run,
     get_app_user_record,
     get_artifact_history,
     get_assistant_history,
+    get_daily_quota_status,
     get_selected_history_workflow_run_id,
     get_workflow_history,
     is_authenticated,
@@ -44,9 +46,11 @@ from src.ui.workflow import (
     get_cached_pdf_package,
     get_cached_tailored_resume_pdf_package,
     get_resume_page_state,
+    get_saved_workflow_payload_status,
     prepare_pdf_package,
     prepare_export_bundle_package,
     prepare_tailored_resume_pdf_package,
+    refresh_daily_quota_status,
     refresh_authenticated_history,
     resolve_job_description_input,
     run_supervised_workflow,
@@ -85,7 +89,7 @@ def _render_openai_usage(usage):
     cols = st.columns(3)
     with cols[0]:
         render_metric_card(
-            "Workflow Runs Left",
+            "Browser Session Runs Left",
             _format_remaining_capacity(
                 usage.get("remaining_calls"),
                 usage.get("max_calls"),
@@ -94,12 +98,12 @@ def _render_openai_usage(usage):
         )
     with cols[1]:
         render_metric_card(
-            "Session Capacity Left",
+            "Browser Session Capacity Left",
             _format_remaining_capacity(
                 usage.get("remaining_total_tokens"),
                 usage.get("max_total_tokens"),
             ),
-            "Remaining assisted capacity before the app falls back to the deterministic path.",
+            "Remaining assisted capacity in this browser session before the app falls back to the deterministic path.",
         )
     with cols[2]:
         budget_reached = (
@@ -107,10 +111,14 @@ def _render_openai_usage(usage):
             or usage.get("remaining_total_tokens") == 0
         )
         render_metric_card(
-            "Assisted Mode",
+            "Session Assisted Mode",
             "Limit Reached" if budget_reached else "Available",
-            "If the limit is reached, the workflow remains available in the deterministic fallback mode.",
+            "If this session limit is reached, the workflow remains available in deterministic fallback mode.",
         )
+
+    st.caption(
+        "Browser-session safeguards only apply to this session. Daily quota is account-level and is enforced across signed-in sessions."
+    )
 
     last_metadata = usage.get("last_response_metadata") or {}
     if last_metadata:
@@ -125,7 +133,7 @@ def _render_openai_usage(usage):
 def _render_daily_quota_status(daily_quota):
     if not daily_quota:
         return
-    cols = st.columns(3)
+    cols = st.columns(4)
     with cols[0]:
         render_metric_card(
             "Daily Workflow Runs Left",
@@ -146,6 +154,12 @@ def _render_daily_quota_status(daily_quota):
             "Plan Tier",
             daily_quota.plan_tier,
             "Daily assisted limits are enforced from persisted authenticated usage.",
+        )
+    with cols[3]:
+        render_metric_card(
+            "Quota State",
+            "Exhausted" if daily_quota.quota_exhausted else "Available",
+            "This is the account-level assisted quota state for the current UTC day.",
         )
 
     if daily_quota.quota_exhausted:
@@ -863,11 +877,24 @@ def render_history_page():
 
     if st.button("Refresh Saved History", key="refresh_saved_history"):
         workflow_history, artifact_history = refresh_authenticated_history()
+        daily_quota = refresh_daily_quota_status()
     else:
         workflow_history = get_workflow_history()
         artifact_history = get_artifact_history()
+        daily_quota = get_daily_quota_status() or refresh_daily_quota_status()
         if workflow_history and not get_selected_history_workflow_run_id():
             workflow_history, artifact_history = refresh_authenticated_history()
+
+    st.info(
+        "Browsing saved history is read-only. It does not replace your current resume, current JD, or the active workflow run used for new exports."
+    )
+
+    if daily_quota:
+        st.markdown("### Account Quota")
+        _render_daily_quota_status(daily_quota)
+        st.caption(
+            "This quota is tied to your signed-in account. Browser-session usage safeguards appear on the active job-description workflow page."
+        )
 
     app_user = get_app_user_record()
     cols = st.columns(4)
@@ -951,7 +978,8 @@ def render_history_page():
             "{score}/100".format(score=selected_workflow_run.fit_score),
             "Stored fit score at the time this workflow run completed.",
         )
-        status_cols = st.columns(2)
+        payload_status = get_saved_workflow_payload_status(selected_workflow_run)
+        status_cols = st.columns(3)
         with status_cols[0]:
             render_metric_card(
                 "Review Status",
@@ -964,19 +992,40 @@ def render_history_page():
                 selected_workflow_run.model_policy or "Deterministic",
                 "Model tier recorded for the workflow result.",
             )
+        with status_cols[2]:
+            render_metric_card(
+                "Payload Format",
+                payload_status["label"],
+                "Saved historical downloads are rebuilt only when the payload format is supported.",
+            )
 
         st.caption(
             "Created: {created}".format(
                 created=_format_history_timestamp(selected_workflow_run.created_at)
             )
         )
+        st.caption(payload_status["message"])
+
+        active_workflow_run = get_active_workflow_run()
+        if active_workflow_run and str(active_workflow_run.id) == str(selected_workflow_run.id):
+            st.caption(
+                "This selected historical run is also the current active run for new export tracking."
+            )
+        else:
+            st.caption(
+                "New exports still attach to the current active workflow run, not to this historical selection."
+            )
         saved_report = build_saved_report_from_workflow_run(selected_workflow_run)
         saved_resume = build_saved_tailored_resume_from_workflow_run(selected_workflow_run)
+        if not payload_status["supported"]:
+            st.warning(
+                "Historical downloads are unavailable for this run because the saved payload format is not currently compatible."
+            )
         if saved_report or saved_resume:
             st.caption(
                 "Historical downloads below are regenerated from the saved run content, not from your current resume or current JD inputs."
             )
-        if saved_report:
+        if saved_report and payload_status["supported"]:
             st.download_button(
                 "Download Saved Report Markdown",
                 data=export_markdown_bytes(saved_report),
@@ -991,7 +1040,7 @@ def render_history_page():
                 mime="application/pdf",
                 key="history_saved_report_pdf_{run_id}".format(run_id=selected_workflow_run.id),
             )
-        if saved_resume:
+        if saved_resume and payload_status["supported"]:
             st.download_button(
                 "Download Saved Tailored Resume Markdown",
                 data=export_markdown_bytes(saved_resume),
@@ -1006,7 +1055,7 @@ def render_history_page():
                 mime="application/pdf",
                 key="history_saved_resume_pdf_{run_id}".format(run_id=selected_workflow_run.id),
             )
-        if saved_report and saved_resume:
+        if saved_report and saved_resume and payload_status["supported"]:
             st.download_button(
                 "Download Saved Export Bundle",
                 data=export_zip_bundle_bytes(
@@ -1148,6 +1197,9 @@ def render_job_description_page():
     ai_session = workflow_view_model.ai_session
     st.caption(
         "Run the supervised workflow explicitly to avoid unnecessary model-backed usage on every rerun."
+    )
+    st.info(
+        "Account quota and browser-session safeguards are separate. Daily quota is shared across signed-in sessions, while the session budget below only applies to this browser session."
     )
     _render_daily_quota_status(ai_session.daily_quota)
     _render_openai_usage(ai_session.usage)

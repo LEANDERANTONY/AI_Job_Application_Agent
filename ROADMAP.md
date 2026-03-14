@@ -87,12 +87,12 @@ Status:
 
 ## Phase 8: Persistence Hardening
 
-- Add payload versioning for saved workflow reconstruction
+- Add payload versioning and compatibility handling for saved workflow reconstruction
 - Tighten migration guidance for existing Supabase projects
 - Consider object storage only if binary artifact retention becomes necessary
 
 Status:
-- Not started
+- In progress
 
 ## Phase 9: Backend Extraction
 

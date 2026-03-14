@@ -233,6 +233,8 @@ Persistent authenticated state includes:
 - `report_payload_json`
 - `tailored_resume_payload_json`
 
+New workflow runs write those payloads through a versioned JSON envelope so historical regeneration can evolve without silently breaking older saved runs. The reader remains backward-compatible with the earlier unversioned payloads.
+
 That split is deliberate. Current in-progress work stays fast and local to Streamlit reruns, while account-bound history and quota enforcement live in Supabase.
 
 ## Testing Model
@@ -257,7 +259,6 @@ These tests are intentionally fast and file-light so they can run in local devel
 ## Current Constraints
 
 - The `Job Search` page is still a placeholder rather than a real provider integration.
-- Historical downloads are regenerated from saved payloads, but there is not yet an explicit payload-versioning contract for backward compatibility.
 - Large binary artifacts are not stored in object storage; the app currently prefers cheap Postgres metadata plus on-demand regeneration.
 - Streamlit remains the only runtime client even though the service boundaries are backend-ready.
 
@@ -266,7 +267,7 @@ These tests are intentionally fast and file-light so they can run in local devel
 The next meaningful expansion is delivery hardening and persistence maturation rather than another new core workflow. The main targets are:
 
 - deployment hardening for a real hosted Streamlit environment
-- payload versioning for saved workflow reconstruction
+- migration guidance and compatibility hardening for saved workflow reconstruction
 - additional UX polish around history, quotas, and exported package review
 - optional object storage only if binary artifact retention becomes a product requirement
 - later API exposure of the same orchestration entrypoint through FastAPI once multiple clients or async work justify it
