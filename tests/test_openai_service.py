@@ -191,6 +191,57 @@ def test_openai_service_retries_with_higher_output_budget_after_incomplete_respo
     assert client.responses.calls[1]["max_output_tokens"] == 500
 
 
+def test_openai_service_retries_when_incomplete_response_contains_partial_json():
+    client = FakeClient(
+        [
+            _build_response(
+                '{"approved": ',
+                response_id="resp_partial_json",
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+                include_message=True,
+            ),
+            _build_response('{"approved": true}', response_id="resp_complete_after_partial"),
+        ]
+    )
+    service = OpenAIService(client=client)
+
+    payload = service.run_json_prompt("system", "user", expected_keys=["approved"], max_completion_tokens=100)
+
+    assert payload["approved"] is True
+    assert len(client.responses.calls) == 2
+    assert client.responses.calls[0]["max_output_tokens"] == 100
+    assert client.responses.calls[1]["max_output_tokens"] == 500
+
+
+def test_openai_service_retries_when_incomplete_response_is_missing_required_fields():
+    client = FakeClient(
+        [
+            _build_response(
+                '{"answer": "partial"}',
+                response_id="resp_partial_fields",
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+                include_message=True,
+            ),
+            _build_response('{"answer": "done", "sources": []}', response_id="resp_complete_after_missing_fields"),
+        ]
+    )
+    service = OpenAIService(client=client)
+
+    payload = service.run_json_prompt(
+        "system",
+        "user",
+        expected_keys=["answer", "sources"],
+        max_completion_tokens=100,
+    )
+
+    assert payload["answer"] == "done"
+    assert payload["sources"] == []
+    assert len(client.responses.calls) == 2
+    assert client.responses.calls[1]["max_output_tokens"] == 500
+
+
 def test_openai_service_uses_high_reasoning_for_high_trust_tasks():
     client = FakeClient([_build_response('{"approved": true}', response_id="resp_high")])
     service = OpenAIService(client=client)

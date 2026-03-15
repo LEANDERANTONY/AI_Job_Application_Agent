@@ -265,40 +265,68 @@ class OpenAIService:
                 ) from exc
 
         if self._is_incomplete_due_to_output_tokens(response):
-            retry_payload = dict(request_payload)
-            retry_payload["max_output_tokens"] = min(
-                max(max_completion_tokens * 2, max_completion_tokens + 400),
-                4000,
-            )
-            log_event(
-                LOGGER,
-                logging.INFO,
-                "openai_request_retry_with_higher_output_budget",
-                "Retrying OpenAI request with a higher output token budget after an incomplete response.",
-                model=resolved_model,
+            response, request_payload = self._retry_with_higher_output_budget(
+                response=response,
+                request_payload=request_payload,
+                resolved_model=resolved_model,
                 task_name=task_name,
                 reasoning_effort=reasoning_effort,
-                previous_max_output_tokens=max_completion_tokens,
-                retry_max_output_tokens=retry_payload["max_output_tokens"],
+                started_at=started_at,
+                retry_reason="empty_incomplete_response",
             )
-            try:
-                response = self._client.responses.create(**retry_payload)
-            except Exception as retry_exc:
-                log_event(
-                    LOGGER,
-                    logging.ERROR,
-                    "openai_request_failed",
-                    "OpenAI JSON prompt retry failed after incomplete response.",
-                    model=resolved_model,
+
+        content = self._extract_output_text(response)
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            if self._should_retry_partial_json_response(response):
+                response, request_payload = self._retry_with_higher_output_budget(
+                    response=response,
+                    request_payload=request_payload,
+                    resolved_model=resolved_model,
                     task_name=task_name,
-                    duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
-                    error_type=type(retry_exc).__name__,
-                    details=str(retry_exc),
+                    reasoning_effort=reasoning_effort,
+                    started_at=started_at,
+                    retry_reason="truncated_partial_json",
                 )
+                content = self._extract_output_text(response)
+                try:
+                    payload = json.loads(content)
+                except json.JSONDecodeError as retry_exc:
+                    raise AgentExecutionError(
+                        "The AI workflow returned an invalid JSON response.",
+                        details=content,
+                    ) from retry_exc
+            else:
                 raise AgentExecutionError(
-                    "The AI workflow request failed.",
-                    details=str(retry_exc),
+                    "The AI workflow returned an invalid JSON response.",
+                    details=content,
+                ) from exc
+
+        missing_keys = [
+            key for key in list(expected_keys or []) if key not in payload
+        ]
+        if missing_keys and self._should_retry_partial_json_response(response):
+            response, request_payload = self._retry_with_higher_output_budget(
+                response=response,
+                request_payload=request_payload,
+                resolved_model=resolved_model,
+                task_name=task_name,
+                reasoning_effort=reasoning_effort,
+                started_at=started_at,
+                retry_reason="partial_json_missing_fields",
+            )
+            content = self._extract_output_text(response)
+            try:
+                payload = json.loads(content)
+            except json.JSONDecodeError as retry_exc:
+                raise AgentExecutionError(
+                    "The AI workflow returned an invalid JSON response.",
+                    details=content,
                 ) from retry_exc
+            missing_keys = [
+                key for key in list(expected_keys or []) if key not in payload
+            ]
 
         usage = getattr(response, "usage", None)
         status = getattr(response, "status", None)
@@ -351,25 +379,66 @@ class OpenAIService:
                 "status": status or "",
             }
         )
-
-        content = self._extract_output_text(response)
-        try:
-            payload = json.loads(content)
-        except json.JSONDecodeError as exc:
-            raise AgentExecutionError(
-                "The AI workflow returned an invalid JSON response.",
-                details=content,
-            ) from exc
-
-        missing_keys = [
-            key for key in list(expected_keys or []) if key not in payload
-        ]
         if missing_keys:
             raise AgentExecutionError(
                 "The AI workflow response was missing required fields.",
                 details=", ".join(missing_keys),
             )
         return payload
+
+    def _retry_with_higher_output_budget(
+        self,
+        *,
+        response,
+        request_payload,
+        resolved_model,
+        task_name,
+        reasoning_effort,
+        started_at,
+        retry_reason,
+    ):
+        current_max_output_tokens = int(request_payload.get("max_output_tokens", 0) or 0)
+        retry_max_output_tokens = min(
+            max(current_max_output_tokens * 2, current_max_output_tokens + 400),
+            6000,
+        )
+        if retry_max_output_tokens <= current_max_output_tokens:
+            return response, request_payload
+
+        retry_payload = dict(request_payload)
+        retry_payload["max_output_tokens"] = retry_max_output_tokens
+        log_event(
+            LOGGER,
+            logging.INFO,
+            "openai_request_retry_with_higher_output_budget",
+            "Retrying OpenAI request with a higher output token budget after an incomplete response.",
+            model=resolved_model,
+            task_name=task_name,
+            reasoning_effort=reasoning_effort,
+            previous_max_output_tokens=current_max_output_tokens,
+            retry_max_output_tokens=retry_max_output_tokens,
+            retry_reason=retry_reason,
+        )
+        try:
+            response = self._client.responses.create(**retry_payload)
+        except Exception as retry_exc:
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "openai_request_failed",
+                "OpenAI JSON prompt retry failed after incomplete response.",
+                model=resolved_model,
+                task_name=task_name,
+                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                error_type=type(retry_exc).__name__,
+                details=str(retry_exc),
+                retry_reason=retry_reason,
+            )
+            raise AgentExecutionError(
+                "The AI workflow request failed.",
+                details=str(retry_exc),
+            ) from retry_exc
+        return response, retry_payload
 
     def _record_usage_event(self, payload: dict):
         if self._usage_event_recorder is None:
@@ -402,6 +471,15 @@ class OpenAIService:
             getattr(response, "status", None) == "incomplete"
             and incomplete_reason == "max_output_tokens"
             and not cls._has_message_output(response)
+        )
+
+    @staticmethod
+    def _should_retry_partial_json_response(response) -> bool:
+        incomplete_details = getattr(response, "incomplete_details", None)
+        incomplete_reason = getattr(incomplete_details, "reason", None) if incomplete_details else None
+        return (
+            getattr(response, "status", None) == "incomplete"
+            and incomplete_reason == "max_output_tokens"
         )
 
     @classmethod
