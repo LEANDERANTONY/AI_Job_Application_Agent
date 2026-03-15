@@ -273,13 +273,33 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
         "Specialist agents refine the deterministic baseline while preserving grounded output.",
     )
 
+    if agent_result.mode != "openai":
+        if agent_result.attempted_assisted:
+            st.warning(
+                "This run started in AI-assisted mode but downgraded to deterministic fallback. Reason: {reason}".format(
+                    reason=agent_result.fallback_reason or "The AI-assisted step did not complete successfully."
+                )
+            )
+        else:
+            st.info(
+                "This run used deterministic fallback because AI-assisted execution was not available for this run."
+            )
+
     cols = st.columns(3)
     with cols[0]:
-        render_metric_card("Execution Mode", "OpenAI" if agent_result.mode == "openai" else "Fallback", "Explicit model calls run only on button press.")
+        render_metric_card(
+            "Execution Mode",
+            "OpenAI" if agent_result.mode == "openai" else ("Fallback After AI Attempt" if agent_result.attempted_assisted else "Fallback"),
+            "Explicit model calls run only on button press.",
+        )
     with cols[1]:
         render_metric_card("Review Status", "Approved" if agent_result.review.approved else "Needs Revision", "The review agent is the final quality gate.")
     with cols[2]:
         render_metric_card("Model", agent_result.model, "Fallback means deterministic logic only.")
+
+    if agent_result.fallback_details:
+        with st.expander("Fallback Details", expanded=False):
+            st.code(agent_result.fallback_details)
 
     with st.expander("Profile and Job Positioning", expanded=True):
         st.markdown("**Profile Positioning Headline**")

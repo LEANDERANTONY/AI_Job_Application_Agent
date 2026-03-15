@@ -177,6 +177,9 @@ class AgentWorkflowResult:
     strategy: Optional[StrategyAgentOutput] = None
     resume_generation: Optional[ResumeGenerationAgentOutput] = None
     review_history: List[ReviewPassResult] = field(default_factory=list)
+    attempted_assisted: bool = False
+    fallback_reason: str = ""
+    fallback_details: str = ""
 
 
 @dataclass

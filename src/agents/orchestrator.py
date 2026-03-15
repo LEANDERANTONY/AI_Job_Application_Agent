@@ -42,7 +42,12 @@ class ApplicationOrchestrator:
                 fit_analysis,
             )
 
+        attempted_assisted = False
+        fallback_reason = ""
+        fallback_details = ""
+
         if self._openai_service.is_available():
+            attempted_assisted = True
             policy_label = (
                 self._openai_service.describe_model_policy()
                 if hasattr(self._openai_service, "describe_model_policy")
@@ -58,8 +63,11 @@ class ApplicationOrchestrator:
                     mode="openai",
                     model_name=policy_label,
                     max_revision_passes=self._max_revision_passes,
+                    attempted_assisted=True,
                 )
-            except AgentExecutionError:
+            except AgentExecutionError as exc:
+                fallback_reason = exc.user_message
+                fallback_details = exc.details or ""
                 log_event(
                     LOGGER,
                     logging.WARNING,
@@ -67,6 +75,8 @@ class ApplicationOrchestrator:
                     "OpenAI orchestration failed; falling back to deterministic mode.",
                     model=policy_label,
                     max_revision_passes=self._max_revision_passes,
+                    fallback_reason=fallback_reason,
+                    fallback_details=fallback_details,
                 )
                 if not self._allow_fallback:
                     raise
@@ -80,6 +90,9 @@ class ApplicationOrchestrator:
             mode="deterministic_fallback",
             model_name="fallback",
             max_revision_passes=self._max_revision_passes,
+            attempted_assisted=attempted_assisted,
+            fallback_reason=fallback_reason,
+            fallback_details=fallback_details,
         )
 
     @staticmethod
@@ -92,6 +105,9 @@ class ApplicationOrchestrator:
         mode,
         model_name,
         max_revision_passes=2,
+        attempted_assisted=False,
+        fallback_reason="",
+        fallback_details="",
     ):
         tailoring_agent = TailoringAgent(openai_service)
         review_agent = ReviewAgent(openai_service)
@@ -242,4 +258,7 @@ class ApplicationOrchestrator:
             review=review_output,
             resume_generation=resume_generation_output,
             review_history=review_history,
+            attempted_assisted=attempted_assisted,
+            fallback_reason=fallback_reason,
+            fallback_details=fallback_details,
         )

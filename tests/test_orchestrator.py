@@ -263,6 +263,7 @@ def test_orchestrator_runs_in_deterministic_fallback_mode():
 
     assert result.mode == "deterministic_fallback"
     assert result.model == "fallback"
+    assert result.attempted_assisted is False
     assert result.profile.positioning_headline
     assert result.fit.fit_summary
     assert result.tailoring.professional_summary
@@ -297,6 +298,8 @@ def test_orchestrator_falls_back_if_ai_execution_fails():
 
     assert result.mode == "deterministic_fallback"
     assert result.model == "fallback"
+    assert result.attempted_assisted is True
+    assert result.fallback_reason == "boom"
     assert result.review.final_notes
 
 
