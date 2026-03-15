@@ -1,13 +1,12 @@
 import pytest
+from types import SimpleNamespace
 
 from src.errors import InputValidationError
 from src.schemas import (
-    ArtifactRecord,
     CandidateProfile,
     JobDescription,
     JobRequirements,
     ResumeDocument,
-    WorkflowRunRecord,
 )
 from src.ui import workflow_history, workflow_intake
 from src.ui import workflow
@@ -83,91 +82,22 @@ def test_run_supervised_workflow_requires_authentication_when_enabled(monkeypatc
         workflow.run_supervised_workflow(view_model)
 
 
-def test_refresh_authenticated_history_selects_requested_run(monkeypatch):
-    workflow_runs = [
-        WorkflowRunRecord(
-            id="run-1",
-            user_id="user-123",
-            job_title="Data Analyst",
-            fit_score=82,
-            review_approved=True,
-            model_policy="gpt-5.4",
-            created_at="2026-03-14T00:00:00+00:00",
-        ),
-        WorkflowRunRecord(
-            id="run-2",
-            user_id="user-123",
-            job_title="ML Engineer",
-            fit_score=76,
-            review_approved=False,
-            model_policy="gpt-5-mini-2025-08-07",
-            created_at="2026-03-14T01:00:00+00:00",
-        ),
-    ]
-    artifacts = [
-        ArtifactRecord(
-            id="artifact-1",
-            workflow_run_id="run-2",
-            artifact_type="application_bundle_zip",
-            filename_stem="ml-engineer-application-bundle",
-            storage_path="ml-engineer-application-bundle.zip",
-            created_at="2026-03-14T01:05:00+00:00",
-        )
-    ]
-    captured = {}
-
-    class FakeHistoryStore:
-        def is_configured(self):
-            return True
-
-        def list_recent_workflow_runs(self, access_token, refresh_token, user_id, limit=10):
-            captured["workflow_runs_request"] = (access_token, refresh_token, user_id, limit)
-            return workflow_runs
-
-        def list_recent_artifacts(self, access_token, refresh_token, workflow_run_id, limit=20):
-            captured["artifact_request"] = (access_token, refresh_token, workflow_run_id, limit)
-            return artifacts
-
-    monkeypatch.setattr(workflow_history, "get_app_user_record", lambda: type("AppUser", (), {"id": "user-123"})())
-    monkeypatch.setattr(workflow_history, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
-    monkeypatch.setattr(workflow_history, "get_selected_history_workflow_run_id", lambda: None)
-    monkeypatch.setattr(workflow_history, "get_active_workflow_run", lambda: None)
-    monkeypatch.setattr(workflow_history, "get_auth_service", lambda: object())
-    monkeypatch.setattr(workflow_history, "HistoryStore", lambda auth_service: FakeHistoryStore())
-    monkeypatch.setattr(workflow_history, "set_workflow_history", lambda rows: captured.update({"workflow_runs": rows}))
-    monkeypatch.setattr(workflow_history, "set_selected_history_workflow_run_id", lambda run_id: captured.update({"selected_run_id": run_id}))
-    monkeypatch.setattr(workflow_history, "set_artifact_history", lambda rows: captured.update({"artifacts": rows}))
-
+def test_refresh_authenticated_history_is_noop_under_saved_workspace_model(monkeypatch):
     resolved_runs, resolved_artifacts = workflow.refresh_authenticated_history("run-2")
 
-    assert resolved_runs == workflow_runs
-    assert resolved_artifacts == artifacts
-    assert captured["selected_run_id"] == "run-2"
-    assert captured["artifact_request"] == ("access-token", "refresh-token", "run-2", 20)
+    assert resolved_runs == []
+    assert resolved_artifacts == []
 
 
 def test_refresh_authenticated_history_clears_state_without_auth(monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(workflow_history, "get_app_user_record", lambda: None)
-    monkeypatch.setattr(workflow_history, "get_auth_tokens", lambda: (None, None))
-    monkeypatch.setattr(workflow_history, "set_workflow_history", lambda rows: captured.update({"workflow_runs": rows}))
-    monkeypatch.setattr(workflow_history, "set_artifact_history", lambda rows: captured.update({"artifacts": rows}))
-    monkeypatch.setattr(workflow_history, "set_selected_history_workflow_run_id", lambda run_id: captured.update({"selected_run_id": run_id}))
-
     resolved_runs, resolved_artifacts = workflow.refresh_authenticated_history()
 
     assert resolved_runs == []
     assert resolved_artifacts == []
-    assert captured["workflow_runs"] == []
-    assert captured["artifacts"] == []
-    assert captured["selected_run_id"] is None
 
 
 def test_build_saved_documents_from_workflow_run_payloads():
-    workflow_run = WorkflowRunRecord(
-        id="run-1",
-        user_id="user-123",
+    workflow_run = SimpleNamespace(
         report_payload_json='{"version": 1, "kind": "application_report", "data": {"title": "Saved Report", "filename_stem": "saved-report", "summary": "summary", "markdown": "# Report", "plain_text": "Report"}}',
         tailored_resume_payload_json='{"version": 1, "kind": "tailored_resume_artifact", "data": {"title": "Saved Resume", "filename_stem": "saved-resume", "summary": "summary", "markdown": "# Resume", "plain_text": "Resume", "theme": "modern_professional"}}',
     )
@@ -182,9 +112,7 @@ def test_build_saved_documents_from_workflow_run_payloads():
 
 
 def test_build_saved_documents_supports_legacy_payloads():
-    workflow_run = WorkflowRunRecord(
-        id="run-legacy",
-        user_id="user-123",
+    workflow_run = SimpleNamespace(
         report_payload_json='{"title": "Legacy Report", "filename_stem": "legacy-report", "summary": "summary", "markdown": "# Report", "plain_text": "Report"}',
         tailored_resume_payload_json='{"title": "Legacy Resume", "filename_stem": "legacy-resume", "summary": "summary", "markdown": "# Resume", "plain_text": "Resume", "theme": "classic_ats"}',
     )
@@ -200,9 +128,7 @@ def test_build_saved_documents_supports_legacy_payloads():
 
 
 def test_saved_payload_status_blocks_unsupported_future_version():
-    workflow_run = WorkflowRunRecord(
-        id="run-future",
-        user_id="user-123",
+    workflow_run = SimpleNamespace(
         report_payload_json='{"version": 99, "kind": "application_report", "data": {"title": "Future Report"}}',
     )
 
@@ -233,6 +159,7 @@ def test_refresh_daily_quota_status_uses_quota_service(monkeypatch):
 
     captured = {}
     monkeypatch.setattr(workflow, "get_daily_quota_status", lambda: None)
+    monkeypatch.setattr(workflow, "get_daily_quota_status_refreshed_at", lambda: None)
     monkeypatch.setattr(
         workflow,
         "get_app_user_record",
@@ -247,8 +174,213 @@ def test_refresh_daily_quota_status_uses_quota_service(monkeypatch):
         "set_daily_quota_status",
         lambda value: captured.update({"daily_quota": value}),
     )
+    monkeypatch.setattr(
+        workflow,
+        "set_daily_quota_status_refreshed_at",
+        lambda value: captured.update({"refreshed_at": value}),
+    )
 
-    result = workflow.refresh_daily_quota_status()
+    result = workflow.refresh_daily_quota_status(now=100.0)
 
     assert result is daily_quota
     assert captured["daily_quota"] is daily_quota
+    assert captured["refreshed_at"] == 100.0
+
+
+def test_refresh_daily_quota_status_uses_recent_cached_value(monkeypatch):
+    daily_quota = type("DailyQuota", (), {"quota_exhausted": False, "plan_tier": "free"})()
+    fetches = {"count": 0}
+
+    class FakeUsageStore:
+        def __init__(self, auth_service):
+            self.auth_service = auth_service
+
+        def is_configured(self):
+            return True
+
+    class FakeQuotaService:
+        def __init__(self, auth_service, usage_store):
+            self.auth_service = auth_service
+            self.usage_store = usage_store
+
+        def get_daily_quota_status(self, access_token, refresh_token, user_id, plan_tier):
+            fetches["count"] += 1
+            return daily_quota
+
+    monkeypatch.setattr(workflow, "DAILY_QUOTA_CACHE_TTL_SECONDS", 15)
+    monkeypatch.setattr(workflow, "get_daily_quota_status", lambda: daily_quota)
+    monkeypatch.setattr(workflow, "get_daily_quota_status_refreshed_at", lambda: 100.0)
+    monkeypatch.setattr(
+        workflow,
+        "get_app_user_record",
+        lambda: type("AppUser", (), {"id": "user-123", "plan_tier": "free"})(),
+    )
+    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
+    monkeypatch.setattr(workflow, "get_auth_service", lambda: object())
+    monkeypatch.setattr(workflow, "UsageStore", FakeUsageStore)
+    monkeypatch.setattr(workflow, "QuotaService", FakeQuotaService)
+
+    result = workflow.refresh_daily_quota_status(now=110.0)
+
+    assert result is daily_quota
+    assert fetches["count"] == 0
+
+
+def test_build_ai_session_view_model_uses_cached_quota_without_refresh(monkeypatch):
+    daily_quota = type("DailyQuota", (), {"quota_exhausted": False, "plan_tier": "free"})()
+
+    class FakeUsageStore:
+        def __init__(self, auth_service):
+            self.auth_service = auth_service
+
+        def is_configured(self):
+            return True
+
+    monkeypatch.setattr(workflow, "get_openai_session_usage", lambda *args, **kwargs: {
+        "request_count": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "max_calls": 24,
+        "max_total_tokens": 120000,
+        "remaining_calls": 24,
+        "remaining_total_tokens": 120000,
+        "last_response_metadata": {},
+    })
+    monkeypatch.setattr(workflow, "get_daily_quota_status", lambda: daily_quota)
+    monkeypatch.setattr(
+        workflow,
+        "get_app_user_record",
+        lambda: type("AppUser", (), {"id": "user-123", "plan_tier": "free"})(),
+    )
+    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
+    monkeypatch.setattr(workflow, "get_auth_service", lambda: object())
+    monkeypatch.setattr(workflow, "UsageStore", FakeUsageStore)
+    monkeypatch.setattr(
+        workflow,
+        "refresh_daily_quota_status",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("quota refresh should not run")),
+    )
+
+    view_model = workflow.build_ai_session_view_model()
+
+    assert view_model.daily_quota is daily_quota
+
+
+def test_restore_latest_saved_workspace_restores_snapshot(monkeypatch):
+    captured = {}
+    snapshot = SimpleNamespace(
+        candidate_profile=CandidateProfile(full_name="Leander Antony", resume_text="resume text"),
+        job_description=JobDescription(
+            title="ML Engineer",
+            raw_text="raw jd",
+            cleaned_text="cleaned jd",
+            requirements=JobRequirements(hard_skills=["Python"]),
+        ),
+        fit_analysis=SimpleNamespace(),
+        tailored_draft=SimpleNamespace(),
+        agent_result=None,
+    )
+
+    class FakeSavedWorkspaceStore:
+        def __init__(self, auth_service):
+            self.auth_service = auth_service
+
+        def is_configured(self):
+            return True
+
+        def load_workspace(self, access_token, refresh_token, user_id):
+            return (
+                SimpleNamespace(
+                    workflow_snapshot_json="snapshot",
+                    tailored_resume_payload_json="resume",
+                    expires_at="2026-03-16T00:00:00+00:00",
+                ),
+                "available",
+            )
+
+    monkeypatch.setattr(workflow, "get_app_user_record", lambda: SimpleNamespace(id="user-123"))
+    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
+    monkeypatch.setattr(workflow, "get_auth_service", lambda: object())
+    monkeypatch.setattr(workflow, "SavedWorkspaceStore", FakeSavedWorkspaceStore)
+    monkeypatch.setattr(workflow, "build_saved_workflow_snapshot_from_payload", lambda raw: snapshot)
+    monkeypatch.setattr(workflow, "build_saved_tailored_resume_from_payload", lambda raw: SimpleNamespace(theme="modern_professional"))
+    monkeypatch.setattr(workflow, "store_resume_intake", lambda document, profile: captured.update({"resume_intake": (document, profile)}))
+    monkeypatch.setattr(workflow, "set_active_candidate_profile", lambda value: captured.update({"candidate_profile": value}))
+    monkeypatch.setattr(workflow, "store_job_description_inputs", lambda raw_text, source_label, job_description: captured.update({"job_description": (raw_text, source_label, job_description)}))
+    monkeypatch.setattr(workflow, "store_fit_outputs", lambda fit_analysis, tailored_draft: captured.update({"fit_outputs": (fit_analysis, tailored_draft)}))
+    monkeypatch.setattr(workflow, "set_agent_workflow_result", lambda value: captured.update({"agent_result": value}))
+    monkeypatch.setattr(workflow, "set_tailored_resume_theme", lambda value: captured.update({"theme": value}))
+    monkeypatch.setattr(workflow, "request_menu_navigation", lambda menu_name: captured.update({"menu": menu_name}))
+    monkeypatch.setattr(workflow, "set_workspace_restore_notice", lambda value: captured.update({"notice": value}))
+
+    result = workflow.restore_latest_saved_workspace()
+
+    assert captured["resume_intake"][0].filetype == "Saved Workspace"
+    assert captured["resume_intake"][0].text == "resume text"
+    assert captured["resume_intake"][1].full_name == "Leander Antony"
+    assert captured["candidate_profile"].full_name == "Leander Antony"
+    assert captured["job_description"][0] == "raw jd"
+    assert captured["job_description"][1] == "Reloaded saved workspace"
+    assert captured["theme"] == "modern_professional"
+    assert captured["menu"] == "Manual JD Input"
+    assert result["level"] == "success"
+
+
+def test_load_saved_workspace_summary_builds_saved_artifacts(monkeypatch):
+    class FakeSavedWorkspaceStore:
+        def __init__(self, auth_service):
+            self.auth_service = auth_service
+
+        def is_configured(self):
+            return True
+
+        def load_workspace(self, access_token, refresh_token, user_id):
+            return (
+                SimpleNamespace(
+                    report_payload_json="report-payload",
+                    tailored_resume_payload_json="resume-payload",
+                    workflow_snapshot_json="snapshot-payload",
+                ),
+                "available",
+            )
+
+    monkeypatch.setattr(workflow, "get_app_user_record", lambda: SimpleNamespace(id="user-123"))
+    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
+    monkeypatch.setattr(workflow, "get_auth_service", lambda: object())
+    monkeypatch.setattr(workflow, "SavedWorkspaceStore", FakeSavedWorkspaceStore)
+    monkeypatch.setattr(workflow, "build_saved_report_from_payload", lambda raw: {"kind": "report", "raw": raw})
+    monkeypatch.setattr(workflow, "build_saved_tailored_resume_from_payload", lambda raw: {"kind": "resume", "raw": raw})
+    monkeypatch.setattr(workflow, "build_saved_workflow_snapshot_from_payload", lambda raw: {"kind": "snapshot", "raw": raw})
+
+    summary = workflow.load_saved_workspace_summary()
+
+    assert summary["status"] == "available"
+    assert summary["report"] == {"kind": "report", "raw": "report-payload"}
+    assert summary["resume"] == {"kind": "resume", "raw": "resume-payload"}
+    assert summary["snapshot"] == {"kind": "snapshot", "raw": "snapshot-payload"}
+
+
+def test_restore_latest_saved_workspace_reports_expired_snapshot(monkeypatch):
+    captured = {}
+
+    class FakeSavedWorkspaceStore:
+        def __init__(self, auth_service):
+            self.auth_service = auth_service
+
+        def is_configured(self):
+            return True
+
+        def load_workspace(self, access_token, refresh_token, user_id):
+            return None, "expired"
+
+    monkeypatch.setattr(workflow, "get_app_user_record", lambda: SimpleNamespace(id="user-123"))
+    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
+    monkeypatch.setattr(workflow, "get_auth_service", lambda: object())
+    monkeypatch.setattr(workflow, "SavedWorkspaceStore", FakeSavedWorkspaceStore)
+    monkeypatch.setattr(workflow, "set_workspace_restore_notice", lambda value: captured.update({"notice": value}))
+
+    result = workflow.restore_latest_saved_workspace()
+
+    assert result["level"] == "warning"
+    assert "expired" in result["message"].lower()

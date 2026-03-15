@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from src.assistant_service import AssistantService
+from src.errors import AgentExecutionError
 from src.schemas import ResumeDocument, WorkExperience
 from src.services.fit_service import build_fit_analysis
 from src.services.job_service import build_job_description_from_text
@@ -65,6 +66,31 @@ def test_product_help_fallback_explains_report_vs_resume():
     assert response.sources
 
 
+def test_product_help_fallback_explains_navigation():
+    service = AssistantService()
+
+    response = service.answer_product_help(
+        "Can you explain how the navigation tab works?",
+        current_page="Saved Workspace",
+        app_context={},
+    )
+
+    assert "sidebar navigation" in response.answer.lower()
+    assert "saved workspace" in response.answer.lower()
+
+
+def test_product_help_fallback_answers_assistant_identity_question():
+    service = AssistantService()
+
+    response = service.answer_product_help(
+        "Hello what is your name?",
+        current_page="Upload Resume",
+        app_context={},
+    )
+
+    assert "product help assistant" in response.answer.lower()
+
+
 def test_application_qa_fallback_explains_gaps():
     service = AssistantService()
     view_model = _build_view_model()
@@ -92,3 +118,38 @@ def test_application_qa_requires_context_when_inputs_missing():
     )
 
     assert "needs both a resume and a job description" in response.answer.lower()
+
+
+def test_product_help_falls_back_when_model_returns_blank_answer():
+    class FakeOpenAIService:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def run_json_prompt(*args, **kwargs):
+            return {
+                "answer": "   ",
+                "sources": ["Manual JD Input"],
+                "suggested_follow_ups": [],
+            }
+
+    service = AssistantService(openai_service=FakeOpenAIService())
+
+    response = service.answer_product_help(
+        "How do I use the report?",
+        current_page="Manual JD Input",
+        app_context={},
+    )
+
+    assert response.answer
+    assert "report" in response.answer.lower()
+
+
+def test_build_response_raises_on_blank_answer_payload():
+    try:
+        AssistantService._build_response({"answer": "  "}, max_sources=3)
+    except AgentExecutionError as exc:
+        assert "empty answer" in exc.user_message.lower()
+    else:
+        raise AssertionError("Expected AgentExecutionError for blank assistant answer")

@@ -1,3 +1,4 @@
+from src.config import get_openai_max_completion_tokens_for_task
 from src.prompts import build_profile_agent_prompt
 from src.schemas import CandidateProfile, ProfileAgentOutput
 
@@ -15,6 +16,7 @@ class ProfileAgent:
                 prompt["system"],
                 prompt["user"],
                 expected_keys=prompt["expected_keys"],
+                max_completion_tokens=get_openai_max_completion_tokens_for_task("profile"),
                 task_name="profile",
             )
             return ProfileAgentOutput(

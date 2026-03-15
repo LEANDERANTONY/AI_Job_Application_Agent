@@ -346,3 +346,11 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
   - high effort for review, resume generation, and grounded application-QA tasks
 - Extended `.env.example` and config helpers so reasoning effort can be tuned without editing code.
 - Verified the stabilized OpenAI path with targeted service tests, live local probes, and a passing full suite.
+
+## Day 27: Saved Workspace Retention Hardening
+
+- Removed the legacy `workflow_runs` and `artifacts` persistence path so the product now stores only one latest `saved_workspaces` snapshot per user.
+- Simplified runtime config, state, exports, and tests around the latest-only saved workspace model.
+- Updated the Supabase bootstrap so expired saved workspaces become unreadable exactly at `expires_at` through RLS.
+- Added a Supabase scheduled cleanup job that deletes expired saved-workspace rows every 5 minutes, even if the user never returns.
+- Kept the app-side save/load purge as a backup cleanup path in case the scheduled job is temporarily unavailable.

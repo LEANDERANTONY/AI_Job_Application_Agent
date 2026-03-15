@@ -83,6 +83,7 @@ def test_openai_service_tracks_usage_across_requests():
     assert usage["last_response_metadata"]["response_id"] == "resp_2"
     assert usage["model_usage"][service.default_model]["request_count"] == 2
     assert client.responses.calls[0]["reasoning"] == {"effort": "medium"}
+    assert "json" in client.responses.calls[0]["input"].lower()
 
 
 def test_openai_service_blocks_when_call_budget_is_reached():
@@ -198,3 +199,17 @@ def test_openai_service_uses_high_reasoning_for_high_trust_tasks():
 
     assert payload["approved"] is True
     assert client.responses.calls[0]["reasoning"] == {"effort": "high"}
+
+
+def test_openai_service_preserves_user_prompt_when_it_already_mentions_json():
+    client = FakeClient([_build_response('{"approved": true}', response_id="resp_json_prompt")])
+    service = OpenAIService(client=client)
+
+    payload = service.run_json_prompt(
+        "system",
+        "Return json with the approved field.",
+        expected_keys=["approved"],
+    )
+
+    assert payload["approved"] is True
+    assert client.responses.calls[0]["input"] == "Return json with the approved field."

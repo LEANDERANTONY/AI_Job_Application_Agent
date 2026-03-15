@@ -49,6 +49,18 @@ def render_footer():
     )
 
 
+@st.fragment
+def render_download_button(label, data, file_name, mime, key, use_container_width=False):
+    st.download_button(
+        label,
+        data=data,
+        file_name=file_name,
+        mime=mime,
+        key=key,
+        use_container_width=use_container_width,
+    )
+
+
 def render_evolution_note():
     with st.expander("How this app is evolving", expanded=False):
         st.markdown(

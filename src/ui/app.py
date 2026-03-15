@@ -26,7 +26,6 @@ from src.ui.state import (
 )
 from src.ui.auth import get_auth_service
 from src.ui.theme import apply_theme
-from src.ui.workflow import refresh_authenticated_history
 
 
 LOGGER = get_logger(__name__)
@@ -84,20 +83,6 @@ def _initialize_auth():
                     error=sync_error.user_message,
                     details=sync_error.details,
                 )
-            access_token, refresh_token = get_auth_tokens()
-            if access_token and refresh_token:
-                try:
-                    refresh_authenticated_history()
-                except AppError as history_error:
-                    log_event(
-                        LOGGER,
-                        30,
-                        "workflow_history_load_failed",
-                        "Recent workflow history could not be loaded after sign-in.",
-                        user_id=session.user.user_id,
-                        error=history_error.user_message,
-                        details=history_error.details,
-                    )
             log_event(
                 LOGGER,
                 20,
@@ -139,19 +124,6 @@ def _initialize_auth():
                         error=sync_error.user_message,
                         details=sync_error.details,
                     )
-                if access_token and refresh_token:
-                    try:
-                        refresh_authenticated_history()
-                    except AppError as history_error:
-                        log_event(
-                            LOGGER,
-                            30,
-                            "workflow_history_load_failed",
-                            "Recent workflow history could not be loaded after session restore.",
-                            user_id=session.user.user_id,
-                            error=history_error.user_message,
-                            details=history_error.details,
-                        )
             except AppError as error:
                 clear_authenticated_session()
                 set_auth_error(error.user_message)
@@ -208,7 +180,7 @@ def main():
             render_job_search_page()
         elif menu == "Manual JD Input":
             render_job_description_page()
-        elif menu == "History":
+        elif menu == "Saved Workspace":
             render_history_page()
         else:
             raise InputValidationError("Unknown navigation target.")

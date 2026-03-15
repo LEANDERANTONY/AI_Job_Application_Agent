@@ -1,21 +1,14 @@
 import streamlit as st
 
 from src.exporters import export_markdown_bytes, export_pdf_bytes, export_zip_bundle_bytes
-from src.ui.components import render_metric_card, render_section_head
+from src.ui.components import render_download_button, render_metric_card, render_section_head
 from src.ui.state import (
-    get_active_workflow_run,
     get_app_user_record,
-    get_artifact_history,
     get_daily_quota_status,
-    get_selected_history_workflow_run_id,
-    get_workflow_history,
     is_authenticated,
 )
 from src.ui.workflow import (
-    build_saved_report_from_workflow_run,
-    build_saved_tailored_resume_from_workflow_run,
-    get_saved_workflow_payload_status,
-    refresh_authenticated_history,
+    load_saved_workspace_summary,
     refresh_daily_quota_status,
 )
 
@@ -26,34 +19,27 @@ def _format_history_timestamp(raw_timestamp):
     return str(raw_timestamp).replace("T", " ").replace("+00:00", " UTC")
 
 
-def _format_artifact_label(artifact_type):
-    return str(artifact_type or "artifact").replace("_", " ").title()
-
-
 def render_history_page(render_daily_quota_status):
     render_section_head(
-        "History",
-        "Review authenticated workflow runs and the export metadata saved to your account.",
+        "Saved Workspace",
+        "Review or download the latest reloadable workspace saved to your account.",
     )
 
     if not is_authenticated():
         st.info(
-            "Sign in with Google from the sidebar to load your saved workflow runs and export history."
+            "Sign in with Google from the sidebar to load your latest saved workspace."
         )
         return
 
-    if st.button("Refresh Saved History", key="refresh_saved_history"):
-        workflow_history, artifact_history = refresh_authenticated_history()
-        daily_quota = refresh_daily_quota_status()
+    if st.button("Refresh Saved Workspace", key="refresh_saved_workspace_page"):
+        daily_quota = refresh_daily_quota_status(force=True)
     else:
-        workflow_history = get_workflow_history()
-        artifact_history = get_artifact_history()
         daily_quota = get_daily_quota_status() or refresh_daily_quota_status()
-        if workflow_history and not get_selected_history_workflow_run_id():
-            workflow_history, artifact_history = refresh_authenticated_history()
+
+    saved_workspace = load_saved_workspace_summary()
 
     st.info(
-        "Browsing saved history is read-only. It does not replace your current resume, current JD, or the active workflow run used for new exports."
+        "This page reflects the latest reloadable workspace only. Each new successful workflow run overwrites the previous saved workspace, and the save expires after 24 hours by default."
     )
 
     if daily_quota:
@@ -79,181 +65,115 @@ def render_history_page(render_daily_quota_status):
         )
     with cols[2]:
         render_metric_card(
-            "Saved Runs",
-            str(len(workflow_history)),
-            "Recent assisted workflow runs persisted for this authenticated user.",
+            "Saved Workspace",
+            "Available" if saved_workspace["record"] else "Not Saved",
+            "Only the latest successful workflow run is kept as a reloadable saved workspace.",
         )
     with cols[3]:
         render_metric_card(
-            "Visible Artifacts",
-            str(len(artifact_history)),
-            "Artifacts linked to the currently selected workflow run.",
+            "Saved Status",
+            saved_workspace["status"].replace("_", " ").title(),
+            "Expired saves are deleted when the user tries to reload or inspect them after expiry.",
         )
 
-    if not workflow_history:
+    if saved_workspace["status"] == "expired":
+        st.warning(
+            "Your saved workspace expired after 24 hours and has been cleared. Re-run the workflow to create a fresh save."
+        )
+        return
+    if saved_workspace["record"] is None:
         st.caption(
-            "No saved workflow runs are available yet. Run the assisted workflow once while signed in, then return here."
+            "No saved workspace is available yet. Run the supervised workflow once while signed in, then return here."
         )
         return
 
-    selected_run_id = str(get_selected_history_workflow_run_id() or workflow_history[0].id)
-    selected_workflow_run = next(
-        (
-            workflow_run
-            for workflow_run in workflow_history
-            if str(workflow_run.id) == selected_run_id
-        ),
-        workflow_history[0],
-    )
+    record = saved_workspace["record"]
+    snapshot = saved_workspace.get("snapshot")
+    saved_report = saved_workspace.get("report")
+    saved_resume = saved_workspace.get("resume")
 
-    left_col, right_col = st.columns([0.95, 1.25])
-    with left_col:
-        st.subheader("Workflow Runs")
-        for workflow_run in workflow_history:
-            is_selected = str(workflow_run.id) == str(selected_workflow_run.id)
-            st.markdown(
-                "**{job}**".format(job=workflow_run.job_title or "Target Role")
-            )
-            st.caption(
-                "Fit {score}/100 | {status} | {created}".format(
-                    score=workflow_run.fit_score,
-                    status="Approved" if workflow_run.review_approved else "Review Pending",
-                    created=_format_history_timestamp(workflow_run.created_at),
-                )
-            )
-            if st.button(
-                "Selected Run" if is_selected else "Open Run",
-                key="history_run_{run_id}".format(run_id=workflow_run.id),
-            ):
-                workflow_history, artifact_history = refresh_authenticated_history(
-                    str(workflow_run.id)
-                )
-                selected_workflow_run = next(
-                    (
-                        run
-                        for run in workflow_history
-                        if str(run.id) == str(workflow_run.id)
-                    ),
-                    workflow_run,
-                )
-            st.markdown("---")
-
-    with right_col:
-        st.subheader("Selected Run")
+    status_cols = st.columns(4)
+    with status_cols[0]:
         render_metric_card(
-            "Fit Score",
-            "{score}/100".format(score=selected_workflow_run.fit_score),
-            "Stored fit score at the time this workflow run completed.",
+            "Target Role",
+            record.job_title or "Unknown",
+            "Latest role saved for explicit reload and download regeneration.",
         )
-        payload_status = get_saved_workflow_payload_status(selected_workflow_run)
-        status_cols = st.columns(3)
-        with status_cols[0]:
-            render_metric_card(
-                "Review Status",
-                "Approved" if selected_workflow_run.review_approved else "Pending",
-                "Final review outcome recorded for this run.",
-            )
-        with status_cols[1]:
-            render_metric_card(
-                "Model Policy",
-                selected_workflow_run.model_policy or "Deterministic",
-                "Model tier recorded for the workflow result.",
-            )
-        with status_cols[2]:
-            render_metric_card(
-                "Payload Format",
-                payload_status["label"],
-                "Saved historical downloads are rebuilt only when the payload format is supported.",
-            )
+    with status_cols[1]:
+        render_metric_card(
+            "Updated",
+            _format_history_timestamp(record.updated_at),
+            "Each successful workflow run overwrites the prior saved workspace.",
+        )
+    with status_cols[2]:
+        render_metric_card(
+            "Expires",
+            _format_history_timestamp(record.expires_at),
+            "After expiry the saved workspace is no longer reloadable.",
+        )
+    with status_cols[3]:
+        render_metric_card(
+            "Reload Action",
+            "Sidebar",
+            "Use `Reload Saved Workspace` from the sidebar to restore this snapshot into Manual JD Input.",
+        )
 
+    if snapshot and snapshot.fit_analysis:
+        fit_score = getattr(snapshot.fit_analysis, "overall_score", 0)
+        readiness = getattr(snapshot.fit_analysis, "readiness_label", "Unknown")
         st.caption(
-            "Created: {created}".format(
-                created=_format_history_timestamp(selected_workflow_run.created_at)
+            "Saved fit snapshot: {score}/100 with readiness marked as {label}.".format(
+                score=fit_score,
+                label=readiness,
             )
         )
-        st.caption(payload_status["message"])
 
-        active_workflow_run = get_active_workflow_run()
-        if active_workflow_run and str(active_workflow_run.id) == str(selected_workflow_run.id):
-            st.caption(
-                "This selected historical run is also the current active run for new export tracking."
-            )
-        else:
-            st.caption(
-                "New exports still attach to the current active workflow run, not to this historical selection."
-            )
-        saved_report = build_saved_report_from_workflow_run(selected_workflow_run)
-        saved_resume = build_saved_tailored_resume_from_workflow_run(selected_workflow_run)
-        if not payload_status["supported"]:
-            st.warning(
-                "Historical downloads are unavailable for this run because the saved payload format is not currently compatible."
-            )
-        if saved_report or saved_resume:
-            st.caption(
-                "Historical downloads below are regenerated from the saved run content, not from your current resume or current JD inputs."
-            )
-        if saved_report and payload_status["supported"]:
-            st.download_button(
-                "Download Saved Report Markdown",
-                data=export_markdown_bytes(saved_report),
-                file_name=saved_report.filename_stem + ".md",
-                mime="text/markdown",
-                key="history_saved_report_markdown_{run_id}".format(run_id=selected_workflow_run.id),
-            )
-            st.download_button(
-                "Download Saved Report PDF",
-                data=export_pdf_bytes(saved_report),
-                file_name=saved_report.filename_stem + ".pdf",
-                mime="application/pdf",
-                key="history_saved_report_pdf_{run_id}".format(run_id=selected_workflow_run.id),
-            )
-        if saved_resume and payload_status["supported"]:
-            st.download_button(
-                "Download Saved Tailored Resume Markdown",
-                data=export_markdown_bytes(saved_resume),
-                file_name=saved_resume.filename_stem + ".md",
-                mime="text/markdown",
-                key="history_saved_resume_markdown_{run_id}".format(run_id=selected_workflow_run.id),
-            )
-            st.download_button(
-                "Download Saved Tailored Resume PDF",
-                data=export_pdf_bytes(saved_resume),
-                file_name=saved_resume.filename_stem + ".pdf",
-                mime="application/pdf",
-                key="history_saved_resume_pdf_{run_id}".format(run_id=selected_workflow_run.id),
-            )
-        if saved_report and saved_resume and payload_status["supported"]:
-            st.download_button(
-                "Download Saved Export Bundle",
-                data=export_zip_bundle_bytes(
-                    {
-                        saved_report.filename_stem + ".md": export_markdown_bytes(saved_report),
-                        saved_report.filename_stem + ".pdf": export_pdf_bytes(saved_report),
-                        saved_resume.filename_stem + ".md": export_markdown_bytes(saved_resume),
-                        saved_resume.filename_stem + ".pdf": export_pdf_bytes(saved_resume),
-                    }
-                ),
-                file_name=saved_resume.filename_stem.replace("-tailored-resume", "-application-bundle") + ".zip",
-                mime="application/zip",
-                key="history_saved_bundle_{run_id}".format(run_id=selected_workflow_run.id),
-            )
-        st.markdown("### Artifacts")
-        if artifact_history:
-            for artifact in artifact_history:
-                st.markdown(
-                    "**{label}**".format(
-                        label=_format_artifact_label(artifact.artifact_type)
-                    )
-                )
-                st.caption(
-                    "{name} | {created}".format(
-                        name=artifact.filename_stem or "unnamed-artifact",
-                        created=_format_history_timestamp(artifact.created_at),
-                    )
-                )
-                if artifact.storage_path:
-                    st.text(artifact.storage_path)
-        else:
-            st.caption(
-                "No artifacts have been recorded for this run yet. Prepare a PDF or ZIP export to populate this list."
-            )
+    if saved_report or saved_resume:
+        st.caption(
+            "Downloads below are regenerated from the current saved workspace payloads, not from your current in-session inputs."
+        )
+    if saved_report:
+        render_download_button(
+            "Download Saved Report Markdown",
+            data=export_markdown_bytes(saved_report),
+            file_name=saved_report.filename_stem + ".md",
+            mime="text/markdown",
+            key="saved_workspace_report_markdown",
+        )
+        render_download_button(
+            "Download Saved Report PDF",
+            data=export_pdf_bytes(saved_report),
+            file_name=saved_report.filename_stem + ".pdf",
+            mime="application/pdf",
+            key="saved_workspace_report_pdf",
+        )
+    if saved_resume:
+        render_download_button(
+            "Download Saved Tailored Resume Markdown",
+            data=export_markdown_bytes(saved_resume),
+            file_name=saved_resume.filename_stem + ".md",
+            mime="text/markdown",
+            key="saved_workspace_resume_markdown",
+        )
+        render_download_button(
+            "Download Saved Tailored Resume PDF",
+            data=export_pdf_bytes(saved_resume),
+            file_name=saved_resume.filename_stem + ".pdf",
+            mime="application/pdf",
+            key="saved_workspace_resume_pdf",
+        )
+    if saved_report and saved_resume:
+        render_download_button(
+            "Download Saved Export Bundle",
+            data=export_zip_bundle_bytes(
+                {
+                    saved_report.filename_stem + ".md": export_markdown_bytes(saved_report),
+                    saved_report.filename_stem + ".pdf": export_pdf_bytes(saved_report),
+                    saved_resume.filename_stem + ".md": export_markdown_bytes(saved_resume),
+                    saved_resume.filename_stem + ".pdf": export_pdf_bytes(saved_resume),
+                }
+            ),
+            file_name=saved_resume.filename_stem.replace("-tailored-resume", "-application-bundle") + ".zip",
+            mime="application/zip",
+            key="saved_workspace_bundle",
+        )

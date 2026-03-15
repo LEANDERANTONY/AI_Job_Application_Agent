@@ -1,9 +1,11 @@
+import time
 from dataclasses import dataclass
 from typing import Optional
 
 from src.agents.orchestrator import ApplicationOrchestrator
 from src.config import (
     AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW,
+    DAILY_QUOTA_CACHE_TTL_SECONDS,
     OPENAI_MAX_CALLS_PER_SESSION,
     OPENAI_MAX_TOKENS_PER_SESSION,
 )
@@ -12,6 +14,7 @@ from src.openai_service import OpenAIService
 from src.quota_service import QuotaService
 from src.report_builder import build_application_report
 from src.resume_builder import build_tailored_resume_artifact
+from src.saved_workspace_store import SavedWorkspaceStore
 from src.schemas import (
     AgentWorkflowResult,
     ApplicationReport,
@@ -19,6 +22,7 @@ from src.schemas import (
     DailyQuotaStatus,
     FitAnalysis,
     JobDescription,
+    ResumeDocument,
     TailoredResumeArtifact,
     TailoredResumeDraft,
 )
@@ -33,13 +37,20 @@ from src.ui.state import (
     get_app_user_record,
     get_auth_tokens,
     get_daily_quota_status,
+    get_daily_quota_status_refreshed_at,
     get_openai_session_usage,
     get_state,
     get_tailored_resume_theme,
+    request_menu_navigation,
     reset_agent_workflow_if_signature_changed,
+    set_active_candidate_profile,
     set_agent_workflow_result,
     set_daily_quota_status,
+    set_daily_quota_status_refreshed_at,
     set_openai_session_usage,
+    set_tailored_resume_theme,
+    set_workspace_restore_notice,
+    store_resume_intake,
     store_fit_outputs,
     store_job_description_inputs,
     sync_report_signature,
@@ -51,6 +62,9 @@ from src.ui.workflow_payloads import (
     WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT,
     WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
     WORKFLOW_HISTORY_PAYLOAD_VERSION,
+    build_saved_report_from_payload,
+    build_saved_tailored_resume_from_payload,
+    build_saved_workflow_snapshot_from_payload,
     get_saved_workflow_payload_status,
 )
 from src.ui.workflow_signatures import report_signature as _report_signature
@@ -87,13 +101,24 @@ def _load_sample_jd(filename):
     return workflow_intake._load_sample_jd(filename)
 
 
-def refresh_daily_quota_status():
+def refresh_daily_quota_status(force=False, now=None):
     daily_quota = get_daily_quota_status()
+    cached_at = get_daily_quota_status_refreshed_at()
+    current_time = time.time() if now is None else now
     auth_user_record = get_app_user_record()
     access_token, refresh_token = get_auth_tokens()
     if auth_user_record is None or not access_token or not refresh_token:
         set_daily_quota_status(None)
+        set_daily_quota_status_refreshed_at(None)
         return None
+
+    if (
+        not force
+        and daily_quota is not None
+        and cached_at is not None
+        and (current_time - cached_at) < DAILY_QUOTA_CACHE_TTL_SECONDS
+    ):
+        return daily_quota
 
     auth_service = get_auth_service()
     usage_store = UsageStore(auth_service)
@@ -111,6 +136,7 @@ def refresh_daily_quota_status():
     except AppError:
         return get_daily_quota_status()
     set_daily_quota_status(daily_quota)
+    set_daily_quota_status_refreshed_at(current_time)
     return daily_quota
 
 
@@ -145,10 +171,12 @@ def build_ai_session_view_model():
     )
     usage_event_recorder = None
     quota_checker = None
-    daily_quota = refresh_daily_quota_status()
+    daily_quota = get_daily_quota_status()
     auth_user_record = get_app_user_record()
     access_token, refresh_token = get_auth_tokens()
     if auth_user_record is not None and access_token and refresh_token:
+        if daily_quota is None:
+            daily_quota = refresh_daily_quota_status()
         auth_service = get_auth_service()
         usage_store = UsageStore(auth_service)
         if usage_store.is_configured():
@@ -162,7 +190,7 @@ def build_ai_session_view_model():
             else:
 
                 def quota_checker():
-                    refreshed_quota = refresh_daily_quota_status()
+                    refreshed_quota = refresh_daily_quota_status(force=True)
                     if refreshed_quota and refreshed_quota.quota_exhausted:
                         raise AgentExecutionError(
                             "Your daily assisted usage limit has been reached. Try again tomorrow or upgrade your plan tier."
@@ -245,12 +273,114 @@ def _persist_workflow_run(view_model: JobWorkflowViewModel):
     return workflow_history.persist_workflow_run(view_model)
 
 
-def _persist_artifact_record(artifact_type: str, filename_stem: str, storage_path: str = ""):
-    return workflow_history.persist_artifact_record(artifact_type, filename_stem, storage_path)
-
-
 def refresh_authenticated_history(selected_workflow_run_id: Optional[str] = None):
     return workflow_history.refresh_authenticated_history(selected_workflow_run_id)
+
+
+def load_saved_workspace_summary():
+    auth_user_record = get_app_user_record()
+    access_token, refresh_token = get_auth_tokens()
+    if auth_user_record is None or not access_token or not refresh_token:
+        return {"status": "unauthenticated", "record": None, "report": None, "resume": None}
+
+    saved_workspace_store = SavedWorkspaceStore(get_auth_service())
+    if not saved_workspace_store.is_configured():
+        return {"status": "unconfigured", "record": None, "report": None, "resume": None}
+
+    saved_workspace, status = saved_workspace_store.load_workspace(
+        access_token,
+        refresh_token,
+        auth_user_record.id,
+    )
+    if saved_workspace is None:
+        return {"status": status, "record": None, "report": None, "resume": None}
+
+    return {
+        "status": status,
+        "record": saved_workspace,
+        "report": build_saved_report_from_payload(saved_workspace.report_payload_json),
+        "resume": build_saved_tailored_resume_from_payload(saved_workspace.tailored_resume_payload_json),
+        "snapshot": build_saved_workflow_snapshot_from_payload(saved_workspace.workflow_snapshot_json),
+    }
+
+
+def restore_latest_saved_workspace():
+    auth_user_record = get_app_user_record()
+    access_token, refresh_token = get_auth_tokens()
+    if auth_user_record is None or not access_token or not refresh_token:
+        result = {
+            "level": "warning",
+            "message": "Sign in with Google before reloading a saved workspace.",
+        }
+        set_workspace_restore_notice(result)
+        return result
+
+    saved_workspace_store = SavedWorkspaceStore(get_auth_service())
+    if not saved_workspace_store.is_configured():
+        result = {
+            "level": "warning",
+            "message": "Saved workspace reload is not configured.",
+        }
+        set_workspace_restore_notice(result)
+        return result
+
+    saved_workspace, status = saved_workspace_store.load_workspace(
+        access_token,
+        refresh_token,
+        auth_user_record.id,
+    )
+    if status == "expired":
+        result = {
+            "level": "warning",
+            "message": "Your saved workspace expired after 24 hours. Re-run the flow to save a fresh one.",
+        }
+        set_workspace_restore_notice(result)
+        return result
+    if saved_workspace is None:
+        result = {
+            "level": "info",
+            "message": "No saved workspace is available to reload yet.",
+        }
+        set_workspace_restore_notice(result)
+        return result
+
+    saved_snapshot = build_saved_workflow_snapshot_from_payload(saved_workspace.workflow_snapshot_json)
+    if saved_snapshot is None:
+        result = {
+            "level": "warning",
+            "message": "The saved workspace could not be restored safely. Re-run the flow to create a fresh save.",
+        }
+        set_workspace_restore_notice(result)
+        return result
+
+    store_resume_intake(
+        ResumeDocument(
+            text=saved_snapshot.candidate_profile.resume_text or "",
+            filetype="Saved Workspace",
+            source="saved_workspace",
+        ),
+        saved_snapshot.candidate_profile,
+    )
+    set_active_candidate_profile(saved_snapshot.candidate_profile)
+    store_job_description_inputs(
+        saved_snapshot.job_description.raw_text or saved_snapshot.job_description.cleaned_text,
+        "Reloaded saved workspace",
+        saved_snapshot.job_description,
+    )
+    store_fit_outputs(saved_snapshot.fit_analysis, saved_snapshot.tailored_draft)
+    set_agent_workflow_result(saved_snapshot.agent_result)
+    saved_resume = build_saved_tailored_resume_from_payload(saved_workspace.tailored_resume_payload_json)
+    if saved_resume is not None and saved_resume.theme:
+        set_tailored_resume_theme(saved_resume.theme)
+    request_menu_navigation("Manual JD Input")
+    result = {
+        "level": "success",
+        "message": "Reloaded your latest saved workspace. This save expires at {expires_at}.".format(
+            expires_at=saved_workspace.expires_at.replace("T", " ").replace("+00:00", " UTC")
+        ),
+    }
+    set_workspace_restore_notice(result)
+    return result
 
 
 def build_saved_report_from_workflow_run(workflow_run: Optional[object]):

@@ -1,3 +1,4 @@
+from src.config import get_openai_max_completion_tokens_for_task
 from src.prompts import build_tailoring_agent_prompt
 from src.schemas import (
     CandidateProfile,
@@ -42,6 +43,7 @@ class TailoringAgent:
                 prompt["system"],
                 prompt["user"],
                 expected_keys=prompt["expected_keys"],
+                max_completion_tokens=get_openai_max_completion_tokens_for_task("tailoring"),
                 task_name="tailoring",
             )
             return TailoringAgentOutput(

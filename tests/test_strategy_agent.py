@@ -69,9 +69,17 @@ def test_strategy_agent_run_uses_openai_payload_when_available():
         def is_available(self):
             return True
 
-        def run_json_prompt(self, system_prompt, user_prompt, expected_keys=None, task_name=None):
+        def run_json_prompt(
+            self,
+            system_prompt,
+            user_prompt,
+            expected_keys=None,
+            max_completion_tokens=None,
+            task_name=None,
+        ):
             captured["task_name"] = task_name
             captured["expected_keys"] = expected_keys
+            captured["max_completion_tokens"] = max_completion_tokens
             return {
                 "recruiter_positioning": "Position the candidate around delivery strength.",
                 "cover_letter_talking_points": ["Lead with delivery outcomes", "Lead with delivery outcomes"],
@@ -94,6 +102,7 @@ def test_strategy_agent_run_uses_openai_payload_when_available():
     )
 
     assert captured["task_name"] == "strategy"
+    assert captured["max_completion_tokens"] == 2500
     assert result.cover_letter_talking_points == ["Lead with delivery outcomes"]
     assert result.interview_preparation_themes == ["Delivery", "Architecture"]
     assert result.portfolio_project_emphasis == ["Platform APIs"]

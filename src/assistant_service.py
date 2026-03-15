@@ -1,11 +1,17 @@
 from dataclasses import asdict
+import logging
 
 from src.errors import AgentExecutionError
+from src.logging_utils import get_logger, log_event
 from src.prompts import (
     build_application_qa_assistant_prompt,
     build_product_help_assistant_prompt,
 )
+from src.config import get_openai_max_completion_tokens_for_task
 from src.schemas import AssistantResponse
+
+
+LOGGER = get_logger(__name__)
 
 
 class AssistantService:
@@ -29,16 +35,14 @@ class AssistantService:
                     prompt["user"],
                     expected_keys=prompt["expected_keys"],
                     temperature=0.2,
-                    max_completion_tokens=700,
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task(
+                        "assistant_product_help"
+                    ),
                     task_name="assistant_product_help",
                 )
-                return AssistantResponse(
-                    answer=str(payload.get("answer", "")).strip(),
-                    sources=[str(item).strip() for item in payload.get("sources", []) if str(item).strip()][:3],
-                    suggested_follow_ups=[str(item).strip() for item in payload.get("suggested_follow_ups", []) if str(item).strip()][:3],
-                )
-            except AgentExecutionError:
-                pass
+                return self._build_response(payload, max_sources=3)
+            except AgentExecutionError as exc:
+                self._log_assistant_fallback("assistant_product_help", exc)
         return self._fallback_product_help(question, current_page)
 
     def answer_application_qa(self, question, workflow_view_model, report=None, artifact=None, history=None):
@@ -63,21 +67,57 @@ class AssistantService:
                     prompt["user"],
                     expected_keys=prompt["expected_keys"],
                     temperature=0.2,
-                    max_completion_tokens=900,
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task(
+                        "assistant_application_qa"
+                    ),
                     task_name="assistant_application_qa",
                 )
-                return AssistantResponse(
-                    answer=str(payload.get("answer", "")).strip(),
-                    sources=[str(item).strip() for item in payload.get("sources", []) if str(item).strip()][:4],
-                    suggested_follow_ups=[str(item).strip() for item in payload.get("suggested_follow_ups", []) if str(item).strip()][:3],
-                )
-            except AgentExecutionError:
-                pass
+                return self._build_response(payload, max_sources=4)
+            except AgentExecutionError as exc:
+                self._log_assistant_fallback("assistant_application_qa", exc)
         return self._fallback_application_qa(question, workflow_view_model, artifact)
+
+    @staticmethod
+    def _build_response(payload, max_sources):
+        answer = str(payload.get("answer", "")).strip()
+        if not answer:
+            raise AgentExecutionError(
+                "The assistant returned an empty answer.",
+                details=str(payload),
+            )
+        return AssistantResponse(
+            answer=answer,
+            sources=[str(item).strip() for item in payload.get("sources", []) if str(item).strip()][:max_sources],
+            suggested_follow_ups=[str(item).strip() for item in payload.get("suggested_follow_ups", []) if str(item).strip()][:3],
+        )
+
+    @staticmethod
+    def _log_assistant_fallback(task_name, exc):
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            "assistant_fallback_used",
+            "Assistant request fell back to deterministic response.",
+            task_name=task_name,
+            error_message=exc.user_message,
+            details=exc.details,
+        )
 
     @staticmethod
     def _fallback_product_help(question, current_page):
         normalized = str(question or "").lower()
+        if "your name" in normalized or "who are you" in normalized:
+            return AssistantResponse(
+                answer="I am the in-app Product Help Assistant for the AI Job Application Agent. I can explain the current workflow, navigation, saved workspace behavior, and the difference between the generated outputs.",
+                sources=[current_page, "Upload Resume", "Manual JD Input"],
+                suggested_follow_ups=["How does the navigation work?", "What does Reload Saved Workspace do?"],
+            )
+        if "navigation" in normalized or "nav" in normalized or "tab" in normalized or "sidebar" in normalized:
+            return AssistantResponse(
+                answer="The sidebar navigation is the main way to move through the product. Upload Resume is where you parse your resume, Job Search is the placeholder search entry, Manual JD Input is where you load and analyze the target role, and Saved Workspace lets you inspect the latest saved account snapshot. If you are signed in, the account panel can also expose Reload Saved Workspace to restore that saved state back into Manual JD Input.",
+                sources=["Upload Resume", "Job Search", "Manual JD Input"],
+                suggested_follow_ups=["What does Saved Workspace do?", "What does Reload Saved Workspace do?"],
+            )
         if "resume" in normalized and ("upload" in normalized or "where" in normalized):
             return AssistantResponse(
                 answer="Start on Upload Resume. You can choose a sample file or upload your own PDF, DOCX, or TXT resume, then move to Manual JD Input once the resume is parsed.",

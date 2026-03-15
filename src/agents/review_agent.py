@@ -1,3 +1,4 @@
+from src.config import get_openai_max_completion_tokens_for_task
 from src.prompts import build_review_agent_prompt
 from src.schemas import (
     CandidateProfile,
@@ -39,6 +40,7 @@ class ReviewAgent:
                 prompt["system"],
                 prompt["user"],
                 expected_keys=prompt["expected_keys"],
+                max_completion_tokens=get_openai_max_completion_tokens_for_task("review"),
                 task_name="review",
             )
             return ReviewAgentOutput(

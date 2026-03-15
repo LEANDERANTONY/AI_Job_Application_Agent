@@ -21,6 +21,13 @@ from src.logging_utils import get_logger, log_event
 LOGGER = get_logger(__name__)
 
 
+def _ensure_json_input_prompt(user_prompt):
+    prompt_text = str(user_prompt or "")
+    if "json" in prompt_text.lower():
+        return prompt_text
+    return "Respond in JSON only.\n\n{prompt}".format(prompt=prompt_text)
+
+
 class OpenAIService:
     def __init__(
         self,
@@ -194,7 +201,7 @@ class OpenAIService:
         request_payload = {
             "model": resolved_model,
             "instructions": system_prompt,
-            "input": user_prompt,
+            "input": _ensure_json_input_prompt(user_prompt),
             "store": False,
             "max_output_tokens": max_completion_tokens,
             "metadata": request_metadata or None,
@@ -234,6 +241,7 @@ class OpenAIService:
                         task_name=task_name,
                         duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
                         error_type=type(retry_exc).__name__,
+                        details=str(retry_exc),
                     )
                     raise AgentExecutionError(
                         "The AI workflow request failed.",
@@ -249,6 +257,7 @@ class OpenAIService:
                     task_name=task_name,
                     duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
                     error_type=type(exc).__name__,
+                    details=str(exc),
                 )
                 raise AgentExecutionError(
                     "The AI workflow request failed.",
@@ -284,6 +293,7 @@ class OpenAIService:
                     task_name=task_name,
                     duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
                     error_type=type(retry_exc).__name__,
+                    details=str(retry_exc),
                 )
                 raise AgentExecutionError(
                     "The AI workflow request failed.",

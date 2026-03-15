@@ -1,16 +1,17 @@
 import streamlit as st
 
 from src.errors import AppError
+from src.ui import workflow
 from src.ui.state import CURRENT_MENU, consume_pending_menu, get_current_menu, set_current_menu
 from src.ui.state import (
     clear_authenticated_session,
     get_app_user_record,
-    get_artifact_history,
     get_auth_error,
     get_auth_tokens,
     get_authenticated_user,
-    get_workflow_history,
+    get_workspace_restore_notice,
     set_auth_error,
+    set_workspace_restore_notice,
 )
 
 
@@ -18,14 +19,14 @@ MENU_OPTIONS = [
     "Upload Resume",
     "Job Search",
     "Manual JD Input",
-    "History",
+    "Saved Workspace",
 ]
 
 MENU_COPY = {
     "Upload Resume": "Parse a resume and keep it ready for tailoring.",
     "Job Search": "Placeholder for job-source integrations and matching.",
     "Manual JD Input": "Load a target role and extract structured requirements.",
-    "History": "Review authenticated workflow runs and export history.",
+    "Saved Workspace": "Review or download your latest 24-hour saved workspace.",
 }
 
 
@@ -38,6 +39,7 @@ def _render_account_panel(auth_service):
 
     user = get_authenticated_user()
     app_user = get_app_user_record()
+    restore_notice = get_workspace_restore_notice()
     if user is not None:
         st.markdown("**Signed in**")
         st.write(user.display_name or user.email or user.user_id)
@@ -60,33 +62,24 @@ def _render_account_panel(auth_service):
             finally:
                 clear_authenticated_session()
                 st.rerun()
-        workflow_history = get_workflow_history()
-        if workflow_history:
-            with st.expander("Recent Workflow Runs", expanded=False):
-                for workflow_run in workflow_history[:5]:
-                    status = "Approved" if workflow_run.review_approved else "Review Pending"
-                    st.markdown(
-                        "**{job}**".format(job=workflow_run.job_title or "Target Role")
-                    )
-                    st.caption(
-                        "Fit {score}/100 | {status} | {created}".format(
-                            score=workflow_run.fit_score,
-                            status=status,
-                            created=workflow_run.created_at or "unknown time",
-                        )
-                    )
-        artifact_history = get_artifact_history()
-        if artifact_history:
-            with st.expander("Recent Artifacts", expanded=False):
-                for artifact in artifact_history[:5]:
-                    st.markdown("**{kind}**".format(kind=artifact.artifact_type or "artifact"))
-                    st.caption(
-                        "{name} | {created}".format(
-                            name=artifact.filename_stem or "unnamed-artifact",
-                            created=artifact.created_at or "unknown time",
-                        )
-                    )
+        if st.button("Reload Saved Workspace", key="reload_saved_workspace"):
+            result = workflow.restore_latest_saved_workspace()
+            if result.get("level") == "success":
+                st.rerun()
+        if restore_notice:
+            level = str(restore_notice.get("level", "info") or "info").lower()
+            message = str(restore_notice.get("message", "") or "")
+            if message:
+                if level == "success":
+                    st.success(message)
+                elif level == "warning":
+                    st.warning(message)
+                else:
+                    st.info(message)
         return
+
+    if restore_notice:
+        set_workspace_restore_notice(None)
 
     st.caption(
         "Sign in with Google to unlock the assisted workflow and persistent account state."
@@ -138,7 +131,7 @@ def render_sidebar(auth_service):
             <div class="sidebar-card">
                 <div class="sidebar-kicker">Current Focus</div>
                 <div style="font-size:0.92rem; color:#cbd5e1;">
-                    Deployment hardening, authenticated history, and reliable export regeneration.
+                    Deployment hardening, expiring saved workspaces, and reliable export regeneration.
                 </div>
             </div>
             """,

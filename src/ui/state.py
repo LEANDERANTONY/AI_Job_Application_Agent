@@ -29,10 +29,8 @@ AUTH_ERROR = "auth_error"
 AUTH_PKCE_CODE_VERIFIER = "auth_pkce_code_verifier"
 APP_USER_RECORD = "app_user_record"
 DAILY_QUOTA_STATUS = "daily_quota_status"
-WORKFLOW_HISTORY = "workflow_history"
-ARTIFACT_HISTORY = "artifact_history"
-ACTIVE_WORKFLOW_RUN = "active_workflow_run"
-HISTORY_SELECTED_WORKFLOW_RUN_ID = "history_selected_workflow_run_id"
+DAILY_QUOTA_STATUS_REFRESHED_AT = "daily_quota_status_refreshed_at"
+WORKSPACE_RESTORE_NOTICE = "workspace_restore_notice"
 
 
 def get_state(key, default=None):
@@ -116,10 +114,8 @@ def clear_authenticated_session():
     pop_state(AUTH_REFRESH_TOKEN, None)
     pop_state(APP_USER_RECORD, None)
     pop_state(DAILY_QUOTA_STATUS, None)
-    pop_state(WORKFLOW_HISTORY, None)
-    pop_state(ARTIFACT_HISTORY, None)
-    pop_state(ACTIVE_WORKFLOW_RUN, None)
-    pop_state(HISTORY_SELECTED_WORKFLOW_RUN_ID, None)
+    pop_state(DAILY_QUOTA_STATUS_REFRESHED_AT, None)
+    pop_state(WORKSPACE_RESTORE_NOTICE, None)
     return pop_state(AUTH_USER, None)
 
 
@@ -159,44 +155,29 @@ def get_daily_quota_status():
 
 def set_daily_quota_status(daily_quota_status):
     if daily_quota_status is None:
+        pop_state(DAILY_QUOTA_STATUS_REFRESHED_AT, None)
         return pop_state(DAILY_QUOTA_STATUS, None)
     return set_state(DAILY_QUOTA_STATUS, daily_quota_status)
 
 
-def get_workflow_history():
-    return get_state(WORKFLOW_HISTORY, [])
+def get_daily_quota_status_refreshed_at():
+    return get_state(DAILY_QUOTA_STATUS_REFRESHED_AT)
 
 
-def set_workflow_history(workflow_history):
-    return set_state(WORKFLOW_HISTORY, workflow_history or [])
+def set_daily_quota_status_refreshed_at(refreshed_at):
+    if refreshed_at is None:
+        return pop_state(DAILY_QUOTA_STATUS_REFRESHED_AT, None)
+    return set_state(DAILY_QUOTA_STATUS_REFRESHED_AT, refreshed_at)
 
 
-def get_artifact_history():
-    return get_state(ARTIFACT_HISTORY, [])
+def get_workspace_restore_notice():
+    return get_state(WORKSPACE_RESTORE_NOTICE)
 
 
-def set_artifact_history(artifact_history):
-    return set_state(ARTIFACT_HISTORY, artifact_history or [])
-
-
-def get_active_workflow_run():
-    return get_state(ACTIVE_WORKFLOW_RUN)
-
-
-def set_active_workflow_run(workflow_run):
-    if workflow_run is None:
-        return pop_state(ACTIVE_WORKFLOW_RUN, None)
-    return set_state(ACTIVE_WORKFLOW_RUN, workflow_run)
-
-
-def get_selected_history_workflow_run_id():
-    return get_state(HISTORY_SELECTED_WORKFLOW_RUN_ID)
-
-
-def set_selected_history_workflow_run_id(workflow_run_id):
-    if workflow_run_id is None:
-        return pop_state(HISTORY_SELECTED_WORKFLOW_RUN_ID, None)
-    return set_state(HISTORY_SELECTED_WORKFLOW_RUN_ID, str(workflow_run_id))
+def set_workspace_restore_notice(notice):
+    if notice is None:
+        return pop_state(WORKSPACE_RESTORE_NOTICE, None)
+    return set_state(WORKSPACE_RESTORE_NOTICE, notice)
 
 
 def store_resume_intake(resume_document, candidate_profile_resume):

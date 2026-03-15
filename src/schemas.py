@@ -265,25 +265,21 @@ class DailyQuotaStatus:
 
 
 @dataclass
-class WorkflowRunRecord:
-    id: str
+class SavedWorkflowSnapshot:
+    candidate_profile: CandidateProfile
+    job_description: JobDescription
+    fit_analysis: FitAnalysis
+    tailored_draft: TailoredResumeDraft
+    agent_result: Optional[AgentWorkflowResult] = None
+
+
+@dataclass
+class SavedWorkspaceRecord:
     user_id: str
     job_title: str = ""
-    fit_score: int = 0
-    review_approved: bool = False
-    model_policy: str = ""
     workflow_signature: str = ""
     workflow_snapshot_json: str = ""
     report_payload_json: str = ""
     tailored_resume_payload_json: str = ""
-    created_at: str = ""
-
-
-@dataclass
-class ArtifactRecord:
-    id: str
-    workflow_run_id: str
-    artifact_type: str = ""
-    filename_stem: str = ""
-    storage_path: str = ""
-    created_at: str = ""
+    expires_at: str = ""
+    updated_at: str = ""

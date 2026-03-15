@@ -73,8 +73,22 @@ def _load_bool_env(name: str, default: bool = False):
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
+    "profile": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PROFILE", 1800),
+    "job": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_JOB", 1800),
+    "fit": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_FIT", 3200),
+    "tailoring": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_TAILORING", 3200),
+    "strategy": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_STRATEGY", 2500),
+    "review": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_REVIEW", 2000),
+    "resume_generation": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_GENERATION", 5000),
+    "assistant_product_help": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PRODUCT_HELP", 700),
+    "assistant_application_qa": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
+}
+
+
 OPENAI_MAX_CALLS_PER_SESSION = _load_int_env("OPENAI_MAX_CALLS_PER_SESSION", 24)
 OPENAI_MAX_TOKENS_PER_SESSION = _load_int_env("OPENAI_MAX_TOKENS_PER_SESSION", 120000)
+DAILY_QUOTA_CACHE_TTL_SECONDS = _load_int_env("DAILY_QUOTA_CACHE_TTL_SECONDS", 15)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 SUPABASE_AUTH_REDIRECT_URL = os.getenv(
@@ -88,12 +102,10 @@ SUPABASE_APP_USERS_TABLE = os.getenv("SUPABASE_APP_USERS_TABLE", "app_users").st
 SUPABASE_USAGE_EVENTS_TABLE = os.getenv(
     "SUPABASE_USAGE_EVENTS_TABLE", "usage_events"
 ).strip()
-SUPABASE_WORKFLOW_RUNS_TABLE = os.getenv(
-    "SUPABASE_WORKFLOW_RUNS_TABLE", "workflow_runs"
+SUPABASE_SAVED_WORKSPACES_TABLE = os.getenv(
+    "SUPABASE_SAVED_WORKSPACES_TABLE", "saved_workspaces"
 ).strip()
-SUPABASE_ARTIFACTS_TABLE = os.getenv(
-    "SUPABASE_ARTIFACTS_TABLE", "artifacts"
-).strip()
+SAVED_WORKSPACE_TTL_HOURS = _load_int_env("SAVED_WORKSPACE_TTL_HOURS", 24)
 AUTH_DEFAULT_PLAN_TIER = os.getenv("AUTH_DEFAULT_PLAN_TIER", "free").strip()
 AUTH_DEFAULT_ACCOUNT_STATUS = os.getenv(
     "AUTH_DEFAULT_ACCOUNT_STATUS", "active"
@@ -146,6 +158,12 @@ def get_openai_reasoning_effort_for_task(task_name: str = None, fallback: str = 
     if task_name:
         return OPENAI_REASONING_ROUTING.get(task_name, fallback or OPENAI_REASONING_DEFAULT)
     return fallback or OPENAI_REASONING_DEFAULT
+
+
+def get_openai_max_completion_tokens_for_task(task_name: str = None, fallback: int = 1200):
+    if task_name:
+        return OPENAI_MAX_COMPLETION_TOKENS_ROUTING.get(task_name, fallback)
+    return fallback
 
 
 def describe_openai_model_policy(default_model: str = None):

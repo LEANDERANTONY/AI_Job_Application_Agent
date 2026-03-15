@@ -43,7 +43,7 @@ The repository now follows the same product-style structure as the GitHub Portfo
 - Build an application package / strategy report from the current workflow state
 - Download the tailored resume and the report as Markdown or PDF
 - Download both artifacts together as a ZIP bundle
-- Save authenticated workflow history and regenerate historical downloads from saved run payloads without re-running OpenAI
+- Save one reloadable authenticated workspace snapshot per user for 24 hours and reload it on demand from the sidebar
 - Ask a built-in two-mode assistant for:
   - product help (`Using the App`)
   - grounded application Q&A (`About My Resume`)
@@ -55,14 +55,14 @@ The repository now follows the same product-style structure as the GitHub Portfo
 
 ## Current Status
 
-The app is still an MVP, but it is now a coherent authenticated workflow product rather than only a deterministic prototype. Resume parsing, JD structuring, deterministic fit analysis, supervised specialist-agent orchestration, bounded review-driven revision, tailored resume generation, report generation, preview-before-download flows, export packaging, model-aware assisted routing, grounded in-app assistance, Google sign-in, persisted usage tracking, daily quotas, and workflow history are all working.
+The app is still an MVP, but it is now a coherent authenticated workflow product rather than only a deterministic prototype. Resume parsing, JD structuring, deterministic fit analysis, supervised specialist-agent orchestration, bounded review-driven revision, tailored resume generation, report generation, preview-before-download flows, export packaging, model-aware assisted routing, grounded in-app assistance, Google sign-in, persisted usage tracking, daily quotas, and 24-hour saved workspace reloads are all working.
 
 The active product scope is intentionally focused:
 
 - resume plus JD in
 - grounded tailored resume plus application package out
 
-Google sign-in is integrated alongside persisted per-user usage tracking, plan-based daily quotas, and saved workflow and artifact history backed by Supabase Postgres. Historical resume and report downloads are regenerated from the saved run payloads, while any new resume or JD input produces a new workflow run instead of reusing stale artifacts.
+Google sign-in is integrated alongside persisted per-user usage tracking, plan-based daily quotas, and a single reloadable saved workspace backed by Supabase Postgres. Each successful workflow run overwrites the prior saved workspace for that user, and the saved workspace expires after 24 hours by default.
 
 ## Strategy
 
@@ -72,7 +72,7 @@ That document captures:
 
 - why we are keeping Streamlit first
 - why this app keeps a sidebar unlike the GitHub agent
-- how the current supervised workflow, auth, quotas, and history layers fit together
+- how the current supervised workflow, auth, quotas, and saved-workspace layers fit together
 - where the real architecture boundaries are today and where backend extraction becomes worth it later
 - the re-baselined implementation roadmap from the current product state
 
@@ -193,8 +193,8 @@ Optional runtime and routing settings:
 - `SUPABASE_AUTH_REDIRECT_URL`
 - `SUPABASE_APP_USERS_TABLE`
 - `SUPABASE_USAGE_EVENTS_TABLE`
-- `SUPABASE_WORKFLOW_RUNS_TABLE`
-- `SUPABASE_ARTIFACTS_TABLE`
+- `SUPABASE_SAVED_WORKSPACES_TABLE`
+- `SAVED_WORKSPACE_TTL_HOURS`
 - `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW`
 - `AUTH_DEFAULT_PLAN_TIER`
 - `AUTH_DEFAULT_ACCOUNT_STATUS`
@@ -212,7 +212,7 @@ The current OpenAI Responses API integration also includes runtime safeguards fo
 - one retry with a higher output-token budget when a response is incomplete because the original output budget was exhausted
 - longer client timeouts plus SDK retries to reduce transient read-timeout failures
 
-The current app also does not require Supabase for a first hosted deploy. If Supabase is not configured yet, the app can still run the non-authenticated product shell and deterministic workflow. Google sign-in, persisted history, artifact tracking, and account-level quotas remain inactive until Supabase is configured.
+The current app also does not require Supabase for a first hosted deploy. If Supabase is not configured yet, the app can still run the non-authenticated product shell and deterministic workflow. Google sign-in, saved-workspace reloads, and account-level quotas remain inactive until Supabase is configured.
 
 If you plan to deploy before creating Supabase, set `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW=false` so the AI-assisted workflow button is not blocked by the missing login layer. Once Supabase exists, turn it back on if you want assisted usage tied to authenticated accounts.
 
@@ -228,13 +228,12 @@ Local runs now load a private repo-root `.env` file automatically. On Streamlit 
 
 For the concrete operator checklist, see [docs/supabase-setup-checklist.md](docs/supabase-setup-checklist.md).
 
-To enable the full authenticated persistence path in one step, apply [docs/supabase-bootstrap.sql](docs/supabase-bootstrap.sql) in the Supabase SQL Editor. That bootstrap script creates `app_users`, `usage_events`, `workflow_runs`, and `artifacts` with the required indexes and RLS policies.
+To enable the full authenticated persistence path in one step, apply [docs/supabase-bootstrap.sql](docs/supabase-bootstrap.sql) in the Supabase SQL Editor. That bootstrap script creates `app_users`, `usage_events`, and `saved_workspaces` for the active product path.
 
 If you prefer incremental setup, the same schema is still split across:
 
 - [docs/supabase-app-users.sql](docs/supabase-app-users.sql)
 - [docs/supabase-usage-events.sql](docs/supabase-usage-events.sql)
-- [docs/supabase-workflow-history.sql](docs/supabase-workflow-history.sql)
 
 To enable persistent account sync after login, create the `app_users` table in Supabase and keep `SUPABASE_APP_USERS_TABLE` aligned with its name. The authenticated user now syncs a lightweight app-level account record on sign-in and session restore.
 
@@ -242,11 +241,13 @@ To persist assisted usage in the external database, also create the `usage_event
 
 The app now enforces authenticated daily assisted limits from persisted usage. Free-tier defaults and paid-tier defaults are configured through environment variables, and admin/internal plan tiers remain unrestricted.
 
-Authenticated assisted runs now also persist lightweight history metadata plus saved run payloads in Supabase. The sidebar account panel surfaces a recent snapshot, and the dedicated History page lets the user inspect saved runs, inspect linked artifacts, and regenerate historical downloads from the saved run content instead of the current in-session inputs.
+Authenticated assisted runs now persist one reloadable workspace payload in Supabase. The sidebar account panel exposes an explicit `Reload Saved Workspace` action, and the dedicated `Saved Workspace` page lets the user inspect expiry status and regenerate downloads from that one saved payload instead of the current in-session inputs.
+
+The saved workspace is overwritten by each new successful workflow run for the same user. By default it is retained for 24 hours. After `expires_at`, Supabase Row Level Security stops serving it immediately, and a scheduled cleanup job removes expired rows from the table every 5 minutes. The app also purges expired rows on save/load as a backup cleanup path.
 
 New saved workflow payloads are written through a versioned JSON envelope, while the reader remains backward-compatible with the earlier unversioned payload format.
 
-This keeps storage cheap: the app stores structured workflow payloads and metadata in Postgres, regenerates PDFs on demand, and avoids storing large binary artifacts unless that tradeoff becomes necessary later.
+This keeps storage cheap: the app stores one structured workspace payload per user in Postgres, regenerates PDFs on demand, and avoids storing large binary artifacts unless that tradeoff becomes necessary later.
 
 If `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW` is left at its default value of `true`, the AI-assisted workflow button is disabled until the user signs in. Resume parsing and deterministic JD analysis remain available without login.
 

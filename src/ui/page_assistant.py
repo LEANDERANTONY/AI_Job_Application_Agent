@@ -3,7 +3,36 @@ import streamlit as st
 from src.assistant_service import AssistantService
 from src.schemas import AssistantTurn
 from src.ui.components import render_section_head
-from src.ui.state import append_assistant_turn, clear_assistant_history, get_assistant_history
+from src.ui.state import (
+    append_assistant_turn,
+    clear_assistant_history,
+    get_assistant_history,
+    is_authenticated,
+    set_openai_session_usage,
+)
+from src.ui.workflow import build_ai_session_view_model
+
+
+def _resolve_assistant_ai_session(workflow_view_model=None):
+    if workflow_view_model and workflow_view_model.ai_session:
+        return workflow_view_model.ai_session
+    return build_ai_session_view_model()
+
+
+def _build_product_help_context(workflow_view_model=None, artifact=None, report=None):
+    return {
+        "available_pages": [
+            "Upload Resume",
+            "Job Search",
+            "Manual JD Input",
+            "Saved Workspace",
+        ],
+        "signed_in_actions": ["Reload Saved Workspace"] if is_authenticated() else [],
+        "has_resume": bool(workflow_view_model and workflow_view_model.candidate_profile),
+        "has_job_description": bool(workflow_view_model and workflow_view_model.job_description),
+        "has_tailored_resume": bool(artifact),
+        "has_report": bool(report),
+    }
 
 
 def render_assistant_panel(current_page, workflow_view_model=None, artifact=None, report=None):
@@ -65,22 +94,19 @@ def render_assistant_panel(current_page, workflow_view_model=None, artifact=None
         st.rerun()
 
     if ask_clicked and question.strip():
-        openai_service = None
-        if workflow_view_model and workflow_view_model.ai_session:
-            openai_service = workflow_view_model.ai_session.openai_service
+        ai_session = _resolve_assistant_ai_session(workflow_view_model)
+        openai_service = ai_session.openai_service if ai_session else None
         assistant = AssistantService(openai_service=openai_service)
         if mode == "product_help":
             response = assistant.answer_product_help(
                 question,
                 current_page=current_page,
                 history=history,
-                app_context={
-                    "available_pages": ["Upload Resume", "Job Search", "Manual JD Input"],
-                    "has_resume": bool(workflow_view_model and workflow_view_model.candidate_profile),
-                    "has_job_description": bool(workflow_view_model and workflow_view_model.job_description),
-                    "has_tailored_resume": bool(artifact),
-                    "has_report": bool(report),
-                },
+                app_context=_build_product_help_context(
+                    workflow_view_model=workflow_view_model,
+                    artifact=artifact,
+                    report=report,
+                ),
             )
         else:
             response = assistant.answer_application_qa(
@@ -90,6 +116,8 @@ def render_assistant_panel(current_page, workflow_view_model=None, artifact=None
                 artifact=artifact,
                 history=history,
             )
+        if ai_session and ai_session.openai_service:
+            set_openai_session_usage(ai_session.openai_service.get_usage_snapshot())
         append_assistant_turn(
             mode,
             AssistantTurn(mode=mode, question=question.strip(), response=response),

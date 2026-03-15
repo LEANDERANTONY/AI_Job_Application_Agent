@@ -2,7 +2,27 @@ import json
 from dataclasses import asdict
 from typing import Optional
 
-from src.schemas import ApplicationReport, TailoredResumeArtifact
+from src.schemas import (
+    AgentWorkflowResult,
+    ApplicationReport,
+    CandidateProfile,
+    EducationEntry,
+    FitAgentOutput,
+    FitAnalysis,
+    JobAgentOutput,
+    JobDescription,
+    JobRequirements,
+    ProfileAgentOutput,
+    ResumeGenerationAgentOutput,
+    ReviewAgentOutput,
+    ReviewPassResult,
+    SavedWorkflowSnapshot,
+    StrategyAgentOutput,
+    TailoredResumeArtifact,
+    TailoredResumeDraft,
+    TailoringAgentOutput,
+    WorkExperience,
+)
 
 
 WORKFLOW_HISTORY_PAYLOAD_VERSION = 1
@@ -219,4 +239,196 @@ def build_saved_tailored_resume_from_payload(raw_payload: str):
         markdown=str(payload.get("markdown", "") or ""),
         plain_text=str(payload.get("plain_text", "") or ""),
         theme=str(payload.get("theme", "classic_ats") or "classic_ats"),
+    )
+
+
+def build_saved_workflow_snapshot_from_payload(raw_payload: str):
+    inspection = inspect_saved_payload(raw_payload, WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT)
+    if not inspection["supported"]:
+        return None
+    payload = inspection["data"] or {}
+    candidate_profile = payload.get("candidate_profile") or {}
+    job_description = payload.get("job_description") or {}
+    fit_analysis = payload.get("fit_analysis") or {}
+    tailored_draft = payload.get("tailored_draft") or {}
+    if not candidate_profile or not job_description or not fit_analysis or not tailored_draft:
+        return None
+    return SavedWorkflowSnapshot(
+        candidate_profile=_build_candidate_profile(candidate_profile),
+        job_description=_build_job_description(job_description),
+        fit_analysis=_build_fit_analysis(fit_analysis),
+        tailored_draft=_build_tailored_draft(tailored_draft),
+        agent_result=_build_agent_result(payload.get("agent_result")),
+    )
+
+
+def _build_candidate_profile(payload: dict):
+    return CandidateProfile(
+        full_name=str(payload.get("full_name", "") or ""),
+        location=str(payload.get("location", "") or ""),
+        source=str(payload.get("source", "") or ""),
+        resume_text=str(payload.get("resume_text", "") or ""),
+        skills=[str(item) for item in payload.get("skills", []) or []],
+        experience=[_build_work_experience(item) for item in payload.get("experience", []) or []],
+        education=[_build_education_entry(item) for item in payload.get("education", []) or []],
+        certifications=[str(item) for item in payload.get("certifications", []) or []],
+        source_signals=[str(item) for item in payload.get("source_signals", []) or []],
+    )
+
+
+def _build_work_experience(payload: dict):
+    return WorkExperience(
+        title=str(payload.get("title", "") or ""),
+        organization=str(payload.get("organization", "") or ""),
+        location=str(payload.get("location", "") or ""),
+        description=str(payload.get("description", "") or ""),
+        start=payload.get("start"),
+        end=payload.get("end"),
+    )
+
+
+def _build_education_entry(payload: dict):
+    return EducationEntry(
+        institution=str(payload.get("institution", "") or ""),
+        degree=str(payload.get("degree", "") or ""),
+        field_of_study=str(payload.get("field_of_study", "") or ""),
+        start=str(payload.get("start", "") or ""),
+        end=str(payload.get("end", "") or ""),
+    )
+
+
+def _build_job_description(payload: dict):
+    requirements = payload.get("requirements") or {}
+    return JobDescription(
+        title=str(payload.get("title", "") or ""),
+        raw_text=str(payload.get("raw_text", "") or ""),
+        cleaned_text=str(payload.get("cleaned_text", "") or ""),
+        location=str(payload.get("location", "") or "") or None,
+        requirements=JobRequirements(
+            hard_skills=[str(item) for item in requirements.get("hard_skills", []) or []],
+            soft_skills=[str(item) for item in requirements.get("soft_skills", []) or []],
+            experience_requirement=requirements.get("experience_requirement"),
+            must_haves=[str(item) for item in requirements.get("must_haves", []) or []],
+            nice_to_haves=[str(item) for item in requirements.get("nice_to_haves", []) or []],
+        ),
+    )
+
+
+def _build_fit_analysis(payload: dict):
+    return FitAnalysis(
+        target_role=str(payload.get("target_role", "") or ""),
+        overall_score=int(payload.get("overall_score", 0) or 0),
+        readiness_label=str(payload.get("readiness_label", "") or ""),
+        matched_hard_skills=[str(item) for item in payload.get("matched_hard_skills", []) or []],
+        missing_hard_skills=[str(item) for item in payload.get("missing_hard_skills", []) or []],
+        matched_soft_skills=[str(item) for item in payload.get("matched_soft_skills", []) or []],
+        missing_soft_skills=[str(item) for item in payload.get("missing_soft_skills", []) or []],
+        experience_signal=str(payload.get("experience_signal", "") or ""),
+        strengths=[str(item) for item in payload.get("strengths", []) or []],
+        gaps=[str(item) for item in payload.get("gaps", []) or []],
+        recommendations=[str(item) for item in payload.get("recommendations", []) or []],
+    )
+
+
+def _build_tailored_draft(payload: dict):
+    return TailoredResumeDraft(
+        target_role=str(payload.get("target_role", "") or ""),
+        professional_summary=str(payload.get("professional_summary", "") or ""),
+        highlighted_skills=[str(item) for item in payload.get("highlighted_skills", []) or []],
+        priority_bullets=[str(item) for item in payload.get("priority_bullets", []) or []],
+        gap_mitigation_steps=[str(item) for item in payload.get("gap_mitigation_steps", []) or []],
+    )
+
+
+def _build_profile_output(payload: dict):
+    return ProfileAgentOutput(
+        positioning_headline=str(payload.get("positioning_headline", "") or ""),
+        evidence_highlights=[str(item) for item in payload.get("evidence_highlights", []) or []],
+        strengths=[str(item) for item in payload.get("strengths", []) or []],
+        cautions=[str(item) for item in payload.get("cautions", []) or []],
+    )
+
+
+def _build_job_output(payload: dict):
+    return JobAgentOutput(
+        requirement_summary=str(payload.get("requirement_summary", "") or ""),
+        priority_skills=[str(item) for item in payload.get("priority_skills", []) or []],
+        must_have_themes=[str(item) for item in payload.get("must_have_themes", []) or []],
+        messaging_guidance=[str(item) for item in payload.get("messaging_guidance", []) or []],
+    )
+
+
+def _build_fit_output(payload: dict):
+    return FitAgentOutput(
+        fit_summary=str(payload.get("fit_summary", "") or ""),
+        top_matches=[str(item) for item in payload.get("top_matches", []) or []],
+        key_gaps=[str(item) for item in payload.get("key_gaps", []) or []],
+        interview_themes=[str(item) for item in payload.get("interview_themes", []) or []],
+    )
+
+
+def _build_tailoring_output(payload: dict):
+    return TailoringAgentOutput(
+        professional_summary=str(payload.get("professional_summary", "") or ""),
+        rewritten_bullets=[str(item) for item in payload.get("rewritten_bullets", []) or []],
+        highlighted_skills=[str(item) for item in payload.get("highlighted_skills", []) or []],
+        cover_letter_themes=[str(item) for item in payload.get("cover_letter_themes", []) or []],
+    )
+
+
+def _build_strategy_output(payload):
+    if not payload:
+        return None
+    return StrategyAgentOutput(
+        recruiter_positioning=str(payload.get("recruiter_positioning", "") or ""),
+        cover_letter_talking_points=[str(item) for item in payload.get("cover_letter_talking_points", []) or []],
+        interview_preparation_themes=[str(item) for item in payload.get("interview_preparation_themes", []) or []],
+        portfolio_project_emphasis=[str(item) for item in payload.get("portfolio_project_emphasis", []) or []],
+    )
+
+
+def _build_review_output(payload: dict):
+    return ReviewAgentOutput(
+        approved=bool(payload.get("approved", False)),
+        grounding_issues=[str(item) for item in payload.get("grounding_issues", []) or []],
+        revision_requests=[str(item) for item in payload.get("revision_requests", []) or []],
+        final_notes=[str(item) for item in payload.get("final_notes", []) or []],
+    )
+
+
+def _build_resume_generation_output(payload):
+    if not payload:
+        return None
+    return ResumeGenerationAgentOutput(
+        professional_summary=str(payload.get("professional_summary", "") or ""),
+        highlighted_skills=[str(item) for item in payload.get("highlighted_skills", []) or []],
+        experience_bullets=[str(item) for item in payload.get("experience_bullets", []) or []],
+        section_order=[str(item) for item in payload.get("section_order", []) or []],
+        template_hint=str(payload.get("template_hint", "classic_ats") or "classic_ats"),
+    )
+
+
+def _build_review_pass_result(payload: dict):
+    return ReviewPassResult(
+        pass_index=int(payload.get("pass_index", 0) or 0),
+        tailoring=_build_tailoring_output(payload.get("tailoring") or {}),
+        strategy=_build_strategy_output(payload.get("strategy")),
+        review=_build_review_output(payload.get("review") or {}),
+    )
+
+
+def _build_agent_result(payload):
+    if not payload:
+        return None
+    return AgentWorkflowResult(
+        mode=str(payload.get("mode", "") or ""),
+        model=str(payload.get("model", "") or ""),
+        profile=_build_profile_output(payload.get("profile") or {}),
+        job=_build_job_output(payload.get("job") or {}),
+        fit=_build_fit_output(payload.get("fit") or {}),
+        tailoring=_build_tailoring_output(payload.get("tailoring") or {}),
+        review=_build_review_output(payload.get("review") or {}),
+        strategy=_build_strategy_output(payload.get("strategy")),
+        resume_generation=_build_resume_generation_output(payload.get("resume_generation")),
+        review_history=[_build_review_pass_result(item) for item in payload.get("review_history", []) or []],
     )

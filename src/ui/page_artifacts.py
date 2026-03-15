@@ -5,7 +5,7 @@ from src.exporters import export_markdown_bytes
 from src.resume_builder import RESUME_THEMES
 from src.resume_diff import build_resume_diff, build_resume_diff_metrics
 from src.schemas import AgentWorkflowResult, ApplicationReport, TailoredResumeArtifact
-from src.ui.components import render_metric_card, render_section_head
+from src.ui.components import render_download_button, render_metric_card, render_section_head
 from src.ui.state import TAILORED_RESUME_THEME
 from src.ui.workflow import (
     get_active_candidate_profile,
@@ -55,7 +55,7 @@ def render_report_package(report: ApplicationReport, agent_result: AgentWorkflow
 
     download_col, pdf_col = st.columns(2)
     with download_col:
-        st.download_button(
+        render_download_button(
             "Download Markdown Package",
             data=export_markdown_bytes(report),
             file_name=report.filename_stem + ".md",
@@ -71,7 +71,7 @@ def render_report_package(report: ApplicationReport, agent_result: AgentWorkflow
                 except ExportError as error:
                     st.warning(error.user_message)
         else:
-            st.download_button(
+            render_download_button(
                 "Download PDF Package",
                 data=get_cached_pdf_package(),
                 file_name=report.filename_stem + ".pdf",
@@ -122,7 +122,7 @@ def render_export_bundle_actions(
         bundle_name = "{name}.zip".format(
             name=artifact.filename_stem.replace("-tailored-resume", "-application-bundle")
         )
-        st.download_button(
+        render_download_button(
             "Download Combined Export Bundle",
             data=cached_bundle,
             file_name=bundle_name,
@@ -248,7 +248,7 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
 
     download_col, pdf_col = st.columns(2)
     with download_col:
-        st.download_button(
+        render_download_button(
             "Download Tailored Resume Markdown",
             data=export_markdown_bytes(artifact),
             file_name=artifact.filename_stem + ".md",
@@ -264,7 +264,7 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
                 except ExportError as error:
                     st.warning(error.user_message)
         else:
-            st.download_button(
+            render_download_button(
                 "Download Tailored Resume PDF",
                 data=get_cached_tailored_resume_pdf_package(),
                 file_name=artifact.filename_stem + ".pdf",
