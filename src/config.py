@@ -50,7 +50,7 @@ OPENAI_REASONING_ROUTING = {
         "OPENAI_REASONING_RESUME_GENERATION", OPENAI_REASONING_HIGH_TRUST
     ).strip().lower(),
     "assistant_product_help": os.getenv(
-        "OPENAI_REASONING_PRODUCT_HELP", OPENAI_REASONING_DEFAULT
+        "OPENAI_REASONING_PRODUCT_HELP", "low"
     ).strip().lower(),
     "assistant_application_qa": os.getenv(
         "OPENAI_REASONING_APPLICATION_QA", OPENAI_REASONING_HIGH_TRUST

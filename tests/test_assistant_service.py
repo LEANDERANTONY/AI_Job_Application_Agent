@@ -160,6 +160,39 @@ def test_product_help_falls_back_when_model_returns_blank_answer():
     assert "report" in response.answer.lower()
 
 
+def test_product_help_uses_fast_fail_request_shape():
+    class FakeOpenAIService:
+        def __init__(self):
+            self.calls = []
+
+        @staticmethod
+        def is_available():
+            return True
+
+        def run_json_prompt(self, *args, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "answer": "Use Upload Resume first.",
+                "sources": ["Upload Resume"],
+                "suggested_follow_ups": [],
+            }
+
+    openai_service = FakeOpenAIService()
+    service = AssistantService(openai_service=openai_service)
+
+    response = service.answer_product_help(
+        "Where do I start?",
+        current_page="Upload Resume",
+        app_context={},
+    )
+
+    assert response.answer == "Use Upload Resume first."
+    assert len(openai_service.calls) == 1
+    assert openai_service.calls[0]["task_name"] == "assistant_product_help"
+    assert openai_service.calls[0]["temperature"] is None
+    assert openai_service.calls[0]["allow_output_budget_retry"] is False
+
+
 def test_build_response_raises_on_blank_answer_payload():
     try:
         AssistantService._build_response({"answer": "  "}, max_sources=3)

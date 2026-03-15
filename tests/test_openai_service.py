@@ -242,6 +242,33 @@ def test_openai_service_retries_when_incomplete_response_is_missing_required_fie
     assert client.responses.calls[1]["max_output_tokens"] == 500
 
 
+def test_openai_service_can_disable_higher_output_budget_retry():
+    client = FakeClient(
+        [
+            _build_response(
+                '{"approved": ',
+                response_id="resp_partial_json_no_retry",
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+                include_message=True,
+            )
+        ]
+    )
+    service = OpenAIService(client=client)
+
+    with pytest.raises(AgentExecutionError) as error:
+        service.run_json_prompt(
+            "system",
+            "user",
+            expected_keys=["approved"],
+            max_completion_tokens=100,
+            allow_output_budget_retry=False,
+        )
+
+    assert "invalid json response" in error.value.user_message.lower()
+    assert len(client.responses.calls) == 1
+
+
 def test_openai_service_uses_high_reasoning_for_high_trust_tasks():
     client = FakeClient([_build_response('{"approved": true}', response_id="resp_high")])
     service = OpenAIService(client=client)
@@ -250,6 +277,23 @@ def test_openai_service_uses_high_reasoning_for_high_trust_tasks():
 
     assert payload["approved"] is True
     assert client.responses.calls[0]["reasoning"] == {"effort": "high"}
+
+
+def test_openai_service_uses_low_reasoning_for_product_help_tasks():
+    client = FakeClient([_build_response('{"approved": true}', response_id="resp_low")])
+    service = OpenAIService(client=client)
+
+    payload = service.run_json_prompt(
+        "system",
+        "user",
+        expected_keys=["approved"],
+        task_name="assistant_product_help",
+        temperature=None,
+    )
+
+    assert payload["approved"] is True
+    assert client.responses.calls[0]["reasoning"] == {"effort": "low"}
+    assert "temperature" not in client.responses.calls[0]
 
 
 def test_openai_service_preserves_user_prompt_when_it_already_mentions_json():

@@ -165,6 +165,7 @@ class OpenAIService:
         task_name=None,
         model=None,
         metadata=None,
+        allow_output_budget_retry=True,
     ):
         if not self.is_available():
             raise AgentExecutionError(
@@ -264,7 +265,7 @@ class OpenAIService:
                     details=str(exc),
                 ) from exc
 
-        if self._is_incomplete_due_to_output_tokens(response):
+        if allow_output_budget_retry and self._is_incomplete_due_to_output_tokens(response):
             response, request_payload = self._retry_with_higher_output_budget(
                 response=response,
                 request_payload=request_payload,
@@ -279,7 +280,7 @@ class OpenAIService:
         try:
             payload = json.loads(content)
         except json.JSONDecodeError as exc:
-            if self._should_retry_partial_json_response(response):
+            if allow_output_budget_retry and self._should_retry_partial_json_response(response):
                 response, request_payload = self._retry_with_higher_output_budget(
                     response=response,
                     request_payload=request_payload,
@@ -306,7 +307,11 @@ class OpenAIService:
         missing_keys = [
             key for key in list(expected_keys or []) if key not in payload
         ]
-        if missing_keys and self._should_retry_partial_json_response(response):
+        if (
+            allow_output_budget_retry
+            and missing_keys
+            and self._should_retry_partial_json_response(response)
+        ):
             response, request_payload = self._retry_with_higher_output_budget(
                 response=response,
                 request_payload=request_payload,
