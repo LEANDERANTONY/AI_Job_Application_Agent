@@ -27,3 +27,25 @@ def test_resolve_resume_theme_widget_value_resets_invalid_stored_theme(monkeypat
 
     assert resolved == "modern_professional"
     assert calls == ["modern_professional"]
+
+
+def test_build_download_widget_key_changes_when_artifact_content_changes():
+    first = page_artifacts._build_download_widget_key(
+        "download_tailored_resume_markdown",
+        type("Artifact", (), {
+            "title": "Resume",
+            "summary": "Classic",
+            "markdown": "# Resume\nClassic",
+        })(),
+    )
+    second = page_artifacts._build_download_widget_key(
+        "download_tailored_resume_markdown",
+        type("Artifact", (), {
+            "title": "Resume",
+            "summary": "Modern",
+            "markdown": "# Resume\nModern",
+        })(),
+    )
+
+    assert first != second
+    assert first.startswith("download_tailored_resume_markdown:")

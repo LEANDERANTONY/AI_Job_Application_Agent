@@ -7,6 +7,7 @@ from src.resume_diff import build_resume_diff, build_resume_diff_metrics
 from src.schemas import AgentWorkflowResult, ApplicationReport, TailoredResumeArtifact
 from src.ui.components import render_download_button, render_metric_card, render_section_head
 from src.ui.state import TAILORED_RESUME_THEME, get_tailored_resume_theme, set_tailored_resume_theme
+from src.ui.workflow_signatures import report_signature
 from src.ui.workflow import (
     get_active_candidate_profile,
     get_cached_export_bundle_package,
@@ -26,6 +27,13 @@ def _resolve_resume_theme_widget_value(artifact_theme: str, theme_options: list[
     fallback_theme = artifact_theme if artifact_theme in theme_options else theme_options[0]
     set_tailored_resume_theme(fallback_theme)
     return fallback_theme
+
+
+def _build_download_widget_key(base_key: str, artifact) -> str:
+    return "{base}:{signature}".format(
+        base=base_key,
+        signature=report_signature(artifact)[:12],
+    )
 
 
 def render_report_package(report: ApplicationReport, agent_result: AgentWorkflowResult = None):
@@ -70,7 +78,7 @@ def render_report_package(report: ApplicationReport, agent_result: AgentWorkflow
             data=export_markdown_bytes(report),
             file_name=report.filename_stem + ".md",
             mime="text/markdown",
-            key="download_markdown_package",
+            key=_build_download_widget_key("download_markdown_package", report),
         )
     with pdf_col:
         if get_cached_pdf_package() is None:
@@ -86,7 +94,7 @@ def render_report_package(report: ApplicationReport, agent_result: AgentWorkflow
                 data=get_cached_pdf_package(),
                 file_name=report.filename_stem + ".pdf",
                 mime="application/pdf",
-                key="download_pdf_package",
+                key=_build_download_widget_key("download_pdf_package", report),
             )
 
 
@@ -137,7 +145,10 @@ def render_export_bundle_actions(
             data=cached_bundle,
             file_name=bundle_name,
             mime="application/zip",
-            key="download_export_bundle",
+            key="{report_key}:{artifact_key}".format(
+                report_key=_build_download_widget_key("download_export_bundle_report", report),
+                artifact_key=_build_download_widget_key("download_export_bundle_artifact", artifact),
+            ),
         )
 
 
@@ -263,7 +274,7 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
             data=export_markdown_bytes(artifact),
             file_name=artifact.filename_stem + ".md",
             mime="text/markdown",
-            key="download_tailored_resume_markdown",
+            key=_build_download_widget_key("download_tailored_resume_markdown", artifact),
         )
     with pdf_col:
         if get_cached_tailored_resume_pdf_package() is None:
@@ -279,5 +290,5 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
                 data=get_cached_tailored_resume_pdf_package(),
                 file_name=artifact.filename_stem + ".pdf",
                 mime="application/pdf",
-                key="download_tailored_resume_pdf",
+                key=_build_download_widget_key("download_tailored_resume_pdf", artifact),
             )
