@@ -110,6 +110,11 @@ AUTH_DEFAULT_PLAN_TIER = os.getenv("AUTH_DEFAULT_PLAN_TIER", "free").strip()
 AUTH_DEFAULT_ACCOUNT_STATUS = os.getenv(
     "AUTH_DEFAULT_ACCOUNT_STATUS", "active"
 ).strip()
+AUTH_INTERNAL_USER_EMAILS = tuple(
+    email.strip().lower()
+    for email in os.getenv("AUTH_INTERNAL_USER_EMAILS", "").split(",")
+    if email.strip()
+)
 FREE_TIER_MAX_CALLS_PER_DAY = _load_int_env("FREE_TIER_MAX_CALLS_PER_DAY", 12)
 FREE_TIER_MAX_TOKENS_PER_DAY = _load_int_env("FREE_TIER_MAX_TOKENS_PER_DAY", 60000)
 PAID_TIER_MAX_CALLS_PER_DAY = _load_int_env("PAID_TIER_MAX_CALLS_PER_DAY", 80)
@@ -131,6 +136,13 @@ def get_daily_quota_for_plan(plan_tier: str):
         "max_total_tokens": FREE_TIER_MAX_TOKENS_PER_DAY,
         "plan_tier": normalized_plan,
     }
+
+
+def get_default_plan_tier_for_email(email: str, fallback: str = None):
+    normalized_email = str(email or "").strip().lower()
+    if normalized_email and normalized_email in AUTH_INTERNAL_USER_EMAILS:
+        return "internal"
+    return (fallback or AUTH_DEFAULT_PLAN_TIER).strip().lower()
 
 
 def _load_text_file(path: Path):

@@ -6,6 +6,7 @@ from src.config import (
     AUTH_DEFAULT_ACCOUNT_STATUS,
     AUTH_DEFAULT_PLAN_TIER,
     SUPABASE_APP_USERS_TABLE,
+    get_default_plan_tier_for_email,
 )
 from src.errors import AppError
 from src.schemas import AppUserRecord
@@ -42,7 +43,10 @@ class AppUserStore:
             "display_name": auth_session.user.display_name or "",
             "avatar_url": auth_session.user.avatar_url or "",
             "last_seen_at": timestamp,
-            "plan_tier": self.default_plan_tier,
+            "plan_tier": get_default_plan_tier_for_email(
+                auth_session.user.email,
+                fallback=self.default_plan_tier,
+            ),
             "account_status": self.default_account_status,
         }
 
@@ -67,7 +71,7 @@ class AppUserStore:
                 avatar_url=auth_session.user.avatar_url or "",
                 created_at="",
                 last_seen_at=timestamp,
-                plan_tier=self.default_plan_tier,
+                plan_tier=payload["plan_tier"],
                 account_status=self.default_account_status,
             )
         return self._to_record(rows[0])

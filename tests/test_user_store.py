@@ -132,3 +132,52 @@ def test_app_user_store_surfaces_sync_failures(monkeypatch):
         store.sync_user_record(auth_session)
 
     assert "could not sync your account record" in error.value.user_message.lower()
+
+
+def test_app_user_store_assigns_internal_plan_to_allowlisted_email(monkeypatch):
+    auth_service = AuthService(
+        supabase_url="https://project.supabase.co",
+        supabase_anon_key="anon-key",
+        redirect_url="http://localhost:8501",
+    )
+    table_client = FakeTableClient(
+        response=SimpleNamespace(
+            data=[
+                {
+                    "id": "user-123",
+                    "email": "antony.leander@gmail.com",
+                    "display_name": "Leander Antony",
+                    "avatar_url": "https://example.com/avatar.png",
+                    "created_at": "2026-03-14T00:00:00+00:00",
+                    "last_seen_at": "2026-03-14T00:01:00+00:00",
+                    "plan_tier": "internal",
+                    "account_status": "active",
+                }
+            ]
+        )
+    )
+    monkeypatch.setattr(
+        auth_service,
+        "create_authenticated_client",
+        lambda access_token, refresh_token: table_client,
+    )
+    monkeypatch.setattr(
+        "src.user_store.get_default_plan_tier_for_email",
+        lambda email, fallback=None: "internal" if str(email).lower() == "antony.leander@gmail.com" else (fallback or "free"),
+    )
+    store = AppUserStore(auth_service)
+    auth_session = AuthSession(
+        access_token="access-token",
+        refresh_token="refresh-token",
+        user=AuthUser(
+            user_id="user-123",
+            email="antony.leander@gmail.com",
+            display_name="Leander Antony",
+            avatar_url="https://example.com/avatar.png",
+        ),
+    )
+
+    record = store.sync_user_record(auth_session)
+
+    assert table_client.last_query.upsert_payload["plan_tier"] == "internal"
+    assert record.plan_tier == "internal"
