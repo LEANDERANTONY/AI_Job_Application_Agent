@@ -408,7 +408,7 @@ def build_application_qa_assistant_prompt(
     history: Any = None,
 ) -> Dict[str, Any]:
     contract = {
-        "answer": "grounded answer about the user's resume, JD, report, or tailored resume",
+        "answer": "grounded answer that can combine general resume coaching with context-specific recommendations from the user's current package",
         "sources": "array of 1-4 workflow artifacts or signals used for the answer",
         "suggested_follow_ups": "array of 0-3 useful next questions or actions",
     }
@@ -421,7 +421,8 @@ def build_application_qa_assistant_prompt(
     )
     return {
         "system": (
-            "You are the Application Q&A Assistant. Answer only from the provided workflow context. "
+            "You are the Application Q&A Assistant. Use the provided workflow context as the grounding source for all context-specific claims. "
+            "If the user asks for broader resume or application coaching, you may provide general guidance, but anchor it back to the user's current package and clearly separate general advice from context-specific recommendations when helpful. "
             "Do not invent facts about the candidate, JD, or outputs. If evidence is weak, say so directly. "
             + _build_contract(contract)
         ),

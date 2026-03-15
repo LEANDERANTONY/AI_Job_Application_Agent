@@ -1,4 +1,4 @@
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 import logging
 
 from src.errors import AgentExecutionError
@@ -50,16 +50,11 @@ class AssistantService:
         if self._openai_service and self._openai_service.is_available():
             try:
                 prompt = build_application_qa_assistant_prompt(
-                    {
-                        "job_description": asdict(workflow_view_model.job_description) if workflow_view_model and workflow_view_model.job_description else None,
-                        "candidate_profile": asdict(workflow_view_model.candidate_profile) if workflow_view_model and workflow_view_model.candidate_profile else None,
-                        "fit_analysis": asdict(workflow_view_model.fit_analysis) if workflow_view_model and workflow_view_model.fit_analysis else None,
-                        "tailored_draft": asdict(workflow_view_model.tailored_draft) if workflow_view_model and workflow_view_model.tailored_draft else None,
-                        "agent_result": asdict(workflow_view_model.agent_result) if workflow_view_model and workflow_view_model.agent_result else None,
-                        "report_summary": getattr(report, "summary", None),
-                        "tailored_resume_summary": getattr(artifact, "summary", None),
-                        "tailored_resume_validation_notes": getattr(artifact, "validation_notes", []),
-                    },
+                    self._build_application_qa_context(
+                        workflow_view_model,
+                        report=report,
+                        artifact=artifact,
+                    ),
                     question,
                     history=history,
                 )
@@ -77,6 +72,39 @@ class AssistantService:
             except AgentExecutionError as exc:
                 self._log_assistant_fallback("assistant_application_qa", exc)
         return self._fallback_application_qa(question, workflow_view_model, artifact)
+
+    @staticmethod
+    def _build_application_qa_context(workflow_view_model, report=None, artifact=None):
+        fit_analysis = getattr(workflow_view_model, "fit_analysis", None) if workflow_view_model else None
+        agent_result = getattr(workflow_view_model, "agent_result", None) if workflow_view_model else None
+        review = getattr(agent_result, "review", None) if agent_result else None
+        return {
+            "job_description": AssistantService._to_context_payload(getattr(workflow_view_model, "job_description", None) if workflow_view_model else None),
+            "candidate_profile": AssistantService._to_context_payload(getattr(workflow_view_model, "candidate_profile", None) if workflow_view_model else None),
+            "fit_analysis": AssistantService._to_context_payload(fit_analysis),
+            "tailored_draft": AssistantService._to_context_payload(getattr(workflow_view_model, "tailored_draft", None) if workflow_view_model else None),
+            "agent_result": AssistantService._to_context_payload(agent_result),
+            "report_summary": getattr(report, "summary", None),
+            "tailored_resume_summary": getattr(artifact, "summary", None),
+            "tailored_resume_validation_notes": getattr(artifact, "validation_notes", []),
+            "current_highlighted_skills": list(getattr(artifact, "highlighted_skills", []) or getattr(fit_analysis, "matched_hard_skills", [])[:6]),
+            "fit_gaps": list(getattr(fit_analysis, "missing_hard_skills", []) or getattr(fit_analysis, "gaps", [])[:6]) if fit_analysis else [],
+            "review_approved": bool(getattr(review, "approved", False)) if review else False,
+            "review_revision_requests": list(getattr(review, "revision_requests", []) or []),
+            "review_grounding_issues": list(getattr(review, "grounding_issues", []) or []),
+        }
+
+    @staticmethod
+    def _to_context_payload(value):
+        if value is None:
+            return None
+        if is_dataclass(value):
+            return asdict(value)
+        if isinstance(value, dict):
+            return dict(value)
+        if hasattr(value, "__dict__"):
+            return dict(vars(value))
+        return value
 
     @staticmethod
     def _build_response(payload, max_sources):
@@ -179,12 +207,41 @@ class AssistantService:
 
         fit_analysis = workflow_view_model.fit_analysis
         agent_result = workflow_view_model.agent_result
+        highlighted_skills = list(
+            (getattr(artifact, "highlighted_skills", None) or fit_analysis.matched_hard_skills)[:4]
+        )
+        fit_gaps = list((fit_analysis.missing_hard_skills or fit_analysis.gaps)[:4])
+
+        if (
+            "cross-functional" in normalized
+            or "collaboration" in normalized
+            or "without experience" in normalized
+            or "without formal" in normalized
+            or "transferable" in normalized
+            or "frame" in normalized
+            or "position" in normalized
+        ):
+            return AssistantResponse(
+                answer=(
+                    "General advice: describe collaboration through outcomes, stakeholders, and handoffs rather than through job-title labels alone. "
+                    "Use bullets that show who you worked with, what decision or deliverable moved forward, and how your contribution improved the result. "
+                    "Context-specific recommendation: in your current package, anchor that story to {skills} and keep any weaker areas like {gaps} framed as adjacent or transferable evidence rather than direct claims you cannot support."
+                ).format(
+                    skills=", ".join(highlighted_skills) or "your strongest matched skills",
+                    gaps=", ".join(fit_gaps) or "remaining JD gaps",
+                ),
+                sources=["Candidate Profile", "Readiness Snapshot", "Tailored Resume Draft"],
+                suggested_follow_ups=[
+                    "Can you help me rewrite one bullet with that framing?",
+                    "Which collaboration examples in my package look strongest?",
+                ],
+            )
 
         if "missing" in normalized or "gap" in normalized or "weak" in normalized:
             return AssistantResponse(
                 answer=(
                     "The main gaps right now are: {gaps}. These come from the fit analysis against the JD, so they are the highest-friction areas to strengthen with real evidence."
-                ).format(gaps=", ".join((fit_analysis.missing_hard_skills or fit_analysis.gaps)[:4]) or "no major gaps surfaced"),
+                ).format(gaps=", ".join(fit_gaps) or "no major gaps surfaced"),
                 sources=["Deterministic Fit Analysis", "Readiness Snapshot"],
                 suggested_follow_ups=["How should I address these gaps honestly?", "Which of these gaps matter most?"],
             )
@@ -192,7 +249,7 @@ class AssistantService:
             return AssistantResponse(
                 answer=(
                     "The tailored resume was shaped to emphasize verified alignment with the JD, especially around {skills}. The change summary and comparison view show what moved, and the report explains the reasoning behind those adjustments."
-                ).format(skills=", ".join((artifact.highlighted_skills if artifact else [])[:4]) or "the strongest matched skills"),
+                ).format(skills=", ".join(highlighted_skills) or "the strongest matched skills"),
                 sources=["Tailored Resume Draft", "Change Summary", "Application Package"],
                 suggested_follow_ups=["Is this claim grounded in my resume?", "What should I verify before submitting?"],
             )
@@ -217,7 +274,7 @@ class AssistantService:
             ).format(
                 score=fit_analysis.overall_score,
                 label=fit_analysis.readiness_label,
-                skills=", ".join((artifact.highlighted_skills if artifact else fit_analysis.matched_hard_skills)[:4]) or "the strongest matched skills",
+                skills=", ".join(highlighted_skills) or "the strongest matched skills",
             ),
             sources=["Readiness Snapshot", "Tailored Resume Draft", "Application Package"],
             suggested_follow_ups=["What are my biggest remaining gaps?", "Why were these skills emphasized?"],

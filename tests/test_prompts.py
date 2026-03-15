@@ -1,4 +1,4 @@
-from src.prompts import build_fit_agent_prompt
+from src.prompts import build_application_qa_assistant_prompt, build_fit_agent_prompt
 
 
 def test_fit_prompt_compacts_large_sections_and_emits_budget_metadata():
@@ -37,3 +37,13 @@ def test_fit_prompt_compacts_large_sections_and_emits_budget_metadata():
     assert int(prompt["metadata"]["compacted_sections"]) >= 1
     assert "Candidate Profile" in prompt["metadata"].get("compacted_labels", "")
     assert len(prompt["user"]) < 15000
+
+
+def test_application_qa_prompt_allows_grounded_general_coaching():
+    prompt = build_application_qa_assistant_prompt(
+        workflow_context={"candidate_profile": {"summary": "Built dashboards"}},
+        question="How do I show collaboration without formal experience?",
+    )
+
+    assert "broader resume or application coaching" in prompt["system"]
+    assert "general advice" in prompt["system"]

@@ -134,6 +134,22 @@ def test_application_qa_requires_context_when_inputs_missing():
     assert "needs both a resume and a job description" in response.answer.lower()
 
 
+def test_application_qa_fallback_supports_broader_resume_coaching():
+    service = AssistantService()
+    view_model = _build_view_model()
+
+    response = service.answer_application_qa(
+        "How can I show cross-functional collaboration without formal work experience?",
+        workflow_view_model=view_model,
+        report=None,
+        artifact=SimpleNamespace(highlighted_skills=["Python", "SQL"], validation_notes=[]),
+    )
+
+    assert "general advice" in response.answer.lower()
+    assert "context-specific recommendation" in response.answer.lower()
+    assert response.sources
+
+
 def test_product_help_falls_back_when_model_returns_blank_answer():
     class FakeOpenAIService:
         @staticmethod
@@ -200,3 +216,28 @@ def test_build_response_raises_on_blank_answer_payload():
         assert "empty answer" in exc.user_message.lower()
     else:
         raise AssertionError("Expected AgentExecutionError for blank assistant answer")
+
+
+def test_build_application_qa_context_includes_review_and_skill_signals():
+    artifact = SimpleNamespace(
+        summary="Tailored summary",
+        validation_notes=["Check claim wording"],
+        highlighted_skills=["Python", "Communication"],
+    )
+    review = SimpleNamespace(
+        approved=True,
+        revision_requests=["Tighten bullet wording"],
+        grounding_issues=[],
+    )
+    workflow_view_model = _build_view_model()
+    workflow_view_model.agent_result = SimpleNamespace(review=review)
+
+    context = AssistantService._build_application_qa_context(
+        workflow_view_model,
+        report=SimpleNamespace(summary="Report summary"),
+        artifact=artifact,
+    )
+
+    assert context["current_highlighted_skills"] == ["Python", "Communication"]
+    assert context["review_approved"] is True
+    assert context["review_revision_requests"] == ["Tighten bullet wording"]
