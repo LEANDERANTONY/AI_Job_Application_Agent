@@ -242,6 +242,12 @@ To persist assisted usage in the external database, also create the `usage_event
 
 The app now enforces authenticated daily assisted limits from persisted usage. Free-tier defaults and paid-tier defaults are configured through environment variables, and admin/internal plan tiers remain unrestricted.
 
+For product testing, keep internal accounts and quota-test accounts separate:
+
+- put only unrestricted internal emails in `AUTH_INTERNAL_USER_EMAILS`
+- use a second Google account that is not allowlisted when you want to validate normal free-tier quota exhaustion, reset timing, and fallback messaging
+- do not add that quota-test account to `AUTH_INTERNAL_USER_EMAILS`, or it will bypass the very limits you are trying to test
+
 Authenticated assisted runs now persist one reloadable workspace payload in Supabase. The sidebar account panel exposes an explicit `Reload Saved Workspace` action, and the dedicated `Saved Workspace` page lets the user inspect expiry status and regenerate downloads from that one saved payload instead of the current in-session inputs.
 
 The saved workspace is overwritten by each new successful workflow run for the same user. By default it is retained for 24 hours. After `expires_at`, Supabase Row Level Security stops serving it immediately, and a scheduled cleanup job removes expired rows from the table every 5 minutes. The app also purges expired rows on save/load as a backup cleanup path.
