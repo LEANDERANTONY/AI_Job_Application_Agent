@@ -10,6 +10,7 @@ from src.ui.state import (
 from src.ui.workflow import (
     load_saved_workspace_summary,
     refresh_daily_quota_status,
+    restore_latest_saved_workspace,
 )
 
 
@@ -17,6 +18,18 @@ def _format_history_timestamp(raw_timestamp):
     if not raw_timestamp:
         return "Unknown time"
     return str(raw_timestamp).replace("T", " ").replace("+00:00", " UTC")
+
+
+def _build_saved_workspace_explainer(has_saved_workspace: bool):
+    lines = [
+        "This page is for inspection and download regeneration of your latest saved workspace.",
+        "Use Reload Saved Workspace when you want to push that saved snapshot back into Manual JD Input and continue working from it.",
+    ]
+    if has_saved_workspace:
+        lines.append("Your latest successful workflow run has a saved snapshot available right now.")
+    else:
+        lines.append("No saved snapshot is available yet, so the page stays informational until you run the supervised workflow while signed in.")
+    return lines
 
 
 def render_history_page(render_daily_quota_status):
@@ -39,7 +52,10 @@ def render_history_page(render_daily_quota_status):
     saved_workspace = load_saved_workspace_summary()
 
     st.info(
-        "This page reflects the latest reloadable workspace only. Each new successful workflow run overwrites the previous saved workspace, and the save expires after 24 hours by default."
+        "\n".join(_build_saved_workspace_explainer(bool(saved_workspace["record"])))
+    )
+    st.caption(
+        "Each new successful workflow run overwrites the previous saved workspace, and the save expires after 24 hours by default."
     )
 
     if daily_quota:
@@ -114,9 +130,14 @@ def render_history_page(render_daily_quota_status):
     with status_cols[3]:
         render_metric_card(
             "Reload Action",
-            "Sidebar",
-            "Use `Reload Saved Workspace` from the sidebar to restore this snapshot into Manual JD Input.",
+            "Page Or Sidebar",
+            "Reload from here or from the sidebar to restore this snapshot into Manual JD Input.",
         )
+
+    if st.button("Reload This Saved Workspace", key="reload_saved_workspace_page_action"):
+        result = restore_latest_saved_workspace()
+        if result.get("level") == "success":
+            st.rerun()
 
     if snapshot and snapshot.fit_analysis:
         fit_score = getattr(snapshot.fit_analysis, "overall_score", 0)
