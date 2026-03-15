@@ -1,4 +1,4 @@
-from typing import Iterable, Optional
+from typing import Optional
 
 from src.schemas import (
     AgentWorkflowResult,
@@ -9,18 +9,6 @@ from src.schemas import (
     TailoredResumeDraft,
 )
 from src.utils import markdown_to_text, render_markdown_list, safe_join_strings, slugify_text
-
-
-def _slugify(value: str) -> str:
-    return slugify_text(value, fallback="application-package")
-
-
-def _safe_join(values: Iterable[str], fallback: str = "N/A", limit: Optional[int] = None) -> str:
-    return safe_join_strings(values, fallback=fallback, limit=limit)
-
-
-def _render_markdown_list(items: Iterable[str], empty_state: str) -> str:
-    return render_markdown_list(items, empty_state)
 
 
 def _build_title(candidate_profile: CandidateProfile, job_description: JobDescription) -> str:
@@ -58,15 +46,15 @@ def _build_candidate_section(candidate_profile: CandidateProfile) -> str:
             "- Location: {value}".format(value=candidate_profile.location or "Not inferred"),
             "- Source: {value}".format(value=candidate_profile.source or "Unknown"),
             "- Skills: {value}".format(
-                value=_safe_join(candidate_profile.skills, fallback="No explicit skills detected", limit=10)
+                value=safe_join_strings(candidate_profile.skills, fallback="No explicit skills detected", limit=10)
             ),
             "- Experience Entries: {value}".format(value=len(candidate_profile.experience)),
             "- Certifications: {value}".format(
-                value=_safe_join(candidate_profile.certifications, fallback="None listed", limit=6)
+                value=safe_join_strings(candidate_profile.certifications, fallback="None listed", limit=6)
             ),
             "",
             "### Source Signals",
-            _render_markdown_list(
+            render_markdown_list(
                 candidate_profile.source_signals,
                 "No source signals available.",
             ),
@@ -86,17 +74,17 @@ def _build_job_section(job_description: JobDescription) -> str:
                 value=requirements.experience_requirement or "N/A"
             ),
             "- Hard Skills: {value}".format(
-                value=_safe_join(requirements.hard_skills, fallback="None extracted", limit=10)
+                value=safe_join_strings(requirements.hard_skills, fallback="None extracted", limit=10)
             ),
             "- Soft Skills: {value}".format(
-                value=_safe_join(requirements.soft_skills, fallback="None extracted", limit=8)
+                value=safe_join_strings(requirements.soft_skills, fallback="None extracted", limit=8)
             ),
             "",
             "### Must-Have Themes",
-            _render_markdown_list(requirements.must_haves, "No explicit must-have lines extracted."),
+            render_markdown_list(requirements.must_haves, "No explicit must-have lines extracted."),
             "",
             "### Nice-To-Have Themes",
-            _render_markdown_list(
+            render_markdown_list(
                 requirements.nice_to_haves,
                 "No explicit nice-to-have lines extracted.",
             ),
@@ -114,25 +102,25 @@ def _build_fit_section(fit_analysis: FitAnalysis) -> str:
             "- Experience Signal: {value}".format(value=fit_analysis.experience_signal),
             "",
             "### Matched Hard Skills",
-            _render_markdown_list(
+            render_markdown_list(
                 fit_analysis.matched_hard_skills,
                 "No matched hard-skill evidence found.",
             ),
             "",
             "### Missing Hard Skills",
-            _render_markdown_list(
+            render_markdown_list(
                 fit_analysis.missing_hard_skills,
                 "No hard-skill gaps detected.",
             ),
             "",
             "### Strengths",
-            _render_markdown_list(fit_analysis.strengths, "No strengths surfaced."),
+            render_markdown_list(fit_analysis.strengths, "No strengths surfaced."),
             "",
             "### Gaps",
-            _render_markdown_list(fit_analysis.gaps, "No major gaps surfaced."),
+            render_markdown_list(fit_analysis.gaps, "No major gaps surfaced."),
             "",
             "### Recommendations",
-            _render_markdown_list(
+            render_markdown_list(
                 fit_analysis.recommendations,
                 "No recommendations available.",
             ),
@@ -149,19 +137,19 @@ def _build_tailoring_section(tailored_draft: TailoredResumeDraft) -> str:
             tailored_draft.professional_summary or "No professional summary drafted.",
             "",
             "### Highlighted Skills",
-            _render_markdown_list(
+            render_markdown_list(
                 tailored_draft.highlighted_skills,
                 "No highlighted skills prepared.",
             ),
             "",
             "### Priority Bullets",
-            _render_markdown_list(
+            render_markdown_list(
                 tailored_draft.priority_bullets,
                 "No priority bullets prepared.",
             ),
             "",
             "### Gap Mitigation Steps",
-            _render_markdown_list(
+            render_markdown_list(
                 tailored_draft.gap_mitigation_steps,
                 "No gap mitigation steps prepared.",
             ),
@@ -194,13 +182,13 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
             agent_result.profile.positioning_headline or "No positioning headline produced.",
             "",
             "#### Evidence Highlights",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.profile.evidence_highlights,
                 "No evidence highlights produced.",
             ),
             "",
             "#### Job Messaging Guidance",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.job.messaging_guidance,
                 "No messaging guidance produced.",
             ),
@@ -209,13 +197,13 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
             agent_result.fit.fit_summary or "No fit summary produced.",
             "",
             "#### Top Matches",
-            _render_markdown_list(agent_result.fit.top_matches, "No top matches produced."),
+            render_markdown_list(agent_result.fit.top_matches, "No top matches produced."),
             "",
             "#### Key Gaps",
-            _render_markdown_list(agent_result.fit.key_gaps, "No key gaps produced."),
+            render_markdown_list(agent_result.fit.key_gaps, "No key gaps produced."),
             "",
             "#### Interview Themes",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.fit.interview_themes,
                 "No interview themes produced.",
             ),
@@ -225,13 +213,13 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
             or "No tailored professional summary produced.",
             "",
             "#### Rewritten Bullets",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.tailoring.rewritten_bullets,
                 "No rewritten bullets produced.",
             ),
             "",
             "#### Cover Letter Themes",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.tailoring.cover_letter_themes,
                 "No cover letter themes produced.",
             ),
@@ -242,38 +230,38 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
             else "No recruiter positioning produced.",
             "",
             "#### Cover Letter Talking Points",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.strategy.cover_letter_talking_points if agent_result.strategy else [],
                 "No cover letter talking points produced.",
             ),
             "",
             "#### Interview Preparation Themes",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.strategy.interview_preparation_themes if agent_result.strategy else [],
                 "No interview preparation themes produced.",
             ),
             "",
             "#### Portfolio / Project Emphasis",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.strategy.portfolio_project_emphasis if agent_result.strategy else [],
                 "No portfolio or project emphasis produced.",
             ),
             "",
             "### Review Notes",
             "#### Grounding Issues",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.review.grounding_issues,
                 "No grounding issues detected.",
             ),
             "",
             "#### Revision Requests",
-            _render_markdown_list(
+            render_markdown_list(
                 agent_result.review.revision_requests,
                 "No revisions requested.",
             ),
             "",
             "#### Final Notes",
-            _render_markdown_list(agent_result.review.final_notes, "No final notes produced."),
+            render_markdown_list(agent_result.review.final_notes, "No final notes produced."),
         ]
     )
 
@@ -285,7 +273,7 @@ def _build_next_actions(
     items = []
     if fit_analysis.missing_hard_skills:
         items.append(
-            "Tighten evidence around: " + _safe_join(fit_analysis.missing_hard_skills, limit=4) + "."
+            "Tighten evidence around: " + safe_join_strings(fit_analysis.missing_hard_skills, limit=4) + "."
         )
     if not agent_result:
         items.append("Run the supervised workflow before sharing or exporting the package.")
@@ -296,13 +284,9 @@ def _build_next_actions(
         [
             "## Next Actions",
             "",
-            _render_markdown_list(items, "No next actions available."),
+            render_markdown_list(items, "No next actions available."),
         ]
     )
-
-
-def _markdown_to_text(markdown: str) -> str:
-    return markdown_to_text(markdown, bullet_marker="*")
 
 
 def build_application_report(
@@ -314,11 +298,12 @@ def build_application_report(
 ) -> ApplicationReport:
     title = _build_title(candidate_profile, job_description)
     summary = _build_summary(candidate_profile, job_description, fit_analysis, agent_result)
-    filename_stem = _slugify(
+    filename_stem = slugify_text(
         "{candidate}-{role}".format(
             candidate=candidate_profile.full_name or "candidate",
             role=job_description.title or "target-role",
-        )
+        ),
+        fallback="application-package",
     )
 
     markdown = "\n\n".join(
@@ -339,5 +324,5 @@ def build_application_report(
         filename_stem=filename_stem,
         summary=summary,
         markdown=markdown,
-        plain_text=_markdown_to_text(markdown),
+        plain_text=markdown_to_text(markdown, bullet_marker="*"),
     )

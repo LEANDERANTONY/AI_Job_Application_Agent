@@ -2,6 +2,8 @@
 
 This document summarizes the 21 recommended changes tracked at the top of `improvements.md`, along with what was changed for each one and the current status.
 
+It also includes the smaller follow-up cleanup items from the later re-assessment section where those were completed after the initial 21-item pass.
+
 Status labels used here:
 
 - `Completed in stepwise pass`: implemented during the March 15-16 step-by-step improvement run
@@ -318,6 +320,177 @@ Current evidence:
 - `src/saved_workspace_store.py`
 - `README.md`
 - `.env.example`
+
+## Additional Follow-Up Improvements From The Re-Assessment
+
+These items come from the later code-quality and testing follow-up section of `improvements.md`, not the original top 21 user-facing recommendations.
+
+### A. Extract duplicated builder utility wrappers
+
+Status: `Completed in current follow-up pass`
+
+Changes made:
+
+- removed the local `_slugify`, `_safe_join`, `_render_markdown_list`, and markdown wrapper indirection from `src/resume_builder.py`
+- removed the parallel duplicated wrapper layer from `src/report_builder.py`
+- used the shared helpers in `src/utils.py` directly so the builder modules no longer re-expose the same logic under local names
+
+Current evidence:
+
+- `src/resume_builder.py`
+- `src/report_builder.py`
+- `src/utils.py`
+
+### B. Consolidate near-duplicate string-list helpers
+
+Status: `Completed in current follow-up pass`
+
+Changes made:
+
+- kept the public `coerce_string_list(...)` and `unique_strings(...)` API surface stable in `src/agents/common.py`
+- removed the duplicated internal deduplication path so both now flow through one shared normalization helper
+
+Current evidence:
+
+- `src/agents/common.py`
+- `tests/test_agents_common.py`
+
+### C. Add boundary tests for fit-service scoring
+
+Status: `Completed in current follow-up pass`
+
+Changes made:
+
+- added a boundary test proving same-year start/end dates still earn the intended 0.5-year minimum experience credit
+- added explicit type-validation tests for invalid `candidate_profile` and `job_description` inputs
+
+Current evidence:
+
+- `tests/test_fit_service.py`
+
+### D. Add tests for thin helper modules
+
+Status: `Completed in current follow-up pass`
+
+Changes made:
+
+- added direct helper coverage for `src/agents/common.py`
+- added direct caching/factory-injection coverage for `src/ui/auth.py`
+- added a workflow-level regression test showing an injected auth service can be reused without resolving a fresh one inside the UI workflow path
+
+Current evidence:
+
+- `tests/test_agents_common.py`
+- `tests/test_ui_auth.py`
+- `tests/test_ui_workflow.py`
+
+### E. Make auth-service reuse more explicit in workflow persistence/quota paths
+
+Status: `Completed in current follow-up pass`
+
+Changes made:
+
+- added optional `auth_service` injection to `refresh_daily_quota_status(...)`, `build_ai_session_view_model(...)`, `load_saved_workspace_summary(...)`, and `restore_latest_saved_workspace(...)`
+- kept the cached `get_auth_service()` fallback behavior intact for normal app execution while making those workflow paths easier to test and reuse with one shared service instance
+- added optional factory injection to `get_auth_service(...)` in `src/ui/auth.py`
+
+Current evidence:
+
+- `src/ui/workflow.py`
+- `src/ui/auth.py`
+- `tests/test_ui_workflow.py`
+- `tests/test_ui_auth.py`
+
+### F. Reclassified as already satisfied or stale after audit
+
+Status: `Reclassified during follow-up audit`
+
+Findings:
+
+- the `datetime.utcnow()` note for `src/services/fit_service.py` was stale because the file already uses `datetime.now(timezone.utc)`
+- the OpenAI retry logic note was stale because retry and incomplete-response recovery are already present in `src/openai_service.py`
+- the md5 compatibility comment note was stale because the exporter already documents the `pdfdoc.md5 = md5_compat` compatibility path
+
+Current evidence:
+
+- `src/services/fit_service.py`
+- `src/openai_service.py`
+- `src/exporters.py`
+
+### G. UI page split was already partially completed earlier
+
+Status: `Mostly implemented earlier`
+
+Findings:
+
+- `src/ui/pages.py` is no longer the earlier ~1,240-line monolith referenced in the re-assessment; it is now 408 lines
+- page-specific responsibilities were already split into `src/ui/page_artifacts.py`, `src/ui/page_assistant.py`, and `src/ui/page_history.py`
+- the remaining `src/ui/pages.py` file is still a central composition layer, but the bulk split work had already happened before this follow-up pass
+
+Current evidence:
+
+- `src/ui/pages.py`
+- `src/ui/page_artifacts.py`
+- `src/ui/page_assistant.py`
+- `src/ui/page_history.py`
+
+### H. UI workflow split was already partially completed earlier
+
+Status: `Mostly implemented earlier`
+
+Findings:
+
+- `src/ui/workflow.py` is no longer the earlier ~640-line file referenced in the re-assessment; it is now 417 lines
+- workflow concerns were already split across `src/ui/workflow_intake.py`, `src/ui/workflow_history.py`, `src/ui/workflow_exports.py`, `src/ui/workflow_payloads.py`, and `src/ui/workflow_signatures.py`
+- this follow-up pass only tightened the auth-service reuse seam; the larger structural split work had already been done earlier
+
+Current evidence:
+
+- `src/ui/workflow.py`
+- `src/ui/workflow_intake.py`
+- `src/ui/workflow_history.py`
+- `src/ui/workflow_exports.py`
+- `src/ui/workflow_payloads.py`
+- `src/ui/workflow_signatures.py`
+
+### I. Move daily usage aggregation to a server-side aggregate/RPC path
+
+Status: `Completed in current follow-up pass`
+
+Changes made:
+
+- added `public.get_daily_usage_totals(...)` to the Supabase bootstrap SQL so the database can aggregate usage totals for the authenticated user directly
+- updated `src/usage_store.py` to prefer the RPC path and return one aggregated totals payload instead of always fetching and summing every matching row in Python
+- kept a compatibility fallback to the prior row-query path so the app still works until the updated SQL bootstrap is applied in Supabase
+- added focused tests covering both RPC success and fallback behavior
+
+Current evidence:
+
+- `docs/supabase-bootstrap.sql`
+- `src/usage_store.py`
+- `tests/test_usage_store.py`
+
+### J. Remaining larger follow-on work after this pass
+
+Status: `No clear unresolved re-assessment blocker confirmed`
+
+Current state:
+
+- the late re-assessment items that were still under question have now been reconciled against the codebase
+- the UI page split, UI workflow split, builder-helper cleanup, thin-module tests, fit-service boundary tests, and server-side usage aggregation are all now accounted for
+- any further work from here would be new follow-on refinement rather than an unclosed item from the audited `improvements.md` list
+
+## Tomorrow Follow-Up
+
+These are the next practical checks to run in the app after the Supabase bootstrap update.
+
+1. Sign in with a normal non-internal account and confirm the daily quota panel renders without warnings or silent fallback.
+2. Trigger one assisted action and confirm the daily quota values refresh correctly after the new usage event is recorded.
+3. Verify the saved workspace flow still works normally after the updated bootstrap SQL, including reload and download regeneration.
+4. Do one final cleanup pass over `improvements.md` and explicitly separate any remaining notes into:
+	- obsolete / already handled
+	- future nice-to-haves / optional refinements
+5. If anything in the runtime quota path looks off, inspect `src/usage_store.py`, `src/quota_service.py`, and the `public.get_daily_usage_totals(...)` function together before changing unrelated UI code.
 
 ## Commit Index
 

@@ -18,6 +18,30 @@ class UsageStore:
     def is_configured(self):
         return self.auth_service.is_configured() and bool(self.table_name)
 
+    @staticmethod
+    def _daily_window_bounds(now=None):
+        current_time = now or datetime.now(timezone.utc)
+        window_start = current_time.replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        window_end = window_start + timedelta(days=1)
+        return window_start, window_end
+
+    @staticmethod
+    def _normalize_daily_totals(row: dict, window_start: str, window_end: str):
+        payload = row or {}
+        return {
+            "request_count": int(payload.get("request_count", 0) or 0),
+            "prompt_tokens": int(payload.get("prompt_tokens", 0) or 0),
+            "completion_tokens": int(payload.get("completion_tokens", 0) or 0),
+            "total_tokens": int(payload.get("total_tokens", 0) or 0),
+            "window_start": str(payload.get("window_start") or window_start),
+            "window_end": str(payload.get("window_end") or window_end),
+        }
+
     def record_usage_event(self, access_token: str, refresh_token: str, event_payload: dict):
         if not self.is_configured():
             raise AppError("Usage persistence is not configured.")
@@ -73,21 +97,37 @@ class UsageStore:
             raise AppError("Usage aggregation requires an authenticated user id.")
 
         client = self.auth_service.create_authenticated_client(access_token, refresh_token)
-        window_start = datetime.now(timezone.utc).replace(
-            hour=0,
-            minute=0,
-            second=0,
-            microsecond=0,
-        )
-        window_end = window_start + timedelta(days=1)
+        window_start, window_end = self._daily_window_bounds()
+        window_start_iso = window_start.isoformat()
+        window_end_iso = window_end.isoformat()
+
+        try:
+            response = client.rpc(
+                "get_daily_usage_totals",
+                {
+                    "target_user_id": user_id,
+                    "target_window_start": window_start_iso,
+                    "target_window_end": window_end_iso,
+                },
+            ).execute()
+            rows = getattr(response, "data", None)
+            if isinstance(rows, list):
+                row = rows[0] if rows else {}
+            elif isinstance(rows, dict):
+                row = rows
+            else:
+                row = {}
+            return self._normalize_daily_totals(row, window_start_iso, window_end_iso)
+        except Exception:
+            pass
 
         try:
             response = (
                 client.table(self.table_name)
                 .select("request_count,prompt_tokens,completion_tokens,total_tokens,created_at")
                 .eq("user_id", user_id)
-                .gte("created_at", window_start.isoformat())
-                .lt("created_at", window_end.isoformat())
+                .gte("created_at", window_start_iso)
+                .lt("created_at", window_end_iso)
                 .execute()
             )
         except Exception as exc:
@@ -97,14 +137,7 @@ class UsageStore:
             ) from exc
 
         rows = getattr(response, "data", None) or []
-        totals = {
-            "request_count": 0,
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "window_start": window_start.isoformat(),
-            "window_end": window_end.isoformat(),
-        }
+        totals = self._normalize_daily_totals({}, window_start_iso, window_end_iso)
         for row in rows:
             totals["request_count"] += int(row.get("request_count", 0) or 0)
             totals["prompt_tokens"] += int(row.get("prompt_tokens", 0) or 0)

@@ -267,6 +267,48 @@ def test_build_ai_session_view_model_uses_cached_quota_without_refresh(monkeypat
     assert view_model.daily_quota is daily_quota
 
 
+def test_build_ai_session_view_model_accepts_injected_auth_service(monkeypatch):
+    injected_auth_service = object()
+
+    class FakeUsageStore:
+        def __init__(self, auth_service):
+            self.auth_service = auth_service
+
+        def is_configured(self):
+            return False
+
+    monkeypatch.setattr(workflow, "get_openai_session_usage", lambda *args, **kwargs: {
+        "request_count": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "max_calls": 24,
+        "max_total_tokens": 120000,
+        "remaining_calls": 24,
+        "remaining_total_tokens": 120000,
+        "last_response_metadata": {},
+    })
+    monkeypatch.setattr(workflow, "get_daily_quota_status", lambda: None)
+    monkeypatch.setattr(
+        workflow,
+        "get_app_user_record",
+        lambda: type("AppUser", (), {"id": "user-123", "plan_tier": "free"})(),
+    )
+    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
+    monkeypatch.setattr(
+        workflow,
+        "get_auth_service",
+        lambda: (_ for _ in ()).throw(AssertionError("get_auth_service should not run")),
+    )
+    monkeypatch.setattr(workflow, "UsageStore", FakeUsageStore)
+    monkeypatch.setattr(workflow, "OpenAIService", lambda **kwargs: type("FakeOpenAIService", (), {"is_available": lambda self: False})())
+    monkeypatch.setattr(workflow, "refresh_daily_quota_status", lambda *args, **kwargs: None)
+
+    view_model = workflow.build_ai_session_view_model(auth_service=injected_auth_service)
+
+    assert view_model.daily_quota is None
+
+
 def test_restore_latest_saved_workspace_restores_snapshot(monkeypatch):
     captured = {}
     snapshot = SimpleNamespace(

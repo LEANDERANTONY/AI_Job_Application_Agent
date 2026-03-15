@@ -1,5 +1,5 @@
 import re
-from typing import Iterable, Optional
+from typing import Optional
 
 from src.schemas import (
     AgentWorkflowResult,
@@ -31,12 +31,6 @@ RESUME_THEMES = {
         "tagline": "Cleaner hierarchy with a slightly more polished visual rhythm.",
     },
 }
-
-
-def _slugify(value: str) -> str:
-    return slugify_text(value, fallback="tailored-resume")
-
-
 def _resolve_resume_theme(theme: str, agent_result: Optional[AgentWorkflowResult]) -> str:
     normalized_theme = str(theme or "").strip()
     if normalized_theme in RESUME_THEMES:
@@ -48,20 +42,6 @@ def _resolve_resume_theme(theme: str, agent_result: Optional[AgentWorkflowResult
     if hinted_theme in RESUME_THEMES:
         return hinted_theme
     return "classic_ats"
-
-
-def _safe_join(values: Iterable[str], fallback: str = "N/A", limit: Optional[int] = None) -> str:
-    return safe_join_strings(values, fallback=fallback, limit=limit)
-
-
-def _render_markdown_list(items: Iterable[str], empty_state: str) -> str:
-    return render_markdown_list(items, empty_state)
-
-
-def _markdown_to_text(markdown: str) -> str:
-    return markdown_to_text(markdown, strip_bold=True)
-
-
 def _normalize_date_token(token) -> str:
     if isinstance(token, dict):
         year = token.get("year")
@@ -201,7 +181,7 @@ def _build_resume_markdown(
     if subtitle_parts:
         header_block.append("**" + " | ".join(subtitle_parts) + "**")
     if header.contact_lines:
-        header_block.append(_safe_join(header.contact_lines, fallback=""))
+        header_block.append(safe_join_strings(header.contact_lines, fallback=""))
 
     experience_blocks = []
     for entry in experience_entries:
@@ -215,7 +195,7 @@ def _build_resume_markdown(
             "\n".join(
                 [
                     "### " + role_line,
-                    _render_markdown_list(entry.bullets, "No grounded bullets available."),
+                    render_markdown_list(entry.bullets, "No grounded bullets available."),
                 ]
             )
         )
@@ -236,12 +216,12 @@ def _build_resume_markdown(
             "\n".join(part for part in header_block if part),
             theme_config["tagline"],
             "## Professional Summary\n\n" + (professional_summary or "No professional summary generated."),
-            "## Core Skills\n\n" + _render_markdown_list(highlighted_skills, "No highlighted skills generated."),
+            "## Core Skills\n\n" + render_markdown_list(highlighted_skills, "No highlighted skills generated."),
             "## Professional Experience\n\n" + ("\n\n".join(experience_blocks) if experience_blocks else "No structured experience entries were inferred from the current resume."),
-            "## Education\n\n" + _render_markdown_list(education_lines, "No education entries available."),
-            "## Certifications\n\n" + _render_markdown_list(certifications, "No certifications listed."),
-            "## Change Summary\n\n" + _render_markdown_list(change_log, "No change summary available."),
-            "## Validation Notes\n\n" + _render_markdown_list(validation_notes, "No validation notes available."),
+            "## Education\n\n" + render_markdown_list(education_lines, "No education entries available."),
+            "## Certifications\n\n" + render_markdown_list(certifications, "No certifications listed."),
+            "## Change Summary\n\n" + render_markdown_list(change_log, "No change summary available."),
+            "## Validation Notes\n\n" + render_markdown_list(validation_notes, "No validation notes available."),
         ]
     ).strip()
 
@@ -276,11 +256,12 @@ def build_tailored_resume_artifact(
         name=candidate_profile.full_name or "Candidate",
         role=job_description.title or "Target Role",
     )
-    filename_stem = _slugify(
+    filename_stem = slugify_text(
         "{candidate}-{role}-tailored-resume".format(
             candidate=candidate_profile.full_name or "candidate",
             role=job_description.title or "target-role",
-        )
+        ),
+        fallback="tailored-resume",
     )
     markdown = _build_resume_markdown(
         header,
@@ -303,7 +284,7 @@ def build_tailored_resume_artifact(
         filename_stem=filename_stem,
         summary=summary,
         markdown=markdown,
-        plain_text=_markdown_to_text(markdown),
+        plain_text=markdown_to_text(markdown, strip_bold=True),
         theme=theme,
         header=header,
         target_role=job_description.title,

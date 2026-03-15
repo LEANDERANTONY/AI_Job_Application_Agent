@@ -66,6 +66,46 @@ for insert
 to authenticated
 with check (auth.uid() = user_id);
 
+create or replace function public.get_daily_usage_totals(
+    target_user_id uuid,
+    target_window_start timestamptz default timezone('utc', now())::date,
+    target_window_end timestamptz default (timezone('utc', now())::date + interval '1 day')
+)
+returns table (
+    request_count bigint,
+    prompt_tokens bigint,
+    completion_tokens bigint,
+    total_tokens bigint,
+    window_start timestamptz,
+    window_end timestamptz
+)
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+    if auth.uid() is null or auth.uid() <> target_user_id then
+        raise exception 'Daily usage totals can only be read for the authenticated user.';
+    end if;
+
+    return query
+    select
+        coalesce(sum(usage_events.request_count), 0) as request_count,
+        coalesce(sum(usage_events.prompt_tokens), 0) as prompt_tokens,
+        coalesce(sum(usage_events.completion_tokens), 0) as completion_tokens,
+        coalesce(sum(usage_events.total_tokens), 0) as total_tokens,
+                target_window_start as window_start,
+                target_window_end as window_end
+    from public.usage_events
+    where usage_events.user_id = target_user_id
+            and usage_events.created_at >= target_window_start
+            and usage_events.created_at < target_window_end;
+end;
+$$;
+
+revoke all on function public.get_daily_usage_totals(uuid, timestamptz, timestamptz) from public;
+grant execute on function public.get_daily_usage_totals(uuid, timestamptz, timestamptz) to authenticated;
+
 create table if not exists public.saved_workspaces (
     user_id uuid primary key references auth.users (id) on delete cascade,
     job_title text not null default '',

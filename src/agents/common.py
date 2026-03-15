@@ -1,4 +1,4 @@
-from typing import Iterable, List
+from typing import Iterable
 
 from src.utils import dedupe_strings
 
@@ -12,10 +12,10 @@ def coerce_string(value, default=""):
 def coerce_string_list(value, limit=None):
     if not isinstance(value, list):
         return []
-    return dedupe_strings(value, limit=limit)
+    return unique_strings(value, limit=limit)
 
 
-def unique_strings(values: Iterable[str], limit=None) -> List[str]:
+def unique_strings(values: Iterable[str], limit=None) -> list[str]:
     return dedupe_strings(values, limit=limit)
 
 

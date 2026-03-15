@@ -101,7 +101,7 @@ def _load_sample_jd(filename):
     return workflow_intake._load_sample_jd(filename)
 
 
-def refresh_daily_quota_status(force=False, now=None):
+def refresh_daily_quota_status(force=False, now=None, auth_service=None):
     daily_quota = get_daily_quota_status()
     cached_at = get_daily_quota_status_refreshed_at()
     current_time = time.time() if now is None else now
@@ -120,7 +120,7 @@ def refresh_daily_quota_status(force=False, now=None):
     ):
         return daily_quota
 
-    auth_service = get_auth_service()
+    auth_service = auth_service or get_auth_service()
     usage_store = UsageStore(auth_service)
     if not usage_store.is_configured():
         return daily_quota
@@ -164,7 +164,7 @@ def resolve_job_description_input(uploaded_jd=None, selected_sample="None", past
     )
 
 
-def build_ai_session_view_model():
+def build_ai_session_view_model(auth_service=None):
     usage = get_openai_session_usage(
         OPENAI_MAX_CALLS_PER_SESSION,
         OPENAI_MAX_TOKENS_PER_SESSION,
@@ -175,9 +175,9 @@ def build_ai_session_view_model():
     auth_user_record = get_app_user_record()
     access_token, refresh_token = get_auth_tokens()
     if auth_user_record is not None and access_token and refresh_token:
+        auth_service = auth_service or get_auth_service()
         if daily_quota is None:
-            daily_quota = refresh_daily_quota_status()
-        auth_service = get_auth_service()
+            daily_quota = refresh_daily_quota_status(auth_service=auth_service)
         usage_store = UsageStore(auth_service)
         if usage_store.is_configured():
             if daily_quota and daily_quota.quota_exhausted:
@@ -190,7 +190,7 @@ def build_ai_session_view_model():
             else:
 
                 def quota_checker():
-                    refreshed_quota = refresh_daily_quota_status(force=True)
+                    refreshed_quota = refresh_daily_quota_status(force=True, auth_service=auth_service)
                     if refreshed_quota and refreshed_quota.quota_exhausted:
                         raise AgentExecutionError(
                             "Your daily assisted usage limit has been reached. Try again tomorrow or upgrade your plan tier."
@@ -277,13 +277,13 @@ def refresh_authenticated_history(selected_workflow_run_id: Optional[str] = None
     return workflow_history.refresh_authenticated_history(selected_workflow_run_id)
 
 
-def load_saved_workspace_summary():
+def load_saved_workspace_summary(auth_service=None):
     auth_user_record = get_app_user_record()
     access_token, refresh_token = get_auth_tokens()
     if auth_user_record is None or not access_token or not refresh_token:
         return {"status": "unauthenticated", "record": None, "report": None, "resume": None}
 
-    saved_workspace_store = SavedWorkspaceStore(get_auth_service())
+    saved_workspace_store = SavedWorkspaceStore(auth_service or get_auth_service())
     if not saved_workspace_store.is_configured():
         return {"status": "unconfigured", "record": None, "report": None, "resume": None}
 
@@ -304,7 +304,7 @@ def load_saved_workspace_summary():
     }
 
 
-def restore_latest_saved_workspace():
+def restore_latest_saved_workspace(auth_service=None):
     auth_user_record = get_app_user_record()
     access_token, refresh_token = get_auth_tokens()
     if auth_user_record is None or not access_token or not refresh_token:
@@ -315,7 +315,7 @@ def restore_latest_saved_workspace():
         set_workspace_restore_notice(result)
         return result
 
-    saved_workspace_store = SavedWorkspaceStore(get_auth_service())
+    saved_workspace_store = SavedWorkspaceStore(auth_service or get_auth_service())
     if not saved_workspace_store.is_configured():
         result = {
             "level": "warning",
