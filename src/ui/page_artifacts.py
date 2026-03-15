@@ -36,6 +36,13 @@ def _build_download_widget_key(base_key: str, artifact) -> str:
     )
 
 
+def _prepare_deferred_download(clicked: bool, cached_payload, prepare_callback) -> bool:
+    if cached_payload is not None or not clicked:
+        return False
+    prepare_callback()
+    return True
+
+
 def render_report_package(report: ApplicationReport, agent_result: AgentWorkflowResult = None):
     st.markdown("---")
     render_section_head(
@@ -82,12 +89,18 @@ def render_report_package(report: ApplicationReport, agent_result: AgentWorkflow
         )
     with pdf_col:
         if get_cached_pdf_package() is None:
-            if st.button("Prepare PDF Package", key="prepare_pdf_package"):
+            if st.button("Download PDF Package", key="prepare_pdf_package"):
                 try:
                     with st.spinner("Generating PDF package..."):
-                        prepare_pdf_package(report)
+                        if _prepare_deferred_download(
+                            True,
+                            get_cached_pdf_package(),
+                            lambda: prepare_pdf_package(report),
+                        ):
+                            st.rerun()
                 except ExportError as error:
                     st.warning(error.user_message)
+            st.caption("Generates the PDF on first click, then hands off the file through the browser download control.")
         else:
             render_download_button(
                 "Download PDF Package",
@@ -130,12 +143,18 @@ def render_export_bundle_actions(
 
     cached_bundle = get_cached_export_bundle_package()
     if cached_bundle is None:
-        if st.button("Prepare Combined Export Bundle", key="prepare_export_bundle"):
+        if st.button("Download Combined Export Bundle", key="prepare_export_bundle"):
             try:
                 with st.spinner("Preparing report and tailored resume bundle..."):
-                    prepare_export_bundle_package(report, artifact)
+                    if _prepare_deferred_download(
+                        True,
+                        get_cached_export_bundle_package(),
+                        lambda: prepare_export_bundle_package(report, artifact),
+                    ):
+                        st.rerun()
             except ExportError as error:
                 st.warning(error.user_message)
+        st.caption("Generates the ZIP bundle on first click, then refreshes into the browser download control.")
     else:
         bundle_name = "{name}.zip".format(
             name=artifact.filename_stem.replace("-tailored-resume", "-application-bundle")
@@ -278,12 +297,18 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
         )
     with pdf_col:
         if get_cached_tailored_resume_pdf_package() is None:
-            if st.button("Prepare Tailored Resume PDF", key="prepare_tailored_resume_pdf"):
+            if st.button("Download Tailored Resume PDF", key="prepare_tailored_resume_pdf"):
                 try:
                     with st.spinner("Generating tailored resume PDF..."):
-                        prepare_tailored_resume_pdf_package(artifact)
+                        if _prepare_deferred_download(
+                            True,
+                            get_cached_tailored_resume_pdf_package(),
+                            lambda: prepare_tailored_resume_pdf_package(artifact),
+                        ):
+                            st.rerun()
                 except ExportError as error:
                     st.warning(error.user_message)
+            st.caption("Generates the PDF on first click, then refreshes into the browser download control.")
         else:
             render_download_button(
                 "Download Tailored Resume PDF",

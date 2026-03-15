@@ -49,3 +49,29 @@ def test_build_download_widget_key_changes_when_artifact_content_changes():
 
     assert first != second
     assert first.startswith("download_tailored_resume_markdown:")
+
+
+def test_prepare_deferred_download_only_runs_when_uncached_and_clicked():
+    calls = []
+
+    prepared = page_artifacts._prepare_deferred_download(
+        True,
+        None,
+        lambda: calls.append("prepared"),
+    )
+
+    assert prepared is True
+    assert calls == ["prepared"]
+
+
+def test_prepare_deferred_download_skips_when_payload_already_cached():
+    calls = []
+
+    prepared = page_artifacts._prepare_deferred_download(
+        True,
+        b"cached",
+        lambda: calls.append("prepared"),
+    )
+
+    assert prepared is False
+    assert calls == []
