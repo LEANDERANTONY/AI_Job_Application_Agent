@@ -148,6 +148,9 @@ Deployment decision: keep the same Playwright-first PDF path used in the GitHub 
 
 Environment variables can be stored in [`.env.example`](.env.example):
 
+For local development, create a private `.env` file in the repo root and copy the keys you need from `.env.example`.
+That file is already ignored by git.
+
 Required for a minimal deploy:
 
 - none
@@ -199,6 +202,10 @@ To enable Google sign-in, configure Supabase Auth with the Google provider and s
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_AUTH_REDIRECT_URL` to the Streamlit app URL allowed in your Supabase redirect settings, for example `http://localhost:8501`
+
+Local runs now load a private repo-root `.env` file automatically. On Streamlit Community Cloud, keep using the Secrets manager; those environment variables are still read through the same `os.getenv(...)` path.
+
+For the concrete operator checklist, see [docs/supabase-setup-checklist.md](docs/supabase-setup-checklist.md).
 
 To enable the full authenticated persistence path in one step, apply [docs/supabase-bootstrap.sql](docs/supabase-bootstrap.sql) in the Supabase SQL Editor. That bootstrap script creates `app_users`, `usage_events`, `workflow_runs`, and `artifacts` with the required indexes and RLS policies.
 

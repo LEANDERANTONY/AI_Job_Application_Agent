@@ -1,8 +1,11 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 STATIC_DIR = BASE_DIR / "static"
 DEMO_RESUME_DIR = STATIC_DIR / "demo_resume"
 DEMO_JOB_DESCRIPTION_DIR = STATIC_DIR / "demo_job_description"

@@ -40,6 +40,8 @@ Phase 6 notes: "Supabase project bootstrap remains operator setup work." This is
 - Configure Google OAuth with the production redirect URL.
 - Verify Row Level Security (RLS) policies.
 
+Concrete operator steps are captured in [docs/supabase-setup-checklist.md](docs/supabase-setup-checklist.md).
+
 Until then, the app can still be deployed in a pre-auth state. For that phase, keep `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW=false` if you want assisted features reachable without login.
 
 ### 4. Keep Playwright/Chromium for deployment
