@@ -6,7 +6,7 @@ from src.resume_builder import RESUME_THEMES
 from src.resume_diff import build_resume_diff, build_resume_diff_metrics
 from src.schemas import AgentWorkflowResult, ApplicationReport, TailoredResumeArtifact
 from src.ui.components import render_download_button, render_metric_card, render_section_head
-from src.ui.state import TAILORED_RESUME_THEME
+from src.ui.state import TAILORED_RESUME_THEME, get_tailored_resume_theme, set_tailored_resume_theme
 from src.ui.workflow import (
     get_active_candidate_profile,
     get_cached_export_bundle_package,
@@ -16,6 +16,16 @@ from src.ui.workflow import (
     prepare_pdf_package,
     prepare_tailored_resume_pdf_package,
 )
+
+
+def _resolve_resume_theme_widget_value(artifact_theme: str, theme_options: list[str]) -> str:
+    stored_theme = get_tailored_resume_theme(default_theme=artifact_theme)
+    if stored_theme in theme_options:
+        return stored_theme
+
+    fallback_theme = artifact_theme if artifact_theme in theme_options else theme_options[0]
+    set_tailored_resume_theme(fallback_theme)
+    return fallback_theme
 
 
 def render_report_package(report: ApplicationReport, agent_result: AgentWorkflowResult = None):
@@ -142,12 +152,12 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
     selected_theme = st.selectbox(
         "Resume Template",
         theme_options,
-        index=theme_options.index(artifact.theme) if artifact.theme in theme_options else 0,
+        index=theme_options.index(
+            _resolve_resume_theme_widget_value(artifact.theme, theme_options)
+        ),
         key=TAILORED_RESUME_THEME,
         format_func=lambda value: RESUME_THEMES[value]["label"],
     )
-    if selected_theme != artifact.theme:
-        st.rerun()
 
     cols = st.columns(3)
     with cols[0]:
