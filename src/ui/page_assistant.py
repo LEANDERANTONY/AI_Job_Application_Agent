@@ -19,7 +19,9 @@ def _resolve_assistant_ai_session(workflow_view_model=None):
     return build_ai_session_view_model()
 
 
-def _build_product_help_context(workflow_view_model=None, artifact=None, report=None):
+def _build_product_help_context(workflow_view_model=None, artifact=None, report=None, ai_session=None):
+    session_usage = getattr(ai_session, "usage", {}) or {}
+    daily_quota = getattr(ai_session, "daily_quota", None)
     return {
         "available_pages": [
             "Upload Resume",
@@ -32,6 +34,19 @@ def _build_product_help_context(workflow_view_model=None, artifact=None, report=
         "has_job_description": bool(workflow_view_model and workflow_view_model.job_description),
         "has_tailored_resume": bool(artifact),
         "has_report": bool(report),
+        "session_usage": {
+            "remaining_calls": session_usage.get("remaining_calls"),
+            "remaining_total_tokens": session_usage.get("remaining_total_tokens"),
+            "max_calls": session_usage.get("max_calls"),
+            "max_total_tokens": session_usage.get("max_total_tokens"),
+            "budget_reached": bool(getattr(ai_session, "budget_reached", False)),
+        },
+        "daily_quota": {
+            "plan_tier": None if not daily_quota else daily_quota.plan_tier,
+            "remaining_calls": None if not daily_quota else daily_quota.remaining_calls,
+            "remaining_total_tokens": None if not daily_quota else daily_quota.remaining_total_tokens,
+            "quota_exhausted": bool(daily_quota and daily_quota.quota_exhausted),
+        },
     }
 
 
@@ -61,6 +76,7 @@ def _submit_assistant_question(
                 workflow_view_model=workflow_view_model,
                 artifact=artifact,
                 report=report,
+                ai_session=ai_session,
             ),
         )
     else:

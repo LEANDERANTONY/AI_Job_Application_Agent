@@ -142,11 +142,17 @@ class AssistantService:
                 sources=["Tailored Resume Draft"],
                 suggested_follow_ups=["Which template is safer for ATS?", "Can I preview before downloading?"],
             )
-        if "budget" in normalized or ("ai" in normalized and "warning" in normalized):
+        if (
+            "budget" in normalized
+            or "quota" in normalized
+            or "token" in normalized
+            or "limit" in normalized
+            or ("ai" in normalized and "warning" in normalized)
+        ):
             return AssistantResponse(
-                answer="The AI session budget tracks model calls and tokens for this browser session. If the budget is reached, the app stays in deterministic fallback mode until the session resets or the limits are raised.",
-                sources=["AI Session Calls", "AI Session Tokens", "Budget Status"],
-                suggested_follow_ups=["What runs without AI?", "What does fallback mode mean?"],
+                answer="The app has two separate assisted limits. First, there is a browser-session budget that tracks model calls and tokens for the current session. Second, signed-in users can also have an account-level daily quota. If either limit is reached, the app can downgrade assisted features to deterministic fallback mode until the session resets, the next UTC quota window starts, or the plan tier is changed.",
+                sources=["Browser Session Runs Left", "Daily Workflow Runs Left", "Quota State"],
+                suggested_follow_ups=["What runs without AI?", "What happens when the daily quota is exhausted?"],
             )
         if "job search" in normalized:
             return AssistantResponse(

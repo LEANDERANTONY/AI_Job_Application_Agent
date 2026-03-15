@@ -283,6 +283,7 @@ def build_product_help_assistant_prompt(
             "Explain the current product behavior clearly and only describe features that are actually available in the provided context. "
             "If the user asks about navigation, explain the current sidebar pages and signed-in actions from the provided context. "
             "If the user asks who you are or what your name is, answer as the in-app Product Help Assistant rather than switching to a generic workflow summary. "
+            "If the user asks about limits, tokens, quota, warnings, or fallback behavior, explain the difference between browser-session assisted budget and account-level daily quota using the provided context. "
             + _build_contract(contract)
         ),
         "user": user_prompt,

@@ -91,6 +91,20 @@ def test_product_help_fallback_answers_assistant_identity_question():
     assert "product help assistant" in response.answer.lower()
 
 
+def test_product_help_fallback_explains_session_and_daily_limits():
+    service = AssistantService()
+
+    response = service.answer_product_help(
+        "What are the token and daily limits here?",
+        current_page="Manual JD Input",
+        app_context={},
+    )
+
+    assert "browser-session" in response.answer.lower()
+    assert "daily quota" in response.answer.lower()
+    assert response.sources
+
+
 def test_application_qa_fallback_explains_gaps():
     service = AssistantService()
     view_model = _build_view_model()

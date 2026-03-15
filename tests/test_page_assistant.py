@@ -23,11 +23,27 @@ def test_resolve_assistant_ai_session_builds_shared_session_when_missing(monkeyp
 
 def test_build_product_help_context_includes_saved_workspace_navigation(monkeypatch):
     monkeypatch.setattr(page_assistant, "is_authenticated", lambda: True)
+    ai_session = SimpleNamespace(
+        usage={
+            "remaining_calls": 10,
+            "remaining_total_tokens": 50000,
+            "max_calls": 24,
+            "max_total_tokens": 120000,
+        },
+        budget_reached=False,
+        daily_quota=SimpleNamespace(
+            plan_tier="free",
+            remaining_calls=5,
+            remaining_total_tokens=20000,
+            quota_exhausted=False,
+        ),
+    )
 
     context = page_assistant._build_product_help_context(
         workflow_view_model=SimpleNamespace(candidate_profile=object(), job_description=object()),
         artifact=object(),
         report=object(),
+        ai_session=ai_session,
     )
 
     assert "Saved Workspace" in context["available_pages"]
@@ -36,6 +52,8 @@ def test_build_product_help_context_includes_saved_workspace_navigation(monkeypa
     assert context["has_job_description"] is True
     assert context["has_tailored_resume"] is True
     assert context["has_report"] is True
+    assert context["session_usage"]["remaining_calls"] == 10
+    assert context["daily_quota"]["plan_tier"] == "free"
 
 
 def test_submit_assistant_question_returns_false_for_blank_input():
