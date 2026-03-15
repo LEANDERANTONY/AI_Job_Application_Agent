@@ -9,9 +9,14 @@ from src.openai_service import OpenAIService
 class FakeCompletions:
     def __init__(self, responses):
         self._responses = list(responses)
+        self.calls = []
 
     def create(self, **kwargs):
-        return self._responses.pop(0)
+        self.calls.append(dict(kwargs))
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class FakeClient:
@@ -19,26 +24,40 @@ class FakeClient:
         self.responses = FakeCompletions(responses)
 
 
-def _build_response(content, *, response_id="resp_1", prompt_tokens=10, completion_tokens=5):
+def _build_response(
+    content,
+    *,
+    response_id="resp_1",
+    prompt_tokens=10,
+    completion_tokens=5,
+    status="completed",
+    incomplete_reason=None,
+    include_message=True,
+):
     return SimpleNamespace(
         id=response_id,
-        status="completed",
+        status=status,
         output_text=content,
+        incomplete_details=SimpleNamespace(reason=incomplete_reason) if incomplete_reason else None,
         usage=SimpleNamespace(
             input_tokens=prompt_tokens,
             output_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
             output_tokens_details=SimpleNamespace(reasoning_tokens=0),
         ),
-        output=[
-            SimpleNamespace(
-                type="message",
-                role="assistant",
-                content=[
-                    SimpleNamespace(type="output_text", text=content),
-                ],
-            )
-        ],
+        output=(
+            [
+                SimpleNamespace(
+                    type="message",
+                    role="assistant",
+                    content=[
+                        SimpleNamespace(type="output_text", text=content),
+                    ],
+                )
+            ]
+            if include_message
+            else [SimpleNamespace(type="reasoning", summary=[])]
+        ),
     )
 
 
@@ -63,6 +82,7 @@ def test_openai_service_tracks_usage_across_requests():
     assert usage["total_tokens"] == 41
     assert usage["last_response_metadata"]["response_id"] == "resp_2"
     assert usage["model_usage"][service.default_model]["request_count"] == 2
+    assert client.responses.calls[0]["reasoning"] == {"effort": "medium"}
 
 
 def test_openai_service_blocks_when_call_budget_is_reached():
@@ -125,3 +145,56 @@ def test_openai_service_does_not_fail_when_usage_event_recording_breaks():
     payload = service.run_json_prompt("system", "user", expected_keys=["approved"])
 
     assert payload["approved"] is True
+
+
+def test_openai_service_retries_without_temperature_when_model_rejects_it():
+    client = FakeClient(
+        [
+            RuntimeError(
+                "Error code: 400 - {'error': {'message': \"Unsupported parameter: 'temperature' is not supported with this model.\"}}"
+            ),
+            _build_response('{"approved": true}', response_id="resp_retry"),
+        ]
+    )
+    service = OpenAIService(client=client)
+
+    payload = service.run_json_prompt("system", "user", expected_keys=["approved"], temperature=0.2)
+
+    assert payload["approved"] is True
+    assert len(client.responses.calls) == 2
+    assert client.responses.calls[0]["temperature"] == 0.2
+    assert "temperature" not in client.responses.calls[1]
+    assert client.responses.calls[1]["reasoning"] == {"effort": "medium"}
+
+
+def test_openai_service_retries_with_higher_output_budget_after_incomplete_response():
+    client = FakeClient(
+        [
+            _build_response(
+                "",
+                response_id="resp_incomplete",
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+                include_message=False,
+            ),
+            _build_response('{"approved": true}', response_id="resp_complete"),
+        ]
+    )
+    service = OpenAIService(client=client)
+
+    payload = service.run_json_prompt("system", "user", expected_keys=["approved"], max_completion_tokens=100)
+
+    assert payload["approved"] is True
+    assert len(client.responses.calls) == 2
+    assert client.responses.calls[0]["max_output_tokens"] == 100
+    assert client.responses.calls[1]["max_output_tokens"] == 500
+
+
+def test_openai_service_uses_high_reasoning_for_high_trust_tasks():
+    client = FakeClient([_build_response('{"approved": true}', response_id="resp_high")])
+    service = OpenAIService(client=client)
+
+    payload = service.run_json_prompt("system", "user", expected_keys=["approved"], task_name="review")
+
+    assert payload["approved"] is True
+    assert client.responses.calls[0]["reasoning"] == {"effort": "high"}

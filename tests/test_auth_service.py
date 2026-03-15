@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -43,6 +44,7 @@ def test_get_google_sign_in_url_uses_supabase_oauth(monkeypatch):
         lambda *args, **kwargs: FakeSupabaseClient(auth_client),
     )
     monkeypatch.setattr("src.auth_service.ClientOptions", lambda **kwargs: kwargs)
+    monkeypatch.setattr("src.auth_service.get_auth_pkce_code_verifier", lambda: "pkce-verifier")
 
     service = AuthService(
         supabase_url="https://project.supabase.co",
@@ -54,7 +56,12 @@ def test_get_google_sign_in_url_uses_supabase_oauth(monkeypatch):
 
     assert sign_in_url == "https://example.com/oauth"
     assert auth_client.oauth_payload["provider"] == "google"
-    assert auth_client.oauth_payload["options"]["redirect_to"] == "http://localhost:8501"
+    redirect_to = auth_client.oauth_payload["options"]["redirect_to"]
+    parsed_redirect = urlsplit(redirect_to)
+    query = parse_qs(parsed_redirect.query)
+    assert "auth_flow" in query
+    assert parsed_redirect.scheme == "http"
+    assert parsed_redirect.netloc == "localhost:8501"
 
 
 def test_exchange_code_for_session_builds_authenticated_user(monkeypatch):
@@ -79,6 +86,12 @@ def test_exchange_code_for_session_builds_authenticated_user(monkeypatch):
         lambda *args, **kwargs: FakeSupabaseClient(auth_client),
     )
     monkeypatch.setattr("src.auth_service.ClientOptions", lambda **kwargs: kwargs)
+    monkeypatch.setattr("src.auth_service.set_auth_pkce_code_verifier", lambda value: None)
+    monkeypatch.setitem(
+        __import__("src.auth_service", fromlist=["_PKCE_CODE_VERIFIER_CACHE"]).__dict__["_PKCE_CODE_VERIFIER_CACHE"],
+        "flow-123",
+        "pkce-verifier",
+    )
 
     service = AuthService(
         supabase_url="https://project.supabase.co",
@@ -86,15 +99,39 @@ def test_exchange_code_for_session_builds_authenticated_user(monkeypatch):
         redirect_url="http://localhost:8501",
     )
 
-    session = service.exchange_code_for_session("auth-code")
+    session = service.exchange_code_for_session("auth-code", auth_flow="flow-123")
 
-    assert auth_client.exchange_payload == {"auth_code": "auth-code"}
+    assert auth_client.exchange_payload == {
+        "auth_code": "auth-code",
+        "code_verifier": "pkce-verifier",
+        "redirect_to": "http://localhost:8501?auth_flow=flow-123",
+    }
     assert session.access_token == "access-token"
     assert session.refresh_token == "refresh-token"
     assert session.user.user_id == "user-123"
     assert session.user.email == "user@example.com"
     assert session.user.display_name == "Leander Antony"
     assert session.user.avatar_url == "https://example.com/avatar.png"
+
+
+def test_exchange_code_for_session_requires_pkce_verifier(monkeypatch):
+    auth_client = FakeAuthClient(exchange_response=None)
+
+    monkeypatch.setattr(
+        "src.auth_service.create_client",
+        lambda *args, **kwargs: FakeSupabaseClient(auth_client),
+    )
+    monkeypatch.setattr("src.auth_service.ClientOptions", lambda **kwargs: kwargs)
+    monkeypatch.setattr("src.auth_service.get_auth_pkce_code_verifier", lambda: None)
+
+    service = AuthService(
+        supabase_url="https://project.supabase.co",
+        supabase_anon_key="anon-key",
+        redirect_url="http://localhost:8501",
+    )
+
+    with pytest.raises(AppError, match="session expired"):
+        service.exchange_code_for_session("auth-code", auth_flow="flow-123")
 
 
 def test_get_google_sign_in_url_requires_configuration():

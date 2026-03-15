@@ -52,6 +52,7 @@ def _initialize_auth():
     user_store = AppUserStore(auth_service)
     auth_error = _query_param_value("error_description") or _query_param_value("error")
     auth_code = _query_param_value("code")
+    auth_flow = _query_param_value("auth_flow")
 
     if auth_error:
         clear_authenticated_session()
@@ -67,7 +68,7 @@ def _initialize_auth():
 
     if auth_code and auth_service.is_configured():
         try:
-            session = auth_service.exchange_code_for_session(str(auth_code))
+            session = auth_service.exchange_code_for_session(str(auth_code), auth_flow=str(auth_flow) if auth_flow else None)
             set_authenticated_session(session)
             set_auth_error(None)
             set_app_user_record(None)

@@ -35,6 +35,7 @@ The repository now follows the same product-style structure as the GitHub Portfo
 - Run a bounded review-revision loop before the final resume artifact is generated
 - Use OpenAI when configured, with deterministic fallback when it is not
 - Route different assisted tasks to different model tiers instead of relying on one global model
+- Route GPT-5 reasoning effort by task, with medium effort for normal tasks and high effort for review, resume generation, and grounded application Q&A
 - Use the OpenAI Responses API for assisted JSON generation and usage tracking
 - Build a tailored resume artifact from the current workflow state
 - Preview the tailored resume directly in the app before export
@@ -173,6 +174,17 @@ Optional runtime and routing settings:
 - `OPENAI_MODEL_MID_TIER`
 - `OPENAI_MODEL_PRODUCT_HELP`
 - `OPENAI_MODEL_APPLICATION_QA`
+- `OPENAI_REASONING_DEFAULT`
+- `OPENAI_REASONING_HIGH_TRUST`
+- `OPENAI_REASONING_PROFILE`
+- `OPENAI_REASONING_JOB`
+- `OPENAI_REASONING_FIT`
+- `OPENAI_REASONING_TAILORING`
+- `OPENAI_REASONING_STRATEGY`
+- `OPENAI_REASONING_REVIEW`
+- `OPENAI_REASONING_RESUME_GENERATION`
+- `OPENAI_REASONING_PRODUCT_HELP`
+- `OPENAI_REASONING_APPLICATION_QA`
 - `OPENAI_MAX_CALLS_PER_SESSION`
 - `OPENAI_MAX_TOKENS_PER_SESSION`
 - `APP_BASE_URL`
@@ -193,6 +205,13 @@ Optional runtime and routing settings:
 
 The current app does not require OpenAI for parsing or deterministic analysis. If `OPENAI_API_KEY` is present, assisted workflow and assistant features will use the configured routed models. If not, they will fall back to deterministic behavior where supported.
 
+The current OpenAI Responses API integration also includes runtime safeguards for GPT-5 routed models:
+
+- retry without `temperature` if the routed model rejects that parameter
+- per-task reasoning-effort routing for GPT-5 models
+- one retry with a higher output-token budget when a response is incomplete because the original output budget was exhausted
+- longer client timeouts plus SDK retries to reduce transient read-timeout failures
+
 The current app also does not require Supabase for a first hosted deploy. If Supabase is not configured yet, the app can still run the non-authenticated product shell and deterministic workflow. Google sign-in, persisted history, artifact tracking, and account-level quotas remain inactive until Supabase is configured.
 
 If you plan to deploy before creating Supabase, set `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW=false` so the AI-assisted workflow button is not blocked by the missing login layer. Once Supabase exists, turn it back on if you want assisted usage tied to authenticated accounts.
@@ -203,13 +222,13 @@ To enable Google sign-in, configure Supabase Auth with the Google provider and s
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_AUTH_REDIRECT_URL` to the Streamlit app URL allowed in your Supabase redirect settings, for example `http://localhost:8501`
 
+The local sign-in flow now preserves Supabase PKCE verifier state across the redirect and Streamlit rerun cycle. If that state expires, the app fails closed with a clean retry message instead of silently leaving the sidebar in a broken signed-out state.
+
 Local runs now load a private repo-root `.env` file automatically. On Streamlit Community Cloud, keep using the Secrets manager; those environment variables are still read through the same `os.getenv(...)` path.
 
 For the concrete operator checklist, see [docs/supabase-setup-checklist.md](docs/supabase-setup-checklist.md).
 
 To enable the full authenticated persistence path in one step, apply [docs/supabase-bootstrap.sql](docs/supabase-bootstrap.sql) in the Supabase SQL Editor. That bootstrap script creates `app_users`, `usage_events`, `workflow_runs`, and `artifacts` with the required indexes and RLS policies.
-
-If your Supabase project already has the earlier `workflow_runs` table, apply [docs/supabase-workflow-history-payloads-migration.sql](docs/supabase-workflow-history-payloads-migration.sql) to add the saved-run regeneration columns without rerunning the full bootstrap.
 
 If you prefer incremental setup, the same schema is still split across:
 
@@ -237,6 +256,7 @@ If `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW` is left at its default value of `true`,
 - Chosen first deployment target: Streamlit Community Cloud.
 - Keep Playwright/Chromium enabled on that target, matching the existing GitHub agent deployment pattern.
 - ReportLab remains the automatic fallback if the browser backend is unavailable at runtime.
+- Hosted AI-assisted flows now use the stabilized Responses API path with reasoning routing, GPT-5 parameter fallback handling, and incomplete-response retries.
 - A later Docker move is still optional, but it is no longer required for the preferred PDF path.
 
 ## Run the App

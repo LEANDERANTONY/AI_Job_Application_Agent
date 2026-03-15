@@ -15,7 +15,7 @@ from src.ui.page_artifacts import (
 )
 from src.ui.page_assistant import render_assistant_panel as _render_assistant_panel
 from src.ui.page_history import render_history_page as _render_history_page
-from src.ui.state import is_authenticated, set_current_menu
+from src.ui.state import is_authenticated, request_menu_navigation
 from src.ui.workflow import (
     build_application_report_view_model,
     build_job_workflow_view_model,
@@ -29,7 +29,7 @@ from src.ui.workflow import (
 
 
 def _go_to(menu_name):
-    set_current_menu(menu_name)
+    request_menu_navigation(menu_name)
     st.rerun()
 
 

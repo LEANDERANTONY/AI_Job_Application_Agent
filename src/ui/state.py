@@ -2,6 +2,7 @@ import streamlit as st
 
 
 CURRENT_MENU = "current_menu"
+PENDING_MENU = "pending_menu"
 RESUME_DOCUMENT = "resume_document"
 CANDIDATE_PROFILE_RESUME = "candidate_profile_resume"
 CANDIDATE_PROFILE = "candidate_profile"
@@ -59,6 +60,14 @@ def get_current_menu(default_menu):
 
 def set_current_menu(menu_name):
     return set_state(CURRENT_MENU, menu_name)
+
+
+def request_menu_navigation(menu_name):
+    return set_state(PENDING_MENU, menu_name)
+
+
+def consume_pending_menu():
+    return pop_state(PENDING_MENU, None)
 
 
 def get_openai_session_usage(default_max_calls, default_max_total_tokens):

@@ -1,7 +1,7 @@
 import streamlit as st
 
 from src.errors import AppError
-from src.ui.state import CURRENT_MENU, get_current_menu
+from src.ui.state import CURRENT_MENU, consume_pending_menu, get_current_menu, set_current_menu
 from src.ui.state import (
     clear_authenticated_session,
     get_app_user_record,
@@ -121,6 +121,9 @@ def render_sidebar(auth_service):
             unsafe_allow_html=True,
         )
         st.title("Navigation")
+        pending_menu = consume_pending_menu()
+        if pending_menu is not None:
+            set_current_menu(pending_menu)
         get_current_menu(MENU_OPTIONS[0])
         menu = st.radio(
             "Go to:",

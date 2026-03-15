@@ -11,6 +11,7 @@ from src.config import (
     OPENAI_MODEL_DEFAULT,
     describe_openai_model_policy,
     get_openai_model_for_task,
+    get_openai_reasoning_effort_for_task,
     load_openai_key,
 )
 from src.errors import AgentExecutionError
@@ -59,7 +60,7 @@ class OpenAIService:
         self._usage_event_recorder = usage_event_recorder
         self._quota_checker = quota_checker
         if self._client is None and self._api_key:
-            self._client = OpenAI(api_key=self._api_key)
+            self._client = OpenAI(api_key=self._api_key, timeout=120.0, max_retries=2)
 
     def is_available(self):
         return self._client is not None
@@ -127,6 +128,9 @@ class OpenAIService:
             return model
         return get_openai_model_for_task(task_name, fallback=self.default_model)
 
+    def _resolve_reasoning_effort(self, task_name=None):
+        return get_openai_reasoning_effort_for_task(task_name)
+
     def _record_usage(self, model_name, prompt_tokens, completion_tokens, total_tokens):
         self._usage_totals["request_count"] += 1
         self._usage_totals["prompt_tokens"] += prompt_tokens
@@ -162,6 +166,7 @@ class OpenAIService:
 
         self._enforce_budget()
         resolved_model = self._resolve_model(task_name=task_name, model=model)
+        reasoning_effort = self._resolve_reasoning_effort(task_name=task_name)
         request_metadata = {
             key: str(value)
             for key, value in dict(metadata or {}).items()
@@ -179,38 +184,111 @@ class OpenAIService:
             model=resolved_model,
             task_name=task_name,
             temperature=temperature,
+            reasoning_effort=reasoning_effort,
             max_completion_tokens=max_completion_tokens,
             expected_keys=list(expected_keys or []),
             system_prompt_chars=len(system_prompt or ""),
             user_prompt_chars=len(user_prompt or ""),
         )
 
+        request_payload = {
+            "model": resolved_model,
+            "instructions": system_prompt,
+            "input": user_prompt,
+            "store": False,
+            "max_output_tokens": max_completion_tokens,
+            "metadata": request_metadata or None,
+            "text": {"format": {"type": "json_object"}},
+        }
+        if self._supports_reasoning_effort(resolved_model) and reasoning_effort:
+            request_payload["reasoning"] = {"effort": reasoning_effort}
+        if temperature is not None:
+            request_payload["temperature"] = temperature
+
         try:
-            response = self._client.responses.create(
-                model=resolved_model,
-                instructions=system_prompt,
-                input=user_prompt,
-                store=False,
-                temperature=temperature,
-                max_output_tokens=max_completion_tokens,
-                metadata=request_metadata or None,
-                text={"format": {"type": "json_object"}},
-            )
+            response = self._client.responses.create(**request_payload)
         except Exception as exc:
+            if (
+                temperature is not None
+                and self._is_unsupported_temperature_error(exc)
+            ):
+                log_event(
+                    LOGGER,
+                    logging.INFO,
+                    "openai_request_retry_without_temperature",
+                    "Retrying OpenAI request without temperature because the model rejected it.",
+                    model=resolved_model,
+                    task_name=task_name,
+                    reasoning_effort=reasoning_effort,
+                )
+                request_payload.pop("temperature", None)
+                try:
+                    response = self._client.responses.create(**request_payload)
+                except Exception as retry_exc:
+                    log_event(
+                        LOGGER,
+                        logging.ERROR,
+                        "openai_request_failed",
+                        "OpenAI JSON prompt request failed.",
+                        model=resolved_model,
+                        task_name=task_name,
+                        duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                        error_type=type(retry_exc).__name__,
+                    )
+                    raise AgentExecutionError(
+                        "The AI workflow request failed.",
+                        details=str(retry_exc),
+                    ) from retry_exc
+            else:
+                log_event(
+                    LOGGER,
+                    logging.ERROR,
+                    "openai_request_failed",
+                    "OpenAI JSON prompt request failed.",
+                    model=resolved_model,
+                    task_name=task_name,
+                    duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                    error_type=type(exc).__name__,
+                )
+                raise AgentExecutionError(
+                    "The AI workflow request failed.",
+                    details=str(exc),
+                ) from exc
+
+        if self._is_incomplete_due_to_output_tokens(response):
+            retry_payload = dict(request_payload)
+            retry_payload["max_output_tokens"] = min(
+                max(max_completion_tokens * 2, max_completion_tokens + 400),
+                4000,
+            )
             log_event(
                 LOGGER,
-                logging.ERROR,
-                "openai_request_failed",
-                "OpenAI JSON prompt request failed.",
+                logging.INFO,
+                "openai_request_retry_with_higher_output_budget",
+                "Retrying OpenAI request with a higher output token budget after an incomplete response.",
                 model=resolved_model,
                 task_name=task_name,
-                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
-                error_type=type(exc).__name__,
+                reasoning_effort=reasoning_effort,
+                previous_max_output_tokens=max_completion_tokens,
+                retry_max_output_tokens=retry_payload["max_output_tokens"],
             )
-            raise AgentExecutionError(
-                "The AI workflow request failed.",
-                details=str(exc),
-            ) from exc
+            try:
+                response = self._client.responses.create(**retry_payload)
+            except Exception as retry_exc:
+                log_event(
+                    LOGGER,
+                    logging.ERROR,
+                    "openai_request_failed",
+                    "OpenAI JSON prompt retry failed after incomplete response.",
+                    model=resolved_model,
+                    task_name=task_name,
+                    duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                    error_type=type(retry_exc).__name__,
+                )
+                raise AgentExecutionError(
+                    "The AI workflow request failed.",
+                    details=str(retry_exc),
+                ) from retry_exc
 
         usage = getattr(response, "usage", None)
         status = getattr(response, "status", None)
@@ -300,6 +378,38 @@ class OpenAIService:
                 model=payload.get("model_name"),
                 response_id=payload.get("response_id"),
             )
+
+    @staticmethod
+    def _is_unsupported_temperature_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "unsupported parameter" in message and "temperature" in message
+
+    @classmethod
+    def _is_incomplete_due_to_output_tokens(cls, response) -> bool:
+        incomplete_details = getattr(response, "incomplete_details", None)
+        incomplete_reason = getattr(incomplete_details, "reason", None) if incomplete_details else None
+        return (
+            getattr(response, "status", None) == "incomplete"
+            and incomplete_reason == "max_output_tokens"
+            and not cls._has_message_output(response)
+        )
+
+    @classmethod
+    def _has_message_output(cls, response) -> bool:
+        if getattr(response, "output_text", None):
+            return True
+        for item in getattr(response, "output", None) or []:
+            if cls._get_field(item, "type") != "message":
+                continue
+            for part in cls._get_field(item, "content", []) or []:
+                if cls._get_field(part, "type") == "output_text" and cls._get_field(part, "text", ""):
+                    return True
+        return False
+
+    @staticmethod
+    def _supports_reasoning_effort(model_name: str) -> bool:
+        normalized = str(model_name or "").lower()
+        return normalized.startswith("gpt-5")
 
     @staticmethod
     def _get_field(value, field_name, default=None):

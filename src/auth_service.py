@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from uuid import uuid4
 
 from src.config import (
     SUPABASE_ANON_KEY,
@@ -47,6 +49,16 @@ class StreamlitSessionStorage:
             set_auth_pkce_code_verifier(None)
 
 
+_PKCE_CODE_VERIFIER_CACHE: dict[str, str] = {}
+
+
+def _with_query_params(url: str, **params: str):
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query.update({key: value for key, value in params.items() if value is not None})
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
 class AuthService:
     def __init__(
         self,
@@ -63,23 +75,46 @@ class AuthService:
 
     def get_google_sign_in_url(self):
         client = self._create_client()
+        flow_id = uuid4().hex
         response = client.auth.sign_in_with_oauth(
             {
                 "provider": "google",
-                "options": {"redirect_to": self.redirect_url},
+                "options": {"redirect_to": _with_query_params(self.redirect_url, auth_flow=flow_id)},
             }
         )
+        code_verifier = get_auth_pkce_code_verifier()
+        if not code_verifier:
+            raise AppError("Unable to start Google sign-in right now.")
+        _PKCE_CODE_VERIFIER_CACHE[flow_id] = code_verifier
         url = self._extract_oauth_url(response)
         if not url:
             raise AppError("Unable to start Google sign-in right now.")
         return url
 
-    def exchange_code_for_session(self, auth_code: str):
+    def exchange_code_for_session(self, auth_code: str, auth_flow: Optional[str] = None):
+        redirect_to = self.redirect_url
+        code_verifier = None
+        if auth_flow:
+            auth_flow = str(auth_flow)
+            redirect_to = _with_query_params(self.redirect_url, auth_flow=auth_flow)
+            code_verifier = _PKCE_CODE_VERIFIER_CACHE.pop(auth_flow, None)
+        if not code_verifier:
+            code_verifier = get_auth_pkce_code_verifier()
+        if not code_verifier:
+            raise AppError("Google sign-in session expired. Start the sign-in flow again.")
         client = self._create_client()
         try:
-            response = client.auth.exchange_code_for_session({"auth_code": auth_code})
+            response = client.auth.exchange_code_for_session(
+                {
+                    "auth_code": auth_code,
+                    "code_verifier": code_verifier,
+                    "redirect_to": redirect_to,
+                }
+            )
         except TypeError:
             response = client.auth.exchange_code_for_session(auth_code)
+        finally:
+            set_auth_pkce_code_verifier(None)
         return self._build_auth_session(response)
 
     def restore_session(self, access_token: str, refresh_token: str):

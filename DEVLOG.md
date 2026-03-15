@@ -325,3 +325,24 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Expanded boundary coverage for fit, job, tailoring, strategy, and logging modules.
 - Added `.streamlit/config.toml` and reworked deployment docs so the app can be deployed before Supabase is provisioned.
 - Chose **Streamlit Community Cloud** as the first deployment target while keeping the existing Playwright/Chromium-first PDF path and retaining ReportLab as the runtime fallback.
+
+## Day 25: Supabase Auth Stabilization and Local Operator Setup
+
+- Added repo-root `.env` loading for local development while preserving hosted secret-manager compatibility through `os.getenv(...)`.
+- Added `docs/supabase-setup-checklist.md` as the canonical fresh-project operator guide for Supabase setup.
+- Stabilized Supabase Google sign-in for the Streamlit rerun model by preserving PKCE verifier state across the OAuth redirect and callback exchange.
+- Fixed the sidebar navigation handoff so JD-page transitions no longer mutate `current_menu` after the radio widget is instantiated.
+- Removed stale fresh-install guidance that still pointed at the earlier workflow-history migration file.
+- Verified the auth and navigation changes with focused tests and a passing full suite.
+
+## Day 26: OpenAI Runtime Hardening and Reasoning Routing
+
+- Diagnosed assisted-workflow fallback to a GPT-5 compatibility issue in the Responses API path: routed models were rejecting `temperature`.
+- Updated `src/openai_service.py` to retry without `temperature` when the routed model rejects that parameter.
+- Added a retry path for incomplete Responses API outputs caused by exhausted `max_output_tokens`.
+- Increased the OpenAI client timeout and enabled SDK retries to reduce transient `read operation timed out` failures in the assistant path.
+- Added per-task GPT-5 reasoning routing:
+  - medium effort for normal workflow tasks
+  - high effort for review, resume generation, and grounded application-QA tasks
+- Extended `.env.example` and config helpers so reasoning effort can be tuned without editing code.
+- Verified the stabilized OpenAI path with targeted service tests, live local probes, and a passing full suite.

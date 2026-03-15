@@ -22,6 +22,10 @@ OPENAI_MODEL_PRODUCT_HELP = os.getenv(
 OPENAI_MODEL_APPLICATION_QA = os.getenv(
     "OPENAI_MODEL_APPLICATION_QA", OPENAI_MODEL_HIGH_TRUST
 )
+OPENAI_REASONING_DEFAULT = os.getenv("OPENAI_REASONING_DEFAULT", "medium").strip().lower()
+OPENAI_REASONING_HIGH_TRUST = os.getenv(
+    "OPENAI_REASONING_HIGH_TRUST", "high"
+).strip().lower()
 OPENAI_MODEL_ROUTING = {
     "profile": os.getenv("OPENAI_MODEL_PROFILE", OPENAI_MODEL_MID_TIER),
     "job": os.getenv("OPENAI_MODEL_JOB", OPENAI_MODEL_MID_TIER),
@@ -34,6 +38,23 @@ OPENAI_MODEL_ROUTING = {
     ),
     "assistant_product_help": OPENAI_MODEL_PRODUCT_HELP,
     "assistant_application_qa": OPENAI_MODEL_APPLICATION_QA,
+}
+OPENAI_REASONING_ROUTING = {
+    "profile": os.getenv("OPENAI_REASONING_PROFILE", OPENAI_REASONING_DEFAULT).strip().lower(),
+    "job": os.getenv("OPENAI_REASONING_JOB", OPENAI_REASONING_DEFAULT).strip().lower(),
+    "fit": os.getenv("OPENAI_REASONING_FIT", OPENAI_REASONING_DEFAULT).strip().lower(),
+    "tailoring": os.getenv("OPENAI_REASONING_TAILORING", OPENAI_REASONING_DEFAULT).strip().lower(),
+    "strategy": os.getenv("OPENAI_REASONING_STRATEGY", OPENAI_REASONING_DEFAULT).strip().lower(),
+    "review": os.getenv("OPENAI_REASONING_REVIEW", OPENAI_REASONING_HIGH_TRUST).strip().lower(),
+    "resume_generation": os.getenv(
+        "OPENAI_REASONING_RESUME_GENERATION", OPENAI_REASONING_HIGH_TRUST
+    ).strip().lower(),
+    "assistant_product_help": os.getenv(
+        "OPENAI_REASONING_PRODUCT_HELP", OPENAI_REASONING_DEFAULT
+    ).strip().lower(),
+    "assistant_application_qa": os.getenv(
+        "OPENAI_REASONING_APPLICATION_QA", OPENAI_REASONING_HIGH_TRUST
+    ).strip().lower(),
 }
 OPENAI_MODEL = OPENAI_MODEL_DEFAULT
 
@@ -121,13 +142,30 @@ def get_openai_model_for_task(task_name: str = None, fallback: str = None):
     return fallback or OPENAI_MODEL_DEFAULT
 
 
+def get_openai_reasoning_effort_for_task(task_name: str = None, fallback: str = None):
+    if task_name:
+        return OPENAI_REASONING_ROUTING.get(task_name, fallback or OPENAI_REASONING_DEFAULT)
+    return fallback or OPENAI_REASONING_DEFAULT
+
+
 def describe_openai_model_policy(default_model: str = None):
-    models = sorted(set(OPENAI_MODEL_ROUTING.values()))
-    if not models:
-        return default_model or OPENAI_MODEL_DEFAULT
-    if len(models) == 1:
-        return models[0]
-    return "routed({models})".format(models=", ".join(models))
+    policies = sorted(
+        set(
+            "{model}[{reasoning}]".format(
+                model=model,
+                reasoning=OPENAI_REASONING_ROUTING.get(task_name, OPENAI_REASONING_DEFAULT),
+            )
+            for task_name, model in OPENAI_MODEL_ROUTING.items()
+        )
+    )
+    if not policies:
+        return "{model}[{reasoning}]".format(
+            model=default_model or OPENAI_MODEL_DEFAULT,
+            reasoning=OPENAI_REASONING_DEFAULT,
+        )
+    if len(policies) == 1:
+        return policies[0]
+    return "routed({policies})".format(policies=", ".join(policies))
 
 
 def is_supabase_auth_configured():

@@ -79,8 +79,13 @@ The remaining items are quality-of-life improvements that do not affect deployme
 | # | Item | Category |
 |---|---|---|
 | 9 | Add server-side aggregation for daily usage | Performance at scale |
-| 10 | Add OpenAI retry logic | Reliability (fallback already covers failures) |
 | 11 | Add token budget awareness to prompts | Edge case for very large inputs |
+
+OpenAI retry hardening is now in place in the Responses API wrapper for:
+
+- unsupported `temperature` handling on GPT-5 routed models
+- incomplete responses caused by exhausted `max_output_tokens`
+- longer client timeouts with SDK retries for transient network reads
 
 ---
 

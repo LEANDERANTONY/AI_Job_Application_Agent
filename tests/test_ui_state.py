@@ -53,3 +53,13 @@ def test_sync_signatures_clear_cached_export_bytes(monkeypatch):
     assert state.get_cached_pdf_bytes() is None
     assert state.get_cached_tailored_resume_pdf_bytes() is None
     assert state.get_cached_export_bundle_bytes() is None
+
+
+def test_request_menu_navigation_can_be_consumed_once(monkeypatch):
+    fake_streamlit = SimpleNamespace(session_state={})
+    monkeypatch.setattr(state, "st", fake_streamlit)
+
+    state.request_menu_navigation("Manual JD Input")
+
+    assert state.consume_pending_menu() == "Manual JD Input"
+    assert state.consume_pending_menu() is None
