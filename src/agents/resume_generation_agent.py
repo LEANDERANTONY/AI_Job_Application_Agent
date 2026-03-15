@@ -46,6 +46,7 @@ class ResumeGenerationAgent:
                     "resume_generation"
                 ),
                 task_name="resume_generation",
+                metadata=prompt.get("metadata"),
             )
             return ResumeGenerationAgentOutput(
                 professional_summary=coerce_string(payload.get("professional_summary")),

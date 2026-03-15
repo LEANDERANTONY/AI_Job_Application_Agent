@@ -42,6 +42,7 @@ class ReviewAgent:
                 expected_keys=prompt["expected_keys"],
                 max_completion_tokens=get_openai_max_completion_tokens_for_task("review"),
                 task_name="review",
+                metadata=prompt.get("metadata"),
             )
             return ReviewAgentOutput(
                 approved=coerce_bool(payload.get("approved")),

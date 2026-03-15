@@ -197,6 +197,10 @@ class OpenAIService:
             expected_keys=list(expected_keys or []),
             system_prompt_chars=len(system_prompt or ""),
             user_prompt_chars=len(user_prompt or ""),
+            estimated_input_chars=request_metadata.get("estimated_input_chars"),
+            compacted_sections=request_metadata.get("compacted_sections"),
+            prompt_budget_mode=request_metadata.get("prompt_budget_mode"),
+            compacted_labels=request_metadata.get("compacted_labels"),
         )
 
         request_payload = {
@@ -349,6 +353,10 @@ class OpenAIService:
             "incomplete_reason": incomplete_reason,
             "model": resolved_model,
             "task_name": task_name,
+            "estimated_input_chars": request_metadata.get("estimated_input_chars"),
+            "compacted_sections": request_metadata.get("compacted_sections"),
+            "compacted_labels": request_metadata.get("compacted_labels"),
+            "prompt_budget_mode": request_metadata.get("prompt_budget_mode"),
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,

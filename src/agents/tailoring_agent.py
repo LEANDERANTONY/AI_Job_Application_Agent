@@ -45,6 +45,7 @@ class TailoringAgent:
                 expected_keys=prompt["expected_keys"],
                 max_completion_tokens=get_openai_max_completion_tokens_for_task("tailoring"),
                 task_name="tailoring",
+                metadata=prompt.get("metadata"),
             )
             return TailoringAgentOutput(
                 professional_summary=coerce_string(payload.get("professional_summary")),

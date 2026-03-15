@@ -296,6 +296,30 @@ def test_openai_service_uses_low_reasoning_for_product_help_tasks():
     assert "temperature" not in client.responses.calls[0]
 
 
+def test_openai_service_exposes_prompt_budget_metadata_in_usage_snapshot():
+    client = FakeClient([_build_response('{"approved": true}', response_id="resp_budget")])
+    service = OpenAIService(client=client)
+
+    payload = service.run_json_prompt(
+        "system",
+        "user",
+        expected_keys=["approved"],
+        metadata={
+            "estimated_input_chars": "1234",
+            "compacted_sections": "2",
+            "compacted_labels": "Candidate Profile, Job Description",
+            "prompt_budget_mode": "compacted",
+        },
+    )
+    usage = service.get_usage_snapshot()
+
+    assert payload["approved"] is True
+    assert usage["last_response_metadata"]["estimated_input_chars"] == "1234"
+    assert usage["last_response_metadata"]["compacted_sections"] == "2"
+    assert usage["last_response_metadata"]["compacted_labels"] == "Candidate Profile, Job Description"
+    assert usage["last_response_metadata"]["prompt_budget_mode"] == "compacted"
+
+
 def test_openai_service_preserves_user_prompt_when_it_already_mentions_json():
     client = FakeClient([_build_response('{"approved": true}', response_id="resp_json_prompt")])
     service = OpenAIService(client=client)

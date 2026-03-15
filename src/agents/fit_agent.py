@@ -38,6 +38,7 @@ class FitAgent:
                 expected_keys=prompt["expected_keys"],
                 max_completion_tokens=get_openai_max_completion_tokens_for_task("fit"),
                 task_name="fit",
+                metadata=prompt.get("metadata"),
             )
             return FitAgentOutput(
                 fit_summary=coerce_string(payload.get("fit_summary")),

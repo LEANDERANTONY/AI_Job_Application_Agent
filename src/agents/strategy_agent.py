@@ -41,6 +41,7 @@ class StrategyAgent:
                 expected_keys=prompt["expected_keys"],
                 max_completion_tokens=get_openai_max_completion_tokens_for_task("strategy"),
                 task_name="strategy",
+                metadata=prompt.get("metadata"),
             )
             return StrategyAgentOutput(
                 recruiter_positioning=coerce_string(payload.get("recruiter_positioning")),

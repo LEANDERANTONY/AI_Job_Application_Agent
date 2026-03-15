@@ -82,12 +82,27 @@ def _render_openai_usage(usage):
 
     last_metadata = usage.get("last_response_metadata") or {}
     if last_metadata:
-        st.caption(
+        detail_parts = [
             "Latest assisted step used {tokens} tokens and finished with status `{status}`.".format(
                 tokens=last_metadata.get("total_tokens", 0),
                 status=last_metadata.get("status") or "unknown",
             )
-        )
+        ]
+        estimated_input_chars = last_metadata.get("estimated_input_chars")
+        if estimated_input_chars:
+            detail_parts.append(
+                "Estimated prompt size was {chars} characters.".format(
+                    chars=estimated_input_chars
+                )
+            )
+        compacted_sections = last_metadata.get("compacted_sections")
+        if compacted_sections not in (None, "", 0, "0"):
+            detail_parts.append(
+                "Compaction was applied to {count} section(s).".format(
+                    count=compacted_sections
+                )
+            )
+        st.caption(" ".join(detail_parts))
 
 
 def _render_daily_quota_status(daily_quota):

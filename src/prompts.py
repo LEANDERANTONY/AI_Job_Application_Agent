@@ -1,6 +1,6 @@
 import json
 from dataclasses import asdict, is_dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
 from src.schemas import (
     CandidateProfile,
@@ -29,6 +29,114 @@ def _to_serializable(value: Any):
 def _json_block(label: str, value: Any) -> str:
     payload = json.dumps(_to_serializable(value), indent=2, default=str)
     return "{label}:\n{payload}".format(label=label, payload=payload)
+
+
+def _truncate_text(value: Any, max_chars: int) -> str:
+    text = str(value or "")
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    if max_chars <= 16:
+        return text[:max_chars]
+    return text[: max_chars - 16].rstrip() + "...[truncated]"
+
+
+def _compact_prompt_value(value: Any, *, max_string_chars: int, max_list_items: int):
+    serializable = _to_serializable(value)
+    if isinstance(serializable, dict):
+        return {
+            key: _compact_prompt_value(
+                item,
+                max_string_chars=max_string_chars,
+                max_list_items=max_list_items,
+            )
+            for key, item in serializable.items()
+        }
+    if isinstance(serializable, list):
+        return [
+            _compact_prompt_value(
+                item,
+                max_string_chars=max_string_chars,
+                max_list_items=max_list_items,
+            )
+            for item in serializable[:max_list_items]
+        ]
+    if isinstance(serializable, tuple):
+        return [
+            _compact_prompt_value(
+                item,
+                max_string_chars=max_string_chars,
+                max_list_items=max_list_items,
+            )
+            for item in serializable[:max_list_items]
+        ]
+    if isinstance(serializable, str):
+        return _truncate_text(serializable, max_string_chars)
+    return serializable
+
+
+def _json_block_with_budget(label: str, value: Any, *, max_chars: int) -> tuple[str, Dict[str, Any]]:
+    serialized_value = _to_serializable(value)
+    original_payload = json.dumps(serialized_value, indent=2, default=str)
+    payload = original_payload
+    compacted = False
+
+    if len(payload) > max_chars:
+        compacted = True
+        for max_string_chars, max_list_items in (
+            (600, 12),
+            (420, 8),
+            (280, 6),
+            (180, 4),
+            (120, 3),
+        ):
+            compacted_value = _compact_prompt_value(
+                serialized_value,
+                max_string_chars=max_string_chars,
+                max_list_items=max_list_items,
+            )
+            payload = json.dumps(compacted_value, indent=2, default=str)
+            if len(payload) <= max_chars:
+                break
+
+        if len(payload) > max_chars:
+            payload = json.dumps(
+                {
+                    "summary": "Section compacted to stay within the prompt budget.",
+                    "preview": _truncate_text(payload, min(max_chars, 600)),
+                },
+                indent=2,
+                default=str,
+            )
+
+    return (
+        "{label}:\n{payload}".format(label=label, payload=payload),
+        {
+            "label": label,
+            "original_chars": len(original_payload),
+            "final_chars": len(payload),
+            "compacted": compacted,
+        },
+    )
+
+
+def _build_budgeted_user_prompt(sections: Iterable[tuple[str, Any, int]]) -> tuple[str, Dict[str, str]]:
+    blocks = []
+    stats = []
+    for label, value, max_chars in sections:
+        block, stat = _json_block_with_budget(label, value, max_chars=max_chars)
+        blocks.append(block)
+        stats.append(stat)
+
+    user_prompt = "\n\n".join(blocks)
+    compacted_labels = [stat["label"] for stat in stats if stat["compacted"]]
+    metadata = {
+        "estimated_input_chars": str(len(user_prompt)),
+        "compacted_sections": str(len(compacted_labels)),
+        "prompt_budget_mode": "compacted" if compacted_labels else "full",
+    }
+    if compacted_labels:
+        metadata["compacted_labels"] = ", ".join(compacted_labels)
+    return user_prompt, metadata
 
 
 def _build_contract(contract: Dict[str, str]) -> str:
@@ -87,13 +195,13 @@ def build_fit_agent_prompt(
         "key_gaps": "array of 2-4 grounded gaps or risks",
         "interview_themes": "array of 2-4 interview themes to prepare",
     }
-    user_prompt = "\n\n".join(
+    user_prompt, metadata = _build_budgeted_user_prompt(
         [
-            _json_block("Candidate Profile", candidate_profile),
-            _json_block("Job Description", job_description),
-            _json_block("Deterministic Fit Analysis", fit_analysis),
-            _json_block("Profile Agent Output", profile_output),
-            _json_block("Job Agent Output", job_output),
+            ("Candidate Profile", candidate_profile, 2400),
+            ("Job Description", job_description, 2200),
+            ("Deterministic Fit Analysis", fit_analysis, 1800),
+            ("Profile Agent Output", profile_output, 1000),
+            ("Job Agent Output", job_output, 1000),
         ]
     )
     return {
@@ -104,6 +212,7 @@ def build_fit_agent_prompt(
         ),
         "user": user_prompt,
         "expected_keys": list(contract.keys()),
+        "metadata": metadata,
     }
 
 
@@ -123,22 +232,19 @@ def build_tailoring_agent_prompt(
         "highlighted_skills": "array of 4-8 skills to foreground",
         "cover_letter_themes": "array of 2-4 cover-letter talking points",
     }
-    user_prompt = "\n\n".join(
-        [
-            _json_block("Candidate Profile", candidate_profile),
-            _json_block("Job Description", job_description),
-            _json_block("Deterministic Fit Analysis", fit_analysis),
-            _json_block("Deterministic Tailored Draft", tailored_draft),
-            _json_block("Profile Agent Output", profile_output),
-            _json_block("Fit Agent Output", fit_output),
-        ]
-        + (
-            [_json_block("Previous Tailoring Output", previous_tailoring_output)]
-            if previous_tailoring_output
-            else []
-        )
-        + ([ _json_block("Revision Requests", revision_requests)] if revision_requests else [])
-    )
+    sections = [
+        ("Candidate Profile", candidate_profile, 2200),
+        ("Job Description", job_description, 1800),
+        ("Deterministic Fit Analysis", fit_analysis, 1600),
+        ("Deterministic Tailored Draft", tailored_draft, 1800),
+        ("Profile Agent Output", profile_output, 1000),
+        ("Fit Agent Output", fit_output, 1200),
+    ]
+    if previous_tailoring_output:
+        sections.append(("Previous Tailoring Output", previous_tailoring_output, 1200))
+    if revision_requests:
+        sections.append(("Revision Requests", revision_requests, 900))
+    user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (
             "You are the Tailoring Agent. Improve the deterministic draft without inventing facts. "
@@ -148,6 +254,7 @@ def build_tailoring_agent_prompt(
         ),
         "user": user_prompt,
         "expected_keys": list(contract.keys()),
+        "metadata": metadata,
     }
 
 
@@ -165,16 +272,16 @@ def build_review_agent_prompt(
         "revision_requests": "array of 0-4 concrete requested revisions",
         "final_notes": "array of 1-3 final quality notes",
     }
-    user_prompt = "\n\n".join(
-        [
-            _json_block("Candidate Profile", candidate_profile),
-            _json_block("Job Description", job_description),
-            _json_block("Deterministic Fit Analysis", fit_analysis),
-            _json_block("Deterministic Tailored Draft", tailored_draft),
-            _json_block("Tailoring Agent Output", tailoring_output),
-        ]
-        + ([_json_block("Strategy Agent Output", strategy_output)] if strategy_output else [])
-    )
+    sections = [
+        ("Candidate Profile", candidate_profile, 2000),
+        ("Job Description", job_description, 1600),
+        ("Deterministic Fit Analysis", fit_analysis, 1600),
+        ("Deterministic Tailored Draft", tailored_draft, 1800),
+        ("Tailoring Agent Output", tailoring_output, 1400),
+    ]
+    if strategy_output:
+        sections.append(("Strategy Agent Output", strategy_output, 1200))
+    user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (
             "You are the Review Agent. Your job is to reject embellishment and unsupported claims. "
@@ -183,6 +290,7 @@ def build_review_agent_prompt(
         ),
         "user": user_prompt,
         "expected_keys": list(contract.keys()),
+        "metadata": metadata,
     }
 
 
@@ -200,14 +308,14 @@ def build_strategy_agent_prompt(
         "interview_preparation_themes": "array of 2-4 interview themes to prepare with evidence",
         "portfolio_project_emphasis": "array of 2-4 portfolio or project emphasis suggestions grounded in the candidate profile",
     }
-    user_prompt = "\n\n".join(
+    user_prompt, metadata = _build_budgeted_user_prompt(
         [
-            _json_block("Candidate Profile", candidate_profile),
-            _json_block("Job Description", job_description),
-            _json_block("Deterministic Fit Analysis", fit_analysis),
-            _json_block("Profile Agent Output", profile_output),
-            _json_block("Fit Agent Output", fit_output),
-            _json_block("Tailoring Agent Output", tailoring_output),
+            ("Candidate Profile", candidate_profile, 2000),
+            ("Job Description", job_description, 1600),
+            ("Deterministic Fit Analysis", fit_analysis, 1500),
+            ("Profile Agent Output", profile_output, 1000),
+            ("Fit Agent Output", fit_output, 1200),
+            ("Tailoring Agent Output", tailoring_output, 1400),
         ]
     )
     return {
@@ -218,6 +326,7 @@ def build_strategy_agent_prompt(
         ),
         "user": user_prompt,
         "expected_keys": list(contract.keys()),
+        "metadata": metadata,
     }
 
 
@@ -237,17 +346,18 @@ def build_resume_generation_agent_prompt(
         "section_order": "array describing preferred section order for the resume",
         "template_hint": "preferred template hint such as classic_ats or modern_professional",
     }
-    user_prompt = "\n\n".join(
-        [
-            _json_block("Candidate Profile", candidate_profile),
-            _json_block("Job Description", job_description),
-            _json_block("Deterministic Fit Analysis", fit_analysis),
-            _json_block("Deterministic Tailored Draft", tailored_draft),
-            _json_block("Tailoring Agent Output", tailoring_output),
-        ]
-        + ([_json_block("Strategy Agent Output", strategy_output)] if strategy_output else [])
-        + ([_json_block("Review Agent Output", review_output)] if review_output else [])
-    )
+    sections = [
+        ("Candidate Profile", candidate_profile, 1800),
+        ("Job Description", job_description, 1500),
+        ("Deterministic Fit Analysis", fit_analysis, 1500),
+        ("Deterministic Tailored Draft", tailored_draft, 1800),
+        ("Tailoring Agent Output", tailoring_output, 1400),
+    ]
+    if strategy_output:
+        sections.append(("Strategy Agent Output", strategy_output, 1100))
+    if review_output:
+        sections.append(("Review Agent Output", review_output, 1000))
+    user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (
             "You are the Resume Generation Agent. Produce the final tailored resume content from grounded upstream analysis. "
@@ -257,6 +367,7 @@ def build_resume_generation_agent_prompt(
         ),
         "user": user_prompt,
         "expected_keys": list(contract.keys()),
+        "metadata": metadata,
     }
 
 
