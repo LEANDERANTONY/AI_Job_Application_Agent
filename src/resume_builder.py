@@ -37,6 +37,19 @@ def _slugify(value: str) -> str:
     return slugify_text(value, fallback="tailored-resume")
 
 
+def _resolve_resume_theme(theme: str, agent_result: Optional[AgentWorkflowResult]) -> str:
+    normalized_theme = str(theme or "").strip()
+    if normalized_theme in RESUME_THEMES:
+        return normalized_theme
+
+    hinted_theme = ""
+    if agent_result and agent_result.resume_generation:
+        hinted_theme = str(agent_result.resume_generation.template_hint or "").strip()
+    if hinted_theme in RESUME_THEMES:
+        return hinted_theme
+    return "classic_ats"
+
+
 def _safe_join(values: Iterable[str], fallback: str = "N/A", limit: Optional[int] = None) -> str:
     return safe_join_strings(values, fallback=fallback, limit=limit)
 
@@ -241,8 +254,7 @@ def build_tailored_resume_artifact(
     agent_result: Optional[AgentWorkflowResult] = None,
     theme: str = "classic_ats",
 ) -> TailoredResumeArtifact:
-    if agent_result and agent_result.resume_generation and agent_result.resume_generation.template_hint:
-        theme = agent_result.resume_generation.template_hint
+    theme = _resolve_resume_theme(theme, agent_result)
     professional_summary = (
         agent_result.resume_generation.professional_summary
         if agent_result and agent_result.resume_generation and agent_result.resume_generation.professional_summary
