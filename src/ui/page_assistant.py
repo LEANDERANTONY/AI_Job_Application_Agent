@@ -35,6 +35,51 @@ def _build_product_help_context(workflow_view_model=None, artifact=None, report=
     }
 
 
+def _submit_assistant_question(
+    *,
+    current_page,
+    mode,
+    question,
+    history,
+    workflow_view_model=None,
+    artifact=None,
+    report=None,
+):
+    normalized_question = str(question or "").strip()
+    if not normalized_question:
+        return False
+
+    ai_session = _resolve_assistant_ai_session(workflow_view_model)
+    openai_service = ai_session.openai_service if ai_session else None
+    assistant = AssistantService(openai_service=openai_service)
+    if mode == "product_help":
+        response = assistant.answer_product_help(
+            normalized_question,
+            current_page=current_page,
+            history=history,
+            app_context=_build_product_help_context(
+                workflow_view_model=workflow_view_model,
+                artifact=artifact,
+                report=report,
+            ),
+        )
+    else:
+        response = assistant.answer_application_qa(
+            normalized_question,
+            workflow_view_model,
+            report=report,
+            artifact=artifact,
+            history=history,
+        )
+    if ai_session and ai_session.openai_service:
+        set_openai_session_usage(ai_session.openai_service.get_usage_snapshot())
+    append_assistant_turn(
+        mode,
+        AssistantTurn(mode=mode, question=normalized_question, response=response),
+    )
+    return True
+
+
 def render_assistant_panel(current_page, workflow_view_model=None, artifact=None, report=None):
     st.markdown("---")
     render_section_head(
@@ -68,58 +113,37 @@ def render_assistant_panel(current_page, workflow_view_model=None, artifact=None
             if turn.response.sources:
                 st.caption("Sources: " + ", ".join(turn.response.sources))
 
-    question = st.text_input(
-        "Ask a question",
-        key="assistant_question_{page}_{mode}".format(page=page_slug, mode=mode),
-        placeholder=(
-            "Ask how to use the app..."
-            if mode == "product_help"
-            else "Ask about your resume, JD, or report..."
-        ),
+    with st.form(
+        key="assistant_form_{page}_{mode}".format(page=page_slug, mode=mode),
+        clear_on_submit=True,
+    ):
+        question = st.text_input(
+            "Ask a question",
+            key="assistant_question_{page}_{mode}".format(page=page_slug, mode=mode),
+            placeholder=(
+                "Ask how to use the app..."
+                if mode == "product_help"
+                else "Ask about your resume, JD, or report..."
+            ),
+        )
+        ask_clicked = st.form_submit_button("Ask Assistant")
+
+    clear_clicked = st.button(
+        "Clear Chat",
+        key="clear_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
     )
-    ask_col, clear_col = st.columns(2)
-    with ask_col:
-        ask_clicked = st.button(
-            "Ask Assistant",
-            key="ask_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
-        )
-    with clear_col:
-        clear_clicked = st.button(
-            "Clear Chat",
-            key="clear_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
-        )
 
     if clear_clicked:
         clear_assistant_history(mode)
         st.rerun()
 
-    if ask_clicked and question.strip():
-        ai_session = _resolve_assistant_ai_session(workflow_view_model)
-        openai_service = ai_session.openai_service if ai_session else None
-        assistant = AssistantService(openai_service=openai_service)
-        if mode == "product_help":
-            response = assistant.answer_product_help(
-                question,
-                current_page=current_page,
-                history=history,
-                app_context=_build_product_help_context(
-                    workflow_view_model=workflow_view_model,
-                    artifact=artifact,
-                    report=report,
-                ),
-            )
-        else:
-            response = assistant.answer_application_qa(
-                question,
-                workflow_view_model,
-                report=report,
-                artifact=artifact,
-                history=history,
-            )
-        if ai_session and ai_session.openai_service:
-            set_openai_session_usage(ai_session.openai_service.get_usage_snapshot())
-        append_assistant_turn(
-            mode,
-            AssistantTurn(mode=mode, question=question.strip(), response=response),
-        )
+    if ask_clicked and _submit_assistant_question(
+        current_page=current_page,
+        mode=mode,
+        question=question,
+        history=history,
+        workflow_view_model=workflow_view_model,
+        artifact=artifact,
+        report=report,
+    ):
         st.rerun()
