@@ -1,0 +1,339 @@
+# Recommended Changes Status — March 16, 2026
+
+This document summarizes the 21 recommended changes tracked at the top of `improvements.md`, along with what was changed for each one and the current status.
+
+Status labels used here:
+
+- `Completed in stepwise pass`: implemented during the March 15-16 step-by-step improvement run
+- `Already implemented earlier`: present in the current codebase before this summary document was created
+- `Mostly implemented earlier`: core capability already exists, but some surrounding work was completed during the recent stepwise pass
+
+## 1. Assistant Product-Help Latency
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- switched product-help requests to a leaner request shape that does not send `temperature` to models that reject it
+- reduced product-help reasoning effort to `low`
+- disabled higher output-budget retries for product-help so short help questions fail fast to deterministic fallback instead of paying extra round trips
+
+Checkpoint:
+
+- `c064307` — `Step 7: Reduce product-help assistant latency`
+
+## 2. Assistant Limit Awareness Is Inaccurate
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- expanded product-help prompt guidance for limit, quota, warning, and fallback questions
+- added runtime session-budget and daily-quota context to product-help requests
+- improved deterministic fallback answers so they explain browser-session budget versus account-level daily quota directly
+
+Checkpoint:
+
+- `5c2bca1` — `Step 5: Ground assistant limit-awareness in runtime quotas`
+
+## 3. Main AI Workflow Can Quietly Drop To Deterministic Fallback Mid-Run
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- preserved whether assisted mode was attempted before fallback
+- surfaced fallback reason and details on the workflow result
+- added explicit UI warning when a supervised run downgrades from AI-assisted mode to deterministic fallback
+
+Checkpoint:
+
+- `88c2953` — `Step 2: Show supervised workflow fallback reasons`
+
+## 4. Truncated Partial JSON Responses Need Dedicated Recovery Logic
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- added retry handling for incomplete `max_output_tokens` responses that contain partial malformed JSON
+- added retry handling for incomplete responses with partial JSON that is missing required fields
+- added focused tests covering both retry paths
+
+Checkpoint:
+
+- `f19aa77` — `Step 1: Recover truncated partial JSON responses`
+
+## 5. Internal Account Should Support Unlimited Assisted Access During Product Testing
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- added `AUTH_INTERNAL_USER_EMAILS` configuration
+- mapped allowlisted emails to `plan_tier=internal` during authenticated user sync
+- documented the configuration in `.env.example` and `README.md`
+
+Checkpoint:
+
+- `eafe132` — `Step 3: Add internal account quota override`
+
+## 6. Add A Separate Quota-Test User For Daily-Limit Validation
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- documented the intended split between unrestricted internal accounts and normal quota-test accounts
+- clarified that only unrestricted internal emails belong in `AUTH_INTERNAL_USER_EMAILS`
+- documented that any second non-allowlisted Google account remains on the normal free-tier quota path
+
+Checkpoint:
+
+- `fa4408a` — `Step 14: Document quota test account split`
+
+## 7. Input Prompt Budgeting Needs First-Class Visibility And Guardrails
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- added prompt-compaction rules for the largest supervised-agent prompts
+- attached prompt-budget metadata such as estimated input size and compacted sections to assisted requests
+- surfaced latest prompt-budget details in the UI usage panel
+
+Checkpoint:
+
+- `6fd8d53` — `Step 8: Add prompt budgeting guardrails`
+
+## 8. Resume Template Selection Does Not Apply Cleanly
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- made the selected resume template authoritative when building the artifact
+- stopped `resume_generation.template_hint` from overriding a valid user-selected theme
+- aligned artifact summary and displayed metadata with the active selected theme
+
+Checkpoint:
+
+- `d4489c8` — `Step 10: Make selected resume template authoritative`
+
+## 9. Modern Professional Template Causes Unstable Reruns
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- removed the explicit extra rerun in the resume-template selector path
+- added theme-state normalization so invalid widget state is reset to a valid theme
+- kept template changes converging on one session-state value
+
+Checkpoint:
+
+- `267db39` — `Step 11: Stabilize resume template reruns`
+
+## 10. Markdown Downloads Break After Modern Professional Selection
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- made artifact download widget keys content-aware so theme changes generate fresh download controls
+- kept download controls aligned with the current tailored-resume artifact after theme switches
+- removed stale UI-state behavior that could leave download controls pointing at old content
+
+Checkpoint:
+
+- `1057ef7` — `Step 12: Refresh download controls after theme changes`
+
+## 11. Export Preparation UX Is Indirect And Confusing
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- replaced explicit `Prepare ...` labels with consistent `Download ...` actions for PDF and ZIP bundle exports
+- generated exports behind the first click with spinner feedback, then refreshed into the browser download control
+- documented the Streamlit constraint that file bytes must exist before browser handoff
+
+Checkpoint:
+
+- `bf8b6d7` — `Step 13: Simplify export download actions`
+
+## 12. Assistant Input Should Submit On Enter
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- moved assistant entry to a form-based submission flow
+- made pressing Enter submit the assistant question directly
+- kept the explicit `Ask Assistant` button path inside the same form
+
+Checkpoint:
+
+- `51c430f` — `Step 4: Submit assistant input on Enter and clear after send`
+
+## 13. Assistant Input Field Should Clear After Send
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- enabled `clear_on_submit` on the assistant form
+- left the input ready for the next question after a successful send
+
+Checkpoint:
+
+- `51c430f` — `Step 4: Submit assistant input on Enter and clear after send`
+
+## 14. Application Q&A Is Too Narrow For General Resume Coaching
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- broadened Application Q&A prompt guidance so it can give general coaching while staying grounded in the current package
+- enriched Application Q&A context with review signals, highlighted skills, and fit gaps
+- added deterministic fallback handling for broader coaching questions such as transferable collaboration framing
+
+Checkpoint:
+
+- `88f778e` — `Step 9: Broaden application Q&A coaching`
+
+## 15. Saved Workspace Page Purpose And UX Are Unclear
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- clarified that the page is for inspection and download regeneration of the latest saved snapshot
+- added a direct in-page reload action
+- updated page copy so the difference between inspect/download and restore/reload is explicit
+
+Checkpoint:
+
+- `a53abdd` — `Step 6: Clarify Saved Workspace page purpose`
+
+## 16. Saved Workspace Reload Must Restore Resume-Backed Workflow State
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- preserved resume document, candidate profile, JD, fit outputs, and tailored draft during reload
+- restored the matching workflow signature before reapplying the saved supervised workflow result
+- prevented the next Manual JD render from dropping restored workflow state as stale
+
+Checkpoint:
+
+- `0cb88c5` — `Step 15: Preserve saved workspace workflow state`
+
+## 17. Explore Retrieval-Augmented Product Context For The Assistant
+
+Status: `Completed in stepwise pass`
+
+Changes made:
+
+- added `src/product_knowledge.py` with curated product knowledge documents
+- retrieved relevant knowledge hits per question and combined them with live runtime/session context
+- allowed deterministic product-help fallback to use retrieved knowledge when a question falls outside the hardcoded fallback branches
+
+Checkpoint:
+
+- `9b34c99` — `Step 16: Add retrieval-backed product help context`
+
+## 18. Revision Loop
+
+Status: `Already implemented earlier`
+
+Changes present in the current codebase:
+
+- `ApplicationOrchestrator` reruns tailoring, strategy, and review in a bounded revision loop
+- review feedback is injected back into `TailoringAgent.run(...)` as `revision_requests`
+- revision pass history is preserved on `review_history`
+- the loop is capped by `max_revision_passes`
+
+Current evidence:
+
+- `src/agents/orchestrator.py`
+
+## 19. Application Strategy Agent
+
+Status: `Already implemented earlier`
+
+Changes present in the current codebase:
+
+- `StrategyAgent` exists as a first-class agent under `src/agents/strategy_agent.py`
+- the orchestrator runs it on each revision pass
+- its output is included in workflow payloads, UI rendering, report generation, and resume generation context
+
+Current evidence:
+
+- `src/agents/strategy_agent.py`
+- `src/agents/orchestrator.py`
+
+## 20. Logging and Observability
+
+Status: `Already implemented earlier`
+
+Changes present in the current codebase:
+
+- structured JSON logging exists in `src/logging_utils.py`
+- workflow, agent, OpenAI, export, and usage-persistence paths emit structured events with metadata
+- OpenAI request lifecycle logging is already present in `src/openai_service.py`
+- orchestration lifecycle logging is already present in `src/agents/orchestrator.py`
+
+Current evidence:
+
+- `src/logging_utils.py`
+- `src/openai_service.py`
+- `src/agents/orchestrator.py`
+- `src/exporters.py`
+
+## 21. Authentication and Multi-Tenancy
+
+Status: `Mostly implemented earlier`
+
+Changes present in the current codebase:
+
+- Google sign-in via Supabase is already integrated
+- authenticated users sync into `app_users`
+- persisted usage events back daily quota enforcement
+- saved workspaces are stored per authenticated user
+- internal account override and quota-test account split were completed in the recent stepwise pass
+
+What was added during the recent stepwise pass for this area:
+
+- internal-account allowlist override for unrestricted testing
+- explicit documentation for keeping a separate non-allowlisted quota-test user
+
+Current evidence:
+
+- `src/ui/auth.py`
+- `src/user_store.py`
+- `src/usage_store.py`
+- `src/saved_workspace_store.py`
+- `README.md`
+- `.env.example`
+
+## Commit Index
+
+- `f19aa77` — Step 1: Recover truncated partial JSON responses
+- `88c2953` — Step 2: Show supervised workflow fallback reasons
+- `eafe132` — Step 3: Add internal account quota override
+- `51c430f` — Step 4: Submit assistant input on Enter and clear after send
+- `5c2bca1` — Step 5: Ground assistant limit-awareness in runtime quotas
+- `a53abdd` — Step 6: Clarify Saved Workspace page purpose
+- `c064307` — Step 7: Reduce product-help assistant latency
+- `6fd8d53` — Step 8: Add prompt budgeting guardrails
+- `88f778e` — Step 9: Broaden application Q&A coaching
+- `d4489c8` — Step 10: Make selected resume template authoritative
+- `267db39` — Step 11: Stabilize resume template reruns
+- `1057ef7` — Step 12: Refresh download controls after theme changes
+- `bf8b6d7` — Step 13: Simplify export download actions
+- `fa4408a` — Step 14: Document quota test account split
+- `0cb88c5` — Step 15: Preserve saved workspace workflow state
+- `9b34c99` — Step 16: Add retrieval-backed product help context
