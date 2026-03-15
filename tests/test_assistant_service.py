@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from src.assistant_service import AssistantService
 from src.errors import AgentExecutionError
+from src.product_knowledge import retrieve_product_knowledge
 from src.schemas import ResumeDocument, WorkExperience
 from src.services.fit_service import build_fit_analysis
 from src.services.job_service import build_job_description_from_text
@@ -103,6 +104,19 @@ def test_product_help_fallback_explains_session_and_daily_limits():
     assert "browser-session" in response.answer.lower()
     assert "daily quota" in response.answer.lower()
     assert response.sources
+
+
+def test_product_help_fallback_can_use_retrieved_knowledge_for_saved_workspace_expiry():
+    service = AssistantService()
+
+    response = service.answer_product_help(
+        "How long does the saved workspace last?",
+        current_page="Saved Workspace",
+        app_context={},
+    )
+
+    assert "24 hours" in response.answer.lower()
+    assert "saved workspace" in response.sources[0].lower()
 
 
 def test_application_qa_fallback_explains_gaps():
@@ -241,3 +255,10 @@ def test_build_application_qa_context_includes_review_and_skill_signals():
     assert context["current_highlighted_skills"] == ["Python", "Communication"]
     assert context["review_approved"] is True
     assert context["review_revision_requests"] == ["Tighten bullet wording"]
+
+
+def test_retrieve_product_knowledge_matches_export_questions():
+    matches = retrieve_product_knowledge("How do PDF and ZIP downloads work?", current_page="Manual JD Input")
+
+    assert matches
+    assert matches[0]["topic"] == "exports"

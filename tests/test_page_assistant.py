@@ -56,6 +56,25 @@ def test_build_product_help_context_includes_saved_workspace_navigation(monkeypa
     assert context["daily_quota"]["plan_tier"] == "free"
 
 
+def test_build_product_help_context_for_question_includes_retrieved_knowledge(monkeypatch):
+    monkeypatch.setattr(
+        page_assistant,
+        "retrieve_product_knowledge",
+        lambda question, current_page="": [{"title": "Saved Workspace", "source": "Saved Workspace", "content": "Restores saved state."}],
+    )
+
+    context = page_assistant._build_product_help_context_for_question(
+        "How long does the saved workspace last?",
+        current_page="Saved Workspace",
+        workflow_view_model=None,
+        artifact=None,
+        report=None,
+        ai_session=None,
+    )
+
+    assert context["knowledge_hits"][0]["source"] == "Saved Workspace"
+
+
 def test_submit_assistant_question_returns_false_for_blank_input():
     submitted = page_assistant._submit_assistant_question(
         current_page="Upload Resume",

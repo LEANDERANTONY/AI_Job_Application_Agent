@@ -3,6 +3,7 @@ import logging
 
 from src.errors import AgentExecutionError
 from src.logging_utils import get_logger, log_event
+from src.product_knowledge import retrieve_product_knowledge
 from src.prompts import (
     build_application_qa_assistant_prompt,
     build_product_help_assistant_prompt,
@@ -19,7 +20,10 @@ class AssistantService:
         self._openai_service = openai_service
 
     def answer_product_help(self, question, current_page, history=None, app_context=None):
-        app_context = app_context or {}
+        app_context = {
+            **(app_context or {}),
+            "knowledge_hits": retrieve_product_knowledge(question, current_page=current_page),
+        }
         if self._openai_service and self._openai_service.is_available():
             try:
                 prompt = build_product_help_assistant_prompt(
@@ -44,7 +48,7 @@ class AssistantService:
                 return self._build_response(payload, max_sources=3)
             except AgentExecutionError as exc:
                 self._log_assistant_fallback("assistant_product_help", exc)
-        return self._fallback_product_help(question, current_page)
+        return self._fallback_product_help(question, current_page, app_context=app_context)
 
     def answer_application_qa(self, question, workflow_view_model, report=None, artifact=None, history=None):
         if self._openai_service and self._openai_service.is_available():
@@ -133,8 +137,10 @@ class AssistantService:
         )
 
     @staticmethod
-    def _fallback_product_help(question, current_page):
+    def _fallback_product_help(question, current_page, app_context=None):
         normalized = str(question or "").lower()
+        app_context = app_context or {}
+        knowledge_hits = list(app_context.get("knowledge_hits", []) or [])
         if "your name" in normalized or "who are you" in normalized:
             return AssistantResponse(
                 answer="I am the in-app Product Help Assistant for the AI Job Application Agent. I can explain the current workflow, navigation, saved workspace behavior, and the difference between the generated outputs.",
@@ -158,6 +164,12 @@ class AssistantService:
                 answer="Use Manual JD Input to upload a JD file, select a sample JD, or paste JD text directly. Once the JD is loaded, the app builds the fit snapshot and tailored outputs from that structured role data.",
                 sources=["Manual JD Input", "Readiness Snapshot"],
                 suggested_follow_ups=["What is the supervised workflow?", "What do I get at the end?"],
+            )
+        if "report" in normalized:
+            return AssistantResponse(
+                answer="Use the application package report to review the fit summary, strategy guidance, review notes, and rationale behind the tailored resume wording. It is the explanation layer, while the tailored resume is the direct-use artifact.",
+                sources=["Application Package", "Readiness Snapshot", "Tailored Resume Draft"],
+                suggested_follow_ups=["What is the difference between the report and the resume?", "Can I download the report as PDF?"],
             )
         if "difference" in normalized or ("report" in normalized and "resume" in normalized):
             return AssistantResponse(
@@ -188,6 +200,13 @@ class AssistantService:
                 answer="Job Search is still a placeholder entry point. The active production path today is resume upload, JD input, fit analysis, supervised workflow, and export.",
                 sources=["Job Search", "Upload Resume", "Manual JD Input"],
                 suggested_follow_ups=["What is the current happy path?", "How do I generate both outputs?"],
+            )
+        if knowledge_hits:
+            primary_hit = knowledge_hits[0]
+            return AssistantResponse(
+                answer=primary_hit.get("content", "") or "The product context is available in the current page and saved knowledge documents.",
+                sources=[str(item.get("source", "")).strip() for item in knowledge_hits if str(item.get("source", "")).strip()][:3],
+                suggested_follow_ups=["Can you explain that step-by-step?", "What page should I use for that?"],
             )
         return AssistantResponse(
             answer="The current flow is: upload a resume, load a job description, review the fit snapshot, optionally run the supervised workflow, inspect the tailored resume and report, then download only if you want to keep them.",

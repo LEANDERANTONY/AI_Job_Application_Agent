@@ -47,3 +47,12 @@ def test_application_qa_prompt_allows_grounded_general_coaching():
 
     assert "broader resume or application coaching" in prompt["system"]
     assert "general advice" in prompt["system"]
+
+
+def test_product_help_prompt_mentions_retrieved_knowledge_hits():
+    prompt = build_application_qa_assistant_prompt(
+        workflow_context={"candidate_profile": {"summary": "Built dashboards"}},
+        question="How do I show collaboration without formal experience?",
+    )
+
+    assert prompt

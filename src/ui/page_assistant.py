@@ -1,6 +1,7 @@
 import streamlit as st
 
 from src.assistant_service import AssistantService
+from src.product_knowledge import retrieve_product_knowledge
 from src.schemas import AssistantTurn
 from src.ui.components import render_section_head
 from src.ui.state import (
@@ -50,6 +51,26 @@ def _build_product_help_context(workflow_view_model=None, artifact=None, report=
     }
 
 
+def _build_product_help_context_for_question(
+    question,
+    *,
+    current_page,
+    workflow_view_model=None,
+    artifact=None,
+    report=None,
+    ai_session=None,
+):
+    return {
+        **_build_product_help_context(
+            workflow_view_model=workflow_view_model,
+            artifact=artifact,
+            report=report,
+            ai_session=ai_session,
+        ),
+        "knowledge_hits": retrieve_product_knowledge(question, current_page=current_page),
+    }
+
+
 def _submit_assistant_question(
     *,
     current_page,
@@ -72,7 +93,9 @@ def _submit_assistant_question(
             normalized_question,
             current_page=current_page,
             history=history,
-            app_context=_build_product_help_context(
+            app_context=_build_product_help_context_for_question(
+                normalized_question,
+                current_page=current_page,
                 workflow_view_model=workflow_view_model,
                 artifact=artifact,
                 report=report,
