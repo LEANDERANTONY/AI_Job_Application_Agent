@@ -309,6 +309,8 @@ def test_restore_latest_saved_workspace_restores_snapshot(monkeypatch):
     monkeypatch.setattr(workflow, "set_active_candidate_profile", lambda value: captured.update({"candidate_profile": value}))
     monkeypatch.setattr(workflow, "store_job_description_inputs", lambda raw_text, source_label, job_description: captured.update({"job_description": (raw_text, source_label, job_description)}))
     monkeypatch.setattr(workflow, "store_fit_outputs", lambda fit_analysis, tailored_draft: captured.update({"fit_outputs": (fit_analysis, tailored_draft)}))
+    monkeypatch.setattr(workflow, "reset_agent_workflow_if_signature_changed", lambda value: captured.update({"workflow_signature": value}))
+    monkeypatch.setattr(workflow, "_workflow_signature", lambda *args: "restored-signature")
     monkeypatch.setattr(workflow, "set_agent_workflow_result", lambda value: captured.update({"agent_result": value}))
     monkeypatch.setattr(workflow, "set_tailored_resume_theme", lambda value: captured.update({"theme": value}))
     monkeypatch.setattr(workflow, "request_menu_navigation", lambda menu_name: captured.update({"menu": menu_name}))
@@ -322,6 +324,7 @@ def test_restore_latest_saved_workspace_restores_snapshot(monkeypatch):
     assert captured["candidate_profile"].full_name == "Leander Antony"
     assert captured["job_description"][0] == "raw jd"
     assert captured["job_description"][1] == "Reloaded saved workspace"
+    assert captured["workflow_signature"] == "restored-signature"
     assert captured["theme"] == "modern_professional"
     assert captured["menu"] == "Manual JD Input"
     assert result["level"] == "success"

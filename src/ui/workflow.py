@@ -368,6 +368,14 @@ def restore_latest_saved_workspace():
         saved_snapshot.job_description,
     )
     store_fit_outputs(saved_snapshot.fit_analysis, saved_snapshot.tailored_draft)
+    reset_agent_workflow_if_signature_changed(
+        _workflow_signature(
+            saved_snapshot.candidate_profile,
+            saved_snapshot.job_description,
+            saved_snapshot.fit_analysis,
+            saved_snapshot.tailored_draft,
+        )
+    )
     set_agent_workflow_result(saved_snapshot.agent_result)
     saved_resume = build_saved_tailored_resume_from_payload(saved_workspace.tailored_resume_payload_json)
     if saved_resume is not None and saved_resume.theme:
