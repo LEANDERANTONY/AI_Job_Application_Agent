@@ -4,7 +4,6 @@ from src.errors import AppError, InputValidationError, ParsingError
 from src.logging_utils import configure_logging, get_logger, log_event
 from src.user_store import AppUserStore
 from src.ui.components import (
-    render_evolution_note,
     render_footer,
     render_intro,
 )
@@ -149,8 +148,6 @@ def main():
     auth_service = _initialize_auth()
     menu = render_sidebar(auth_service=auth_service)
     render_intro()
-
-    render_evolution_note()
 
     try:
         if menu == "Upload Resume":

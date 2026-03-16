@@ -106,16 +106,3 @@ def render_html_preview(html_document, height=720, scrolling=True):
         height=height,
         scrolling=scrolling,
     )
-
-
-def render_evolution_note():
-    with st.expander("How this app is evolving", expanded=False):
-        st.markdown(
-            """
-1. Collect and normalize candidate inputs.
-2. Structure the target job description.
-3. Run supervised agent orchestration on top of the deterministic baseline.
-4. Render recruiter-facing output and export it cleanly.
-5. Harden deployment for Streamlit first, then extract a backend when the workflow stabilizes.
-"""
-        )

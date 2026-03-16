@@ -9,7 +9,6 @@ from src.errors import InputValidationError
 from src.schemas import AgentWorkflowResult, CandidateProfile, FitAnalysis, TailoredResumeDraft
 from src.ui.components import render_metric_card, render_section_head
 from src.ui.page_artifacts import (
-    render_export_bundle_actions as _render_export_bundle_actions,
     render_report_package as _render_report_package,
     render_tailored_resume_artifact as _render_tailored_resume_artifact,
 )
@@ -245,57 +244,6 @@ def render_job_search_page():
             "Planned",
             "Real provider integrations come after fit analysis and tailoring are stable.",
         )
-def _render_fit_snapshot(candidate_profile: CandidateProfile, fit_analysis: FitAnalysis, tailored_draft: TailoredResumeDraft):
-    summary_html = escape(
-        tailored_draft.professional_summary or "No professional summary drafted yet."
-    )
-    bullet_items = [
-        "<li>{item}</li>".format(item=escape(item))
-        for item in tailored_draft.priority_bullets
-        if item
-    ]
-    mitigation_items = [
-        "<li>{item}</li>".format(item=escape(item))
-        for item in tailored_draft.gap_mitigation_steps
-        if item
-    ]
-    if not bullet_items:
-        bullet_items = ["<li>No priority bullets generated yet.</li>"]
-    if not mitigation_items:
-        mitigation_items = ["<li>No mitigation steps generated yet.</li>"]
-
-    st.markdown(
-        """
-        <div class="deterministic-draft-card">
-            <div class="deterministic-draft-kicker">Deterministic Baseline</div>
-            <h3>Tailored Resume Draft Preview</h3>
-            <p class="deterministic-draft-copy">
-                This is the grounded pre-agent draft built directly from the parsed resume and JD. It stays visible as a clean baseline without the full deterministic fit breakdown.
-            </p>
-            <div class="deterministic-draft-section">
-                <h4>Professional Summary Draft</h4>
-                <p>{summary}</p>
-            </div>
-            <div class="deterministic-draft-grid">
-                <div class="deterministic-draft-section">
-                    <h4>Priority Bullets</h4>
-                    <ul>{bullets}</ul>
-                </div>
-                <div class="deterministic-draft-section">
-                    <h4>Gap Mitigation Steps</h4>
-                    <ul>{mitigations}</ul>
-                </div>
-            </div>
-        </div>
-        """.format(
-            summary=summary_html,
-            bullets="".join(bullet_items),
-            mitigations="".join(mitigation_items),
-        ),
-        unsafe_allow_html=True,
-    )
-
-
 def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
     st.markdown("---")
     render_section_head(
@@ -521,10 +469,6 @@ def render_job_description_page():
         return
 
     ai_session = workflow_view_model.ai_session
-    fit_analysis = workflow_view_model.fit_analysis
-    tailored_draft = workflow_view_model.tailored_draft
-    _render_fit_snapshot(candidate_profile, fit_analysis, tailored_draft)
-
     st.markdown("---")
     st.caption("Run the supervised workflow explicitly to avoid unnecessary model-backed usage on every rerun.")
     login_required = assisted_workflow_requires_login() and not is_authenticated()
@@ -548,4 +492,3 @@ def render_job_description_page():
 
     report = build_application_report_view_model(workflow_view_model)
     _render_report_package(report, agent_result=agent_result)
-    _render_export_bundle_actions(tailored_resume_artifact, report)

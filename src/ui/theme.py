@@ -255,7 +255,18 @@ def apply_theme():
                 background: rgba(255, 255, 255, 0.05) !important;
                 border: 1px solid rgba(148, 163, 184, 0.14) !important;
             }
-            [data-testid="stSidebar"] .stExpander summary,
+            [data-testid="stSidebar"] .stExpander summary {
+                background: #ffffff !important;
+                color: var(--ink) !important;
+                border-bottom: 1px solid rgba(20, 32, 51, 0.08) !important;
+            }
+            [data-testid="stSidebar"] .stExpander summary *,
+            [data-testid="stSidebar"] .stExpander summary p,
+            [data-testid="stSidebar"] .stExpander summary span,
+            [data-testid="stSidebar"] .stExpander summary div,
+            [data-testid="stSidebar"] .stExpander summary label {
+                color: var(--ink) !important;
+            }
             [data-testid="stSidebar"] .stExpander label,
             [data-testid="stSidebar"] .stExpander p,
             [data-testid="stSidebar"] .stExpander div,
@@ -353,11 +364,20 @@ def apply_theme():
                 margin: 0;
                 padding-left: 1.2rem;
             }
-            div[data-testid="stTextArea"]:has(textarea[aria-label="Or paste the job description here"]) textarea {
+            div[data-testid="stTextArea"]:has(textarea[aria-label="Or paste the job description here"]) {
                 background: linear-gradient(180deg, rgba(5, 12, 24, 0.98), rgba(9, 20, 38, 0.98)) !important;
+                border: 1px solid rgba(96, 165, 250, 0.16) !important;
+                border-radius: 18px !important;
+                padding: 0.8rem !important;
+                box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18) !important;
+            }
+            div[data-testid="stTextArea"]:has(textarea[aria-label="Or paste the job description here"]) textarea {
+                background: rgba(148, 163, 184, 0.08) !important;
                 color: #eef4ff !important;
-                border: 1px solid rgba(96, 165, 250, 0.18) !important;
-                box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
+                border: 1px solid rgba(148, 163, 184, 0.14) !important;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+                border-radius: 14px !important;
+                padding: 0.95rem 1rem !important;
             }
             div[data-testid="stTextArea"]:has(textarea[aria-label="Or paste the job description here"]) textarea::placeholder {
                 color: #c9daf8 !important;
@@ -383,9 +403,36 @@ def apply_theme():
                 background: transparent !important;
             }
             .stExpander summary {
+                list-style: none !important;
                 background: #ffffff !important;
                 color: var(--ink) !important;
                 border-bottom: 1px solid rgba(20, 32, 51, 0.08) !important;
+                position: relative;
+                padding-right: 2.6rem !important;
+            }
+            .stExpander summary::-webkit-details-marker {
+                display: none !important;
+            }
+            .stExpander summary svg,
+            .stExpander summary [data-testid="stIconMaterial"] {
+                display: none !important;
+            }
+            .stExpander summary::marker {
+                content: "";
+            }
+            .stExpander summary::after {
+                content: "▾";
+                position: absolute;
+                right: 1rem;
+                top: 50%;
+                transform: translateY(-50%);
+                color: var(--ink) !important;
+                font-size: 1rem;
+                line-height: 1;
+                font-weight: 700;
+            }
+            .stExpander details:not([open]) summary::after {
+                content: "▸";
             }
             .stExpander summary:hover {
                 background: #f8fafc !important;
@@ -396,6 +443,12 @@ def apply_theme():
                 color: var(--ink) !important;
                 fill: var(--ink) !important;
                 opacity: 1 !important;
+            }
+            .stExpander summary p,
+            .stExpander summary span,
+            .stExpander summary label,
+            .stExpander summary div {
+                color: var(--ink) !important;
             }
             .stExpander [data-testid="stExpanderDetails"],
             .stExpander details > div {
@@ -442,6 +495,13 @@ def apply_theme():
                 background: rgba(15, 23, 42, 0.82) !important;
                 color: #e2e8f0 !important;
                 border-color: rgba(148, 163, 184, 0.16) !important;
+            }
+            .stExpander summary p,
+            .stExpander summary span,
+            .stExpander summary label,
+            .stExpander summary div,
+            .stExpander summary strong {
+                color: var(--ink) !important;
             }
             @media (max-width: 900px) {
                 .deterministic-draft-grid {

@@ -94,6 +94,10 @@ def build_resume_preview_html(artifact: TailoredResumeArtifact) -> str:
     )
 
 
+def build_report_preview_html(report: ApplicationReport) -> str:
+    return _build_report_html(report.markdown, title=report.title)
+
+
 def export_zip_bundle_bytes(file_map: dict[str, bytes]) -> bytes:
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
