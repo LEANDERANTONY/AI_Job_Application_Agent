@@ -66,7 +66,7 @@ class AssistantService:
                     prompt["system"],
                     prompt["user"],
                     expected_keys=prompt["expected_keys"],
-                    temperature=0.2,
+                    temperature=None,
                     max_completion_tokens=get_openai_max_completion_tokens_for_task(
                         "assistant_application_qa"
                     ),

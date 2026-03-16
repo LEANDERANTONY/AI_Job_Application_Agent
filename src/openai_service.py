@@ -160,7 +160,7 @@ class OpenAIService:
         system_prompt,
         user_prompt,
         expected_keys: Optional[Iterable[str]] = None,
-        temperature=0.2,
+        temperature=None,
         max_completion_tokens=1200,
         task_name=None,
         model=None,
@@ -214,60 +214,25 @@ class OpenAIService:
         }
         if self._supports_reasoning_effort(resolved_model) and reasoning_effort:
             request_payload["reasoning"] = {"effort": reasoning_effort}
-        if temperature is not None:
-            request_payload["temperature"] = temperature
 
         try:
             response = self._client.responses.create(**request_payload)
         except Exception as exc:
-            if (
-                temperature is not None
-                and self._is_unsupported_temperature_error(exc)
-            ):
-                log_event(
-                    LOGGER,
-                    logging.INFO,
-                    "openai_request_retry_without_temperature",
-                    "Retrying OpenAI request without temperature because the model rejected it.",
-                    model=resolved_model,
-                    task_name=task_name,
-                    reasoning_effort=reasoning_effort,
-                )
-                request_payload.pop("temperature", None)
-                try:
-                    response = self._client.responses.create(**request_payload)
-                except Exception as retry_exc:
-                    log_event(
-                        LOGGER,
-                        logging.ERROR,
-                        "openai_request_failed",
-                        "OpenAI JSON prompt request failed.",
-                        model=resolved_model,
-                        task_name=task_name,
-                        duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
-                        error_type=type(retry_exc).__name__,
-                        details=str(retry_exc),
-                    )
-                    raise AgentExecutionError(
-                        "The AI workflow request failed.",
-                        details=str(retry_exc),
-                    ) from retry_exc
-            else:
-                log_event(
-                    LOGGER,
-                    logging.ERROR,
-                    "openai_request_failed",
-                    "OpenAI JSON prompt request failed.",
-                    model=resolved_model,
-                    task_name=task_name,
-                    duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
-                    error_type=type(exc).__name__,
-                    details=str(exc),
-                )
-                raise AgentExecutionError(
-                    "The AI workflow request failed.",
-                    details=str(exc),
-                ) from exc
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "openai_request_failed",
+                "OpenAI JSON prompt request failed.",
+                model=resolved_model,
+                task_name=task_name,
+                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                error_type=type(exc).__name__,
+                details=str(exc),
+            )
+            raise AgentExecutionError(
+                "The AI workflow request failed.",
+                details=str(exc),
+            ) from exc
 
         if allow_output_budget_retry and self._is_incomplete_due_to_output_tokens(response):
             response, request_payload = self._retry_with_higher_output_budget(
@@ -470,11 +435,6 @@ class OpenAIService:
                 model=payload.get("model_name"),
                 response_id=payload.get("response_id"),
             )
-
-    @staticmethod
-    def _is_unsupported_temperature_error(exc: Exception) -> bool:
-        message = str(exc).lower()
-        return "unsupported parameter" in message and "temperature" in message
 
     @classmethod
     def _is_incomplete_due_to_output_tokens(cls, response) -> bool:

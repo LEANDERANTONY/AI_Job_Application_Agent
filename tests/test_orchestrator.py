@@ -256,6 +256,17 @@ class FakeNeverApprovedOpenAIService:
         return self._responses.pop(0)
 
 
+class SpyStrategyRevisionOpenAIService(FakeRevisionLoopOpenAIService):
+    def __init__(self):
+        super().__init__()
+        self.strategy_prompts = []
+
+    def run_json_prompt(self, system_prompt, user_prompt, expected_keys=None, **kwargs):
+        if kwargs.get("task_name") == "strategy":
+            self.strategy_prompts.append(user_prompt)
+        return super().run_json_prompt(system_prompt, user_prompt, expected_keys=expected_keys, **kwargs)
+
+
 def test_orchestrator_runs_in_deterministic_fallback_mode():
     orchestrator = ApplicationOrchestrator(openai_service=FakeUnavailableOpenAIService())
 
@@ -333,3 +344,58 @@ def test_orchestrator_stops_after_max_revision_passes():
     assert result.resume_generation.professional_summary == "Second pass final resume summary."
     assert len(result.review_history) == 2
     assert result.review_history[-1].pass_index == 2
+
+
+def test_orchestrator_reports_progress_updates():
+    orchestrator = ApplicationOrchestrator(openai_service=FakeRevisionLoopOpenAIService())
+    updates = []
+
+    result = orchestrator.run(
+        _build_candidate_profile(),
+        _build_job_description(),
+        progress_callback=lambda title, detail, value: updates.append((title, detail, value)),
+    )
+
+    assert result.mode == "openai"
+    assert updates[0] == (
+        "Workflow crew",
+        "Opening your application brief and assigning the first agent.",
+        3,
+    )
+    assert any(
+        title == "Scout agent"
+        and detail == "Pulling out the strongest grounded proof points from your resume."
+        for title, detail, _ in updates
+    )
+    assert any(
+        title == "Gatekeeper agent"
+        and detail == "Reviewing pass 1; only the strongest work gets through."
+        for title, detail, _ in updates
+    )
+    assert any(
+        title == "Gatekeeper agent"
+        and detail == "Sent it back for one more polish pass before approval."
+        for title, detail, _ in updates
+    )
+    assert any(
+        title == "Builder agent"
+        and detail == "Packaging the final tailored resume and lining up the finish."
+        for title, detail, _ in updates
+    )
+    assert updates[-1] == (
+        "Workflow crew",
+        "All agents are done. Finalizing your application outputs.",
+        100,
+    )
+
+
+def test_orchestrator_passes_review_requests_to_strategy_retry():
+    service = SpyStrategyRevisionOpenAIService()
+    orchestrator = ApplicationOrchestrator(openai_service=service)
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    assert result.mode == "openai"
+    assert len(service.strategy_prompts) == 2
+    assert "Revision Requests" in service.strategy_prompts[1]
+    assert "Remove unsupported AWS delivery claims and keep the summary grounded." in service.strategy_prompts[1]

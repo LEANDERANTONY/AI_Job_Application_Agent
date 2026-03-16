@@ -1,12 +1,21 @@
+from dataclasses import replace
+
 import streamlit as st
 
 from src.errors import ExportError
-from src.exporters import export_markdown_bytes
+from src.exporters import build_resume_preview_html, export_markdown_bytes
 from src.resume_builder import RESUME_THEMES
 from src.resume_diff import build_resume_diff, build_resume_diff_metrics
 from src.schemas import AgentWorkflowResult, ApplicationReport, TailoredResumeArtifact
-from src.ui.components import render_download_button, render_metric_card, render_section_head
-from src.ui.state import TAILORED_RESUME_THEME, get_tailored_resume_theme, set_tailored_resume_theme
+from src.ui.components import render_auto_download, render_download_button, render_html_preview, render_metric_card, render_section_head
+from src.ui.state import (
+    TAILORED_RESUME_THEME,
+    consume_pending_browser_download,
+    get_pending_browser_download,
+    get_tailored_resume_theme,
+    set_pending_browser_download,
+    set_tailored_resume_theme,
+)
 from src.ui.workflow_signatures import report_signature
 from src.ui.workflow import (
     get_active_candidate_profile,
@@ -41,6 +50,102 @@ def _prepare_deferred_download(clicked: bool, cached_payload, prepare_callback) 
         return False
     prepare_callback()
     return True
+
+
+def _queue_browser_download(target: str, data: bytes, file_name: str, mime: str):
+    set_pending_browser_download(
+        {
+            "target": target,
+            "data": data,
+            "file_name": file_name,
+            "mime": mime,
+        }
+    )
+
+
+def _render_pending_auto_download(target: str) -> bool:
+    pending_download = get_pending_browser_download()
+    if not pending_download or pending_download.get("target") != target:
+        return False
+
+    render_auto_download(
+        pending_download["data"],
+        pending_download["file_name"],
+        pending_download["mime"],
+        key="auto_download:{target}".format(target=target),
+    )
+    consume_pending_browser_download()
+    st.caption("Download should start automatically. If the browser blocks it, use the backup download button below.")
+    return True
+
+
+def _build_themed_resume_artifact(artifact: TailoredResumeArtifact, theme_name: str) -> TailoredResumeArtifact:
+    return replace(
+        artifact,
+        theme=theme_name,
+        summary="{label} template ready for review and export.".format(
+            label=RESUME_THEMES.get(theme_name, {"label": theme_name})["label"]
+        ),
+    )
+
+
+def _render_resume_variant_preview(artifact: TailoredResumeArtifact, is_active_theme: bool):
+    theme_config = RESUME_THEMES.get(artifact.theme, {"label": artifact.theme, "tagline": ""})
+    preview_target = "tailored_resume_pdf:{theme}".format(theme=artifact.theme)
+    cached_pdf_bytes = get_cached_tailored_resume_pdf_package(theme_name=artifact.theme)
+
+    st.markdown("### {label}".format(label=theme_config["label"]))
+    st.caption(theme_config.get("tagline", ""))
+    if is_active_theme:
+        st.success("This template is currently selected for the combined export bundle.")
+    else:
+        if st.button(
+            "Use This Template For Bundle",
+            key="use_template_for_bundle:{theme}".format(theme=artifact.theme),
+        ):
+            set_tailored_resume_theme(artifact.theme)
+            st.rerun()
+
+    render_html_preview(
+        build_resume_preview_html(artifact),
+        height=760,
+        scrolling=True,
+    )
+
+    _render_pending_auto_download(preview_target)
+    if cached_pdf_bytes is None:
+        if st.button(
+            "Download {label} PDF".format(label=theme_config["label"]),
+            key="prepare_tailored_resume_pdf:{theme}".format(theme=artifact.theme),
+            use_container_width=True,
+        ):
+            try:
+                with st.spinner(
+                    "Generating {label} PDF...".format(label=theme_config["label"])
+                ):
+                    pdf_bytes = prepare_tailored_resume_pdf_package(artifact)
+                    _queue_browser_download(
+                        preview_target,
+                        pdf_bytes,
+                        artifact.filename_stem + "-" + artifact.theme + ".pdf",
+                        "application/pdf",
+                    )
+                    st.rerun()
+            except ExportError as error:
+                st.warning(error.user_message)
+        st.caption("Generates this template variant as a PDF and starts the browser download when ready.")
+    else:
+        render_download_button(
+            "Download {label} PDF Again".format(label=theme_config["label"]),
+            data=cached_pdf_bytes,
+            file_name=artifact.filename_stem + "-" + artifact.theme + ".pdf",
+            mime="application/pdf",
+            key=_build_download_widget_key(
+                "download_tailored_resume_pdf:{theme}".format(theme=artifact.theme),
+                artifact,
+            ),
+            use_container_width=True,
+        )
 
 
 def render_report_package(report: ApplicationReport, agent_result: AgentWorkflowResult = None):
@@ -88,22 +193,25 @@ def render_report_package(report: ApplicationReport, agent_result: AgentWorkflow
             key=_build_download_widget_key("download_markdown_package", report),
         )
     with pdf_col:
+        _render_pending_auto_download("report_pdf")
         if get_cached_pdf_package() is None:
             if st.button("Download PDF Package", key="prepare_pdf_package"):
                 try:
                     with st.spinner("Generating PDF package..."):
-                        if _prepare_deferred_download(
-                            True,
-                            get_cached_pdf_package(),
-                            lambda: prepare_pdf_package(report),
-                        ):
-                            st.rerun()
+                        pdf_bytes = get_cached_pdf_package() or prepare_pdf_package(report)
+                        _queue_browser_download(
+                            "report_pdf",
+                            pdf_bytes,
+                            report.filename_stem + ".pdf",
+                            "application/pdf",
+                        )
+                        st.rerun()
                 except ExportError as error:
                     st.warning(error.user_message)
-            st.caption("Generates the PDF on first click, then hands off the file through the browser download control.")
+            st.caption("Generates the PDF and should start the browser download automatically when ready.")
         else:
             render_download_button(
-                "Download PDF Package",
+                "Download PDF Package Again",
                 data=get_cached_pdf_package(),
                 file_name=report.filename_stem + ".pdf",
                 mime="application/pdf",
@@ -142,25 +250,31 @@ def render_export_bundle_actions(
         )
 
     cached_bundle = get_cached_export_bundle_package()
+    _render_pending_auto_download("export_bundle")
     if cached_bundle is None:
         if st.button("Download Combined Export Bundle", key="prepare_export_bundle"):
             try:
                 with st.spinner("Preparing report and tailored resume bundle..."):
-                    if _prepare_deferred_download(
-                        True,
-                        get_cached_export_bundle_package(),
-                        lambda: prepare_export_bundle_package(report, artifact),
-                    ):
-                        st.rerun()
+                    bundle_bytes = get_cached_export_bundle_package() or prepare_export_bundle_package(report, artifact)
+                    bundle_name = "{name}.zip".format(
+                        name=artifact.filename_stem.replace("-tailored-resume", "-application-bundle")
+                    )
+                    _queue_browser_download(
+                        "export_bundle",
+                        bundle_bytes,
+                        bundle_name,
+                        "application/zip",
+                    )
+                    st.rerun()
             except ExportError as error:
                 st.warning(error.user_message)
-        st.caption("Generates the ZIP bundle on first click, then refreshes into the browser download control.")
+        st.caption("Generates the ZIP bundle and should start the browser download automatically when ready.")
     else:
         bundle_name = "{name}.zip".format(
             name=artifact.filename_stem.replace("-tailored-resume", "-application-bundle")
         )
         render_download_button(
-            "Download Combined Export Bundle",
+            "Download Combined Export Bundle Again",
             data=cached_bundle,
             file_name=bundle_name,
             mime="application/zip",
@@ -179,15 +293,11 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
     )
 
     theme_options = list(RESUME_THEMES.keys())
-    selected_theme = st.selectbox(
-        "Resume Template",
-        theme_options,
-        index=theme_options.index(
-            _resolve_resume_theme_widget_value(artifact.theme, theme_options)
-        ),
-        key=TAILORED_RESUME_THEME,
-        format_func=lambda value: RESUME_THEMES[value]["label"],
-    )
+    active_theme = _resolve_resume_theme_widget_value(artifact.theme, theme_options)
+    themed_artifacts = {
+        theme_name: _build_themed_resume_artifact(artifact, theme_name)
+        for theme_name in theme_options
+    }
 
     cols = st.columns(3)
     with cols[0]:
@@ -199,8 +309,8 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
     with cols[1]:
         render_metric_card(
             "Template",
-            RESUME_THEMES.get(artifact.theme, {"label": artifact.theme})["label"],
-            RESUME_THEMES.get(artifact.theme, {"tagline": "Theme controls the deterministic layout and section rhythm of the export."})["tagline"],
+            RESUME_THEMES.get(active_theme, {"label": active_theme})["label"],
+            RESUME_THEMES.get(active_theme, {"tagline": "Theme controls the deterministic layout and section rhythm of the export."})["tagline"],
         )
     with cols[2]:
         render_metric_card(
@@ -265,6 +375,16 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
             label_visibility="collapsed",
         )
 
+    st.markdown("**Template Gallery**")
+    st.caption("Preview both resume variants below, then download the one you prefer. The active template is also used for the combined export bundle.")
+    preview_tabs = st.tabs([RESUME_THEMES[theme_name]["label"] for theme_name in theme_options])
+    for tab, theme_name in zip(preview_tabs, theme_options):
+        with tab:
+            _render_resume_variant_preview(
+                themed_artifacts[theme_name],
+                is_active_theme=(theme_name == active_theme),
+            )
+
     with st.expander("Compare Original vs Tailored Resume", expanded=False):
         original_col, tailored_col = st.columns(2)
         with original_col:
@@ -296,24 +416,29 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
             key=_build_download_widget_key("download_tailored_resume_markdown", artifact),
         )
     with pdf_col:
-        if get_cached_tailored_resume_pdf_package() is None:
+        _render_pending_auto_download("tailored_resume_pdf:active")
+        active_artifact = themed_artifacts[active_theme]
+        cached_active_pdf = get_cached_tailored_resume_pdf_package(theme_name=active_theme)
+        if cached_active_pdf is None:
             if st.button("Download Tailored Resume PDF", key="prepare_tailored_resume_pdf"):
                 try:
                     with st.spinner("Generating tailored resume PDF..."):
-                        if _prepare_deferred_download(
-                            True,
-                            get_cached_tailored_resume_pdf_package(),
-                            lambda: prepare_tailored_resume_pdf_package(artifact),
-                        ):
-                            st.rerun()
+                        pdf_bytes = prepare_tailored_resume_pdf_package(active_artifact)
+                        _queue_browser_download(
+                            "tailored_resume_pdf:active",
+                            pdf_bytes,
+                            active_artifact.filename_stem + "-" + active_theme + ".pdf",
+                            "application/pdf",
+                        )
+                        st.rerun()
                 except ExportError as error:
                     st.warning(error.user_message)
-            st.caption("Generates the PDF on first click, then refreshes into the browser download control.")
+            st.caption("Generates the PDF and should start the browser download automatically when ready.")
         else:
             render_download_button(
-                "Download Tailored Resume PDF",
-                data=get_cached_tailored_resume_pdf_package(),
-                file_name=artifact.filename_stem + ".pdf",
+                "Download Tailored Resume PDF Again",
+                data=cached_active_pdf,
+                file_name=active_artifact.filename_stem + "-" + active_theme + ".pdf",
                 mime="application/pdf",
-                key=_build_download_widget_key("download_tailored_resume_pdf", artifact),
+                key=_build_download_widget_key("download_tailored_resume_pdf", active_artifact),
             )

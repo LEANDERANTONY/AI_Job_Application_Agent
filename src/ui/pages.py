@@ -1,3 +1,5 @@
+from html import escape
+
 import streamlit as st
 
 from src.config import (
@@ -6,6 +8,7 @@ from src.config import (
     DEMO_RESUME_DIR,
     list_demo_files,
 )
+from src.errors import InputValidationError
 from src.schemas import AgentWorkflowResult, CandidateProfile, FitAnalysis, TailoredResumeDraft
 from src.ui.components import render_metric_card, render_section_head
 from src.ui.page_artifacts import (
@@ -13,9 +16,11 @@ from src.ui.page_artifacts import (
     render_report_package as _render_report_package,
     render_tailored_resume_artifact as _render_tailored_resume_artifact,
 )
-from src.ui.page_assistant import render_assistant_panel as _render_assistant_panel
 from src.ui.page_history import render_history_page as _render_history_page
-from src.ui.state import is_authenticated, request_menu_navigation
+from src.ui.state import (
+    is_authenticated,
+    request_menu_navigation,
+)
 from src.ui.workflow import (
     build_application_report_view_model,
     build_job_workflow_view_model,
@@ -205,9 +210,6 @@ def render_resume_page():
         st.text_area("Extracted Resume Text", resume_document.text, height=320)
         if st.button("I have a job description"):
             _go_to("Manual JD Input")
-    _render_assistant_panel("Upload Resume")
-
-
 def render_job_search_page():
     render_section_head(
         "Job Search",
@@ -225,60 +227,56 @@ def render_job_search_page():
             "Planned",
             "Real provider integrations come after fit analysis and tailoring are stable.",
         )
-    _render_assistant_panel("Job Search")
-
-
 def _render_fit_snapshot(candidate_profile: CandidateProfile, fit_analysis: FitAnalysis, tailored_draft: TailoredResumeDraft):
     st.markdown("---")
-    render_section_head(
-        "Readiness Snapshot",
-        "Deterministic fit analysis built from the normalized candidate profile and JD.",
+    summary_html = escape(
+        tailored_draft.professional_summary or "No professional summary drafted yet."
     )
-
-    cols = st.columns(3)
-    with cols[0]:
-        render_metric_card("Fit Score", f"{fit_analysis.overall_score}/100", "Weighted from matched skills and experience signals.")
-    with cols[1]:
-        render_metric_card(
-            "Readiness",
-            fit_analysis.readiness_label,
-            fit_analysis.target_role or "Target role inferred from the JD.",
-        )
-    with cols[2]:
-        render_metric_card(
-            "Missing Hard Skills",
-            str(len(fit_analysis.missing_hard_skills)),
-            "These are the highest-friction tailoring gaps right now.",
-        )
+    bullet_items = [
+        "<li>{item}</li>".format(item=escape(item))
+        for item in tailored_draft.priority_bullets
+        if item
+    ]
+    mitigation_items = [
+        "<li>{item}</li>".format(item=escape(item))
+        for item in tailored_draft.gap_mitigation_steps
+        if item
+    ]
+    if not bullet_items:
+        bullet_items = ["<li>No priority bullets generated yet.</li>"]
+    if not mitigation_items:
+        mitigation_items = ["<li>No mitigation steps generated yet.</li>"]
 
     st.markdown(
         """
-        <div class="narrative-panel">
-            <h4>Experience Signal</h4>
-            <p>{signal}</p>
+        <div class="deterministic-draft-card">
+            <div class="deterministic-draft-kicker">Deterministic Baseline</div>
+            <h3>Tailored Resume Draft Preview</h3>
+            <p class="deterministic-draft-copy">
+                This is the grounded pre-agent draft built directly from the parsed resume and JD. It stays visible as a clean baseline without the full deterministic fit breakdown.
+            </p>
+            <div class="deterministic-draft-section">
+                <h4>Professional Summary Draft</h4>
+                <p>{summary}</p>
+            </div>
+            <div class="deterministic-draft-grid">
+                <div class="deterministic-draft-section">
+                    <h4>Priority Bullets</h4>
+                    <ul>{bullets}</ul>
+                </div>
+                <div class="deterministic-draft-section">
+                    <h4>Gap Mitigation Steps</h4>
+                    <ul>{mitigations}</ul>
+                </div>
+            </div>
         </div>
-        """.format(signal=fit_analysis.experience_signal),
+        """.format(
+            summary=summary_html,
+            bullets="".join(bullet_items),
+            mitigations="".join(mitigation_items),
+        ),
         unsafe_allow_html=True,
     )
-
-    left_col, right_col = st.columns(2)
-    with left_col:
-        _render_list("Matched Hard Skills", fit_analysis.matched_hard_skills, "No matched hard-skill evidence yet.")
-        _render_list("Strengths", fit_analysis.strengths, "No strengths have been surfaced yet.")
-        _render_list("Highlighted Skills For Resume", tailored_draft.highlighted_skills, "No highlighted skills prepared yet.")
-    with right_col:
-        _render_list("Missing Hard Skills", fit_analysis.missing_hard_skills, "Hard-skill coverage is complete for the extracted JD keywords.")
-        _render_list("Gaps", fit_analysis.gaps, "No major gaps surfaced from the current inputs.")
-        _render_list("Recommendations", fit_analysis.recommendations, "No recommendations generated yet.")
-
-    with st.expander("Tailored Resume Draft Preview", expanded=True):
-        st.markdown("**Professional Summary Draft**")
-        st.write(tailored_draft.professional_summary)
-        _render_list("Priority Bullets", tailored_draft.priority_bullets, "No priority bullets generated yet.")
-        _render_list("Gap Mitigation Steps", tailored_draft.gap_mitigation_steps, "No mitigation steps generated yet.")
-        st.caption(
-            "This is still deterministic guidance. The later agent layer will rewrite these sections more intelligently while staying grounded."
-        )
 
 
 def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
@@ -363,6 +361,122 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
                 st.markdown("---")
 
 
+def _workflow_progress_palette(title):
+    palette = {
+        "Workflow crew": {
+            "accent": "#2563eb",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.96))",
+            "tag_background": "rgba(37, 99, 235, 0.10)",
+            "tag_text": "#1d4ed8",
+        },
+        "Backup workflow": {
+            "accent": "#475569",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(248,250,252,0.96))",
+            "tag_background": "rgba(71, 85, 105, 0.10)",
+            "tag_text": "#334155",
+        },
+        "Scout agent": {
+            "accent": "#0f766e",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(240,253,250,0.96))",
+            "tag_background": "rgba(15, 118, 110, 0.10)",
+            "tag_text": "#0f766e",
+        },
+        "Signal agent": {
+            "accent": "#2563eb",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.96))",
+            "tag_background": "rgba(37, 99, 235, 0.10)",
+            "tag_text": "#1d4ed8",
+        },
+        "Matchmaker agent": {
+            "accent": "#1d4ed8",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.96))",
+            "tag_background": "rgba(29, 78, 216, 0.10)",
+            "tag_text": "#1d4ed8",
+        },
+        "Forge agent": {
+            "accent": "#ea580c",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(255,247,237,0.96))",
+            "tag_background": "rgba(234, 88, 12, 0.10)",
+            "tag_text": "#c2410c",
+        },
+        "Navigator agent": {
+            "accent": "#0284c7",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(240,249,255,0.96))",
+            "tag_background": "rgba(2, 132, 199, 0.10)",
+            "tag_text": "#0369a1",
+        },
+        "Gatekeeper agent": {
+            "accent": "#b45309",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(255,251,235,0.96))",
+            "tag_background": "rgba(180, 83, 9, 0.10)",
+            "tag_text": "#92400e",
+        },
+        "Builder agent": {
+            "accent": "#2563eb",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.96))",
+            "tag_background": "rgba(37, 99, 235, 0.10)",
+            "tag_text": "#1d4ed8",
+        },
+    }
+    return palette.get(
+        title,
+        {
+            "accent": "#2563eb",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.96))",
+            "tag_background": "rgba(37, 99, 235, 0.10)",
+            "tag_text": "#1d4ed8",
+        },
+    )
+
+
+def _run_supervised_workflow_with_progress(workflow_view_model):
+    status_placeholder = st.empty()
+    progress_bar = st.progress(0)
+    latest_progress = {"value": 0}
+
+    def update_progress(title, detail, value):
+        clamped_value = max(latest_progress["value"], max(0, min(100, int(value))))
+        latest_progress["value"] = clamped_value
+        palette = _workflow_progress_palette(title)
+        status_placeholder.markdown(
+            """
+            <div style="position:relative; overflow:hidden; border:1px solid rgba(20, 32, 51, 0.12); border-radius:18px; background:{surface}; padding:0.95rem 1rem 0.95rem 1.05rem; margin:0 0 0.65rem 0; box-shadow:0 16px 34px rgba(0, 0, 0, 0.14);">
+                <div style="position:absolute; left:0; top:0; bottom:0; width:4px; background:{accent};"></div>
+                <div style="display:inline-flex; align-items:center; border-radius:999px; padding:0.25rem 0.55rem; background:{tag_background}; color:{tag_text}; font-size:0.74rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:0.45rem;">{title}</div>
+                <div style="font-size:0.97rem; line-height:1.45; color:var(--ink);">{detail}</div>
+            </div>
+            """.format(
+                title=escape(title),
+                detail=escape(detail),
+                surface=palette["surface"],
+                accent=palette["accent"],
+                tag_background=palette["tag_background"],
+                tag_text=palette["tag_text"],
+            ),
+            unsafe_allow_html=True,
+        )
+        progress_bar.progress(clamped_value)
+
+    try:
+        workflow_view_model = run_supervised_workflow(
+            workflow_view_model,
+            progress_callback=update_progress,
+        )
+    except InputValidationError as error:
+        status_placeholder.empty()
+        progress_bar.empty()
+        st.error(str(error))
+        return workflow_view_model
+    except Exception:
+        status_placeholder.empty()
+        progress_bar.empty()
+        raise
+
+    status_placeholder.empty()
+    progress_bar.empty()
+    return workflow_view_model
+
+
 def render_history_page():
     return _render_history_page(_render_daily_quota_status)
 
@@ -427,23 +541,18 @@ def render_job_description_page():
         st.info("Load a resume first. Once candidate data exists, this page will render a fit snapshot and tailored resume guidance.")
         return
 
+    ai_session = workflow_view_model.ai_session
     fit_analysis = workflow_view_model.fit_analysis
     tailored_draft = workflow_view_model.tailored_draft
     _render_fit_snapshot(candidate_profile, fit_analysis, tailored_draft)
 
     st.markdown("---")
-    ai_session = workflow_view_model.ai_session
     st.caption("Run the supervised workflow explicitly to avoid unnecessary model-backed usage on every rerun.")
-    st.info("Account quota and browser-session safeguards are separate. Daily quota is shared across signed-in sessions, while the session budget below only applies to this browser session.")
-    _render_daily_quota_status(ai_session.daily_quota)
-    _render_openai_usage(ai_session.usage)
-    if ai_session.budget_reached and ai_session.openai_service.is_available():
-        st.warning("The session usage limit has been reached. Running the supervised workflow now will stay in deterministic fallback mode until the session resets or the limit is raised.")
     login_required = assisted_workflow_requires_login() and not is_authenticated()
     if login_required:
         st.info("Sign in with Google from the sidebar to run the AI-assisted workflow and keep usage tied to your account.")
     if st.button("Run supervised agent workflow", key="run_supervised_workflow", disabled=login_required):
-        workflow_view_model = run_supervised_workflow(workflow_view_model)
+        workflow_view_model = _run_supervised_workflow_with_progress(workflow_view_model)
 
     agent_result = workflow_view_model.agent_result
     if agent_result:
@@ -461,4 +570,3 @@ def render_job_description_page():
     report = build_application_report_view_model(workflow_view_model)
     _render_report_package(report, agent_result=agent_result)
     _render_export_bundle_actions(tailored_resume_artifact, report)
-    _render_assistant_panel("Manual JD Input", workflow_view_model=workflow_view_model, artifact=tailored_resume_artifact, report=report)

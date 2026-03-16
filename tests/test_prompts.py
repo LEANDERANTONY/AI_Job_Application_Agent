@@ -1,4 +1,4 @@
-from src.prompts import build_application_qa_assistant_prompt, build_fit_agent_prompt
+from src.prompts import build_application_qa_assistant_prompt, build_fit_agent_prompt, build_strategy_agent_prompt
 
 
 def test_fit_prompt_compacts_large_sections_and_emits_budget_metadata():
@@ -56,3 +56,21 @@ def test_product_help_prompt_mentions_retrieved_knowledge_hits():
     )
 
     assert prompt
+
+
+def test_strategy_prompt_includes_revision_requests_and_previous_output():
+    prompt = build_strategy_agent_prompt(
+        candidate_profile={"education": [{"degree": "Master of Science in AI/ML"}]},
+        job_description={"title": "ML Engineer"},
+        fit_analysis={"gaps": ["SQL"]},
+        profile_output={"positioning_headline": "Project-based ML candidate"},
+        fit_output={"top_matches": ["Python", "XGBoost"]},
+        tailoring_output={"professional_summary": "Project-focused summary."},
+        previous_strategy_output={"recruiter_positioning": "MS-trained ML practitioner."},
+        revision_requests=["Remove MS-trained unless the exact degree is explicitly evidenced."],
+    )
+
+    assert "Previous Strategy Output" in prompt["user"]
+    assert "Revision Requests" in prompt["user"]
+    assert "MS-trained ML practitioner." in prompt["user"]
+    assert "mandatory constraints" in prompt["system"]

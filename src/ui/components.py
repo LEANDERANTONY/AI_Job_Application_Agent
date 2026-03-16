@@ -1,4 +1,8 @@
+import base64
+import json
+
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 def render_intro():
@@ -58,6 +62,45 @@ def render_download_button(label, data, file_name, mime, key, use_container_widt
         mime=mime,
         key=key,
         use_container_width=use_container_width,
+    )
+
+
+@st.fragment
+def render_auto_download(data, file_name, mime, key):
+    encoded = base64.b64encode(data).decode("ascii")
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            const encoded = {json.dumps(encoded)};
+            const binary = window.atob(encoded);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) {{
+                bytes[i] = binary.charCodeAt(i);
+            }}
+            const blob = new Blob([bytes], {{ type: {json.dumps(mime)} }});
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = {json.dumps(file_name)};
+            link.style.display = "none";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }})();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
+def render_html_preview(html_document, height=720, scrolling=True):
+    components.html(
+        html_document,
+        height=height,
+        scrolling=scrolling,
     )
 
 

@@ -138,12 +138,11 @@ uv sync --group dev
 ### 3. Install Chromium for polished PDF export
 
 ```powershell
-uv run python -m playwright install chromium
 ```
 
-PDF export uses Playwright/Chromium first and falls back to ReportLab if the browser backend is unavailable.
+PDF export now uses WeasyPrint first and falls back to ReportLab if the HTML renderer is unavailable.
 
-Deployment decision: keep the same Playwright-first PDF path used in the GitHub agent project and carry ReportLab as a resilience fallback rather than as the intended primary output path.
+On Windows, WeasyPrint also needs GTK/Pango runtime libraries available on the machine. If those native libraries are missing, the app will fall back to ReportLab until they are installed.
 
 ### 4. Optional configuration
 

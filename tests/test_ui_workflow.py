@@ -82,6 +82,134 @@ def test_run_supervised_workflow_requires_authentication_when_enabled(monkeypatc
         workflow.run_supervised_workflow(view_model)
 
 
+def test_run_supervised_workflow_forwards_progress_callback(monkeypatch):
+    captured = {}
+    progress_updates = []
+    expected_result = object()
+
+    class FakeOrchestrator:
+        def __init__(self, openai_service=None):
+            captured["openai_service"] = openai_service
+
+        def run(self, candidate_profile, job_description, fit_analysis, tailored_draft, progress_callback=None):
+            captured["progress_callback"] = progress_callback
+            progress_callback(
+                "Scout agent",
+                "Pulling out the strongest grounded proof points from your resume.",
+                12,
+            )
+            return expected_result
+
+    refreshed_view_model = workflow.JobWorkflowViewModel(jd_text="jd", jd_source="Manual")
+    refreshed_view_model.agent_result = expected_result
+
+    ai_session = SimpleNamespace(
+        daily_quota=None,
+        openai_service=SimpleNamespace(get_usage_snapshot=lambda: {"request_count": 1}),
+    )
+    view_model = workflow.JobWorkflowViewModel(
+        jd_text="jd",
+        jd_source="Manual",
+        candidate_profile=CandidateProfile(full_name="Leander Antony"),
+        job_description=JobDescription(
+            title="ML Engineer",
+            raw_text="raw",
+            cleaned_text="cleaned",
+            requirements=JobRequirements(hard_skills=["Python"]),
+        ),
+        fit_analysis=SimpleNamespace(),
+        tailored_draft=SimpleNamespace(),
+        ai_session=ai_session,
+    )
+
+    monkeypatch.setattr(workflow, "AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW", False)
+    monkeypatch.setattr(workflow, "ApplicationOrchestrator", FakeOrchestrator)
+    monkeypatch.setattr(workflow, "set_agent_workflow_result", lambda value: captured.update({"agent_result": value}))
+    monkeypatch.setattr(workflow, "set_openai_session_usage", lambda value: captured.update({"usage_snapshot": value}))
+    monkeypatch.setattr(workflow, "build_job_workflow_view_model", lambda jd_text, jd_source: refreshed_view_model)
+    monkeypatch.setattr(workflow, "get_state", lambda key: expected_result)
+    monkeypatch.setattr(workflow, "_persist_workflow_run", lambda current_view_model: captured.update({"persisted": current_view_model}))
+    monkeypatch.setattr(workflow, "get_app_user_record", lambda: None)
+
+    result = workflow.run_supervised_workflow(
+        view_model,
+        progress_callback=lambda title, detail, value: progress_updates.append((title, detail, value)),
+    )
+
+    assert result is refreshed_view_model
+    assert captured["agent_result"] is expected_result
+    assert captured["progress_callback"] is not None
+    assert progress_updates == [
+        (
+            "Scout agent",
+            "Pulling out the strongest grounded proof points from your resume.",
+            12,
+        )
+    ]
+    assert captured["usage_snapshot"] == {"request_count": 1}
+    assert captured["persisted"] is refreshed_view_model
+
+
+def test_run_supervised_workflow_refreshes_daily_quota_after_authenticated_run(monkeypatch):
+    captured = {}
+    expected_result = object()
+
+    class FakeOrchestrator:
+        def __init__(self, openai_service=None):
+            captured["openai_service"] = openai_service
+
+        def run(self, candidate_profile, job_description, fit_analysis, tailored_draft, progress_callback=None):
+            return expected_result
+
+    refreshed_view_model = workflow.JobWorkflowViewModel(jd_text="jd", jd_source="Manual")
+    refreshed_view_model.agent_result = expected_result
+
+    ai_session = SimpleNamespace(
+        daily_quota=None,
+        openai_service=SimpleNamespace(get_usage_snapshot=lambda: {"request_count": 2}),
+    )
+    view_model = workflow.JobWorkflowViewModel(
+        jd_text="jd",
+        jd_source="Manual",
+        candidate_profile=CandidateProfile(full_name="Leander Antony"),
+        job_description=JobDescription(
+            title="ML Engineer",
+            raw_text="raw",
+            cleaned_text="cleaned",
+            requirements=JobRequirements(hard_skills=["Python"]),
+        ),
+        fit_analysis=SimpleNamespace(),
+        tailored_draft=SimpleNamespace(),
+        ai_session=ai_session,
+    )
+
+    monkeypatch.setattr(workflow, "AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW", False)
+    monkeypatch.setattr(workflow, "ApplicationOrchestrator", FakeOrchestrator)
+    monkeypatch.setattr(workflow, "set_agent_workflow_result", lambda value: captured.update({"agent_result": value}))
+    monkeypatch.setattr(workflow, "set_openai_session_usage", lambda value: captured.update({"usage_snapshot": value}))
+    monkeypatch.setattr(workflow, "build_job_workflow_view_model", lambda jd_text, jd_source: refreshed_view_model)
+    monkeypatch.setattr(workflow, "get_state", lambda key: expected_result)
+    monkeypatch.setattr(workflow, "_persist_workflow_run", lambda current_view_model: captured.update({"persisted": current_view_model}))
+    monkeypatch.setattr(
+        workflow,
+        "get_app_user_record",
+        lambda: type("AppUser", (), {"id": "user-123", "plan_tier": "free"})(),
+    )
+    monkeypatch.setattr(
+        workflow,
+        "refresh_daily_quota_status",
+        lambda force=False, now=None, auth_service=None: captured.update({"quota_refresh_force": force}),
+    )
+
+    result = workflow.run_supervised_workflow(view_model)
+
+    assert result is refreshed_view_model
+    assert captured["agent_result"] is expected_result
+    assert captured["usage_snapshot"] == {"request_count": 2}
+    assert captured["quota_refresh_force"] is True
+    assert captured["persisted"] is refreshed_view_model
+
+
 def test_refresh_authenticated_history_is_noop_under_saved_workspace_model(monkeypatch):
     resolved_runs, resolved_artifacts = workflow.refresh_authenticated_history("run-2")
 

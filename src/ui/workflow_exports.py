@@ -22,12 +22,12 @@ def get_cached_pdf_package():
 
 def prepare_tailored_resume_pdf_package(artifact: TailoredResumeArtifact):
     pdf_bytes = export_pdf_bytes(artifact)
-    set_cached_tailored_resume_pdf_bytes(pdf_bytes)
+    set_cached_tailored_resume_pdf_bytes(pdf_bytes, theme_name=artifact.theme)
     return pdf_bytes
 
 
-def get_cached_tailored_resume_pdf_package():
-    return get_cached_tailored_resume_pdf_bytes()
+def get_cached_tailored_resume_pdf_package(theme_name=None):
+    return get_cached_tailored_resume_pdf_bytes(theme_name=theme_name)
 
 
 def prepare_export_bundle_package(
@@ -37,7 +37,7 @@ def prepare_export_bundle_package(
     report_pdf_bytes = export_pdf_bytes(report)
     tailored_resume_pdf_bytes = export_pdf_bytes(artifact)
     set_cached_pdf_bytes(report_pdf_bytes)
-    set_cached_tailored_resume_pdf_bytes(tailored_resume_pdf_bytes)
+    set_cached_tailored_resume_pdf_bytes(tailored_resume_pdf_bytes, theme_name=artifact.theme)
 
     bundle_bytes = export_zip_bundle_bytes(
         {

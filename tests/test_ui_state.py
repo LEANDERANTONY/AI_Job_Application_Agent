@@ -63,3 +63,30 @@ def test_request_menu_navigation_can_be_consumed_once(monkeypatch):
 
     assert state.consume_pending_menu() == "Manual JD Input"
     assert state.consume_pending_menu() is None
+
+
+def test_tailored_resume_pdf_cache_can_store_multiple_themes(monkeypatch):
+    fake_streamlit = SimpleNamespace(session_state={})
+    monkeypatch.setattr(state, "st", fake_streamlit)
+
+    state.set_tailored_resume_theme("classic_ats")
+    state.set_cached_tailored_resume_pdf_bytes(b"classic-pdf", theme_name="classic_ats")
+    state.set_cached_tailored_resume_pdf_bytes(b"modern-pdf", theme_name="modern_professional")
+
+    assert state.get_cached_tailored_resume_pdf_bytes("classic_ats") == b"classic-pdf"
+    assert state.get_cached_tailored_resume_pdf_bytes("modern_professional") == b"modern-pdf"
+
+    state.set_tailored_resume_theme("modern_professional")
+
+    assert state.get_cached_tailored_resume_pdf_bytes() == b"modern-pdf"
+
+
+def test_manual_jd_utility_panel_open_defaults_and_updates(monkeypatch):
+    fake_streamlit = SimpleNamespace(session_state={})
+    monkeypatch.setattr(state, "st", fake_streamlit)
+
+    assert state.get_manual_jd_utility_panel_open() is True
+
+    state.set_manual_jd_utility_panel_open(False)
+
+    assert state.get_manual_jd_utility_panel_open() is False

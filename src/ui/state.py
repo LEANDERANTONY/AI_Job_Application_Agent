@@ -19,6 +19,7 @@ TAILORED_RESUME_SIGNATURE = "tailored_resume_signature"
 TAILORED_RESUME_PDF_BYTES = "tailored_resume_pdf_bytes"
 TAILORED_RESUME_THEME = "tailored_resume_theme"
 EXPORT_BUNDLE_BYTES = "export_bundle_bytes"
+PENDING_BROWSER_DOWNLOAD = "pending_browser_download"
 PRODUCT_HELP_CHAT_HISTORY = "product_help_chat_history"
 APPLICATION_QA_CHAT_HISTORY = "application_qa_chat_history"
 OPENAI_SESSION_USAGE = "openai_session_usage"
@@ -31,6 +32,7 @@ APP_USER_RECORD = "app_user_record"
 DAILY_QUOTA_STATUS = "daily_quota_status"
 DAILY_QUOTA_STATUS_REFRESHED_AT = "daily_quota_status_refreshed_at"
 WORKSPACE_RESTORE_NOTICE = "workspace_restore_notice"
+MANUAL_JD_UTILITY_PANEL_OPEN = "manual_jd_utility_panel_open"
 
 
 def get_state(key, default=None):
@@ -117,6 +119,14 @@ def clear_authenticated_session():
     pop_state(DAILY_QUOTA_STATUS_REFRESHED_AT, None)
     pop_state(WORKSPACE_RESTORE_NOTICE, None)
     return pop_state(AUTH_USER, None)
+
+
+def get_manual_jd_utility_panel_open(default=True):
+    return ensure_state(MANUAL_JD_UTILITY_PANEL_OPEN, default)
+
+
+def set_manual_jd_utility_panel_open(is_open):
+    return set_state(MANUAL_JD_UTILITY_PANEL_OPEN, bool(is_open))
 
 
 def set_auth_error(message):
@@ -232,12 +242,36 @@ def sync_tailored_resume_signature(signature):
         pop_state(EXPORT_BUNDLE_BYTES, None)
 
 
-def get_cached_tailored_resume_pdf_bytes():
-    return get_state(TAILORED_RESUME_PDF_BYTES)
+def get_cached_tailored_resume_pdf_bytes(theme_name=None):
+    cached_value = get_state(TAILORED_RESUME_PDF_BYTES)
+    if theme_name is None:
+        if isinstance(cached_value, dict):
+            active_theme = get_tailored_resume_theme()
+            return cached_value.get(active_theme)
+        return cached_value
+
+    if isinstance(cached_value, dict):
+        return cached_value.get(theme_name)
+
+    active_theme = get_tailored_resume_theme()
+    if cached_value is not None and theme_name == active_theme:
+        return cached_value
+    return None
 
 
-def set_cached_tailored_resume_pdf_bytes(pdf_bytes):
-    return set_state(TAILORED_RESUME_PDF_BYTES, pdf_bytes)
+def set_cached_tailored_resume_pdf_bytes(pdf_bytes, theme_name=None):
+    if theme_name is None:
+        return set_state(TAILORED_RESUME_PDF_BYTES, pdf_bytes)
+
+    cached_value = get_state(TAILORED_RESUME_PDF_BYTES)
+    if isinstance(cached_value, dict):
+        next_value = dict(cached_value)
+    elif cached_value is None:
+        next_value = {}
+    else:
+        next_value = {get_tailored_resume_theme(): cached_value}
+    next_value[theme_name] = pdf_bytes
+    return set_state(TAILORED_RESUME_PDF_BYTES, next_value)
 
 
 def get_tailored_resume_theme(default_theme="classic_ats"):
@@ -254,6 +288,20 @@ def get_cached_export_bundle_bytes():
 
 def set_cached_export_bundle_bytes(bundle_bytes):
     return set_state(EXPORT_BUNDLE_BYTES, bundle_bytes)
+
+
+def get_pending_browser_download():
+    return get_state(PENDING_BROWSER_DOWNLOAD)
+
+
+def set_pending_browser_download(payload):
+    if payload is None:
+        return pop_state(PENDING_BROWSER_DOWNLOAD, None)
+    return set_state(PENDING_BROWSER_DOWNLOAD, payload)
+
+
+def consume_pending_browser_download():
+    return pop_state(PENDING_BROWSER_DOWNLOAD, None)
 
 
 def _assistant_history_key(mode_name):

@@ -75,3 +75,62 @@ def test_prepare_deferred_download_skips_when_payload_already_cached():
 
     assert prepared is False
     assert calls == []
+
+
+def test_queue_browser_download_stores_pending_payload(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(page_artifacts, "set_pending_browser_download", lambda payload: captured.update(payload))
+
+    page_artifacts._queue_browser_download(
+        "report_pdf",
+        b"pdf-bytes",
+        "report.pdf",
+        "application/pdf",
+    )
+
+    assert captured == {
+        "target": "report_pdf",
+        "data": b"pdf-bytes",
+        "file_name": "report.pdf",
+        "mime": "application/pdf",
+    }
+
+
+def test_render_pending_auto_download_only_consumes_matching_target(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(page_artifacts, "get_pending_browser_download", lambda: {
+        "target": "tailored_resume_pdf",
+        "data": b"pdf-bytes",
+        "file_name": "resume.pdf",
+        "mime": "application/pdf",
+    })
+    monkeypatch.setattr(page_artifacts, "render_auto_download", lambda data, file_name, mime, key: calls.append((data, file_name, mime, key)))
+    monkeypatch.setattr(page_artifacts, "consume_pending_browser_download", lambda: calls.append("consumed"))
+    monkeypatch.setattr(page_artifacts.st, "caption", lambda text: calls.append(text))
+
+    rendered = page_artifacts._render_pending_auto_download("report_pdf")
+
+    assert rendered is False
+    assert calls == []
+
+
+def test_render_pending_auto_download_renders_and_consumes_matching_target(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(page_artifacts, "get_pending_browser_download", lambda: {
+        "target": "report_pdf",
+        "data": b"pdf-bytes",
+        "file_name": "report.pdf",
+        "mime": "application/pdf",
+    })
+    monkeypatch.setattr(page_artifacts, "render_auto_download", lambda data, file_name, mime, key: calls.append((data, file_name, mime, key)))
+    monkeypatch.setattr(page_artifacts, "consume_pending_browser_download", lambda: calls.append("consumed"))
+    monkeypatch.setattr(page_artifacts.st, "caption", lambda text: calls.append(text))
+
+    rendered = page_artifacts._render_pending_auto_download("report_pdf")
+
+    assert rendered is True
+    assert calls[0] == (b"pdf-bytes", "report.pdf", "application/pdf", "auto_download:report_pdf")
+    assert "consumed" in calls

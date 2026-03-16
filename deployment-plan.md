@@ -44,15 +44,15 @@ Concrete operator steps are captured in [docs/supabase-setup-checklist.md](docs/
 
 Until then, the app can still be deployed in a pre-auth state. For that phase, keep `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW=false` if you want assisted features reachable without login.
 
-### 4. Keep Playwright/Chromium for deployment
+### 4. Keep the WeasyPrint runtime ready for deployment
 
-The chosen first deployment target is **Streamlit Community Cloud**, and the PDF path should stay **Playwright/Chromium-first** to match the verified GitHub agent setup.
+The chosen first deployment target is **Streamlit Community Cloud**, and the PDF path should stay **WeasyPrint-first** with the required native runtime present on the host.
 
-- Keep the Playwright dependency and Chromium install step in the deployment path.
-- Treat ReportLab as the automatic runtime fallback if the browser backend is unavailable.
-- Verify PDF export during hosted smoke testing rather than changing the primary export path up front.
+- Ensure the deployment runtime includes the native GTK/Pango libraries WeasyPrint needs.
+- Treat ReportLab as the automatic runtime fallback if the WeasyPrint backend is unavailable.
+- Verify PDF export during hosted smoke testing with the same HTML/CSS templates used locally.
 
-Decision taken: use **Streamlit Community Cloud** for the first deploy and keep the existing **Playwright/Chromium-first** PDF path, matching the GitHub agent deployment pattern. ReportLab remains the resilience fallback, not the intended primary renderer.
+Decision taken: use **Streamlit Community Cloud** for the first deploy and keep the current **WeasyPrint-first** PDF path. ReportLab remains the resilience fallback, not the intended primary renderer.
 
 ### 5. Error handling for missing OpenAI key
 
@@ -105,7 +105,7 @@ OpenAI retry hardening is now in place in the Responses API wrapper for:
 | 1 | Fix suggestions #6, #7, #12 | Done |
 | 2 | Add `.streamlit/config.toml` with server and theme config | Done |
 | 3 | Decide deployment platform (Streamlit Cloud vs Docker host) | Done: Streamlit Cloud |
-| 4 | Handle Playwright: keep Chromium install and retain ReportLab as runtime fallback | Done for first deploy |
+| 4 | Handle WeasyPrint runtime: keep GTK/Pango available and retain ReportLab as runtime fallback | Done for first deploy |
 | 5 | Create production Supabase later, then apply schemas, OAuth, and RLS | ~1–2 hours |
 | 6 | Deploy and smoke-test the pre-auth shell first, then the authenticated flows after Supabase exists | Testing |
 | 7 | Tackle remaining suggestions (#9–#11) later | Iterative |

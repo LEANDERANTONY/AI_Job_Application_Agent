@@ -485,12 +485,18 @@ Current state:
 These are the next practical checks to run in the app after the Supabase bootstrap update.
 
 1. Sign in with a normal non-internal account and confirm the daily quota panel renders without warnings or silent fallback.
-2. Trigger one assisted action and confirm the daily quota values refresh correctly after the new usage event is recorded.
-3. Verify the saved workspace flow still works normally after the updated bootstrap SQL, including reload and download regeneration.
+2. Verify the saved workspace flow still works normally after the updated bootstrap SQL, including reload and download regeneration.
+3. Do one final spot-check with a normal non-internal account so the persisted quota panel, assisted run, and post-run quota refresh all behave correctly end to end.
 4. Do one final cleanup pass over `improvements.md` and explicitly separate any remaining notes into:
 	- obsolete / already handled
 	- future nice-to-haves / optional refinements
 5. If anything in the runtime quota path looks off, inspect `src/usage_store.py`, `src/quota_service.py`, and the `public.get_daily_usage_totals(...)` function together before changing unrelated UI code.
+
+Completed on March 16, 2026 after this note was first written:
+- removed the repeated local Playwright penalty on unsupported Windows runtimes by skipping that backend when the selector event-loop policy makes subprocess startup unsupported
+- if Playwright still raises `NotImplementedError`, the exporter now disables that backend for the rest of the process and routes future PDF exports directly to ReportLab
+- completed the cleanup pass over `improvements.md` so stale already-handled items are explicitly marked instead of lingering as false pending work
+- forced an immediate persisted daily-quota refresh after authenticated supervised runs so the quota panel reflects newly recorded usage on the next render instead of waiting for cache expiry
 
 ## Commit Index
 

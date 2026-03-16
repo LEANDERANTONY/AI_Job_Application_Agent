@@ -2,9 +2,11 @@
 
 ## Status
 
-Accepted
+Superseded on March 16, 2026
 
 ## Context
+
+This ADR captured the earlier browser-rendering decision before the Windows runtime work on March 16, 2026 moved the product to a WeasyPrint-first exporter.
 
 The application package can already be assembled deterministically as Markdown, but recruiter-facing output also needs a polished PDF form.
 
@@ -16,7 +18,7 @@ Plain-text export is not sufficient for the product direction because:
 
 The GitHub agent solved a similar problem by using browser-based PDF rendering rather than relying on a low-level PDF layout engine alone.
 
-## Decision
+## Original Decision
 
 Use Playwright/Chromium as the primary PDF backend for application-package export, with ReportLab retained as a fallback.
 
@@ -50,3 +52,13 @@ Rejected because it would couple export behavior too tightly to the UI runtime a
 - the repo now depends on Playwright plus a Chromium install for the best PDF output
 - fallback PDF generation still exists if the Playwright backend is unavailable
 - deployment environments will need to account for the browser dependency explicitly
+
+## Superseded By
+
+The active product now uses WeasyPrint as the primary HTML-to-PDF renderer and keeps ReportLab as the fallback backend.
+
+Reason for the change:
+
+- the local Windows runtime was unreliable for Playwright subprocess startup
+- WeasyPrint better matches the product goal of HTML/CSS-driven document templates without a browser dependency
+- the active exporter no longer depends on Playwright or Chromium

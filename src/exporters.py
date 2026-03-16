@@ -1,7 +1,9 @@
 import html
 import hashlib
 import logging
+import os
 import re
+import sys
 import warnings
 import zipfile
 from io import BytesIO
@@ -16,6 +18,37 @@ from src.schemas import ApplicationReport, TailoredResumeArtifact
 
 _MARKDOWN = MarkdownIt("commonmark", {"html": False})
 LOGGER = get_logger(__name__)
+_WEASYPRINT_DLL_HANDLE = None
+
+
+def _configure_weasyprint_windows_runtime():
+    global _WEASYPRINT_DLL_HANDLE
+
+    if sys.platform != "win32" or _WEASYPRINT_DLL_HANDLE is not None:
+        return
+
+    candidate_dirs = []
+    env_dirs = os.getenv("WEASYPRINT_DLL_DIRECTORIES", "")
+    if env_dirs:
+        candidate_dirs.extend(path for path in env_dirs.split(os.pathsep) if path)
+    candidate_dirs.append(r"C:\msys64\mingw64\bin")
+
+    for dll_dir in candidate_dirs:
+        if not os.path.isdir(dll_dir):
+            continue
+        try:
+            os.environ["WEASYPRINT_DLL_DIRECTORIES"] = dll_dir
+            _WEASYPRINT_DLL_HANDLE = os.add_dll_directory(dll_dir)
+            log_event(
+                LOGGER,
+                logging.INFO,
+                "weasyprint_windows_runtime_configured",
+                "Configured the WeasyPrint Windows DLL search path.",
+                dll_directory=dll_dir,
+            )
+            return
+        except (AttributeError, FileNotFoundError, OSError):
+            continue
 
 
 def export_markdown_bytes(report: ApplicationReport) -> bytes:
@@ -30,7 +63,14 @@ def export_pdf_bytes(report: ApplicationReport) -> bytes:
     try:
         theme = getattr(report, "theme", None)
         document_kind = "tailored_resume" if isinstance(report, TailoredResumeArtifact) else "report"
-        return generate_pdf(report.markdown, title=report.title, theme=theme, document_kind=document_kind).getvalue()
+        artifact = report if isinstance(report, TailoredResumeArtifact) else None
+        return generate_pdf(
+            report.markdown,
+            title=report.title,
+            theme=theme,
+            document_kind=document_kind,
+            artifact=artifact,
+        ).getvalue()
     except ExportError as error:
         log_event(
             LOGGER,
@@ -43,6 +83,15 @@ def export_pdf_bytes(report: ApplicationReport) -> bytes:
             details=error.details,
         )
         raise
+
+
+def build_resume_preview_html(artifact: TailoredResumeArtifact) -> str:
+    return _build_resume_html(
+        artifact.markdown,
+        title=artifact.title,
+        theme=artifact.theme,
+        artifact=artifact,
+    )
 
 
 def export_zip_bundle_bytes(file_map: dict[str, bytes]) -> bytes:
@@ -77,7 +126,6 @@ def _build_report_html(text, title="AI Job Application Package"):
       --paper: #f7f9fc;
       --surface: #ffffff;
       --surface-soft: #eef4ff;
-      --shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
     }}
 
     @page {{
@@ -103,7 +151,6 @@ def _build_report_html(text, title="AI Job Application Package"):
       border: 1px solid rgba(20, 32, 51, 0.08);
       border-radius: 18px;
       padding: 20px 22px 18px;
-      box-shadow: var(--shadow);
     }}
 
     .report-shell::before {{
@@ -187,7 +234,7 @@ def _build_report_html(text, title="AI Job Application Package"):
       border-radius: 10px;
       padding: 12px 14px;
       white-space: pre-wrap;
-      word-break: break-word;
+            overflow-wrap: anywhere;
       overflow: hidden;
       margin: 0 0 12px;
       font-family: Consolas, monospace;
@@ -230,37 +277,188 @@ def _build_report_html(text, title="AI Job Application Package"):
 """.format(title=safe_title, body=body_html)
 
 
-def _build_resume_html(text, title="Tailored Resume", theme="classic_ats"):
-        body_html = _MARKDOWN.render(text or "")
-        safe_title = html.escape(title or "Tailored Resume")
+def _build_resume_section_list(items, empty_state, ordered=False, class_name=""):
+    values = [html.escape(str(item or "").strip()) for item in items if str(item or "").strip()]
+    if not values:
+        return '<p class="resume-empty">{text}</p>'.format(text=html.escape(empty_state))
 
-        if theme == "modern_professional":
-                return """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <title>{title}</title>
-    <style>
-        @page {{ size: A4; margin: 14mm 14mm 16mm 14mm; }}
-        * {{ box-sizing: border-box; }}
-        body {{ margin: 0; font-family: Georgia, "Times New Roman", serif; color: #1f2937; background: #eef2f7; font-size: 10.3pt; line-height: 1.52; }}
-        .resume-shell {{ background: #ffffff; padding: 22px 24px 18px; border-top: 10px solid #0f766e; }}
-        h1 {{ font-size: 24pt; letter-spacing: 0.02em; margin: 0 0 6px; text-transform: uppercase; }}
-        h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: 0.18em; color: #0f766e; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #cbd5e1; }}
-        h3 {{ font-size: 11pt; margin: 12px 0 4px; color: #111827; }}
-        p {{ margin: 0 0 8px; }}
-        ul {{ margin: 0 0 10px 1rem; padding: 0; }}
-        li {{ margin: 0 0 4px; }}
-        strong {{ color: #0f172a; }}
-    </style>
-</head>
-<body>
-    <main class="resume-shell">{body}</main>
-</body>
-</html>
-""".format(title=safe_title, body=body_html)
+    tag_name = "ol" if ordered else "ul"
+    class_attr = ' class="{name}"'.format(name=class_name) if class_name else ""
+    content = "".join("<li>{item}</li>".format(item=value) for value in values)
+    return "<{tag}{class_attr}>{content}</{tag}>".format(
+        tag=tag_name,
+        class_attr=class_attr,
+        content=content,
+    )
 
+
+def _build_resume_experience_html(experience_entries):
+    if not experience_entries:
+        return '<p class="resume-empty">No structured experience entries were available.</p>'
+
+    cards = []
+    for entry in experience_entries:
+        title = html.escape(entry.title or "Relevant Experience")
+        organization = html.escape(entry.organization or "")
+        location = html.escape(entry.location or "")
+        date_parts = [part for part in [entry.start, entry.end] if part]
+        date_text = html.escape(" - ".join(date_parts)) if date_parts else ""
+        meta_parts = [part for part in [organization, location] if part]
+        bullets_html = _build_resume_section_list(
+            entry.bullets,
+            "No grounded bullet points were generated for this role.",
+            class_name="resume-bullet-list",
+        )
+        cards.append(
+            """
+            <article class="resume-experience-card">
+                <div class="resume-role-row">
+                    <div>
+                        <h3>{title}</h3>
+                        {meta}
+                    </div>
+                    {dates}
+                </div>
+                {bullets}
+            </article>
+            """.format(
+                title=title,
+                meta=(
+                    '<p class="resume-role-meta">{meta}</p>'.format(meta=html.escape(" | ".join(meta_parts)))
+                    if meta_parts
+                    else ""
+                ),
+                dates=(
+                    '<p class="resume-role-dates">{dates}</p>'.format(dates=date_text)
+                    if date_text
+                    else ""
+                ),
+                bullets=bullets_html,
+            )
+        )
+    return "".join(cards)
+
+
+def _build_resume_education_html(education_entries):
+    if not education_entries:
+        return '<p class="resume-empty">No education entries were available.</p>'
+
+    blocks = []
+    for entry in education_entries:
+        institution = html.escape(entry.institution or "Education")
+        degree_parts = [part for part in [entry.degree, entry.field_of_study] if part]
+        date_parts = [part for part in [entry.start, entry.end] if part]
+        blocks.append(
+            """
+            <article class="resume-education-card">
+                <h3>{institution}</h3>
+                {degree}
+                {dates}
+            </article>
+            """.format(
+                institution=institution,
+                degree=(
+                    '<p class="resume-education-meta">{degree}</p>'.format(
+                        degree=html.escape(" - ".join(degree_parts))
+                    )
+                    if degree_parts
+                    else ""
+                ),
+                dates=(
+                    '<p class="resume-education-dates">{dates}</p>'.format(
+                        dates=html.escape(" - ".join(date_parts))
+                    )
+                    if date_parts
+                    else ""
+                ),
+            )
+        )
+    return "".join(blocks)
+
+
+def _build_structured_resume_body(artifact: TailoredResumeArtifact):
+    name = html.escape(artifact.header.full_name or artifact.title or "Candidate")
+    subtitle_parts = [part for part in [artifact.target_role, artifact.header.location] if part]
+    subtitle = html.escape(" | ".join(subtitle_parts)) if subtitle_parts else ""
+    contact_html = _build_resume_section_list(
+        artifact.header.contact_lines,
+        "Contact details can be added before submission.",
+        class_name="resume-contact-list",
+    )
+    skills_html = _build_resume_section_list(
+        artifact.highlighted_skills,
+        "No highlighted skills were generated.",
+        class_name="resume-skill-list",
+    )
+    certifications_html = _build_resume_section_list(
+        artifact.certifications,
+        "No certifications listed.",
+        class_name="resume-plain-list",
+    )
+    validation_html = _build_resume_section_list(
+        artifact.validation_notes,
+        "No validation notes were generated.",
+        class_name="resume-plain-list",
+    )
+    return """
+    <section class="resume-hero">
+        <div class="resume-hero-main">
+            <h1>{name}</h1>
+            {subtitle}
+            <div class="resume-summary-card">
+                <h2>Professional Summary</h2>
+                <p>{summary}</p>
+            </div>
+        </div>
+        <aside class="resume-hero-side">
+            <div class="resume-side-card">
+                <h2>Contact</h2>
+                {contact}
+            </div>
+            <div class="resume-side-card">
+                <h2>Core Skills</h2>
+                {skills}
+            </div>
+        </aside>
+    </section>
+    <section class="resume-section">
+        <h2>Professional Experience</h2>
+        {experience}
+    </section>
+    <section class="resume-grid">
+        <div class="resume-section">
+            <h2>Education</h2>
+            {education}
+        </div>
+        <div class="resume-section">
+            <h2>Certifications</h2>
+            {certifications}
+            <h2>Validation Notes</h2>
+            {validation}
+        </div>
+    </section>
+    """.format(
+        name=name,
+        subtitle=(
+            '<p class="resume-subtitle">{subtitle}</p>'.format(subtitle=subtitle)
+            if subtitle
+            else ""
+        ),
+        summary=html.escape(artifact.professional_summary or "No professional summary generated."),
+        contact=contact_html,
+        skills=skills_html,
+        experience=_build_resume_experience_html(artifact.experience_entries),
+        education=_build_resume_education_html(artifact.education_entries),
+        certifications=certifications_html,
+        validation=validation_html,
+    )
+
+
+def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artifact: TailoredResumeArtifact | None = None):
+    body_html = _build_structured_resume_body(artifact) if artifact is not None else _MARKDOWN.render(text or "")
+    safe_title = html.escape(title or "Tailored Resume")
+
+    if theme == "modern_professional":
         return """
 <!DOCTYPE html>
 <html lang="en">
@@ -269,20 +467,103 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats"):
     <title>{title}</title>
     <style>
         @page {{ size: A4; margin: 12mm 12mm 14mm 12mm; }}
+        :root {{
+            --ink: #2b2118;
+            --muted: #766555;
+            --accent: #a06b44;
+            --accent-soft: #ead8c8;
+            --paper: #f6efe8;
+            --line: #d8c3b0;
+            --surface: #fffaf6;
+        }}
         * {{ box-sizing: border-box; }}
-        body {{ margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111827; background: #ffffff; font-size: 10pt; line-height: 1.45; }}
-        .resume-shell {{ padding: 10px 4px; }}
-        h1 {{ font-size: 22pt; margin: 0 0 6px; letter-spacing: -0.01em; }}
-        h2 {{ font-size: 11pt; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.12em; border-bottom: 1px solid #111827; padding-bottom: 3px; }}
-        h3 {{ font-size: 10.5pt; margin: 10px 0 4px; }}
-        p {{ margin: 0 0 8px; }}
-        ul {{ margin: 0 0 8px 1rem; padding: 0; }}
-        li {{ margin: 0 0 3px; }}
-        strong {{ color: #000000; }}
+        body {{ margin: 0; font-family: Georgia, "Times New Roman", serif; color: var(--ink); background: var(--paper); font-size: 10.2pt; line-height: 1.56; }}
+        .resume-shell {{ background: var(--surface); border: 1px solid rgba(160, 107, 68, 0.18); padding: 24px 26px 20px; }}
+        .resume-shell::before {{ content: ""; display: block; height: 8px; border-radius: 999px; background: linear-gradient(90deg, #c89b77 0%, #a06b44 60%, #7f5539 100%); margin-bottom: 18px; }}
+        h1 {{ font-size: 24pt; letter-spacing: 0.03em; margin: 0 0 8px; text-transform: uppercase; color: #2d1f14; }}
+        h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: 0.24em; color: var(--accent); margin: 20px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }}
+        h3 {{ font-size: 11pt; margin: 12px 0 5px; color: #4d3526; }}
+        p {{ margin: 0 0 9px; }}
+        ul {{ margin: 0 0 10px 1rem; padding: 0; }}
+        li {{ margin: 0 0 4px; }}
+        strong {{ color: #2d1f14; }}
+        em {{ color: var(--muted); }}
+        code {{ background: #f2e7dc; border: 1px solid #e1cfbf; border-radius: 4px; padding: 0.08rem 0.28rem; }}
+        hr {{ border: 0; border-top: 1px solid var(--line); margin: 16px 0; }}
+        blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid #c89b77; background: var(--accent-soft); color: #5d493b; }}
+        .resume-hero {{ display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(220px, 0.9fr); gap: 18px; align-items: start; }}
+        .resume-subtitle {{ margin: 0 0 12px; color: var(--muted); font-size: 10.4pt; font-style: italic; }}
+        .resume-summary-card, .resume-side-card, .resume-experience-card, .resume-education-card {{ background: rgba(255, 250, 246, 0.96); border: 1px solid rgba(160, 107, 68, 0.12); border-radius: 14px; padding: 12px 14px; }}
+        .resume-side-card + .resume-side-card {{ margin-top: 12px; }}
+        .resume-grid {{ display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr); gap: 16px; }}
+        .resume-role-row {{ display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }}
+        .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 4px; }}
+        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.4pt; }}
+        .resume-bullet-list, .resume-contact-list, .resume-plain-list {{ margin: 0; padding-left: 1rem; }}
+        .resume-skill-list {{ list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }}
+        .resume-skill-list li {{ background: #f2e7dc; border: 1px solid #e1cfbf; border-radius: 999px; padding: 0.3rem 0.55rem; margin: 0; font-size: 9.3pt; }}
+        .resume-empty {{ color: var(--muted); font-style: italic; }}
+        .resume-section + .resume-section {{ margin-top: 16px; }}
+        .resume-experience-card + .resume-experience-card, .resume-education-card + .resume-education-card {{ margin-top: 12px; }}
+        @media all and (max-width: 720px) {{ .resume-hero, .resume-grid {{ grid-template-columns: 1fr; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
     </style>
 </head>
 <body>
-    <main class="resume-shell">{body}</main>
+    <main class="resume-shell resume-shell--modern">{body}</main>
+</body>
+</html>
+""".format(title=safe_title, body=body_html)
+
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>{title}</title>
+    <style>
+        @page {{ size: A4; margin: 12mm 12mm 14mm 12mm; }}
+        :root {{
+            --ink: #10213f;
+            --muted: #4f678c;
+            --accent: #2563eb;
+            --accent-soft: #dbeafe;
+            --line: #bfd6f7;
+            --surface: #ffffff;
+        }}
+        * {{ box-sizing: border-box; }}
+        body {{ margin: 0; font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: #f7fbff; font-size: 10pt; line-height: 1.48; }}
+        .resume-shell {{ position: relative; background: var(--surface); border: 1px solid rgba(37, 99, 235, 0.14); padding: 18px 18px 18px 24px; }}
+        .resume-shell::before {{ content: ""; position: absolute; top: 0; left: 0; bottom: 0; width: 7px; background: linear-gradient(180deg, #60a5fa 0%, #2563eb 60%, #1d4ed8 100%); }}
+        h1 {{ font-size: 22pt; margin: 0 0 6px; letter-spacing: 0.02em; color: #0f172a; text-transform: uppercase; }}
+        h2 {{ font-size: 10.6pt; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--accent); padding-bottom: 4px; border-bottom: 1px solid var(--line); }}
+        h3 {{ font-size: 10.5pt; margin: 10px 0 4px; color: #17356a; }}
+        p {{ margin: 0 0 8px; }}
+        ul {{ margin: 0 0 8px 1rem; padding: 0; }}
+        li {{ margin: 0 0 3px; }}
+        strong {{ color: #0f172a; }}
+        em {{ color: var(--muted); }}
+        code {{ background: #eef5ff; border: 1px solid #d3e5ff; border-radius: 4px; padding: 0.08rem 0.28rem; }}
+        hr {{ border: 0; border-top: 1px solid var(--line); margin: 14px 0; }}
+        blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: #24497b; }}
+        .resume-hero {{ display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(200px, 0.95fr); gap: 16px; align-items: start; }}
+        .resume-subtitle {{ margin: 0 0 10px; color: var(--muted); font-size: 10pt; }}
+        .resume-summary-card, .resume-side-card, .resume-experience-card, .resume-education-card {{ background: #ffffff; border: 1px solid rgba(37, 99, 235, 0.10); border-radius: 12px; padding: 11px 12px; }}
+        .resume-side-card + .resume-side-card {{ margin-top: 10px; }}
+        .resume-grid {{ display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr); gap: 14px; }}
+        .resume-role-row {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
+        .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 4px; }}
+        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.2pt; }}
+        .resume-bullet-list, .resume-contact-list, .resume-plain-list {{ margin: 0; padding-left: 1rem; }}
+        .resume-skill-list {{ list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }}
+        .resume-skill-list li {{ background: #eef5ff; border: 1px solid #d3e5ff; border-radius: 999px; padding: 0.28rem 0.52rem; margin: 0; font-size: 9pt; }}
+        .resume-empty {{ color: var(--muted); font-style: italic; }}
+        .resume-section + .resume-section {{ margin-top: 15px; }}
+        .resume-experience-card + .resume-experience-card, .resume-education-card + .resume-education-card {{ margin-top: 10px; }}
+        @media all and (max-width: 720px) {{ .resume-hero, .resume-grid {{ grid-template-columns: 1fr; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
+    </style>
+</head>
+<body>
+    <main class="resume-shell resume-shell--classic">{body}</main>
 </body>
 </html>
 """.format(title=safe_title, body=body_html)
@@ -608,71 +889,58 @@ def _generate_pdf_with_reportlab(text, title):
     return buffer
 
 
-def _generate_pdf_with_playwright(text, title, theme=None, document_kind="report"):
-    from playwright.sync_api import sync_playwright
-
-    html_document = (
+def _build_pdf_html(text, title, theme=None, document_kind="report"):
+    return (
         _build_resume_html(text, title=title, theme=theme or "classic_ats")
         if document_kind == "tailored_resume"
         else _build_report_html(text, title=title)
     )
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        try:
-            page = browser.new_page()
-            page.set_content(html_document, wait_until="load")
-            page.emulate_media(media="screen")
-            pdf_bytes = page.pdf(
-                format="A4",
-                print_background=True,
-                display_header_footer=True,
-                header_template="<div></div>",
-                footer_template="""
-                    <div style="width:100%;font-size:8px;padding:6px 14px 0;color:#64748b;
-                                border-top:1px solid #bfdbfe;
-                                display:flex;justify-content:space-between;align-items:center;">
-                      <span>AI Job Application Agent</span>
-                      <span class="pageNumber"></span>
-                    </div>
-                """,
-                margin={
-                    "top": "18mm",
-                    "right": "14mm",
-                    "bottom": "16mm",
-                    "left": "14mm",
-                },
-            )
-        finally:
-            browser.close()
 
-    return BytesIO(pdf_bytes)
+def _generate_pdf_with_weasyprint(text, title, theme=None, document_kind="report", artifact: TailoredResumeArtifact | None = None):
+    _configure_weasyprint_windows_runtime()
+    from weasyprint import HTML
+
+    html_document = (
+        _build_resume_html(text, title=title, theme=theme or "classic_ats", artifact=artifact)
+        if document_kind == "tailored_resume"
+        else _build_report_html(text, title=title)
+    )
+
+    return BytesIO(HTML(string=html_document).write_pdf())
 
 
-def generate_pdf(text, title="AI Job Application Package", theme=None, document_kind="report"):
-    try:
-        return _generate_pdf_with_playwright(text, title, theme=theme, document_kind=document_kind)
-    except Exception as playwright_error:
+def _generate_pdf_with_reportlab_fallback(text, title, renderer_error=None):
+    if renderer_error is not None:
         log_event(
             LOGGER,
             logging.WARNING,
-            "pdf_export_playwright_failed",
-            "Playwright PDF export failed; attempting ReportLab fallback.",
+            "pdf_export_weasyprint_failed",
+            "WeasyPrint PDF export failed; attempting ReportLab fallback.",
             title=title,
-            error_type=type(playwright_error).__name__,
+            error_type=type(renderer_error).__name__,
+            details=str(renderer_error),
         )
-        try:
-            return _generate_pdf_with_reportlab(text, title)
-        except Exception as error:
-            log_event(
-                LOGGER,
-                logging.ERROR,
-                "pdf_export_reportlab_failed",
-                "ReportLab PDF export failed after Playwright fallback.",
-                title=title,
-                error_type=type(error).__name__,
-            )
-            raise ExportError(
-                "PDF export failed. Try downloading the Markdown package instead.",
-                details=str(error),
-            ) from error
+
+    try:
+        return _generate_pdf_with_reportlab(text, title)
+    except Exception as error:
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            "pdf_export_reportlab_failed",
+            "ReportLab PDF export failed after Playwright fallback.",
+            title=title,
+            error_type=type(error).__name__,
+        )
+        raise ExportError(
+            "PDF export failed. Try downloading the Markdown package instead.",
+            details=str(error),
+        ) from error
+
+
+def generate_pdf(text, title="AI Job Application Package", theme=None, document_kind="report", artifact: TailoredResumeArtifact | None = None):
+    try:
+        return _generate_pdf_with_weasyprint(text, title, theme=theme, document_kind=document_kind, artifact=artifact)
+    except Exception as renderer_error:
+        return _generate_pdf_with_reportlab_fallback(text, title, renderer_error=renderer_error)

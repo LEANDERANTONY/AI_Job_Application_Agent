@@ -25,6 +25,8 @@ class StrategyAgent:
         profile_output: ProfileAgentOutput,
         fit_output: FitAgentOutput,
         tailoring_output: TailoringAgentOutput,
+        previous_strategy_output: StrategyAgentOutput = None,
+        revision_requests=None,
     ) -> StrategyAgentOutput:
         if self._openai_service and self._openai_service.is_available():
             prompt = build_strategy_agent_prompt(
@@ -34,6 +36,8 @@ class StrategyAgent:
                 profile_output,
                 fit_output,
                 tailoring_output,
+                previous_strategy_output=previous_strategy_output,
+                revision_requests=revision_requests,
             )
             payload = self._openai_service.run_json_prompt(
                 prompt["system"],

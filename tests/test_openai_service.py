@@ -148,24 +148,16 @@ def test_openai_service_does_not_fail_when_usage_event_recording_breaks():
     assert payload["approved"] is True
 
 
-def test_openai_service_retries_without_temperature_when_model_rejects_it():
-    client = FakeClient(
-        [
-            RuntimeError(
-                "Error code: 400 - {'error': {'message': \"Unsupported parameter: 'temperature' is not supported with this model.\"}}"
-            ),
-            _build_response('{"approved": true}', response_id="resp_retry"),
-        ]
-    )
+def test_openai_service_does_not_send_temperature_even_when_requested():
+    client = FakeClient([_build_response('{"approved": true}', response_id="resp_retry")])
     service = OpenAIService(client=client)
 
     payload = service.run_json_prompt("system", "user", expected_keys=["approved"], temperature=0.2)
 
     assert payload["approved"] is True
-    assert len(client.responses.calls) == 2
-    assert client.responses.calls[0]["temperature"] == 0.2
-    assert "temperature" not in client.responses.calls[1]
-    assert client.responses.calls[1]["reasoning"] == {"effort": "medium"}
+    assert len(client.responses.calls) == 1
+    assert "temperature" not in client.responses.calls[0]
+    assert client.responses.calls[0]["reasoning"] == {"effort": "medium"}
 
 
 def test_openai_service_retries_with_higher_output_budget_after_incomplete_response():

@@ -301,6 +301,8 @@ def build_strategy_agent_prompt(
     profile_output: ProfileAgentOutput,
     fit_output: FitAgentOutput,
     tailoring_output: TailoringAgentOutput,
+    previous_strategy_output: StrategyAgentOutput = None,
+    revision_requests: Any = None,
 ) -> Dict[str, Any]:
     contract = {
         "recruiter_positioning": "2-3 sentence recruiter-facing positioning guidance grounded in the inputs",
@@ -308,20 +310,24 @@ def build_strategy_agent_prompt(
         "interview_preparation_themes": "array of 2-4 interview themes to prepare with evidence",
         "portfolio_project_emphasis": "array of 2-4 portfolio or project emphasis suggestions grounded in the candidate profile",
     }
-    user_prompt, metadata = _build_budgeted_user_prompt(
-        [
-            ("Candidate Profile", candidate_profile, 2000),
-            ("Job Description", job_description, 1600),
-            ("Deterministic Fit Analysis", fit_analysis, 1500),
-            ("Profile Agent Output", profile_output, 1000),
-            ("Fit Agent Output", fit_output, 1200),
-            ("Tailoring Agent Output", tailoring_output, 1400),
-        ]
-    )
+    sections = [
+        ("Candidate Profile", candidate_profile, 2000),
+        ("Job Description", job_description, 1600),
+        ("Deterministic Fit Analysis", fit_analysis, 1500),
+        ("Profile Agent Output", profile_output, 1000),
+        ("Fit Agent Output", fit_output, 1200),
+        ("Tailoring Agent Output", tailoring_output, 1400),
+    ]
+    if previous_strategy_output:
+        sections.append(("Previous Strategy Output", previous_strategy_output, 1200))
+    if revision_requests:
+        sections.append(("Revision Requests", revision_requests, 900))
+    user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (
             "You are the Application Strategy Agent. Convert grounded fit and tailoring signals into downstream application guidance. "
             "Do not invent projects, experience, technologies, or recruiter claims that are not supported by the source profile. "
+            "When revision requests are provided, treat them as mandatory constraints and revise the previous strategy output instead of repeating rejected wording. "
             + _build_contract(contract)
         ),
         "user": user_prompt,

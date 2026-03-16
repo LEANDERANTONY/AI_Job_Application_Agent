@@ -1,5 +1,6 @@
 import logging
 import time
+from typing import Callable, Optional
 
 from src.errors import AgentExecutionError
 from src.logging_utils import get_logger, log_event
@@ -20,8 +21,11 @@ from .tailoring_agent import TailoringAgent
 LOGGER = get_logger(__name__)
 
 
+ProgressCallback = Callable[[str, str, int], None]
+
+
 class ApplicationOrchestrator:
-    def __init__(self, openai_service=None, allow_fallback=True, max_revision_passes=2):
+    def __init__(self, openai_service=None, allow_fallback=True, max_revision_passes=1):
         self._openai_service = openai_service or OpenAIService()
         self._allow_fallback = allow_fallback
         self._max_revision_passes = max(0, int(max_revision_passes))
@@ -32,6 +36,7 @@ class ApplicationOrchestrator:
         job_description: JobDescription,
         fit_analysis=None,
         tailored_draft=None,
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> AgentWorkflowResult:
         if fit_analysis is None:
             fit_analysis = build_fit_analysis(candidate_profile, job_description)
@@ -41,6 +46,13 @@ class ApplicationOrchestrator:
                 job_description,
                 fit_analysis,
             )
+
+        self._emit_progress(
+            progress_callback,
+            "Workflow crew",
+            "Opening your application brief and assigning the first agent.",
+            3,
+        )
 
         attempted_assisted = False
         fallback_reason = ""
@@ -64,6 +76,7 @@ class ApplicationOrchestrator:
                     model_name=policy_label,
                     max_revision_passes=self._max_revision_passes,
                     attempted_assisted=True,
+                    progress_callback=progress_callback,
                 )
             except AgentExecutionError as exc:
                 fallback_reason = exc.user_message
@@ -81,6 +94,13 @@ class ApplicationOrchestrator:
                 if not self._allow_fallback:
                     raise
 
+                self._emit_progress(
+                    progress_callback,
+                    "Backup workflow",
+                    "One AI agent hit a snag, so the deterministic backup crew is stepping in.",
+                    10,
+                )
+
         return self._run_pipeline(
             candidate_profile,
             job_description,
@@ -93,7 +113,14 @@ class ApplicationOrchestrator:
             attempted_assisted=attempted_assisted,
             fallback_reason=fallback_reason,
             fallback_details=fallback_details,
+            progress_callback=progress_callback,
         )
+
+    @staticmethod
+    def _emit_progress(progress_callback, title, detail, value):
+        if progress_callback is None:
+            return
+        progress_callback(title, detail, max(0, min(100, int(value))))
 
     @staticmethod
     def _run_pipeline(
@@ -104,10 +131,11 @@ class ApplicationOrchestrator:
         openai_service,
         mode,
         model_name,
-        max_revision_passes=2,
+        max_revision_passes=1,
         attempted_assisted=False,
         fallback_reason="",
         fallback_details="",
+        progress_callback: Optional[ProgressCallback] = None,
     ):
         tailoring_agent = TailoringAgent(openai_service)
         review_agent = ReviewAgent(openai_service)
@@ -118,6 +146,23 @@ class ApplicationOrchestrator:
         strategy_output = None
         review_output = None
         resume_generation_output = None
+        total_stage_count = 4 + ((max_revision_passes + 1) * 3)
+        stage_index = 0
+
+        def stage_progress(current_stage_index):
+            if total_stage_count <= 1:
+                return 95
+            return 5 + int(round(((current_stage_index - 1) / (total_stage_count - 1)) * 90))
+
+        def begin_stage(title, detail):
+            nonlocal stage_index
+            stage_index += 1
+            ApplicationOrchestrator._emit_progress(
+                progress_callback,
+                title,
+                detail,
+                stage_progress(stage_index),
+            )
 
         def run_agent_step(agent_name, runner, **context):
             started_at = time.perf_counter()
@@ -150,13 +195,25 @@ class ApplicationOrchestrator:
             )
             return result
 
+        begin_stage(
+            "Scout agent",
+            "Pulling out the strongest grounded proof points from your resume.",
+        )
         profile_output = run_agent_step(
             "profile",
             lambda: ProfileAgent(openai_service).run(candidate_profile),
         )
+        begin_stage(
+            "Signal agent",
+            "Translating the job description into clear hiring priorities.",
+        )
         job_output = run_agent_step(
             "job",
             lambda: JobAgent(openai_service).run(job_description),
+        )
+        begin_stage(
+            "Matchmaker agent",
+            "Comparing both sides, scoring overlap, and flagging the real gaps.",
         )
         fit_output = run_agent_step(
             "fit",
@@ -172,6 +229,13 @@ class ApplicationOrchestrator:
         for pass_index in range(1, max_revision_passes + 2):
             revision_requests = review_output.revision_requests if review_output else None
             previous_tailoring_output = tailoring_output
+            previous_strategy_output = strategy_output
+            begin_stage(
+                "Forge agent",
+                "Rewriting pass {pass_index} so the draft sounds sharper for this exact role.".format(
+                    pass_index=pass_index
+                ),
+            )
             tailoring_output = run_agent_step(
                 "tailoring",
                 lambda: tailoring_agent.run(
@@ -187,6 +251,12 @@ class ApplicationOrchestrator:
                 pass_index=pass_index,
                 revision_request_count=len(revision_requests or []),
             )
+            begin_stage(
+                "Navigator agent",
+                "Shaping the recruiter story for pass {pass_index} so the pitch lands cleanly.".format(
+                    pass_index=pass_index
+                ),
+            )
             strategy_output = run_agent_step(
                 "strategy",
                 lambda: strategy_agent.run(
@@ -196,8 +266,16 @@ class ApplicationOrchestrator:
                     profile_output,
                     fit_output,
                     tailoring_output,
+                    previous_strategy_output=previous_strategy_output,
+                    revision_requests=revision_requests,
                 ),
                 pass_index=pass_index,
+            )
+            begin_stage(
+                "Gatekeeper agent",
+                "Reviewing pass {pass_index}; only the strongest work gets through.".format(
+                    pass_index=pass_index
+                ),
             )
             review_output = run_agent_step(
                 "review",
@@ -221,7 +299,18 @@ class ApplicationOrchestrator:
             )
             if review_output.approved:
                 break
+            if pass_index <= max_revision_passes:
+                ApplicationOrchestrator._emit_progress(
+                    progress_callback,
+                    "Gatekeeper agent",
+                    "Sent it back for one more polish pass before approval.",
+                    min(96, stage_progress(stage_index) + 2),
+                )
 
+        begin_stage(
+            "Builder agent",
+            "Packaging the final tailored resume and lining up the finish.",
+        )
         resume_generation_output = run_agent_step(
             "resume_generation",
             lambda: ResumeGenerationAgent(openai_service).run(
@@ -245,6 +334,13 @@ class ApplicationOrchestrator:
             model=model_name,
             review_passes=len(review_history),
             approved=review_output.approved if review_output else False,
+        )
+
+        ApplicationOrchestrator._emit_progress(
+            progress_callback,
+            "Workflow crew",
+            "All agents are done. Finalizing your application outputs.",
+            100,
         )
 
         return AgentWorkflowResult(

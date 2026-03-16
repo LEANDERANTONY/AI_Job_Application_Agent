@@ -111,7 +111,7 @@ Owns lightweight export helpers for the application package and tailored resume:
 - Markdown bytes
 - PDF bytes
 - ZIP bundle bytes
-- Playwright/Chromium as the primary PDF backend
+- WeasyPrint as the primary PDF backend
 - ReportLab as the fallback PDF backend
 
 ### `src/agents/`

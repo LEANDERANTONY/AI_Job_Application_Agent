@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from src.agents.orchestrator import ApplicationOrchestrator
 from src.config import (
@@ -91,6 +91,9 @@ class JobWorkflowViewModel:
     tailored_resume_artifact: Optional[TailoredResumeArtifact] = None
     agent_result: Optional[AgentWorkflowResult] = None
     ai_session: Optional[AISessionViewModel] = None
+
+
+WorkflowProgressCallback = Callable[[str, str, int], None]
 
 
 def _load_sample_resume(filename):
@@ -399,7 +402,10 @@ def build_saved_tailored_resume_from_workflow_run(workflow_run: Optional[object]
     return workflow_history.build_saved_tailored_resume_from_workflow_run(workflow_run)
 
 
-def run_supervised_workflow(view_model: JobWorkflowViewModel):
+def run_supervised_workflow(
+    view_model: JobWorkflowViewModel,
+    progress_callback: Optional[WorkflowProgressCallback] = None,
+):
     if AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW and not is_authenticated():
         raise InputValidationError(
             "Sign in with Google before running the AI-assisted workflow."
@@ -416,10 +422,14 @@ def run_supervised_workflow(view_model: JobWorkflowViewModel):
             view_model.job_description,
             view_model.fit_analysis,
             view_model.tailored_draft,
+            progress_callback=progress_callback,
         )
         set_agent_workflow_result(agent_result)
     finally:
         set_openai_session_usage(view_model.ai_session.openai_service.get_usage_snapshot())
+
+    if get_app_user_record() is not None:
+        refresh_daily_quota_status(force=True)
 
     refreshed_view_model = build_job_workflow_view_model(view_model.jd_text, view_model.jd_source)
     refreshed_view_model.agent_result = get_state(AGENT_WORKFLOW_RESULT)
@@ -478,8 +488,8 @@ def prepare_tailored_resume_pdf_package(artifact: TailoredResumeArtifact):
     return workflow_exports.prepare_tailored_resume_pdf_package(artifact)
 
 
-def get_cached_tailored_resume_pdf_package():
-    return workflow_exports.get_cached_tailored_resume_pdf_package()
+def get_cached_tailored_resume_pdf_package(theme_name=None):
+    return workflow_exports.get_cached_tailored_resume_pdf_package(theme_name=theme_name)
 
 
 def prepare_export_bundle_package(

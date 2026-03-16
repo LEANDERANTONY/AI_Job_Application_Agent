@@ -119,12 +119,23 @@ def _submit_assistant_question(
     return True
 
 
-def render_assistant_panel(current_page, workflow_view_model=None, artifact=None, report=None):
-    st.markdown("---")
-    render_section_head(
-        "Ask The Assistant",
-        "Use product help for navigation questions or ask grounded questions about the current resume and report.",
-    )
+def render_assistant_panel(
+    current_page,
+    workflow_view_model=None,
+    artifact=None,
+    report=None,
+    *,
+    show_divider=True,
+    show_header=True,
+    compact=False,
+):
+    if show_divider:
+        st.markdown("---")
+    if show_header:
+        render_section_head(
+            "Ask The Assistant",
+            "Use product help for navigation questions or ask grounded questions about the current resume and report.",
+        )
 
     mode_options = ["product_help"]
     if workflow_view_model and workflow_view_model.candidate_profile and workflow_view_model.job_description:
@@ -135,6 +146,11 @@ def render_assistant_panel(current_page, workflow_view_model=None, artifact=None
         "product_help": "Using the App",
         "application_qa": "About My Resume",
     }
+    if compact:
+        mode_labels = {
+            "product_help": "App",
+            "application_qa": "Resume",
+        }
     mode = st.radio(
         "Assistant Mode",
         mode_options,
@@ -144,7 +160,8 @@ def render_assistant_panel(current_page, workflow_view_model=None, artifact=None
     )
 
     history = get_assistant_history(mode)
-    for turn in history:
+    turns_to_render = history[-2:] if compact else history
+    for turn in turns_to_render:
         with st.chat_message("user"):
             st.write(turn.question)
         with st.chat_message("assistant"):
@@ -165,12 +182,19 @@ def render_assistant_panel(current_page, workflow_view_model=None, artifact=None
                 else "Ask about your resume, JD, or report..."
             ),
         )
-        ask_clicked = st.form_submit_button("Ask Assistant")
+        ask_clicked = st.form_submit_button("Ask" if compact else "Ask Assistant")
 
-    clear_clicked = st.button(
-        "Clear Chat",
-        key="clear_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
-    )
+    if compact:
+        clear_clicked = st.button(
+            "Clear",
+            key="clear_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
+            use_container_width=True,
+        )
+    else:
+        clear_clicked = st.button(
+            "Clear Chat",
+            key="clear_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
+        )
 
     if clear_clicked:
         clear_assistant_history(mode)

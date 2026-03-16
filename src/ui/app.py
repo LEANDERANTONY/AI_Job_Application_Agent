@@ -7,7 +7,6 @@ from src.ui.components import (
     render_evolution_note,
     render_footer,
     render_intro,
-    render_metric_card,
 )
 from src.ui.navigation import render_sidebar
 from src.ui.pages import (
@@ -150,26 +149,6 @@ def main():
     auth_service = _initialize_auth()
     menu = render_sidebar(auth_service=auth_service)
     render_intro()
-
-    cols = st.columns(3)
-    with cols[0]:
-        render_metric_card(
-            "Resume Intake",
-            "Ready",
-            "PDF, DOCX, and TXT parsing are in place.",
-        )
-    with cols[1]:
-        render_metric_card(
-            "Job Description Intake",
-            "Ready",
-            "File upload, sample loading, and pasted text are supported.",
-        )
-    with cols[2]:
-        render_metric_card(
-            "Application Package",
-            "Ready",
-            "The JD flow now supports supervised orchestration plus Markdown, PDF, and ZIP export.",
-        )
 
     render_evolution_note()
 
