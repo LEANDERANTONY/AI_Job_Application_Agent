@@ -4,9 +4,6 @@ import streamlit as st
 
 from src.config import (
     assisted_workflow_requires_login,
-    DEMO_JOB_DESCRIPTION_DIR,
-    DEMO_RESUME_DIR,
-    list_demo_files,
 )
 from src.errors import InputValidationError
 from src.schemas import AgentWorkflowResult, CandidateProfile, FitAnalysis, TailoredResumeDraft
@@ -28,7 +25,6 @@ from src.ui.workflow import (
     get_resume_page_state,
     resolve_job_description_input,
     run_supervised_workflow,
-    use_sample_resume,
     use_uploaded_resume,
 )
 
@@ -155,11 +151,6 @@ def _render_daily_quota_status(daily_quota):
         )
 
 
-def _render_resume_metrics(resume_document):
-    value = resume_document.filetype if resume_document else "Waiting"
-    render_metric_card("Resume Status", value, "Resume parsing is deterministic and file-based.")
-
-
 def _render_profile_snapshot(candidate_profile: CandidateProfile):
     cols = st.columns(3)
     with cols[0]:
@@ -192,24 +183,18 @@ def _render_profile_snapshot(candidate_profile: CandidateProfile):
 
 def render_resume_page():
     render_section_head("Resume Intake", "Parse an existing resume and keep it ready for tailoring.")
-    resume_files = list_demo_files(DEMO_RESUME_DIR, (".pdf", ".docx", ".txt"))
     resume_document, candidate_profile_resume = get_resume_page_state()
-    left_col, right_col = st.columns([1.1, 1.2])
-    with left_col:
-        selected_resume = st.selectbox("Try a sample resume", ["None", *resume_files])
-        if selected_resume != "None":
-            resume_document, candidate_profile_resume = use_sample_resume(selected_resume)
-        uploaded_file = st.file_uploader("Or upload your own resume file", type=["pdf", "docx", "txt"])
-        if uploaded_file is not None:
-            resume_document, candidate_profile_resume = use_uploaded_resume(uploaded_file)
-    with right_col:
-        _render_resume_metrics(resume_document)
+    uploaded_file = st.file_uploader("Upload your resume file", type=["pdf", "docx", "txt"])
+    if uploaded_file is not None:
+        resume_document, candidate_profile_resume = use_uploaded_resume(uploaded_file)
     if resume_document:
         st.success(f"{resume_document.filetype} resume parsed successfully.")
         _render_profile_snapshot(candidate_profile_resume)
         st.text_area("Extracted Resume Text", resume_document.text, height=320)
         if st.button("I have a job description"):
             _go_to("Manual JD Input")
+
+
 def render_job_search_page():
     render_section_head(
         "Job Search",
@@ -308,7 +293,7 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
     with cols[1]:
         render_metric_card("Review Status", "Approved" if agent_result.review.approved else "Needs Revision", "The review agent is the final quality gate.")
     with cols[2]:
-        render_metric_card("Model", agent_result.model, "Fallback means deterministic logic only.")
+        render_metric_card("Model", agent_result.model, "Fallback means deterministic logic only.", compact=True)
 
     if agent_result.fallback_details:
         with st.expander("Fallback Details", expanded=False):
@@ -483,16 +468,14 @@ def render_history_page():
 
 def render_job_description_page():
     render_section_head("Job Description Intake", "Load a target role and convert it into structured requirements.")
-    demo_files = list_demo_files(DEMO_JOB_DESCRIPTION_DIR, (".txt", ".pdf", ".docx"))
+    uploaded_jd = st.file_uploader("Upload Job Description", type=["pdf", "docx", "txt"])
+    pasted_text = st.text_area("Or paste the job description here", height=180, key="manual_jd_paste")
 
-    left_col, right_col = st.columns([1.1, 1.2])
-    with left_col:
-        uploaded_jd = st.file_uploader("Upload Job Description", type=["pdf", "docx", "txt"])
-        selected_sample = st.selectbox("Try a sample job description", ["None", *demo_files])
-    with right_col:
-        pasted_text = st.text_area("Or paste the job description here", height=240)
-
-    jd_text, jd_source = resolve_job_description_input(uploaded_jd=uploaded_jd, selected_sample=selected_sample, pasted_text=pasted_text)
+    jd_text, jd_source = resolve_job_description_input(
+        uploaded_jd=uploaded_jd,
+        selected_sample="None",
+        pasted_text=pasted_text,
+    )
 
     st.caption(f"JD Source: {jd_source if jd_text else 'None'}")
     workflow_view_model = build_job_workflow_view_model(jd_text, jd_source)
@@ -503,38 +486,11 @@ def render_job_description_page():
 
     cols = st.columns(3)
     with cols[0]:
-        render_metric_card("Target Role", job_description.title or "Unknown", "Structured title extracted from the JD.")
+        render_metric_card("Target Role", job_description.title or "Unknown", "Structured title extracted from the JD.", dense=True)
     with cols[1]:
-        render_metric_card("Hard Skills", str(len(job_description.requirements.hard_skills)), "Matched hard-skill keywords.")
+        render_metric_card("Hard Skills", str(len(job_description.requirements.hard_skills)), "Matched hard-skill keywords.", dense=True)
     with cols[2]:
-        render_metric_card("Soft Skills", str(len(job_description.requirements.soft_skills)), "Matched soft-skill keywords.")
-
-    preview_col, details_col = st.columns([1.1, 1.0])
-    with preview_col:
-        st.subheader("Cleaned Job Description")
-        st.text_area("Cleaned Text", job_description.cleaned_text, height=300, label_visibility="collapsed")
-    with details_col:
-        st.subheader("Structured Job Details")
-        st.markdown(f"- **Job Title:** {job_description.title}")
-        st.markdown(f"- **Location:** {job_description.location or 'N/A'}")
-        st.markdown("- **Experience Required:** " f"{job_description.requirements.experience_requirement or 'N/A'}")
-        st.markdown(f"- **Hard Skills:** {', '.join(job_description.requirements.hard_skills) or 'N/A'}")
-        st.markdown(f"- **Soft Skills:** {', '.join(job_description.requirements.soft_skills) or 'N/A'}")
-        st.markdown(f"- **Must-Have Signals:** {len(job_description.requirements.must_haves)}")
-        st.markdown(f"- **Nice-To-Have Signals:** {len(job_description.requirements.nice_to_haves)}")
-
-    st.markdown(
-        """
-        <div class="narrative-panel">
-            <h4>Why this matters</h4>
-            <p>
-                This structured job object is the input that the later fit-analysis and tailoring
-                agents will compare against your resume-derived candidate profile.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        render_metric_card("Soft Skills", str(len(job_description.requirements.soft_skills)), "Matched soft-skill keywords.", dense=True)
 
     candidate_profile = workflow_view_model.candidate_profile
     if not candidate_profile:

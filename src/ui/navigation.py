@@ -69,7 +69,6 @@ def _render_sidebar_nav_grid(current_menu):
     return st.radio(
         "Go to:",
         MENU_OPTIONS,
-        index=MENU_OPTIONS.index(current_menu) if current_menu in MENU_OPTIONS else 0,
         key=CURRENT_MENU,
         horizontal=True,
         label_visibility="collapsed",
@@ -215,21 +214,19 @@ def _render_account_panel(auth_service):
         account_email = user.email or ""
         plan_tier = app_user.plan_tier if app_user is not None else "Unknown"
         account_status = app_user.account_status if app_user is not None else "Unknown"
+        account_identity = account_email or account_name
         st.markdown(
             """
             <div class="sidebar-card sidebar-account-shell">
-                <div class="sidebar-account-topline">
-                    <div class="sidebar-account-state">Signed in</div>
+                <div class="sidebar-account-row">
+                    <div class="sidebar-account-summary">Signed in as {identity}</div>
                     <div class="sidebar-account-plan">Plan {plan} | {status}</div>
                 </div>
-                <div class="sidebar-account-name">{name}</div>
-                <div class="sidebar-account-email">{email}</div>
             </div>
             """.format(
+                identity=escape(str(account_identity)),
                 plan=escape(str(plan_tier)),
                 status=escape(str(account_status)),
-                name=escape(str(account_name)),
-                email=escape(str(account_email)),
             ),
             unsafe_allow_html=True,
         )
@@ -305,6 +302,7 @@ def render_sidebar(auth_service):
         pending_menu = consume_pending_menu()
         if pending_menu is not None:
             set_current_menu(pending_menu)
+        get_current_menu(MENU_OPTIONS[0])
         menu = _render_sidebar_nav_grid(get_current_menu(MENU_OPTIONS[0]))
         st.caption(MENU_COPY[menu])
         _render_account_panel(auth_service)

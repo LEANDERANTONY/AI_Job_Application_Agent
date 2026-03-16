@@ -87,7 +87,9 @@ def apply_theme():
             .metric-card {
                 border-radius: 18px;
                 padding: 1rem 1rem 0.9rem;
-                min-height: 130px;
+                min-height: 168px;
+                display: flex;
+                flex-direction: column;
                 margin-bottom: 0.8rem;
             }
             .metric-label {
@@ -101,6 +103,36 @@ def apply_theme():
                 color: var(--ink);
                 line-height: 1.08;
                 margin-bottom: 0.4rem;
+            }
+            .metric-card-compact {
+                min-height: 168px;
+            }
+            .metric-card-dense {
+                min-height: 142px;
+                padding: 0.85rem 0.9rem 0.8rem;
+            }
+            .metric-card-dense .metric-value {
+                font-size: 1.55rem;
+                line-height: 1.12;
+            }
+            .metric-value-compact {
+                font-size: 0.92rem;
+                line-height: 1.35;
+                font-weight: 700;
+                word-break: break-word;
+                overflow-wrap: anywhere;
+            }
+            .metric-note {
+                margin-top: auto;
+            }
+            textarea[aria-label="Or paste the job description here"] {
+                background: linear-gradient(180deg, rgba(18, 28, 46, 0.98), rgba(22, 35, 58, 0.98)) !important;
+                color: #eef4ff !important;
+                border: 1px solid rgba(96, 165, 250, 0.18) !important;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+            }
+            textarea[aria-label="Or paste the job description here"]::placeholder {
+                color: #c9daf8 !important;
             }
             .sidebar-card, .narrative-panel {
                 border-radius: 18px;
@@ -119,12 +151,18 @@ def apply_theme():
             .sidebar-account-shell {
                 margin-bottom: 0.65rem;
             }
+            .sidebar-account-shell {
+                padding: 0.72rem 0.8rem;
+            }
             .sidebar-usage-stat {
                 background: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(148, 163, 184, 0.14);
                 border-radius: 16px;
                 padding: 0.72rem 0.65rem;
                 margin-bottom: 0.55rem;
+                min-height: 8.2rem;
+                display: flex;
+                flex-direction: column;
             }
             .sidebar-usage-kicker {
                 text-transform: uppercase;
@@ -145,33 +183,34 @@ def apply_theme():
                 color: #cbd5e1 !important;
                 font-size: 0.7rem;
                 line-height: 1.25;
+                margin-top: auto;
             }
-            .sidebar-account-topline {
+            .sidebar-account-row {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
                 gap: 1rem;
-                margin-bottom: 0.45rem;
             }
-            .sidebar-account-state {
+            .sidebar-account-summary {
                 color: #f8fbff !important;
                 font-weight: 700;
-                font-size: 0.92rem;
+                font-size: 0.9rem;
+                line-height: 1.2;
             }
             .sidebar-account-plan {
                 color: #cbd5e1 !important;
                 font-size: 0.82rem;
                 text-align: right;
             }
-            .sidebar-account-name {
-                color: #f8fbff !important;
-                font-weight: 700;
-                font-size: 0.98rem;
-                margin-bottom: 0.18rem;
-            }
-            .sidebar-account-email {
-                color: #cbd5e1 !important;
-                font-size: 0.85rem;
+            @media (max-width: 1200px) {
+                .sidebar-account-row {
+                    flex-direction: column;
+                    align-items: flex-start;
+                    gap: 0.25rem;
+                }
+                .sidebar-account-plan {
+                    text-align: left;
+                }
             }
             [data-testid="stSidebar"] .stButton > button {
                 border-radius: 14px;
@@ -279,6 +318,15 @@ def apply_theme():
             .deterministic-draft-section ul {
                 margin: 0;
                 padding-left: 1.2rem;
+            }
+            div[data-testid="stTextArea"]:has(textarea[aria-label="Or paste the job description here"]) textarea {
+                background: linear-gradient(180deg, rgba(5, 12, 24, 0.98), rgba(9, 20, 38, 0.98)) !important;
+                color: #eef4ff !important;
+                border: 1px solid rgba(96, 165, 250, 0.18) !important;
+                box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
+            }
+            div[data-testid="stTextArea"]:has(textarea[aria-label="Or paste the job description here"]) textarea::placeholder {
+                color: #c9daf8 !important;
             }
             .stTextInput input, .stTextArea textarea, div[data-baseweb="input"] input, div[data-baseweb="select"] > div {
                 background: #ffffff !important;
