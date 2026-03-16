@@ -192,9 +192,9 @@ def apply_theme():
                 background: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(148, 163, 184, 0.14);
                 border-radius: 16px;
-                padding: 0.72rem 0.65rem;
-                margin-bottom: 0.55rem;
-                min-height: 8.2rem;
+                padding: 0.58rem 0.58rem;
+                margin-bottom: 0.48rem;
+                min-height: 6.6rem;
                 display: flex;
                 flex-direction: column;
             }
@@ -207,7 +207,7 @@ def apply_theme():
                 margin-bottom: 0.24rem;
             }
             .sidebar-usage-value {
-                font-size: 0.96rem;
+                font-size: 0.9rem;
                 line-height: 1.15;
                 color: #f8fbff !important;
                 font-weight: 800;
@@ -215,8 +215,8 @@ def apply_theme():
             }
             .sidebar-usage-copy {
                 color: #cbd5e1 !important;
-                font-size: 0.7rem;
-                line-height: 1.25;
+                font-size: 0.66rem;
+                line-height: 1.2;
                 margin-top: auto;
             }
             .sidebar-account-row {

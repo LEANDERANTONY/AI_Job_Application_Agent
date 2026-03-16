@@ -24,21 +24,18 @@ MENU_OPTIONS = [
     "Upload Resume",
     "Job Search",
     "Manual JD Input",
-    "Saved Workspace",
 ]
 
 MENU_COPY = {
     "Upload Resume": "Parse a resume and keep it ready for tailoring.",
     "Job Search": "Placeholder for job-source integrations and matching.",
     "Manual JD Input": "Load a target role and extract structured requirements.",
-    "Saved Workspace": "Review or download your latest 24-hour saved workspace.",
 }
 
 MENU_SHORT_LABELS = {
     "Upload Resume": "Resume",
     "Job Search": "Jobs",
     "Manual JD Input": "JD",
-    "Saved Workspace": "Workspace",
 }
 
 
@@ -83,13 +80,6 @@ def _render_sidebar_assistant_panel(menu):
     )
     artifact = workflow.build_tailored_resume_artifact_view_model(workflow_view_model)
     report = workflow.build_application_report_view_model(workflow_view_model)
-
-    if menu == "Saved Workspace":
-        saved_workspace = workflow.load_saved_workspace_summary()
-        if saved_workspace.get("resume") is not None:
-            artifact = saved_workspace.get("resume")
-        if saved_workspace.get("report") is not None:
-            report = saved_workspace.get("report")
 
     st.markdown(
         """
@@ -302,8 +292,10 @@ def render_sidebar(auth_service):
         pending_menu = consume_pending_menu()
         if pending_menu is not None:
             set_current_menu(pending_menu)
-        get_current_menu(MENU_OPTIONS[0])
-        menu = _render_sidebar_nav_grid(get_current_menu(MENU_OPTIONS[0]))
+        current_menu = get_current_menu(MENU_OPTIONS[0])
+        if current_menu not in MENU_OPTIONS:
+            current_menu = set_current_menu(MENU_OPTIONS[0])
+        menu = _render_sidebar_nav_grid(current_menu)
         st.caption(MENU_COPY[menu])
         _render_account_panel(auth_service)
         _render_sidebar_usage_panel(menu)

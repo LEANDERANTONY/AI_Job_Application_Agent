@@ -12,7 +12,6 @@ from src.ui.page_artifacts import (
     render_report_package as _render_report_package,
     render_tailored_resume_artifact as _render_tailored_resume_artifact,
 )
-from src.ui.page_history import render_history_page as _render_history_page
 from src.ui.state import (
     is_authenticated,
     request_menu_navigation,
@@ -432,11 +431,6 @@ def _run_supervised_workflow_with_progress(workflow_view_model):
     progress_bar.empty()
     return workflow_view_model
 
-
-def render_history_page():
-    return _render_history_page(_render_daily_quota_status)
-
-
 def render_job_description_page():
     render_section_head("Job Description Intake", "Load a target role and convert it into structured requirements.")
     uploaded_jd = st.file_uploader("Upload Job Description", type=["pdf", "docx", "txt"])
@@ -449,6 +443,7 @@ def render_job_description_page():
     )
 
     st.caption(f"JD Source: {jd_source if jd_text else 'None'}")
+    st.markdown("---")
     workflow_view_model = build_job_workflow_view_model(jd_text, jd_source)
     if not workflow_view_model.job_description:
         return
@@ -469,7 +464,6 @@ def render_job_description_page():
         return
 
     ai_session = workflow_view_model.ai_session
-    st.markdown("---")
     st.caption("Run the supervised workflow explicitly to avoid unnecessary model-backed usage on every rerun.")
     login_required = assisted_workflow_requires_login() and not is_authenticated()
     if login_required:

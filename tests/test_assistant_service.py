@@ -72,12 +72,12 @@ def test_product_help_fallback_explains_navigation():
 
     response = service.answer_product_help(
         "Can you explain how the navigation tab works?",
-        current_page="Saved Workspace",
+        current_page="Manual JD Input",
         app_context={},
     )
 
     assert "sidebar navigation" in response.answer.lower()
-    assert "saved workspace" in response.answer.lower()
+    assert "reload workspace" in response.answer.lower()
 
 
 def test_product_help_fallback_answers_assistant_identity_question():

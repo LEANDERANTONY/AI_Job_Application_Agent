@@ -21,7 +21,7 @@ def test_resolve_assistant_ai_session_builds_shared_session_when_missing(monkeyp
     assert resolved is built_session
 
 
-def test_build_product_help_context_includes_saved_workspace_navigation(monkeypatch):
+def test_build_product_help_context_includes_reload_action(monkeypatch):
     monkeypatch.setattr(page_assistant, "is_authenticated", lambda: True)
     ai_session = SimpleNamespace(
         usage={
@@ -46,8 +46,8 @@ def test_build_product_help_context_includes_saved_workspace_navigation(monkeypa
         ai_session=ai_session,
     )
 
-    assert "Saved Workspace" in context["available_pages"]
-    assert context["signed_in_actions"] == ["Reload Saved Workspace"]
+    assert context["available_pages"] == ["Upload Resume", "Job Search", "Manual JD Input"]
+    assert context["signed_in_actions"] == ["Reload Workspace"]
     assert context["has_resume"] is True
     assert context["has_job_description"] is True
     assert context["has_tailored_resume"] is True

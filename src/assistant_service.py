@@ -143,15 +143,15 @@ class AssistantService:
         knowledge_hits = list(app_context.get("knowledge_hits", []) or [])
         if "your name" in normalized or "who are you" in normalized:
             return AssistantResponse(
-                answer="I am the in-app Product Help Assistant for the AI Job Application Agent. I can explain the current workflow, navigation, saved workspace behavior, and the difference between the generated outputs.",
+                answer="I am the in-app Product Help Assistant for the AI Job Application Agent. I can explain the current workflow, navigation, reload behavior, and the difference between the generated outputs.",
                 sources=[current_page, "Upload Resume", "Manual JD Input"],
                 suggested_follow_ups=["How does the navigation work?", "What does Reload Saved Workspace do?"],
             )
         if "navigation" in normalized or "nav" in normalized or "tab" in normalized or "sidebar" in normalized:
             return AssistantResponse(
-                answer="The sidebar navigation is the main way to move through the product. Upload Resume is where you parse your resume, Job Search is the placeholder search entry, Manual JD Input is where you load and analyze the target role, and Saved Workspace lets you inspect the latest saved account snapshot. If you are signed in, the account panel can also expose Reload Saved Workspace to restore that saved state back into Manual JD Input.",
+                answer="The sidebar navigation is the main way to move through the product. Upload Resume is where you parse your resume, Job Search is the placeholder search entry, and Manual JD Input is where you load and analyze the target role. If you are signed in, the account panel also exposes Reload Workspace to restore your latest saved account snapshot directly into the JD flow.",
                 sources=["Upload Resume", "Job Search", "Manual JD Input"],
-                suggested_follow_ups=["What does Saved Workspace do?", "What does Reload Saved Workspace do?"],
+                suggested_follow_ups=["What does Reload Workspace do?", "What happens after I reload a saved workspace?"],
             )
         if "resume" in normalized and ("upload" in normalized or "where" in normalized):
             return AssistantResponse(
@@ -174,8 +174,8 @@ class AssistantService:
         if "difference" in normalized or ("report" in normalized and "resume" in normalized):
             return AssistantResponse(
                 answer="The tailored resume is the direct-use artifact, while the report explains the fit, strategy, review notes, and why the resume was shaped that way. You can preview both in the page before downloading either one.",
-                sources=["Tailored Resume Draft", "Application Package", "Combined Export"],
-                suggested_follow_ups=["Which one should I submit?", "Can I download both together?"],
+                sources=["Tailored Resume Draft", "Application Package"],
+                suggested_follow_ups=["Which one should I submit?", "Can I download the report as PDF?"],
             )
         if "template" in normalized or "theme" in normalized:
             return AssistantResponse(

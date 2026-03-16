@@ -9,7 +9,6 @@ from src.ui.components import (
 )
 from src.ui.navigation import render_sidebar
 from src.ui.pages import (
-    render_history_page,
     render_job_description_page,
     render_job_search_page,
     render_resume_page,
@@ -156,8 +155,6 @@ def main():
             render_job_search_page()
         elif menu == "Manual JD Input":
             render_job_description_page()
-        elif menu == "Saved Workspace":
-            render_history_page()
         else:
             raise InputValidationError("Unknown navigation target.")
     except ParsingError as error:
