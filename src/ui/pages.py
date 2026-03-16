@@ -49,6 +49,37 @@ def _format_remaining_capacity(remaining, limit):
     return str(remaining)
 
 
+def _simplify_model_name(model_name):
+    if not model_name:
+        return "Unknown"
+
+    replacements = {
+        "gpt-5-mini-2025-08-07": "GPT-5 Mini",
+        "gpt-5.4": "GPT-5.4",
+        "gpt-5": "GPT-5",
+    }
+
+    def normalize_single(value):
+        cleaned = value.strip()
+        if "[" in cleaned:
+            cleaned = cleaned.split("[", 1)[0].strip()
+        return replacements.get(cleaned, cleaned)
+
+    cleaned_name = model_name.strip()
+    if cleaned_name.startswith("routed(") and cleaned_name.endswith(")"):
+        routed_values = cleaned_name[len("routed("):-1]
+        normalized = []
+        seen = set()
+        for part in routed_values.split(","):
+            simplified = normalize_single(part)
+            if simplified and simplified not in seen:
+                normalized.append(simplified)
+                seen.add(simplified)
+        return "Routed: {names}".format(names=", ".join(normalized)) if normalized else "Routed"
+
+    return normalize_single(cleaned_name)
+
+
 def _render_openai_usage(usage):
     cols = st.columns(3)
     with cols[0]:
@@ -158,18 +189,21 @@ def _render_profile_snapshot(candidate_profile: CandidateProfile):
             "Profile Source",
             candidate_profile.source or "Unknown",
             "Profile data currently comes from the resume workflow.",
+            slim=True,
         )
     with cols[1]:
         render_metric_card(
             "Skills Available",
             str(len(candidate_profile.skills)),
             "Detected or imported skills available for matching.",
+            slim=True,
         )
     with cols[2]:
         render_metric_card(
             "Experience Entries",
             str(len(candidate_profile.experience)),
             "Structured experience depends on what the current resume exposes.",
+            slim=True,
         )
 
     with st.expander("Normalized Candidate Snapshot", expanded=False):
@@ -190,7 +224,6 @@ def render_resume_page():
     if resume_document:
         st.success(f"{resume_document.filetype} resume parsed successfully.")
         _render_profile_snapshot(candidate_profile_resume)
-        st.text_area("Extracted Resume Text", resume_document.text, height=320)
         if st.button("I have a job description"):
             _go_to("Manual JD Input")
 
@@ -213,7 +246,6 @@ def render_job_search_page():
             "Real provider integrations come after fit analysis and tailoring are stable.",
         )
 def _render_fit_snapshot(candidate_profile: CandidateProfile, fit_analysis: FitAnalysis, tailored_draft: TailoredResumeDraft):
-    st.markdown("---")
     summary_html = escape(
         tailored_draft.professional_summary or "No professional summary drafted yet."
     )
@@ -289,11 +321,12 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
             "Execution Mode",
             "OpenAI" if agent_result.mode == "openai" else ("Fallback After AI Attempt" if agent_result.attempted_assisted else "Fallback"),
             "Explicit model calls run only on button press.",
+            slim=True,
         )
     with cols[1]:
-        render_metric_card("Review Status", "Approved" if agent_result.review.approved else "Needs Revision", "The review agent is the final quality gate.")
+        render_metric_card("Review Status", "Approved" if agent_result.review.approved else "Needs Revision", "The review agent is the final quality gate.", slim=True)
     with cols[2]:
-        render_metric_card("Model", agent_result.model, "Fallback means deterministic logic only.", compact=True)
+        render_metric_card("Model", _simplify_model_name(agent_result.model), "Fallback means deterministic logic only.", slim=True)
 
     if agent_result.fallback_details:
         with st.expander("Fallback Details", expanded=False):
@@ -305,16 +338,6 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
         _render_list("Evidence Highlights", agent_result.profile.evidence_highlights, "No evidence highlights produced.")
         _render_list("Strengths", agent_result.profile.strengths, "No strengths produced.")
         _render_list("Job Messaging Guidance", agent_result.job.messaging_guidance, "No job messaging guidance produced.")
-
-    left_col, right_col = st.columns(2)
-    with left_col:
-        _render_list("Fit Summary", [agent_result.fit.fit_summary], "No fit summary produced.")
-        _render_list("Top Matches", agent_result.fit.top_matches, "No top matches produced.")
-        _render_list("Interview Themes", agent_result.fit.interview_themes, "No interview themes produced.")
-    with right_col:
-        _render_list("Rewritten Bullet Ideas", agent_result.tailoring.rewritten_bullets, "No rewritten bullets produced.")
-        _render_list("Highlighted Skills", agent_result.tailoring.highlighted_skills, "No highlighted skills produced.")
-        _render_list("Cover Letter Themes", agent_result.tailoring.cover_letter_themes, "No cover letter themes produced.")
 
     with st.expander("Application Strategy", expanded=False):
         st.markdown("**Recruiter Positioning**")
@@ -486,11 +509,11 @@ def render_job_description_page():
 
     cols = st.columns(3)
     with cols[0]:
-        render_metric_card("Target Role", job_description.title or "Unknown", "Structured title extracted from the JD.", dense=True)
+        render_metric_card("Target Role", job_description.title or "Unknown", "Structured title extracted from the JD.", dense=True, slim=True)
     with cols[1]:
-        render_metric_card("Hard Skills", str(len(job_description.requirements.hard_skills)), "Matched hard-skill keywords.", dense=True)
+        render_metric_card("Hard Skills", str(len(job_description.requirements.hard_skills)), "Matched hard-skill keywords.", dense=True, slim=True)
     with cols[2]:
-        render_metric_card("Soft Skills", str(len(job_description.requirements.soft_skills)), "Matched soft-skill keywords.", dense=True)
+        render_metric_card("Soft Skills", str(len(job_description.requirements.soft_skills)), "Matched soft-skill keywords.", dense=True, slim=True)
 
     candidate_profile = workflow_view_model.candidate_profile
     if not candidate_profile:

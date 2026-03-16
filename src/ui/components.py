@@ -21,13 +21,14 @@ def render_intro():
     )
 
 
-def render_metric_card(label, value, note, compact=False, dense=False):
+def render_metric_card(label, value, note, compact=False, dense=False, slim=False):
     compact_class = " metric-card-compact" if compact else ""
     dense_class = " metric-card-dense" if dense else ""
+    slim_class = " metric-card-slim" if slim else ""
     value_class = "metric-value metric-value-compact" if compact else "metric-value"
     st.markdown(
         f"""
-        <div class="metric-card{compact_class}{dense_class}">
+        <div class="metric-card{compact_class}{dense_class}{slim_class}">
             <div class="metric-label">{label}</div>
             <div class="{value_class}">{value}</div>
             <div class="metric-note">{note}</div>

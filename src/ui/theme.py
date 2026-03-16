@@ -115,6 +115,40 @@ def apply_theme():
                 font-size: 1.55rem;
                 line-height: 1.12;
             }
+            .metric-card-slim {
+                min-height: 76px;
+                padding: 0.62rem 0.72rem 0.58rem;
+                border-radius: 16px;
+            }
+            .metric-card-slim .metric-label {
+                font-size: 0.63rem;
+                margin-bottom: 0.16rem;
+                letter-spacing: 0.12em;
+            }
+            .metric-card-slim .metric-value {
+                font-size: 1.18rem;
+                line-height: 1.12;
+                margin-bottom: 0.18rem;
+            }
+            .metric-card-slim.metric-card-dense .metric-value {
+                font-size: 0.98rem;
+                line-height: 1.15;
+                min-height: 2.3em;
+                display: -webkit-box;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 2;
+                overflow: hidden;
+            }
+            .metric-card-slim .metric-value-compact {
+                font-size: 0.74rem;
+                line-height: 1.2;
+                font-weight: 700;
+            }
+            .metric-card-slim .metric-note {
+                font-size: 0.72rem;
+                line-height: 1.18;
+                min-height: 2.36em;
+            }
             .metric-value-compact {
                 font-size: 0.92rem;
                 line-height: 1.35;
@@ -339,12 +373,76 @@ def apply_theme():
                 border: 1px solid var(--accent-strong) !important;
             }
             .stExpander {
-                border: 1px solid var(--surface-line) !important;
+                border: 1px solid rgba(96, 165, 250, 0.16) !important;
                 border-radius: 18px !important;
-                background: #ffffff !important;
+                background: linear-gradient(180deg, rgba(5, 12, 24, 0.98), rgba(9, 20, 38, 0.98)) !important;
+                box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18);
                 overflow: hidden;
             }
-            .stExpander * { color: var(--ink) !important; }
+            .stExpander details {
+                background: transparent !important;
+            }
+            .stExpander summary {
+                background: #ffffff !important;
+                color: var(--ink) !important;
+                border-bottom: 1px solid rgba(20, 32, 51, 0.08) !important;
+            }
+            .stExpander summary:hover {
+                background: #f8fafc !important;
+            }
+            .stExpander summary *,
+            .stExpander summary svg,
+            .stExpander summary [data-testid="stIconMaterial"] {
+                color: var(--ink) !important;
+                fill: var(--ink) !important;
+                opacity: 1 !important;
+            }
+            .stExpander [data-testid="stExpanderDetails"],
+            .stExpander details > div {
+                padding: 0.75rem 0.8rem 0.85rem !important;
+                background: transparent !important;
+            }
+            .stExpander [data-testid="stExpanderDetails"] > div,
+            .stExpander details > div > div {
+                background: rgba(148, 163, 184, 0.07) !important;
+                border: 1px solid rgba(148, 163, 184, 0.14) !important;
+                border-radius: 16px !important;
+                padding: 0.9rem 1rem !important;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+            }
+            .stExpander label,
+            .stExpander p,
+            .stExpander div,
+            .stExpander span,
+            .stExpander li,
+            .stExpander h1,
+            .stExpander h2,
+            .stExpander h3,
+            .stExpander h4,
+            .stExpander h5,
+            .stExpander h6,
+            .stExpander strong {
+                color: #e7eefc !important;
+            }
+            .stExpander [data-testid="stExpanderDetails"] > div p,
+            .stExpander [data-testid="stExpanderDetails"] > div li,
+            .stExpander [data-testid="stExpanderDetails"] > div label,
+            .stExpander [data-testid="stExpanderDetails"] > div span,
+            .stExpander [data-testid="stExpanderDetails"] > div strong,
+            .stExpander details > div > div p,
+            .stExpander details > div > div li,
+            .stExpander details > div > div label,
+            .stExpander details > div > div span,
+            .stExpander details > div > div strong {
+                color: #dbe8ff !important;
+            }
+            .stExpander [data-testid="stMarkdownContainer"] code,
+            .stExpander pre,
+            .stExpander code {
+                background: rgba(15, 23, 42, 0.82) !important;
+                color: #e2e8f0 !important;
+                border-color: rgba(148, 163, 184, 0.16) !important;
+            }
             @media (max-width: 900px) {
                 .deterministic-draft-grid {
                     grid-template-columns: 1fr;

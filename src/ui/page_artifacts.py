@@ -287,93 +287,12 @@ def render_export_bundle_actions(
 
 def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_result: AgentWorkflowResult = None):
     st.markdown("---")
-    render_section_head(
-        "Tailored Resume Draft",
-        "A grounded, JD-aligned resume artifact the candidate can use directly or refine manually.",
-    )
-
     theme_options = list(RESUME_THEMES.keys())
     active_theme = _resolve_resume_theme_widget_value(artifact.theme, theme_options)
     themed_artifacts = {
         theme_name: _build_themed_resume_artifact(artifact, theme_name)
         for theme_name in theme_options
     }
-
-    cols = st.columns(3)
-    with cols[0]:
-        render_metric_card(
-            "Resume Mode",
-            "Agent-Enhanced" if agent_result else "Deterministic",
-            "Uses the current workflow outputs to generate a recruiter-facing tailored resume draft.",
-        )
-    with cols[1]:
-        render_metric_card(
-            "Template",
-            RESUME_THEMES.get(active_theme, {"label": active_theme})["label"],
-            RESUME_THEMES.get(active_theme, {"tagline": "Theme controls the deterministic layout and section rhythm of the export."})["tagline"],
-        )
-    with cols[2]:
-        render_metric_card(
-            "Validation Notes",
-            str(len(artifact.validation_notes)),
-            artifact.summary,
-        )
-
-    left_col, right_col = st.columns(2)
-    with left_col:
-        st.markdown("**Change Summary**")
-        if artifact.change_log:
-            for item in artifact.change_log:
-                st.markdown(f"- {item}")
-        else:
-            st.caption("No change summary available.")
-    with right_col:
-        st.markdown("**Validation Notes**")
-        if artifact.validation_notes:
-            for item in artifact.validation_notes:
-                st.markdown(f"- {item}")
-        else:
-            st.caption("No validation notes available.")
-
-    original_resume_text = get_active_candidate_profile().resume_text if get_active_candidate_profile() else ""
-    diff_metrics = build_resume_diff_metrics(original_resume_text, artifact.markdown)
-
-    metric_cols = st.columns(4)
-    with metric_cols[0]:
-        render_metric_card(
-            "Original Lines",
-            str(diff_metrics["original_line_count"]),
-            "Line count from the current parsed resume text.",
-        )
-    with metric_cols[1]:
-        render_metric_card(
-            "Tailored Lines",
-            str(diff_metrics["tailored_line_count"]),
-            "Line count in the generated tailored resume artifact.",
-        )
-    with metric_cols[2]:
-        render_metric_card(
-            "Added / Removed",
-            "{added}/{removed}".format(
-                added=diff_metrics["added_lines"],
-                removed=diff_metrics["removed_lines"],
-            ),
-            "Simple diff count to show how much content shifted.",
-        )
-    with metric_cols[3]:
-        render_metric_card(
-            "Similarity",
-            "{ratio}%".format(ratio=diff_metrics["similarity_ratio"]),
-            "Text-level similarity between the original input and tailored output.",
-        )
-
-    with st.expander("Preview Tailored Resume", expanded=True):
-        st.text_area(
-            "Tailored Resume Preview",
-            artifact.markdown,
-            height=420,
-            label_visibility="collapsed",
-        )
 
     st.markdown("**Template Gallery**")
     st.caption("Preview both resume variants below, then download the one you prefer. The active template is also used for the combined export bundle.")
