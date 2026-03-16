@@ -78,6 +78,16 @@ def _simplify_model_name(model_name):
     return normalize_single(cleaned_name)
 
 
+def _review_status_label(review):
+    if not review:
+        return "Unknown"
+    if review.approved and (getattr(review, "corrected_tailoring", None) or getattr(review, "corrected_strategy", None)):
+        return "Approved After Corrections"
+    if review.approved:
+        return "Approved"
+    return "Needs Revision"
+
+
 def _render_openai_usage(usage):
     cols = st.columns(3)
     with cols[0]:
@@ -215,6 +225,7 @@ def _render_profile_snapshot(candidate_profile: CandidateProfile):
 
 def render_resume_page():
     render_section_head("Resume Intake", "Parse an existing resume and keep it ready for tailoring.")
+    st.markdown("---")
     resume_document, candidate_profile_resume = get_resume_page_state()
     uploaded_file = st.file_uploader("Upload your resume file", type=["pdf", "docx", "txt"])
     if uploaded_file is not None:
@@ -271,20 +282,13 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
             slim=True,
         )
     with cols[1]:
-        render_metric_card("Review Status", "Approved" if agent_result.review.approved else "Needs Revision", "The review agent is the final quality gate.", slim=True)
+        render_metric_card("Review Status", _review_status_label(agent_result.review), "The review agent is the final quality gate on the final corrected output.", slim=True)
     with cols[2]:
         render_metric_card("Model", _simplify_model_name(agent_result.model), "Fallback means deterministic logic only.", slim=True)
 
     if agent_result.fallback_details:
         with st.expander("Fallback Details", expanded=False):
             st.code(agent_result.fallback_details)
-
-    with st.expander("Profile and Job Positioning", expanded=True):
-        st.markdown("**Profile Positioning Headline**")
-        st.write(agent_result.profile.positioning_headline or "No positioning headline produced.")
-        _render_list("Evidence Highlights", agent_result.profile.evidence_highlights, "No evidence highlights produced.")
-        _render_list("Strengths", agent_result.profile.strengths, "No strengths produced.")
-        _render_list("Job Messaging Guidance", agent_result.job.messaging_guidance, "No job messaging guidance produced.")
 
     with st.expander("Application Strategy", expanded=False):
         st.markdown("**Recruiter Positioning**")
@@ -293,27 +297,23 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
         else:
             st.caption("No recruiter positioning produced.")
         _render_list("Cover Letter Talking Points", agent_result.strategy.cover_letter_talking_points if agent_result.strategy else [], "No cover letter talking points produced.")
-        _render_list("Interview Preparation Themes", agent_result.strategy.interview_preparation_themes if agent_result.strategy else [], "No interview preparation themes produced.")
         _render_list("Portfolio / Project Emphasis", agent_result.strategy.portfolio_project_emphasis if agent_result.strategy else [], "No portfolio or project emphasis produced.")
 
     with st.expander("Review Notes", expanded=True):
         st.markdown("**Tailored Professional Summary**")
         st.write(agent_result.tailoring.professional_summary)
-        _render_list("Grounding Issues", agent_result.review.grounding_issues, "No grounding issues detected.")
-        _render_list("Revision Requests", agent_result.review.revision_requests, "No revisions requested.")
+        _render_list("Issues Found In Incoming Draft", agent_result.review.grounding_issues, "No grounding issues detected in the incoming draft.")
+        unresolved_issues = getattr(agent_result.review, "unresolved_issues", []) or []
+        if unresolved_issues:
+            _render_list("Unresolved Issues", unresolved_issues, "No unresolved issues remain.")
+        _render_list(
+            "Corrections Applied" if getattr(agent_result.review, "corrected_tailoring", None) or getattr(agent_result.review, "corrected_strategy", None) else "Revision Requests",
+            agent_result.review.revision_requests,
+            "No revisions requested.",
+        )
+        if getattr(agent_result.review, "corrected_tailoring", None) or getattr(agent_result.review, "corrected_strategy", None):
+            st.caption("Review corrections were applied directly to the final tailoring and strategy outputs.")
         _render_list("Final Notes", agent_result.review.final_notes, "No final notes produced.")
-
-    if agent_result.review_history:
-        with st.expander("Revision Pass History", expanded=False):
-            for pass_result in agent_result.review_history:
-                status = "Approved" if pass_result.review.approved else "Needs Revision"
-                st.markdown("**Pass {index}: {status}**".format(index=pass_result.pass_index, status=status))
-                st.write(pass_result.tailoring.professional_summary)
-                _render_list("Revision Requests", pass_result.review.revision_requests, "No revisions requested on this pass.")
-                _render_list("Grounding Issues", pass_result.review.grounding_issues, "No grounding issues detected on this pass.")
-                if pass_result.strategy:
-                    _render_list("Interview Preparation Themes", pass_result.strategy.interview_preparation_themes, "No interview themes produced on this pass.")
-                st.markdown("---")
 
 
 def _workflow_progress_palette(title):
@@ -433,8 +433,17 @@ def _run_supervised_workflow_with_progress(workflow_view_model):
 
 def render_job_description_page():
     render_section_head("Job Description Intake", "Load a target role and convert it into structured requirements.")
+    st.markdown("---")
     uploaded_jd = st.file_uploader("Upload Job Description", type=["pdf", "docx", "txt"])
-    pasted_text = st.text_area("Or paste the job description here", height=180, key="manual_jd_paste")
+    st.markdown(
+        """
+        <div class="intake-divider" aria-hidden="true">
+            <span>OR</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    pasted_text = st.text_area("Paste the job description here", height=180, key="manual_jd_paste")
 
     jd_text, jd_source = resolve_job_description_input(
         uploaded_jd=uploaded_jd,

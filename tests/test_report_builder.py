@@ -2,8 +2,6 @@ from src.report_builder import build_application_report
 from src.schemas import (
     AgentWorkflowResult,
     FitAgentOutput,
-    JobAgentOutput,
-    ProfileAgentOutput,
     ReviewAgentOutput,
     StrategyAgentOutput,
     TailoringAgentOutput,
@@ -88,23 +86,10 @@ def test_build_application_report_includes_agent_sections_when_available():
     agent_result = AgentWorkflowResult(
         mode="openai",
         model="gpt-test",
-        profile=ProfileAgentOutput(
-            positioning_headline="Applied AI engineer with grounded delivery evidence",
-            evidence_highlights=["Python delivery", "Production ML APIs"],
-            strengths=["Strong implementation evidence"],
-            cautions=["AWS is not directly evidenced"],
-        ),
-        job=JobAgentOutput(
-            requirement_summary="Production ML role.",
-            priority_skills=["Python", "SQL", "Docker", "AWS"],
-            must_have_themes=["Production ML systems"],
-            messaging_guidance=["Mirror implementation language from the JD."],
-        ),
         fit=FitAgentOutput(
             fit_summary="Strong fit overall with one cloud gap.",
             top_matches=["Python", "SQL", "Docker"],
             key_gaps=["AWS"],
-            interview_themes=["Production delivery"],
         ),
         tailoring=TailoringAgentOutput(
             professional_summary="Grounded tailored summary.",
@@ -115,12 +100,12 @@ def test_build_application_report_includes_agent_sections_when_available():
         strategy=StrategyAgentOutput(
             recruiter_positioning="Position the candidate as an implementation-first ML engineer.",
             cover_letter_talking_points=["Lead with production API delivery evidence."],
-            interview_preparation_themes=["Production delivery"],
             portfolio_project_emphasis=["Highlight shipped ML API work."],
         ),
         review=ReviewAgentOutput(
             approved=True,
             grounding_issues=[],
+            unresolved_issues=[],
             revision_requests=[],
             final_notes=["Grounded output."],
         ),
@@ -135,7 +120,44 @@ def test_build_application_report_includes_agent_sections_when_available():
     )
 
     assert "Review Status: Approved" in report.markdown
-    assert "Applied AI engineer with grounded delivery evidence" in report.markdown
     assert "Built production ML APIs using Python and Docker." in report.markdown
     assert "Position the candidate as an implementation-first ML engineer." in report.markdown
     assert "Grounded output." in report.plain_text
+
+
+def test_build_application_report_marks_approved_after_corrections():
+    candidate_profile = _build_profile()
+    job_description = _build_job()
+    fit_analysis = build_fit_analysis(candidate_profile, job_description)
+    tailored_draft = build_tailored_resume_draft(
+        candidate_profile,
+        job_description,
+        fit_analysis,
+    )
+    agent_result = AgentWorkflowResult(
+        mode="openai",
+        model="gpt-test",
+        fit=FitAgentOutput(fit_summary="Fit summary."),
+        tailoring=TailoringAgentOutput(professional_summary="Corrected summary."),
+        strategy=StrategyAgentOutput(recruiter_positioning="Corrected positioning."),
+        review=ReviewAgentOutput(
+            approved=True,
+            grounding_issues=["Original draft overstated regression experience."],
+            unresolved_issues=[],
+            revision_requests=["Replace unsupported regression references."],
+            final_notes=["Safe after correction."],
+            corrected_tailoring=TailoringAgentOutput(professional_summary="Corrected summary."),
+        ),
+    )
+
+    report = build_application_report(
+        candidate_profile,
+        job_description,
+        fit_analysis,
+        tailored_draft,
+        agent_result=agent_result,
+    )
+
+    assert "Review Status: Approved After Corrections" in report.markdown
+    assert "Issues Found In Incoming Draft" in report.markdown
+    assert "Unresolved Issues" in report.markdown

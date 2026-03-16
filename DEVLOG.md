@@ -258,6 +258,48 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Added `src/usage_store.py` to persist assisted usage events in Supabase Postgres for authenticated users.
 - Extended `src/openai_service.py` with an optional usage-event callback so persistence stays transport-agnostic.
 - Wired authenticated usage-event recording from `src/ui/workflow.py` without leaking Streamlit concerns into the service layer.
+
+## Day 18: Single-Pass Review-Correction Workflow
+
+- Removed the live `ProfileAgent` and `JobAgent` stages from the supervised workflow because they were mostly restating deterministic inputs without adding enough value for the latency cost.
+- Simplified the active orchestrator path to:
+  - fit
+  - tailoring
+  - strategy
+  - review
+  - resume generation
+- Removed the bounded rerun loop that previously sent tailoring and strategy back through another full pass after review.
+- Changed Review so it can return direct corrections for tailoring and strategy, and the orchestrator now feeds those corrected outputs straight into final resume generation.
+- Removed interview-theme style outputs that were adding contract size without being core to the current product output.
+- Updated the UI, payload layer, and report rendering so they reflect the smaller workflow and the direct-correction review model.
+- Verified the redesign with focused workflow, prompt, builder, and UI test coverage.
+
+## Day 19: Model Routing And Output Budget Tuning
+
+- Rebalanced reasoning effort by task based on real runtime logs instead of keeping one default posture for every agent.
+- Changed the active routing defaults to:
+  - `fit`: `gpt-5-mini-2025-08-07` with `low` reasoning
+  - `tailoring`: `gpt-5-mini-2025-08-07` with `medium` reasoning
+  - `strategy`: `gpt-5-mini-2025-08-07` with `low` reasoning
+  - `review`: `gpt-5.4` with `medium` reasoning
+  - `resume_generation`: `gpt-5.4` with `medium` reasoning
+- Increased the Review output budget to start at 4000 tokens so the stage does not immediately fall into retry-on-truncation for corrected JSON payloads.
+- Reduced oversized output caps where observed usage made the previous limits unnecessary:
+  - `fit`: 1600
+  - `strategy`: 1500
+  - `resume_generation`: 3000
+- Kept `tailoring` at 3200 and `review` at 4000 because they still carry the heaviest grounded payloads in the current flow.
+- Verified the new routing and cap defaults with targeted orchestration and OpenAI-service tests.
+
+## Day 20: Review Approval Semantics And Backward Compatibility
+
+- Clarified Review semantics so `approved` now means the final corrected output is safe to use, not that the incoming tailoring or strategy draft was perfect before correction.
+- Added `unresolved_issues` to the review contract so the app can distinguish between:
+  - issues found in the incoming draft
+  - blockers that still remain after correction
+- Updated UI and report labels to show `Approved After Corrections` when Review repaired the output successfully.
+- Added backward-compatible access patterns so older saved or in-memory `ReviewAgentOutput` objects without `unresolved_issues` do not crash the app.
+- Logged PDF-output quality as a follow-up documentation item because export aesthetics still need a dedicated pass even though workflow runtime is now much healthier.
 - Added the `usage_events` SQL schema and RLS policies in `docs/supabase-usage-events.sql`.
 - Kept assisted requests resilient: usage persistence failures are logged but do not break the user-facing AI response.
 

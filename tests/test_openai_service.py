@@ -261,14 +261,14 @@ def test_openai_service_can_disable_higher_output_budget_retry():
     assert len(client.responses.calls) == 1
 
 
-def test_openai_service_uses_high_reasoning_for_high_trust_tasks():
+def test_openai_service_uses_medium_reasoning_for_review_tasks():
     client = FakeClient([_build_response('{"approved": true}', response_id="resp_high")])
     service = OpenAIService(client=client)
 
     payload = service.run_json_prompt("system", "user", expected_keys=["approved"], task_name="review")
 
     assert payload["approved"] is True
-    assert client.responses.calls[0]["reasoning"] == {"effort": "high"}
+    assert client.responses.calls[0]["reasoning"] == {"effort": "medium"}
 
 
 def test_openai_service_uses_low_reasoning_for_product_help_tasks():

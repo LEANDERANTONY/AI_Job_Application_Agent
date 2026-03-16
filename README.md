@@ -25,17 +25,15 @@ The repository now follows the same product-style structure as the GitHub Portfo
 - Generate a deterministic fit snapshot against the active job description
 - Produce first-pass resume-tailoring guidance from grounded profile and JD signals
 - Run a supervised specialist-agent workflow on demand:
-  - profile
-  - job
   - fit
   - tailoring
   - strategy
   - review
   - resume generation
-- Run a bounded review-revision loop before the final resume artifact is generated
+- Let the review stage directly correct tailoring and strategy outputs before final resume generation instead of rerunning the full workflow loop
 - Use OpenAI when configured, with deterministic fallback when it is not
 - Route different assisted tasks to different model tiers instead of relying on one global model
-- Route GPT-5 reasoning effort by task, with medium effort for normal tasks and high effort for review, resume generation, and grounded application Q&A
+- Route GPT-5 reasoning effort by task, with low effort on fit and strategy, medium effort on tailoring, review, and final resume generation, and higher-trust routing kept for the final grounding stages
 - Use the OpenAI Responses API for assisted JSON generation and usage tracking
 - Build a tailored resume artifact from the current workflow state
 - Preview the tailored resume directly in the app before export
@@ -55,7 +53,7 @@ The repository now follows the same product-style structure as the GitHub Portfo
 
 ## Current Status
 
-The app is still an MVP, but it is now a coherent authenticated workflow product rather than only a deterministic prototype. Resume parsing, JD structuring, deterministic fit analysis, supervised specialist-agent orchestration, bounded review-driven revision, tailored resume generation, report generation, preview-before-download flows, export packaging, model-aware assisted routing, grounded in-app assistance, Google sign-in, persisted usage tracking, daily quotas, and 24-hour saved workspace reloads are all working.
+The app is still an MVP, but it is now a coherent authenticated workflow product rather than only a deterministic prototype. Resume parsing, JD structuring, deterministic fit analysis, supervised specialist-agent orchestration, direct review-driven correction, tailored resume generation, report generation, preview-before-download flows, export packaging, model-aware assisted routing, grounded in-app assistance, Google sign-in, persisted usage tracking, daily quotas, and 24-hour saved workspace reloads are all working.
 
 The active product scope is intentionally focused:
 
@@ -211,6 +209,22 @@ The current OpenAI Responses API integration also includes runtime safeguards fo
 - per-task reasoning-effort routing for GPT-5 models
 - one retry with a higher output-token budget when a response is incomplete because the original output budget was exhausted
 - longer client timeouts plus SDK retries to reduce transient read-timeout failures
+
+Current default assisted routing is intentionally asymmetric:
+
+- `fit`: GPT-5 Mini with `low` reasoning
+- `tailoring`: GPT-5 Mini with `medium` reasoning
+- `strategy`: GPT-5 Mini with `low` reasoning
+- `review`: GPT-5.4 with `medium` reasoning
+- `resume_generation`: GPT-5.4 with `medium` reasoning
+
+Current default output-token caps are also tuned by task rather than kept uniform:
+
+- `fit`: 1600
+- `tailoring`: 3200
+- `strategy`: 1500
+- `review`: 4000
+- `resume_generation`: 3000
 
 The current app also does not require Supabase for a first hosted deploy. If Supabase is not configured yet, the app can still run the non-authenticated product shell and deterministic workflow. Google sign-in, saved-workspace reloads, and account-level quotas remain inactive until Supabase is configured.
 

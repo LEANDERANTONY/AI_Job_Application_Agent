@@ -6,7 +6,20 @@ from src.errors import ExportError
 from src.exporters import build_report_preview_html, build_resume_preview_html, export_markdown_bytes
 from src.resume_builder import RESUME_THEMES
 from src.schemas import AgentWorkflowResult, ApplicationReport, TailoredResumeArtifact
-from src.ui.components import render_download_button, render_html_preview, render_metric_card, render_section_head
+from src.ui.components import (
+    render_auto_download,
+    render_download_button,
+    render_html_preview,
+    render_metric_card,
+    render_section_head,
+)
+from src.ui.state import (
+    consume_pending_browser_download,
+    get_pending_browser_download,
+    get_tailored_resume_theme,
+    set_pending_browser_download,
+    set_tailored_resume_theme,
+)
 from src.ui.workflow_signatures import report_signature
 from src.ui.workflow import (
     get_cached_pdf_package,
@@ -31,6 +44,48 @@ def _build_themed_resume_artifact(artifact: TailoredResumeArtifact, theme_name: 
             label=RESUME_THEMES.get(theme_name, {"label": theme_name})["label"]
         ),
     )
+
+
+def _resolve_resume_theme_widget_value(default_theme: str, available_themes: list[str]) -> str:
+    stored_theme = get_tailored_resume_theme(default_theme=default_theme)
+    if stored_theme in available_themes:
+        return stored_theme
+    set_tailored_resume_theme(default_theme)
+    return default_theme
+
+
+def _prepare_deferred_download(clicked: bool, cached_payload, prepare_callback) -> bool:
+    if not clicked or cached_payload is not None:
+        return False
+    prepare_callback()
+    return True
+
+
+def _queue_browser_download(target: str, data: bytes, file_name: str, mime: str) -> None:
+    set_pending_browser_download(
+        {
+            "target": target,
+            "data": data,
+            "file_name": file_name,
+            "mime": mime,
+        }
+    )
+
+
+def _render_pending_auto_download(target: str) -> bool:
+    pending_download = get_pending_browser_download()
+    if not pending_download or pending_download.get("target") != target:
+        return False
+
+    render_auto_download(
+        pending_download["data"],
+        pending_download["file_name"],
+        pending_download["mime"],
+        key="auto_download:{target}".format(target=target),
+    )
+    st.caption("Download starting...")
+    consume_pending_browser_download()
+    return True
 
 
 def _render_resume_variant_preview(artifact: TailoredResumeArtifact):
@@ -160,8 +215,10 @@ def render_tailored_resume_artifact(artifact: TailoredResumeArtifact, agent_resu
         for theme_name in theme_options
     }
 
-    st.markdown("**Template Gallery**")
-    st.caption("Preview both resume variants below, then download the one you prefer.")
+    render_section_head(
+        "Resume Preview",
+        "Preview both resume variants below, then download the one you prefer.",
+    )
     preview_tabs = st.tabs([RESUME_THEMES[theme_name]["label"] for theme_name in theme_options])
     for tab, theme_name in zip(preview_tabs, theme_options):
         with tab:

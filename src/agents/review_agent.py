@@ -11,7 +11,7 @@ from src.schemas import (
 )
 from src.services.profile_service import build_candidate_context_text
 
-from .common import coerce_bool, coerce_string_list, unique_strings
+from .common import coerce_bool, coerce_string, coerce_string_list, unique_strings
 
 
 class ReviewAgent:
@@ -44,17 +44,65 @@ class ReviewAgent:
                 task_name="review",
                 metadata=prompt.get("metadata"),
             )
-            return ReviewAgentOutput(
+            review_output = ReviewAgentOutput(
                 approved=coerce_bool(payload.get("approved")),
                 grounding_issues=coerce_string_list(
                     payload.get("grounding_issues"), limit=4
+                ),
+                unresolved_issues=coerce_string_list(
+                    payload.get("unresolved_issues"), limit=4
                 ),
                 revision_requests=coerce_string_list(
                     payload.get("revision_requests"), limit=4
                 ),
                 final_notes=coerce_string_list(payload.get("final_notes"), limit=3),
+                corrected_tailoring=self._coerce_tailoring_output(payload.get("corrected_tailoring")),
+                corrected_strategy=self._coerce_strategy_output(payload.get("corrected_strategy")),
             )
+            return self._normalize_review_output(review_output)
         return self._fallback(candidate_profile, fit_analysis, tailoring_output, strategy_output)
+
+    @staticmethod
+    def _normalize_review_output(review_output: ReviewAgentOutput) -> ReviewAgentOutput:
+        unresolved = unique_strings(review_output.unresolved_issues, limit=4)
+        corrected_anything = bool(
+            review_output.corrected_tailoring or review_output.corrected_strategy
+        )
+        approved = review_output.approved
+        if unresolved:
+            approved = False
+        elif corrected_anything:
+            approved = True
+        return ReviewAgentOutput(
+            approved=approved,
+            grounding_issues=unique_strings(review_output.grounding_issues, limit=4),
+            unresolved_issues=unresolved,
+            revision_requests=unique_strings(review_output.revision_requests, limit=4),
+            final_notes=unique_strings(review_output.final_notes, limit=3),
+            corrected_tailoring=review_output.corrected_tailoring,
+            corrected_strategy=review_output.corrected_strategy,
+        )
+
+    @staticmethod
+    def _coerce_tailoring_output(payload):
+        if not isinstance(payload, dict):
+            return None
+        return TailoringAgentOutput(
+            professional_summary=coerce_string(payload.get("professional_summary")),
+            rewritten_bullets=coerce_string_list(payload.get("rewritten_bullets"), limit=5),
+            highlighted_skills=coerce_string_list(payload.get("highlighted_skills"), limit=8),
+            cover_letter_themes=coerce_string_list(payload.get("cover_letter_themes"), limit=4),
+        )
+
+    @staticmethod
+    def _coerce_strategy_output(payload):
+        if not isinstance(payload, dict):
+            return None
+        return StrategyAgentOutput(
+            recruiter_positioning=coerce_string(payload.get("recruiter_positioning")),
+            cover_letter_talking_points=coerce_string_list(payload.get("cover_letter_talking_points"), limit=4),
+            portfolio_project_emphasis=coerce_string_list(payload.get("portfolio_project_emphasis"), limit=4),
+        )
 
     @staticmethod
     def _fallback(
@@ -71,7 +119,6 @@ class ReviewAgent:
                 " ".join(tailoring_output.cover_letter_themes),
                 strategy_output.recruiter_positioning if strategy_output else "",
                 " ".join(strategy_output.cover_letter_talking_points) if strategy_output else "",
-                " ".join(strategy_output.interview_preparation_themes) if strategy_output else "",
                 " ".join(strategy_output.portfolio_project_emphasis) if strategy_output else "",
             ]
         ).lower()
@@ -104,6 +151,9 @@ class ReviewAgent:
         return ReviewAgentOutput(
             approved=not grounding_issues,
             grounding_issues=unique_strings(grounding_issues, limit=4),
+            unresolved_issues=unique_strings(grounding_issues, limit=4),
             revision_requests=unique_strings(revision_requests, limit=4),
             final_notes=unique_strings(final_notes, limit=3),
+            corrected_tailoring=tailoring_output,
+            corrected_strategy=strategy_output,
         )

@@ -1,4 +1,9 @@
-from src.prompts import build_application_qa_assistant_prompt, build_fit_agent_prompt, build_strategy_agent_prompt
+from src.prompts import (
+    build_application_qa_assistant_prompt,
+    build_fit_agent_prompt,
+    build_review_agent_prompt,
+    build_strategy_agent_prompt,
+)
 
 
 def test_fit_prompt_compacts_large_sections_and_emits_budget_metadata():
@@ -21,15 +26,10 @@ def test_fit_prompt_compacts_large_sections_and_emits_budget_metadata():
         "strengths": ["D" * 900 for _ in range(6)],
         "gaps": ["E" * 900 for _ in range(6)],
     }
-    profile_output = {"evidence_highlights": ["F" * 800 for _ in range(5)]}
-    job_output = {"priority_skills": ["G" * 800 for _ in range(5)]}
-
     prompt = build_fit_agent_prompt(
         candidate_profile,
         job_description,
         fit_analysis,
-        profile_output,
-        job_output,
     )
 
     assert int(prompt["metadata"]["estimated_input_chars"]) == len(prompt["user"])
@@ -58,19 +58,33 @@ def test_product_help_prompt_mentions_retrieved_knowledge_hits():
     assert prompt
 
 
-def test_strategy_prompt_includes_revision_requests_and_previous_output():
+def test_strategy_prompt_uses_current_grounded_sections_only():
     prompt = build_strategy_agent_prompt(
         candidate_profile={"education": [{"degree": "Master of Science in AI/ML"}]},
         job_description={"title": "ML Engineer"},
         fit_analysis={"gaps": ["SQL"]},
-        profile_output={"positioning_headline": "Project-based ML candidate"},
         fit_output={"top_matches": ["Python", "XGBoost"]},
         tailoring_output={"professional_summary": "Project-focused summary."},
-        previous_strategy_output={"recruiter_positioning": "MS-trained ML practitioner."},
-        revision_requests=["Remove MS-trained unless the exact degree is explicitly evidenced."],
     )
 
-    assert "Previous Strategy Output" in prompt["user"]
-    assert "Revision Requests" in prompt["user"]
-    assert "MS-trained ML practitioner." in prompt["user"]
-    assert "mandatory constraints" in prompt["system"]
+    assert "Tailoring Agent Output" in prompt["user"]
+    assert "Fit Agent Output" in prompt["user"]
+    assert "Previous Strategy Output" not in prompt["user"]
+    assert "Revision Requests" not in prompt["user"]
+
+
+def test_review_prompt_allows_null_corrections_when_no_rewrite_is_needed():
+    prompt = build_review_agent_prompt(
+        candidate_profile={"summary": "Built dashboards and ML pipelines."},
+        job_description={"title": "ML Engineer"},
+        fit_analysis={"strengths": ["Python"]},
+        tailored_draft={"professional_summary": "Grounded draft."},
+        tailoring_output={"professional_summary": "Grounded summary."},
+        strategy_output={"recruiter_positioning": "Grounded positioning."},
+    )
+
+    assert "Return null for corrected_tailoring and corrected_strategy" in prompt["system"]
+    assert "null when no tailoring changes are needed" in prompt["system"]
+    assert "null when no strategy changes are needed" in prompt["system"]
+    assert "unresolved_issues" in prompt["system"]
+    assert "Approve when the final corrected wording stays grounded" in prompt["system"]

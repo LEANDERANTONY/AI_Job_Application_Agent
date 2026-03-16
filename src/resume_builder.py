@@ -157,7 +157,9 @@ def _build_validation_notes(
     if not candidate_profile.experience:
         notes.append("Experience sections are thin because the resume input exposed limited structured work history.")
     if agent_result and not agent_result.review.approved:
-        notes.extend(agent_result.review.revision_requests[:2])
+        unresolved_issues = getattr(agent_result.review, "unresolved_issues", []) or []
+        revision_requests = getattr(agent_result.review, "revision_requests", []) or []
+        notes.extend((unresolved_issues or revision_requests)[:2])
     if not notes:
         notes.append("Generated content stays grounded in the current resume profile and should still be reviewed before submission.")
     return dedupe_strings(notes)

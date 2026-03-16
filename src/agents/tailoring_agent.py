@@ -5,7 +5,6 @@ from src.schemas import (
     FitAnalysis,
     FitAgentOutput,
     JobDescription,
-    ProfileAgentOutput,
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
@@ -23,10 +22,7 @@ class TailoringAgent:
         job_description: JobDescription,
         fit_analysis: FitAnalysis,
         tailored_draft: TailoredResumeDraft,
-        profile_output: ProfileAgentOutput,
         fit_output: FitAgentOutput,
-        previous_tailoring_output: TailoringAgentOutput = None,
-        revision_requests=None,
     ) -> TailoringAgentOutput:
         if self._openai_service and self._openai_service.is_available():
             prompt = build_tailoring_agent_prompt(
@@ -34,10 +30,7 @@ class TailoringAgent:
                 job_description,
                 fit_analysis,
                 tailored_draft,
-                profile_output,
                 fit_output,
-                previous_tailoring_output=previous_tailoring_output,
-                revision_requests=revision_requests,
             )
             payload = self._openai_service.run_json_prompt(
                 prompt["system"],
@@ -57,33 +50,16 @@ class TailoringAgent:
                     payload.get("cover_letter_themes"), limit=4
                 ),
             )
-        return self._fallback(
-            tailored_draft,
-            fit_output,
-            previous_tailoring_output=previous_tailoring_output,
-            revision_requests=revision_requests,
-        )
+        return self._fallback(tailored_draft, fit_output)
 
     @staticmethod
     def _fallback(
         tailored_draft: TailoredResumeDraft,
         fit_output: FitAgentOutput,
-        previous_tailoring_output: TailoringAgentOutput = None,
-        revision_requests=None,
     ) -> TailoringAgentOutput:
         base_summary = tailored_draft.professional_summary
         rewritten_bullets = unique_strings(tailored_draft.priority_bullets, limit=5)
         highlighted_skills = unique_strings(tailored_draft.highlighted_skills, limit=8)
-        if previous_tailoring_output:
-            base_summary = previous_tailoring_output.professional_summary or base_summary
-            rewritten_bullets = unique_strings(
-                previous_tailoring_output.rewritten_bullets or rewritten_bullets,
-                limit=5,
-            )
-            highlighted_skills = unique_strings(
-                previous_tailoring_output.highlighted_skills or highlighted_skills,
-                limit=8,
-            )
 
         cover_letter_themes = []
         if fit_output.top_matches:
@@ -93,10 +69,6 @@ class TailoringAgent:
         if fit_output.key_gaps:
             cover_letter_themes.append(
                 "Acknowledge growth areas while emphasizing grounded adjacent evidence."
-            )
-        if revision_requests:
-            cover_letter_themes.append(
-                "Keep claims tightly grounded in verified experience and transferable evidence."
             )
 
         return TailoringAgentOutput(

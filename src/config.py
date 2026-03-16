@@ -42,12 +42,12 @@ OPENAI_MODEL_ROUTING = {
 OPENAI_REASONING_ROUTING = {
     "profile": os.getenv("OPENAI_REASONING_PROFILE", OPENAI_REASONING_DEFAULT).strip().lower(),
     "job": os.getenv("OPENAI_REASONING_JOB", OPENAI_REASONING_DEFAULT).strip().lower(),
-    "fit": os.getenv("OPENAI_REASONING_FIT", OPENAI_REASONING_DEFAULT).strip().lower(),
+    "fit": os.getenv("OPENAI_REASONING_FIT", "low").strip().lower(),
     "tailoring": os.getenv("OPENAI_REASONING_TAILORING", OPENAI_REASONING_DEFAULT).strip().lower(),
-    "strategy": os.getenv("OPENAI_REASONING_STRATEGY", OPENAI_REASONING_DEFAULT).strip().lower(),
-    "review": os.getenv("OPENAI_REASONING_REVIEW", OPENAI_REASONING_HIGH_TRUST).strip().lower(),
+    "strategy": os.getenv("OPENAI_REASONING_STRATEGY", "low").strip().lower(),
+    "review": os.getenv("OPENAI_REASONING_REVIEW", OPENAI_REASONING_DEFAULT).strip().lower(),
     "resume_generation": os.getenv(
-        "OPENAI_REASONING_RESUME_GENERATION", OPENAI_REASONING_HIGH_TRUST
+        "OPENAI_REASONING_RESUME_GENERATION", OPENAI_REASONING_DEFAULT
     ).strip().lower(),
     "assistant_product_help": os.getenv(
         "OPENAI_REASONING_PRODUCT_HELP", "low"
@@ -76,11 +76,11 @@ def _load_bool_env(name: str, default: bool = False):
 OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
     "profile": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PROFILE", 1800),
     "job": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_JOB", 1800),
-    "fit": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_FIT", 3200),
+    "fit": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_FIT", 1600),
     "tailoring": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_TAILORING", 3200),
-    "strategy": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_STRATEGY", 2500),
-    "review": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_REVIEW", 2000),
-    "resume_generation": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_GENERATION", 5000),
+    "strategy": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_STRATEGY", 1500),
+    "review": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_REVIEW", 4000),
+    "resume_generation": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_GENERATION", 3000),
     "assistant_product_help": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PRODUCT_HELP", 700),
     "assistant_application_qa": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
 }

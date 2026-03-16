@@ -3,8 +3,6 @@ from src.resume_builder import build_tailored_resume_artifact
 from src.schemas import (
     AgentWorkflowResult,
     FitAgentOutput,
-    JobAgentOutput,
-    ProfileAgentOutput,
     ResumeGenerationAgentOutput,
     ResumeDocument,
     ReviewAgentOutput,
@@ -91,23 +89,10 @@ def test_build_tailored_resume_artifact_prefers_agent_output_when_available():
     agent_result = AgentWorkflowResult(
         mode="openai",
         model="gpt-test",
-        profile=ProfileAgentOutput(
-            positioning_headline="Applied AI engineer with grounded delivery evidence",
-            evidence_highlights=["Python delivery", "Production ML APIs"],
-            strengths=["Strong implementation evidence"],
-            cautions=["AWS is not directly evidenced"],
-        ),
-        job=JobAgentOutput(
-            requirement_summary="Production ML role.",
-            priority_skills=["Python", "SQL", "Docker", "AWS"],
-            must_have_themes=["Production ML systems"],
-            messaging_guidance=["Mirror implementation language from the JD."],
-        ),
         fit=FitAgentOutput(
             fit_summary="Strong fit overall with one cloud gap.",
             top_matches=["Python", "SQL", "Docker"],
             key_gaps=["AWS"],
-            interview_themes=["Production delivery"],
         ),
         tailoring=TailoringAgentOutput(
             professional_summary="Agent-enhanced tailored summary.",
@@ -118,12 +103,12 @@ def test_build_tailored_resume_artifact_prefers_agent_output_when_available():
         strategy=StrategyAgentOutput(
             recruiter_positioning="Position the candidate as an implementation-first ML engineer.",
             cover_letter_talking_points=["Lead with production API delivery evidence."],
-            interview_preparation_themes=["Production delivery"],
             portfolio_project_emphasis=["Highlight shipped ML API work."],
         ),
         review=ReviewAgentOutput(
             approved=True,
             grounding_issues=[],
+            unresolved_issues=[],
             revision_requests=[],
             final_notes=["Grounded output."],
         ),
@@ -156,23 +141,10 @@ def test_build_tailored_resume_artifact_keeps_user_selected_theme_when_agent_hin
     agent_result = AgentWorkflowResult(
         mode="openai",
         model="gpt-test",
-        profile=ProfileAgentOutput(
-            positioning_headline="Applied AI engineer with grounded delivery evidence",
-            evidence_highlights=["Python delivery", "Production ML APIs"],
-            strengths=["Strong implementation evidence"],
-            cautions=["AWS is not directly evidenced"],
-        ),
-        job=JobAgentOutput(
-            requirement_summary="Production ML role.",
-            priority_skills=["Python", "SQL", "Docker", "AWS"],
-            must_have_themes=["Production ML systems"],
-            messaging_guidance=["Mirror implementation language from the JD."],
-        ),
         fit=FitAgentOutput(
             fit_summary="Strong fit overall with one cloud gap.",
             top_matches=["Python", "SQL", "Docker"],
             key_gaps=["AWS"],
-            interview_themes=["Production delivery"],
         ),
         tailoring=TailoringAgentOutput(
             professional_summary="Agent-enhanced tailored summary.",
@@ -183,12 +155,12 @@ def test_build_tailored_resume_artifact_keeps_user_selected_theme_when_agent_hin
         strategy=StrategyAgentOutput(
             recruiter_positioning="Position the candidate as an implementation-first ML engineer.",
             cover_letter_talking_points=["Lead with production API delivery evidence."],
-            interview_preparation_themes=["Production delivery"],
             portfolio_project_emphasis=["Highlight shipped ML API work."],
         ),
         review=ReviewAgentOutput(
             approved=True,
             grounding_issues=[],
+            unresolved_issues=[],
             revision_requests=[],
             final_notes=["Grounded output."],
         ),

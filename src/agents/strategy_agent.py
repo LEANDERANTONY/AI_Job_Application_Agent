@@ -5,7 +5,6 @@ from src.schemas import (
     FitAnalysis,
     FitAgentOutput,
     JobDescription,
-    ProfileAgentOutput,
     StrategyAgentOutput,
     TailoringAgentOutput,
 )
@@ -22,22 +21,16 @@ class StrategyAgent:
         candidate_profile: CandidateProfile,
         job_description: JobDescription,
         fit_analysis: FitAnalysis,
-        profile_output: ProfileAgentOutput,
         fit_output: FitAgentOutput,
         tailoring_output: TailoringAgentOutput,
-        previous_strategy_output: StrategyAgentOutput = None,
-        revision_requests=None,
     ) -> StrategyAgentOutput:
         if self._openai_service and self._openai_service.is_available():
             prompt = build_strategy_agent_prompt(
                 candidate_profile,
                 job_description,
                 fit_analysis,
-                profile_output,
                 fit_output,
                 tailoring_output,
-                previous_strategy_output=previous_strategy_output,
-                revision_requests=revision_requests,
             )
             payload = self._openai_service.run_json_prompt(
                 prompt["system"],
@@ -51,9 +44,6 @@ class StrategyAgent:
                 recruiter_positioning=coerce_string(payload.get("recruiter_positioning")),
                 cover_letter_talking_points=coerce_string_list(
                     payload.get("cover_letter_talking_points"), limit=4
-                ),
-                interview_preparation_themes=coerce_string_list(
-                    payload.get("interview_preparation_themes"), limit=4
                 ),
                 portfolio_project_emphasis=coerce_string_list(
                     payload.get("portfolio_project_emphasis"), limit=4
@@ -100,12 +90,6 @@ class StrategyAgent:
                 )
             )
 
-        interview_preparation_themes = list(fit_output.interview_themes[:3])
-        if not interview_preparation_themes:
-            interview_preparation_themes.append(
-                "Prepare grounded stories from recent work that map directly to the JD."
-            )
-
         portfolio_project_emphasis = []
         if candidate_profile.experience:
             for experience in candidate_profile.experience[:2]:
@@ -124,6 +108,5 @@ class StrategyAgent:
         return StrategyAgentOutput(
             recruiter_positioning=" ".join(unique_strings(recruiter_positioning_parts, limit=3)),
             cover_letter_talking_points=unique_strings(cover_letter_talking_points, limit=4),
-            interview_preparation_themes=unique_strings(interview_preparation_themes, limit=4),
             portfolio_project_emphasis=unique_strings(portfolio_project_emphasis, limit=4),
         )

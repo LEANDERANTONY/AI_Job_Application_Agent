@@ -34,8 +34,8 @@ MENU_COPY = {
 
 MENU_SHORT_LABELS = {
     "Upload Resume": "Resume",
-    "Job Search": "Jobs",
-    "Manual JD Input": "JD",
+    "Job Search": "Job Application",
+    "Manual JD Input": "Job Description",
 }
 
 

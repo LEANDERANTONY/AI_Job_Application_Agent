@@ -6,9 +6,7 @@ from src.schemas import (
     CandidateProfile,
     FitAnalysis,
     FitAgentOutput,
-    JobAgentOutput,
     JobDescription,
-    ProfileAgentOutput,
     ReviewAgentOutput,
     StrategyAgentOutput,
     TailoredResumeDraft,
@@ -186,28 +184,23 @@ def build_fit_agent_prompt(
     candidate_profile: CandidateProfile,
     job_description: JobDescription,
     fit_analysis: FitAnalysis,
-    profile_output: ProfileAgentOutput,
-    job_output: JobAgentOutput,
 ) -> Dict[str, Any]:
     contract = {
-        "fit_summary": "two to three sentence summary of fit",
+        "fit_summary": "two concise sentences summarizing fit",
         "top_matches": "array of 2-4 strongest grounded matches",
         "key_gaps": "array of 2-4 grounded gaps or risks",
-        "interview_themes": "array of 2-4 interview themes to prepare",
     }
     user_prompt, metadata = _build_budgeted_user_prompt(
         [
             ("Candidate Profile", candidate_profile, 2400),
             ("Job Description", job_description, 2200),
             ("Deterministic Fit Analysis", fit_analysis, 1800),
-            ("Profile Agent Output", profile_output, 1000),
-            ("Job Agent Output", job_output, 1000),
         ]
     )
     return {
         "system": (
             "You are the Fit Analysis Agent. Use the deterministic fit analysis as the primary signal, "
-            "and enrich it with concise grounded reasoning. Do not contradict explicit data. "
+            "and compress it into a recruiter-readable grounded summary. Do not contradict explicit data or restate obvious parser output. "
             + _build_contract(contract)
         ),
         "user": user_prompt,
@@ -221,10 +214,7 @@ def build_tailoring_agent_prompt(
     job_description: JobDescription,
     fit_analysis: FitAnalysis,
     tailored_draft: TailoredResumeDraft,
-    profile_output: ProfileAgentOutput,
     fit_output: FitAgentOutput,
-    previous_tailoring_output: TailoringAgentOutput = None,
-    revision_requests: Any = None,
 ) -> Dict[str, Any]:
     contract = {
         "professional_summary": "3-4 sentence tailored summary using only grounded claims",
@@ -237,19 +227,13 @@ def build_tailoring_agent_prompt(
         ("Job Description", job_description, 1800),
         ("Deterministic Fit Analysis", fit_analysis, 1600),
         ("Deterministic Tailored Draft", tailored_draft, 1800),
-        ("Profile Agent Output", profile_output, 1000),
         ("Fit Agent Output", fit_output, 1200),
     ]
-    if previous_tailoring_output:
-        sections.append(("Previous Tailoring Output", previous_tailoring_output, 1200))
-    if revision_requests:
-        sections.append(("Revision Requests", revision_requests, 900))
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (
             "You are the Tailoring Agent. Improve the deterministic draft without inventing facts. "
             "If evidence is weak, write conservatively and note transferable alignment instead of exaggerating. "
-            "When revision requests are provided, treat them as mandatory constraints and revise the prior tailoring output rather than repeating the same wording. "
             + _build_contract(contract)
         ),
         "user": user_prompt,
@@ -267,10 +251,13 @@ def build_review_agent_prompt(
     strategy_output: StrategyAgentOutput = None,
 ) -> Dict[str, Any]:
     contract = {
-        "approved": "boolean approval flag",
-        "grounding_issues": "array of 0-4 unsupported or weakly supported claims",
-        "revision_requests": "array of 0-4 concrete requested revisions",
+        "approved": "boolean flag that must be true when the final outputs are safe to use after applying any review corrections; false only when unresolved issues still remain after review",
+        "grounding_issues": "array of 0-4 unsupported or weakly supported claims found in the incoming tailoring or strategy draft before review corrections",
+        "unresolved_issues": "array of 0-4 issues that still remain after review corrections are applied; return an empty array when the corrected outputs are safe to use",
+        "revision_requests": "array of 0-4 concise correction notes or fixes that were needed",
         "final_notes": "array of 1-3 final quality notes",
+        "corrected_tailoring": "null when no tailoring changes are needed; otherwise an object matching the Tailoring Agent contract after review corrections are applied",
+        "corrected_strategy": "null when no strategy changes are needed; otherwise an object matching the Strategy Agent contract after review corrections are applied",
     }
     sections = [
         ("Candidate Profile", candidate_profile, 2000),
@@ -284,8 +271,11 @@ def build_review_agent_prompt(
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (
-            "You are the Review Agent. Your job is to reject embellishment and unsupported claims. "
-            "Approve only if the wording stays grounded in the source profile and deterministic analysis. "
+            "You are the Review Agent. Your job is to reject embellishment and unsupported claims, then directly repair the tailoring and strategy outputs when fixes are straightforward. "
+            "Approve when the final corrected wording stays grounded in the source profile and deterministic analysis, even if the incoming draft had issues that you fixed. "
+            "Set approved to false only when unresolved issues remain after your corrections. "
+            "Return null for corrected_tailoring and corrected_strategy when the current outputs are already acceptable or when no change is needed for that section. "
+            "Only return a corrected object for the specific section that actually needs a grounded rewrite. "
             + _build_contract(contract)
         ),
         "user": user_prompt,
@@ -298,36 +288,26 @@ def build_strategy_agent_prompt(
     candidate_profile: CandidateProfile,
     job_description: JobDescription,
     fit_analysis: FitAnalysis,
-    profile_output: ProfileAgentOutput,
     fit_output: FitAgentOutput,
     tailoring_output: TailoringAgentOutput,
-    previous_strategy_output: StrategyAgentOutput = None,
-    revision_requests: Any = None,
 ) -> Dict[str, Any]:
     contract = {
         "recruiter_positioning": "2-3 sentence recruiter-facing positioning guidance grounded in the inputs",
         "cover_letter_talking_points": "array of 2-4 grounded cover-letter talking points",
-        "interview_preparation_themes": "array of 2-4 interview themes to prepare with evidence",
         "portfolio_project_emphasis": "array of 2-4 portfolio or project emphasis suggestions grounded in the candidate profile",
     }
     sections = [
         ("Candidate Profile", candidate_profile, 2000),
         ("Job Description", job_description, 1600),
         ("Deterministic Fit Analysis", fit_analysis, 1500),
-        ("Profile Agent Output", profile_output, 1000),
         ("Fit Agent Output", fit_output, 1200),
         ("Tailoring Agent Output", tailoring_output, 1400),
     ]
-    if previous_strategy_output:
-        sections.append(("Previous Strategy Output", previous_strategy_output, 1200))
-    if revision_requests:
-        sections.append(("Revision Requests", revision_requests, 900))
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (
             "You are the Application Strategy Agent. Convert grounded fit and tailoring signals into downstream application guidance. "
             "Do not invent projects, experience, technologies, or recruiter claims that are not supported by the source profile. "
-            "When revision requests are provided, treat them as mandatory constraints and revise the previous strategy output instead of repeating rejected wording. "
             + _build_contract(contract)
         ),
         "user": user_prompt,
@@ -361,8 +341,6 @@ def build_resume_generation_agent_prompt(
     ]
     if strategy_output:
         sections.append(("Strategy Agent Output", strategy_output, 1100))
-    if review_output:
-        sections.append(("Review Agent Output", review_output, 1000))
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (

@@ -5,13 +5,17 @@ from typing import Callable, Optional
 from src.errors import AgentExecutionError
 from src.logging_utils import get_logger, log_event
 from src.openai_service import OpenAIService
-from src.schemas import AgentWorkflowResult, CandidateProfile, JobDescription, ReviewPassResult
+from src.schemas import (
+    AgentWorkflowResult,
+    CandidateProfile,
+    JobDescription,
+    JobAgentOutput,
+    ProfileAgentOutput,
+)
 from src.services.fit_service import build_fit_analysis
 from src.services.tailoring_service import build_tailored_resume_draft
 
 from .fit_agent import FitAgent
-from .job_agent import JobAgent
-from .profile_agent import ProfileAgent
 from .resume_generation_agent import ResumeGenerationAgent
 from .review_agent import ReviewAgent
 from .strategy_agent import StrategyAgent
@@ -140,13 +144,12 @@ class ApplicationOrchestrator:
         tailoring_agent = TailoringAgent(openai_service)
         review_agent = ReviewAgent(openai_service)
         strategy_agent = StrategyAgent(openai_service)
-        review_history = []
 
-        tailoring_output = None
-        strategy_output = None
+        final_tailoring_output = None
+        final_strategy_output = None
         review_output = None
         resume_generation_output = None
-        total_stage_count = 4 + ((max_revision_passes + 1) * 3)
+        total_stage_count = 5
         stage_index = 0
 
         def stage_progress(current_stage_index):
@@ -196,22 +199,6 @@ class ApplicationOrchestrator:
             return result
 
         begin_stage(
-            "Scout agent",
-            "Pulling out the strongest grounded proof points from your resume.",
-        )
-        profile_output = run_agent_step(
-            "profile",
-            lambda: ProfileAgent(openai_service).run(candidate_profile),
-        )
-        begin_stage(
-            "Signal agent",
-            "Translating the job description into clear hiring priorities.",
-        )
-        job_output = run_agent_step(
-            "job",
-            lambda: JobAgent(openai_service).run(job_description),
-        )
-        begin_stage(
             "Matchmaker agent",
             "Comparing both sides, scoring overlap, and flagging the real gaps.",
         )
@@ -221,91 +208,54 @@ class ApplicationOrchestrator:
                 candidate_profile,
                 job_description,
                 fit_analysis,
-                profile_output,
-                job_output,
             ),
         )
 
-        for pass_index in range(1, max_revision_passes + 2):
-            revision_requests = review_output.revision_requests if review_output else None
-            previous_tailoring_output = tailoring_output
-            previous_strategy_output = strategy_output
-            begin_stage(
-                "Forge agent",
-                "Rewriting pass {pass_index} so the draft sounds sharper for this exact role.".format(
-                    pass_index=pass_index
-                ),
-            )
-            tailoring_output = run_agent_step(
-                "tailoring",
-                lambda: tailoring_agent.run(
-                    candidate_profile,
-                    job_description,
-                    fit_analysis,
-                    tailored_draft,
-                    profile_output,
-                    fit_output,
-                    previous_tailoring_output=previous_tailoring_output,
-                    revision_requests=revision_requests,
-                ),
-                pass_index=pass_index,
-                revision_request_count=len(revision_requests or []),
-            )
-            begin_stage(
-                "Navigator agent",
-                "Shaping the recruiter story for pass {pass_index} so the pitch lands cleanly.".format(
-                    pass_index=pass_index
-                ),
-            )
-            strategy_output = run_agent_step(
-                "strategy",
-                lambda: strategy_agent.run(
-                    candidate_profile,
-                    job_description,
-                    fit_analysis,
-                    profile_output,
-                    fit_output,
-                    tailoring_output,
-                    previous_strategy_output=previous_strategy_output,
-                    revision_requests=revision_requests,
-                ),
-                pass_index=pass_index,
-            )
-            begin_stage(
-                "Gatekeeper agent",
-                "Reviewing pass {pass_index}; only the strongest work gets through.".format(
-                    pass_index=pass_index
-                ),
-            )
-            review_output = run_agent_step(
-                "review",
-                lambda: review_agent.run(
-                    candidate_profile,
-                    job_description,
-                    fit_analysis,
-                    tailored_draft,
-                    tailoring_output,
-                    strategy_output,
-                ),
-                pass_index=pass_index,
-            )
-            review_history.append(
-                ReviewPassResult(
-                    pass_index=pass_index,
-                    tailoring=tailoring_output,
-                    strategy=strategy_output,
-                    review=review_output,
-                )
-            )
-            if review_output.approved:
-                break
-            if pass_index <= max_revision_passes:
-                ApplicationOrchestrator._emit_progress(
-                    progress_callback,
-                    "Gatekeeper agent",
-                    "Sent it back for one more polish pass before approval.",
-                    min(96, stage_progress(stage_index) + 2),
-                )
+        begin_stage(
+            "Forge agent",
+            "Rewriting the draft so it speaks directly to this role.",
+        )
+        tailoring_output = run_agent_step(
+            "tailoring",
+            lambda: tailoring_agent.run(
+                candidate_profile,
+                job_description,
+                fit_analysis,
+                tailored_draft,
+                fit_output,
+            ),
+        )
+        begin_stage(
+            "Navigator agent",
+            "Shaping the recruiter story so the pitch lands cleanly.",
+        )
+        strategy_output = run_agent_step(
+            "strategy",
+            lambda: strategy_agent.run(
+                candidate_profile,
+                job_description,
+                fit_analysis,
+                fit_output,
+                tailoring_output,
+            ),
+        )
+        begin_stage(
+            "Gatekeeper agent",
+            "Reviewing the drafted outputs and applying grounded corrections.",
+        )
+        review_output = run_agent_step(
+            "review",
+            lambda: review_agent.run(
+                candidate_profile,
+                job_description,
+                fit_analysis,
+                tailored_draft,
+                tailoring_output,
+                strategy_output,
+            ),
+        )
+        final_tailoring_output = review_output.corrected_tailoring or tailoring_output
+        final_strategy_output = review_output.corrected_strategy or strategy_output
 
         begin_stage(
             "Builder agent",
@@ -318,8 +268,8 @@ class ApplicationOrchestrator:
                 job_description,
                 fit_analysis,
                 tailored_draft,
-                tailoring_output,
-                strategy_output,
+                final_tailoring_output,
+                final_strategy_output,
                 review_output,
             ),
             review_approved=review_output.approved if review_output else False,
@@ -332,7 +282,7 @@ class ApplicationOrchestrator:
             "Application orchestration completed.",
             mode=mode,
             model=model_name,
-            review_passes=len(review_history),
+            review_passes=1,
             approved=review_output.approved if review_output else False,
         )
 
@@ -346,14 +296,14 @@ class ApplicationOrchestrator:
         return AgentWorkflowResult(
             mode=mode,
             model=model_name,
-            profile=profile_output,
-            job=job_output,
             fit=fit_output,
-            tailoring=tailoring_output,
-            strategy=strategy_output,
+            tailoring=final_tailoring_output,
             review=review_output,
+            profile=ProfileAgentOutput(),
+            job=JobAgentOutput(),
+            strategy=final_strategy_output,
             resume_generation=resume_generation_output,
-            review_history=review_history,
+            review_history=[],
             attempted_assisted=attempted_assisted,
             fallback_reason=fallback_reason,
             fallback_details=fallback_details,

@@ -102,7 +102,7 @@ class TailoredResumeDraft:
 
 @dataclass
 class ProfileAgentOutput:
-    positioning_headline: str
+    positioning_headline: str = ""
     evidence_highlights: List[str] = field(default_factory=list)
     strengths: List[str] = field(default_factory=list)
     cautions: List[str] = field(default_factory=list)
@@ -110,7 +110,7 @@ class ProfileAgentOutput:
 
 @dataclass
 class JobAgentOutput:
-    requirement_summary: str
+    requirement_summary: str = ""
     priority_skills: List[str] = field(default_factory=list)
     must_have_themes: List[str] = field(default_factory=list)
     messaging_guidance: List[str] = field(default_factory=list)
@@ -118,15 +118,14 @@ class JobAgentOutput:
 
 @dataclass
 class FitAgentOutput:
-    fit_summary: str
+    fit_summary: str = ""
     top_matches: List[str] = field(default_factory=list)
     key_gaps: List[str] = field(default_factory=list)
-    interview_themes: List[str] = field(default_factory=list)
 
 
 @dataclass
 class TailoringAgentOutput:
-    professional_summary: str
+    professional_summary: str = ""
     rewritten_bullets: List[str] = field(default_factory=list)
     highlighted_skills: List[str] = field(default_factory=list)
     cover_letter_themes: List[str] = field(default_factory=list)
@@ -134,9 +133,8 @@ class TailoringAgentOutput:
 
 @dataclass
 class StrategyAgentOutput:
-    recruiter_positioning: str
+    recruiter_positioning: str = ""
     cover_letter_talking_points: List[str] = field(default_factory=list)
-    interview_preparation_themes: List[str] = field(default_factory=list)
     portfolio_project_emphasis: List[str] = field(default_factory=list)
 
 
@@ -153,8 +151,11 @@ class ResumeGenerationAgentOutput:
 class ReviewAgentOutput:
     approved: bool
     grounding_issues: List[str] = field(default_factory=list)
+    unresolved_issues: List[str] = field(default_factory=list)
     revision_requests: List[str] = field(default_factory=list)
     final_notes: List[str] = field(default_factory=list)
+    corrected_tailoring: Optional[TailoringAgentOutput] = None
+    corrected_strategy: Optional[StrategyAgentOutput] = None
 
 
 @dataclass
@@ -169,11 +170,11 @@ class ReviewPassResult:
 class AgentWorkflowResult:
     mode: str
     model: str
-    profile: ProfileAgentOutput
-    job: JobAgentOutput
     fit: FitAgentOutput
     tailoring: TailoringAgentOutput
     review: ReviewAgentOutput
+    profile: ProfileAgentOutput = field(default_factory=ProfileAgentOutput)
+    job: JobAgentOutput = field(default_factory=JobAgentOutput)
     strategy: Optional[StrategyAgentOutput] = None
     resume_generation: Optional[ResumeGenerationAgentOutput] = None
     review_history: List[ReviewPassResult] = field(default_factory=list)

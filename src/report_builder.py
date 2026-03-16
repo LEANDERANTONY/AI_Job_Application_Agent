@@ -11,6 +11,16 @@ from src.schemas import (
 from src.utils import markdown_to_text, render_markdown_list, safe_join_strings, slugify_text
 
 
+def _review_status_label(review) -> str:
+    if not review:
+        return "Unknown"
+    if review.approved and (getattr(review, "corrected_tailoring", None) or getattr(review, "corrected_strategy", None)):
+        return "Approved After Corrections"
+    if review.approved:
+        return "Approved"
+    return "Needs Revision"
+
+
 def _build_title(candidate_profile: CandidateProfile, job_description: JobDescription) -> str:
     candidate_name = candidate_profile.full_name or "Candidate"
     role = job_description.title or "Target Role"
@@ -164,9 +174,13 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
                 "## Supervised Workflow",
                 "",
                 "- Status: Not run",
-                "- Note: Run the supervised workflow to add profile positioning, fit narrative, tailored wording, and review notes.",
+                "- Note: Run the supervised workflow to add fit narrative, tailored wording, strategy guidance, and review notes.",
             ]
         )
+
+    unresolved_issues = getattr(agent_result.review, "unresolved_issues", []) or []
+    corrected_tailoring = getattr(agent_result.review, "corrected_tailoring", None)
+    corrected_strategy = getattr(agent_result.review, "corrected_strategy", None)
 
     return "\n".join(
         [
@@ -175,22 +189,7 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
             "- Mode: {value}".format(value=agent_result.mode),
             "- Model: {value}".format(value=agent_result.model),
             "- Review Status: {value}".format(
-                value="Approved" if agent_result.review.approved else "Needs Revision"
-            ),
-            "",
-            "### Profile Positioning",
-            agent_result.profile.positioning_headline or "No positioning headline produced.",
-            "",
-            "#### Evidence Highlights",
-            render_markdown_list(
-                agent_result.profile.evidence_highlights,
-                "No evidence highlights produced.",
-            ),
-            "",
-            "#### Job Messaging Guidance",
-            render_markdown_list(
-                agent_result.job.messaging_guidance,
-                "No messaging guidance produced.",
+                value=_review_status_label(agent_result.review)
             ),
             "",
             "### Fit Narrative",
@@ -201,12 +200,6 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
             "",
             "#### Key Gaps",
             render_markdown_list(agent_result.fit.key_gaps, "No key gaps produced."),
-            "",
-            "#### Interview Themes",
-            render_markdown_list(
-                agent_result.fit.interview_themes,
-                "No interview themes produced.",
-            ),
             "",
             "### Tailoring Output",
             agent_result.tailoring.professional_summary
@@ -235,12 +228,6 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
                 "No cover letter talking points produced.",
             ),
             "",
-            "#### Interview Preparation Themes",
-            render_markdown_list(
-                agent_result.strategy.interview_preparation_themes if agent_result.strategy else [],
-                "No interview preparation themes produced.",
-            ),
-            "",
             "#### Portfolio / Project Emphasis",
             render_markdown_list(
                 agent_result.strategy.portfolio_project_emphasis if agent_result.strategy else [],
@@ -248,17 +235,31 @@ def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
             ),
             "",
             "### Review Notes",
-            "#### Grounding Issues",
+            "#### Issues Found In Incoming Draft",
             render_markdown_list(
                 agent_result.review.grounding_issues,
-                "No grounding issues detected.",
+                "No grounding issues detected in the incoming draft.",
             ),
             "",
-            "#### Revision Requests",
+            "#### Unresolved Issues",
+            render_markdown_list(
+                unresolved_issues,
+                "No unresolved issues remain after review corrections.",
+            ),
+            "",
+            "#### {label}".format(
+                label="Corrections Applied" if corrected_tailoring or corrected_strategy else "Revision Requests"
+            ),
             render_markdown_list(
                 agent_result.review.revision_requests,
                 "No revisions requested.",
             ),
+            "",
+            "#### Corrected Tailoring Applied",
+            "Yes" if corrected_tailoring else "No direct corrections applied.",
+            "",
+            "#### Corrected Strategy Applied",
+            "Yes" if corrected_strategy else "No direct corrections applied.",
             "",
             "#### Final Notes",
             render_markdown_list(agent_result.review.final_notes, "No final notes produced."),
@@ -278,7 +279,9 @@ def _build_next_actions(
     if not agent_result:
         items.append("Run the supervised workflow before sharing or exporting the package.")
     elif not agent_result.review.approved:
-        items.extend(agent_result.review.revision_requests[:2])
+        unresolved_issues = getattr(agent_result.review, "unresolved_issues", []) or []
+        revision_requests = getattr(agent_result.review, "revision_requests", []) or []
+        items.extend((unresolved_issues or revision_requests)[:2])
     items.append("Export the package and use it to guide resume edits and recruiter outreach.")
     return "\n".join(
         [

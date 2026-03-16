@@ -249,18 +249,26 @@ Checkpoint:
 
 ## 18. Revision Loop
 
-Status: `Already implemented earlier`
+Status: `Superseded by later workflow simplification`
 
-Changes present in the current codebase:
+Earlier state:
 
-- `ApplicationOrchestrator` reruns tailoring, strategy, and review in a bounded revision loop
-- review feedback is injected back into `TailoringAgent.run(...)` as `revision_requests`
-- revision pass history is preserved on `review_history`
-- the loop is capped by `max_revision_passes`
+- `ApplicationOrchestrator` previously reran tailoring, strategy, and review in a bounded revision loop
+- review feedback was injected back into `TailoringAgent.run(...)` as `revision_requests`
+- revision pass history was preserved on `review_history`
+- the loop was capped by `max_revision_passes`
+
+Current state:
+
+- the bounded rerun loop was removed in favor of one single-pass workflow
+- Review now applies direct corrections to tailoring and strategy outputs instead of sending the whole flow through another pass
+- `review_history` remains only as a compatibility field, not as an active revision-loop record for the current live flow
 
 Current evidence:
 
 - `src/agents/orchestrator.py`
+- `src/agents/review_agent.py`
+- `docs/adr/ADR-010-single-pass-review-corrections-and-task-tuned-model-budgets.md`
 
 ## 19. Application Strategy Agent
 
@@ -269,7 +277,7 @@ Status: `Already implemented earlier`
 Changes present in the current codebase:
 
 - `StrategyAgent` exists as a first-class agent under `src/agents/strategy_agent.py`
-- the orchestrator runs it on each revision pass
+- the orchestrator runs it once in the active single-pass workflow
 - its output is included in workflow payloads, UI rendering, report generation, and resume generation context
 
 Current evidence:
@@ -484,6 +492,7 @@ Current state:
 
 These are the next practical checks to run in the app after the Supabase bootstrap update.
 
+0. Review the generated PDF outputs themselves and improve the visual/layout quality, because the current exported documents still look off even when the workflow data and runtime are behaving correctly.
 1. Sign in with a normal non-internal account and confirm the daily quota panel renders without warnings or silent fallback.
 2. Verify the saved workspace flow still works normally after the updated bootstrap SQL, including reload and download regeneration.
 3. Do one final spot-check with a normal non-internal account so the persisted quota panel, assisted run, and post-run quota refresh all behave correctly end to end.

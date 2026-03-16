@@ -384,10 +384,13 @@ def restore_latest_saved_workspace(auth_service=None):
     if saved_resume is not None and saved_resume.theme:
         set_tailored_resume_theme(saved_resume.theme)
     request_menu_navigation("Manual JD Input")
+    expires_at_display = str(saved_workspace.expires_at).replace("T", " ").replace("+00:00", "")
+    if "." in expires_at_display:
+        expires_at_display = expires_at_display.split(".", 1)[0]
     result = {
         "level": "success",
-        "message": "Reloaded your latest saved workspace. This save expires at {expires_at}.".format(
-            expires_at=saved_workspace.expires_at.replace("T", " ").replace("+00:00", " UTC")
+        "message": "Saved workspace reloaded. Expires at {expires_at} UTC.".format(
+            expires_at=expires_at_display.strip()
         ),
     }
     set_workspace_restore_notice(result)

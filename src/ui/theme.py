@@ -48,6 +48,13 @@ def apply_theme():
                 width: 0 !important;
                 border-right: none;
             }
+            [data-testid="collapsedControl"],
+            button[kind="header"][aria-label*="sidebar" i] {
+                display: none !important;
+            }
+            [data-testid="stSidebarCollapseButton"] {
+                display: flex !important;
+            }
             [data-testid="stSidebar"] * { color: var(--page-ink) !important; }
             .app-hero, .section-head, .metric-card {
                 background: #ffffff !important;
@@ -81,6 +88,13 @@ def apply_theme():
                 border-radius: 18px;
                 padding: 0.95rem 1rem;
                 margin-bottom: 0.8rem;
+            }
+            hr,
+            .stMarkdown hr,
+            [data-testid="stMarkdownContainer"] hr {
+                border: 0 !important;
+                border-top: 1px solid rgba(148, 163, 184, 0.22) !important;
+                margin: 0.9rem 0 !important;
             }
             .section-head h4 { margin: 0 0 0.2rem 0; color: var(--ink) !important; }
             .section-meta, .metric-note { color: var(--muted) !important; }
@@ -159,13 +173,13 @@ def apply_theme():
             .metric-note {
                 margin-top: auto;
             }
-            textarea[aria-label="Or paste the job description here"] {
+            textarea[aria-label="Paste the job description here"] {
                 background: linear-gradient(180deg, rgba(18, 28, 46, 0.98), rgba(22, 35, 58, 0.98)) !important;
                 color: #eef4ff !important;
                 border: 1px solid rgba(96, 165, 250, 0.18) !important;
                 box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
             }
-            textarea[aria-label="Or paste the job description here"]::placeholder {
+            textarea[aria-label="Paste the job description here"]::placeholder {
                 color: #c9daf8 !important;
             }
             .sidebar-card, .narrative-panel {
@@ -364,14 +378,60 @@ def apply_theme():
                 margin: 0;
                 padding-left: 1.2rem;
             }
-            div[data-testid="stTextArea"]:has(textarea[aria-label="Or paste the job description here"]) {
+            div[data-testid="stFileUploader"] {
+                background: linear-gradient(180deg, rgba(5, 12, 24, 0.98), rgba(9, 20, 38, 0.98)) !important;
+                border: 1px solid rgba(96, 165, 250, 0.16) !important;
+                border-radius: 18px !important;
+                padding: 0.8rem !important;
+                box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18) !important;
+                margin-bottom: 0.95rem !important;
+            }
+            div[data-testid="stFileUploader"] [data-testid="stWidgetLabel"] {
+                color: #f8fbff !important;
+                font-weight: 700 !important;
+                margin-bottom: 0.65rem !important;
+            }
+            div[data-testid="stFileUploader"] section {
+                background: rgba(148, 163, 184, 0.08) !important;
+                border: 1px solid rgba(148, 163, 184, 0.14) !important;
+                border-radius: 14px !important;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+                padding: 0.35rem !important;
+            }
+            div[data-testid="stFileUploader"] section button {
+                border-radius: 12px !important;
+            }
+            div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] > div,
+            div[data-testid="stFileUploader"] small {
+                color: #dbe8ff !important;
+            }
+            .intake-divider {
+                display: flex;
+                align-items: center;
+                gap: 0.85rem;
+                margin: 0.25rem 0 0.9rem;
+            }
+            .intake-divider::before,
+            .intake-divider::after {
+                content: "";
+                flex: 1 1 auto;
+                height: 1px;
+                background: rgba(148, 163, 184, 0.26);
+            }
+            .intake-divider span {
+                color: #93c5fd !important;
+                font-size: 0.76rem;
+                font-weight: 700;
+                letter-spacing: 0.16em;
+            }
+            div[data-testid="stTextArea"]:has(textarea[aria-label="Paste the job description here"]) {
                 background: linear-gradient(180deg, rgba(5, 12, 24, 0.98), rgba(9, 20, 38, 0.98)) !important;
                 border: 1px solid rgba(96, 165, 250, 0.16) !important;
                 border-radius: 18px !important;
                 padding: 0.8rem !important;
                 box-shadow: 0 18px 34px rgba(0, 0, 0, 0.18) !important;
             }
-            div[data-testid="stTextArea"]:has(textarea[aria-label="Or paste the job description here"]) textarea {
+            div[data-testid="stTextArea"]:has(textarea[aria-label="Paste the job description here"]) textarea {
                 background: rgba(148, 163, 184, 0.08) !important;
                 color: #eef4ff !important;
                 border: 1px solid rgba(148, 163, 184, 0.14) !important;
@@ -379,7 +439,7 @@ def apply_theme():
                 border-radius: 14px !important;
                 padding: 0.95rem 1rem !important;
             }
-            div[data-testid="stTextArea"]:has(textarea[aria-label="Or paste the job description here"]) textarea::placeholder {
+            div[data-testid="stTextArea"]:has(textarea[aria-label="Paste the job description here"]) textarea::placeholder {
                 color: #c9daf8 !important;
             }
             .stTextInput input, .stTextArea textarea, div[data-baseweb="input"] input, div[data-baseweb="select"] > div {

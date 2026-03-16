@@ -363,7 +363,6 @@ def _build_fit_output(payload: dict):
         fit_summary=str(payload.get("fit_summary", "") or ""),
         top_matches=[str(item) for item in payload.get("top_matches", []) or []],
         key_gaps=[str(item) for item in payload.get("key_gaps", []) or []],
-        interview_themes=[str(item) for item in payload.get("interview_themes", []) or []],
     )
 
 
@@ -382,7 +381,6 @@ def _build_strategy_output(payload):
     return StrategyAgentOutput(
         recruiter_positioning=str(payload.get("recruiter_positioning", "") or ""),
         cover_letter_talking_points=[str(item) for item in payload.get("cover_letter_talking_points", []) or []],
-        interview_preparation_themes=[str(item) for item in payload.get("interview_preparation_themes", []) or []],
         portfolio_project_emphasis=[str(item) for item in payload.get("portfolio_project_emphasis", []) or []],
     )
 
@@ -391,8 +389,11 @@ def _build_review_output(payload: dict):
     return ReviewAgentOutput(
         approved=bool(payload.get("approved", False)),
         grounding_issues=[str(item) for item in payload.get("grounding_issues", []) or []],
+        unresolved_issues=[str(item) for item in payload.get("unresolved_issues", []) or []],
         revision_requests=[str(item) for item in payload.get("revision_requests", []) or []],
         final_notes=[str(item) for item in payload.get("final_notes", []) or []],
+        corrected_tailoring=_build_tailoring_output(payload.get("corrected_tailoring") or {}) if payload.get("corrected_tailoring") else None,
+        corrected_strategy=_build_strategy_output(payload.get("corrected_strategy")),
     )
 
 

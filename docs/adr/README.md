@@ -11,6 +11,7 @@ This directory tracks the architectural decisions that shape the AI Job Applicat
 - [ADR-007: Remove LinkedIn import from active product scope](ADR-007-remove-linkedin-import-from-active-product-scope.md)
 - [ADR-008: Two-mode grounded assistant panel](ADR-008-two-mode-grounded-assistant-panel.md)
 - [ADR-009: Google sign-in via Supabase for persistent identity](ADR-009-google-sign-in-via-supabase-for-persistent-identity.md)
+- [ADR-010: Single-pass review corrections and task-tuned model budgets](ADR-010-single-pass-review-corrections-and-task-tuned-model-budgets.md)
 
 ## Superseded
 

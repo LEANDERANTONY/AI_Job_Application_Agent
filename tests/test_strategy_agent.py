@@ -37,7 +37,6 @@ def test_strategy_agent_fallback_returns_grounded_sections():
         fit_summary="Strong fit overall with one visible cloud gap.",
         top_matches=["Python", "SQL", "Docker"],
         key_gaps=["AWS"],
-        interview_themes=["Production delivery", "Cross-team communication"],
     )
 
     result = StrategyAgent()._fallback(
@@ -49,7 +48,6 @@ def test_strategy_agent_fallback_returns_grounded_sections():
 
     assert "Machine Learning Engineer" in result.recruiter_positioning
     assert result.cover_letter_talking_points
-    assert result.interview_preparation_themes
     assert result.portfolio_project_emphasis
 
 
@@ -61,7 +59,6 @@ def test_strategy_agent_run_uses_openai_payload_when_available():
         fit_summary="Strong fit overall.",
         top_matches=["Python", "SQL"],
         key_gaps=["AWS"],
-        interview_themes=["Delivery"],
     )
     captured = {}
 
@@ -76,6 +73,7 @@ def test_strategy_agent_run_uses_openai_payload_when_available():
             expected_keys=None,
             max_completion_tokens=None,
             task_name=None,
+            metadata=None,
         ):
             captured["task_name"] = task_name
             captured["expected_keys"] = expected_keys
@@ -83,7 +81,6 @@ def test_strategy_agent_run_uses_openai_payload_when_available():
             return {
                 "recruiter_positioning": "Position the candidate around delivery strength.",
                 "cover_letter_talking_points": ["Lead with delivery outcomes", "Lead with delivery outcomes"],
-                "interview_preparation_themes": ["Delivery", "Architecture"],
                 "portfolio_project_emphasis": ["Platform APIs", "Platform APIs"],
             }
 
@@ -91,7 +88,6 @@ def test_strategy_agent_run_uses_openai_payload_when_available():
         candidate_profile,
         job_description,
         fit_analysis,
-        profile_output=None,
         fit_output=fit_output,
         tailoring_output=TailoringAgentOutput(
             professional_summary="Summary",
@@ -104,5 +100,4 @@ def test_strategy_agent_run_uses_openai_payload_when_available():
     assert captured["task_name"] == "strategy"
     assert captured["max_completion_tokens"] == 2500
     assert result.cover_letter_talking_points == ["Lead with delivery outcomes"]
-    assert result.interview_preparation_themes == ["Delivery", "Architecture"]
     assert result.portfolio_project_emphasis == ["Platform APIs"]
