@@ -86,14 +86,14 @@ def extract_job_details(text):
         re.IGNORECASE,
     )
     experience_match = re.search(
-        r"(\d+\+?\s*(?:years?|yrs?)(?:\s+of)?\s+experience)",
+        r"((?:required experience\s*[:\-]?\s*)?\d+\+?\s*(?:years?|yrs?)(?:\s+(?:of|in))?\s+(?:experience|[a-z][^\n,.;]{0,80}))",
         text,
         re.IGNORECASE,
     )
     return {
         "title": title,
         "location": location_match.group(1).strip() if location_match else None,
-        "experience_required": experience_match.group(1).strip()
+        "experience_required": re.sub(r"^required experience\s*[:\-]?\s*", "", experience_match.group(1).strip(), flags=re.IGNORECASE)
         if experience_match
         else None,
         "skills": match_keywords(body_text, HARD_SKILL_KEYWORDS),

@@ -11,6 +11,8 @@ def _extract_requirement_lines(cleaned_text: str, markers: Iterable[str]) -> Lis
     for line in cleaned_text.splitlines():
         normalized_line = line.strip()
         lowered = normalized_line.lower()
+        if lowered.startswith("location:"):
+            continue
         if normalized_line and any(marker in lowered for marker in markers):
             matches.append(normalized_line)
     return dedupe_strings(matches[:5])

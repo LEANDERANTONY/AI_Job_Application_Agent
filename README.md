@@ -22,6 +22,7 @@ The repository now follows the same product-style structure as the GitHub Portfo
   - hard skills
   - soft skills
   - must-have and nice-to-have requirement lines
+- Handle more real-world JD phrasing deterministically, including `Required Experience:` variants, while avoiding obvious requirement-bucket pollution from location lines
 - Generate a deterministic fit snapshot against the active job description
 - Produce first-pass resume-tailoring guidance from grounded profile and JD signals
 - Run a supervised specialist-agent workflow on demand:
@@ -59,6 +60,11 @@ The active product scope is intentionally focused:
 
 - resume plus JD in
 - grounded tailored resume plus application package out
+
+Recent deterministic parser hardening kept in the current baseline:
+
+- resume parsing remains hardened against real PDF fixtures from the demo set
+- JD parsing is validated against real TXT, PDF, and DOCX sample descriptions in `static/demo_job_description/`
 
 Google sign-in is integrated alongside persisted per-user usage tracking, plan-based daily quotas, and a single reloadable saved workspace backed by Supabase Postgres. Each successful workflow run overwrites the prior saved workspace for that user, and the saved workspace expires after 24 hours by default.
 

@@ -259,6 +259,16 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Extended `src/openai_service.py` with an optional usage-event callback so persistence stays transport-agnostic.
 - Wired authenticated usage-event recording from `src/ui/workflow.py` without leaking Streamlit concerns into the service layer.
 
+## Day 18: Deterministic JD Parsing Re-baseline
+
+- Reverted the experimental resume/JD parser-verifier agent layer and returned intake parsing to the deterministic path.
+- Kept the deterministic JD parsing improvements that were useful on their own:
+  - broader extraction for `Required Experience:` style phrasing
+  - filtering `Location:` lines out of preferred / nice-to-have buckets
+  - real fixture coverage for JD PDF and DOCX samples already stored under `static/demo_job_description/`
+- Verified the rollback plus retained parser improvements with:
+  - `uv run pytest tests/test_profile_service.py tests/test_job_service.py tests/test_jd_parser.py tests/test_resume_parser.py tests/test_orchestrator.py`
+
 ## Day 18: Single-Pass Review-Correction Workflow
 
 - Removed the live `ProfileAgent` and `JobAgent` stages from the supervised workflow because they were mostly restating deterministic inputs without adding enough value for the latency cost.
