@@ -7,7 +7,7 @@ from src.config import (
 )
 from src.errors import InputValidationError
 from src.schemas import AgentWorkflowResult, CandidateProfile, FitAnalysis, TailoredResumeDraft
-from src.ui.components import render_metric_card, render_page_divider, render_section_head
+from src.ui.components import render_agent_brief, render_metric_card, render_page_divider, render_section_head
 from src.ui.page_artifacts import (
     render_cover_letter_artifact as _render_cover_letter_artifact,
     render_report_package as _render_report_package,
@@ -18,6 +18,7 @@ from src.ui.state import (
     request_menu_navigation,
 )
 from src.ui.workflow import (
+    build_ai_session_view_model,
     build_application_report_view_model,
     build_cover_letter_artifact_view_model,
     build_job_workflow_view_model,
@@ -237,10 +238,19 @@ def render_resume_page():
         )
         return
 
+    ai_session = build_ai_session_view_model()
+    render_agent_brief(
+        "Resume parser agent",
+        "Verifies the structured profile against your resume before the workflow uses it.",
+        "It keeps the deterministic parse when the text is ambiguous and only makes small grounded corrections to fields like name, contacts, experience, education, and certifications.",
+    )
     resume_document, candidate_profile_resume = get_resume_page_state()
     uploaded_file = st.file_uploader("Upload your resume file", type=["pdf", "docx", "txt"])
     if uploaded_file is not None:
-        resume_document, candidate_profile_resume = use_uploaded_resume(uploaded_file)
+        resume_document, candidate_profile_resume = use_uploaded_resume(
+            uploaded_file,
+            openai_service=ai_session.openai_service,
+        )
     if resume_document:
         st.success(f"{resume_document.filetype} resume parsed successfully.")
         _render_profile_snapshot(candidate_profile_resume)
@@ -436,6 +446,12 @@ def _run_supervised_workflow_with_progress(workflow_view_model):
 def render_job_description_page():
     render_page_divider()
     render_section_head("Job Description Intake", "Load a target role and convert it into structured requirements.")
+    ai_session = build_ai_session_view_model()
+    render_agent_brief(
+        "JD parser agent",
+        "Verifies the structured JD parse before fit analysis starts.",
+        "It checks the parsed role, requirements, skills, location, and experience signals against the source job description and makes only grounded corrections.",
+    )
     uploaded_jd = st.file_uploader("Upload Job Description", type=["pdf", "docx", "txt"])
     st.markdown(
         """
@@ -455,7 +471,12 @@ def render_job_description_page():
 
     st.caption(f"JD Source: {jd_source if jd_text else 'None'}")
     st.markdown("---")
-    workflow_view_model = build_job_workflow_view_model(jd_text, jd_source)
+    workflow_view_model = build_job_workflow_view_model(
+        jd_text,
+        jd_source,
+        openai_service=ai_session.openai_service,
+        ai_session=ai_session,
+    )
     if not workflow_view_model.job_description:
         return
 

@@ -67,16 +67,22 @@ def _coerce_candidate_profile(candidate_profile):
     )
 
 
-def use_sample_resume(filename):
+def use_sample_resume(filename, openai_service=None):
     resume_document = _load_sample_resume(filename)
-    candidate_profile_resume = build_candidate_profile_from_resume(resume_document)
+    candidate_profile_resume = build_candidate_profile_from_resume(
+        resume_document,
+        openai_service=openai_service,
+    )
     store_resume_intake(resume_document, candidate_profile_resume)
     return resume_document, candidate_profile_resume
 
 
-def use_uploaded_resume(uploaded_file):
+def use_uploaded_resume(uploaded_file, openai_service=None):
     resume_document = parse_resume_document(uploaded_file)
-    candidate_profile_resume = build_candidate_profile_from_resume(resume_document)
+    candidate_profile_resume = build_candidate_profile_from_resume(
+        resume_document,
+        openai_service=openai_service,
+    )
     store_resume_intake(resume_document, candidate_profile_resume)
     return resume_document, candidate_profile_resume
 

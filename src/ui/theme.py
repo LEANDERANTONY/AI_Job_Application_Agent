@@ -460,6 +460,50 @@ def apply_theme():
                 font-weight: 700;
                 letter-spacing: 0.16em;
             }
+            .parser-agent-brief {
+                position: relative;
+                overflow: hidden;
+                border: 1px solid rgba(20, 32, 51, 0.12);
+                border-radius: 18px;
+                background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(239,246,255,0.96));
+                padding: 0.95rem 1rem 0.95rem 1.05rem;
+                margin: 0 0 0.8rem 0;
+                box-shadow: 0 16px 34px rgba(0, 0, 0, 0.14);
+            }
+            .parser-agent-brief::before {
+                content: "";
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 4px;
+                background: #2563eb;
+            }
+            .parser-agent-pill {
+                display: inline-flex;
+                align-items: center;
+                border-radius: 999px;
+                padding: 0.25rem 0.55rem;
+                background: rgba(37, 99, 235, 0.10);
+                color: #1d4ed8 !important;
+                font-size: 0.74rem;
+                font-weight: 700;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                margin-bottom: 0.45rem;
+            }
+            .parser-agent-title {
+                font-size: 0.97rem;
+                line-height: 1.35;
+                color: var(--ink) !important;
+                font-weight: 700;
+                margin-bottom: 0.18rem;
+            }
+            .parser-agent-copy {
+                font-size: 0.92rem;
+                line-height: 1.45;
+                color: var(--muted) !important;
+            }
             div[data-testid="stTextArea"]:has(textarea[aria-label="Paste the job description here"]) {
                 background: linear-gradient(180deg, rgba(5, 12, 24, 0.98), rgba(9, 20, 38, 0.98)) !important;
                 border: 1px solid rgba(96, 165, 250, 0.16) !important;

@@ -8,6 +8,46 @@ from src.services.profile_service import (
 )
 
 
+class FakeResumeParserOpenAIService:
+    @staticmethod
+    def is_available():
+        return True
+
+    @staticmethod
+    def run_json_prompt(system_prompt, user_prompt, expected_keys=None, **kwargs):
+        return {
+            "full_name": "Leander Antony A",
+            "location": "Chennai, India",
+            "contact_lines": [
+                "antony.leander@gmail.com",
+                "+91 8610317213",
+                "https://github.com/LEANDERANTONY",
+            ],
+            "skills": ["Python", "SQL", "Docker"],
+            "experience": [
+                {
+                    "title": "Machine Learning Engineer",
+                    "organization": "Project Portfolio",
+                    "location": "",
+                    "description": "Built ML services.",
+                    "start": "",
+                    "end": "",
+                }
+            ],
+            "education": [
+                {
+                    "institution": "Liverpool John Moores University",
+                    "degree": "Master of Science in AI/ML",
+                    "field_of_study": "",
+                    "start": "Jan 2025",
+                    "end": "Jan 2026",
+                }
+            ],
+            "certifications": ["Python 3 Programming Specialization"],
+            "verification_notes": ["Corrected name from the resume header."],
+        }
+
+
 def test_build_candidate_profile_from_resume_extracts_core_signals():
     document = ResumeDocument(
         text=(
@@ -45,6 +85,32 @@ def test_build_candidate_context_text_uses_resume_fields_only():
 
     assert "Leander Antony" in context
     assert "Python SQL" in context
+
+
+def test_build_candidate_profile_from_resume_applies_resume_parser_agent_corrections():
+    document = ResumeDocument(
+        text=(
+            "LEANDER ANTONY A\n"
+            "Chennai, India\n"
+            "antony.leander@gmail.com | +91 8610317213 | github.com/LEANDERANTONY\n"
+            "Projects\n"
+            "• Built ML services.\n"
+        ),
+        filetype="PDF",
+        source="uploaded",
+    )
+
+    profile = build_candidate_profile_from_resume(
+        document,
+        openai_service=FakeResumeParserOpenAIService(),
+    )
+
+    assert profile.full_name == "Leander Antony A"
+    assert profile.location == "Chennai, India"
+    assert "antony.leander@gmail.com" in profile.contact_lines
+    assert profile.experience[0].title == "Machine Learning Engineer"
+    assert profile.education[0].institution == "Liverpool John Moores University"
+    assert "Resume parser agent reviewed and corrected the structured profile." in profile.source_signals
 
 
 def test_build_candidate_profile_from_resume_extracts_projects_education_and_certifications():

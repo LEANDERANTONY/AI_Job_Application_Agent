@@ -151,12 +151,18 @@ def get_resume_page_state():
     return workflow_intake.get_resume_page_state()
 
 
-def use_sample_resume(filename):
-    return workflow_intake.use_sample_resume(filename)
+def use_sample_resume(filename, openai_service=None):
+    return workflow_intake.use_sample_resume(
+        filename,
+        openai_service=openai_service,
+    )
 
 
-def use_uploaded_resume(uploaded_file):
-    return workflow_intake.use_uploaded_resume(uploaded_file)
+def use_uploaded_resume(uploaded_file, openai_service=None):
+    return workflow_intake.use_uploaded_resume(
+        uploaded_file,
+        openai_service=openai_service,
+    )
 
 
 def get_active_candidate_profile():
@@ -236,12 +242,16 @@ def build_ai_session_view_model(auth_service=None):
     )
 
 
-def build_job_workflow_view_model(jd_text, jd_source):
+def build_job_workflow_view_model(jd_text, jd_source, openai_service=None, ai_session=None):
     view_model = JobWorkflowViewModel(jd_text=jd_text, jd_source=jd_source)
     if not jd_text:
         return view_model
 
-    job_description = build_job_description_from_text(jd_text)
+    resolved_ai_session = ai_session or build_ai_session_view_model()
+    job_description = build_job_description_from_text(
+        jd_text,
+        openai_service=openai_service or resolved_ai_session.openai_service,
+    )
     store_job_description_inputs(jd_text, jd_source, job_description)
     candidate_profile = get_active_candidate_profile()
 
@@ -272,7 +282,7 @@ def build_job_workflow_view_model(jd_text, jd_source):
         agent_result=view_model.agent_result,
         theme=get_tailored_resume_theme(),
     )
-    view_model.ai_session = build_ai_session_view_model()
+    view_model.ai_session = resolved_ai_session
     return view_model
 
 

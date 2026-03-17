@@ -1,6 +1,7 @@
 import re
 from typing import List
 
+from src.agents.resume_parser_agent import ResumeParserAgent
 from src.schemas import (
     CandidateProfile,
     EducationEntry,
@@ -815,7 +816,11 @@ def _collect_resume_signals(
     return signals
 
 
-def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> CandidateProfile:
+def build_candidate_profile_from_resume(
+    resume_document: ResumeDocument,
+    openai_service=None,
+    verify_with_agent: bool = True,
+) -> CandidateProfile:
     if not isinstance(resume_document, ResumeDocument):
         raise TypeError("resume_document must be a ResumeDocument instance.")
 
@@ -837,7 +842,7 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
     certifications = _parse_certifications(sections.get("certifications", []))
     if not certifications:
         certifications = _parse_certifications_from_resume_text(resume_text)
-    return CandidateProfile(
+    candidate_profile = CandidateProfile(
         full_name=_extract_name_from_resume(resume_text),
         location=_extract_location_from_resume(resume_text),
         contact_lines=_extract_contact_lines_from_resume(resume_text),
@@ -854,6 +859,14 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
             project_entries,
         ),
     )
+
+    if verify_with_agent:
+        candidate_profile = ResumeParserAgent(openai_service).run(
+            resume_document,
+            candidate_profile,
+        )
+
+    return candidate_profile
 
 
 def build_candidate_context_text(candidate_profile: CandidateProfile) -> str:

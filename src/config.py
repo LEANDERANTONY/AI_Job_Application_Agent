@@ -34,6 +34,8 @@ OPENAI_REASONING_ASSISTANT = os.getenv(
 ).strip().lower()
 OPENAI_MODEL_ROUTING = {
     "profile": os.getenv("OPENAI_MODEL_PROFILE", OPENAI_MODEL_MID_TIER),
+    "resume_parser": os.getenv("OPENAI_MODEL_RESUME_PARSER", OPENAI_MODEL_HIGH_TRUST),
+    "jd_parser": os.getenv("OPENAI_MODEL_JD_PARSER", OPENAI_MODEL_HIGH_TRUST),
     "job": os.getenv("OPENAI_MODEL_JOB", OPENAI_MODEL_MID_TIER),
     "fit": os.getenv("OPENAI_MODEL_FIT", OPENAI_MODEL_MID_TIER),
     "tailoring": os.getenv("OPENAI_MODEL_TAILORING", OPENAI_MODEL_MID_TIER),
@@ -49,6 +51,12 @@ OPENAI_MODEL_ROUTING = {
 }
 OPENAI_REASONING_ROUTING = {
     "profile": os.getenv("OPENAI_REASONING_PROFILE", OPENAI_REASONING_DEFAULT).strip().lower(),
+    "resume_parser": os.getenv(
+        "OPENAI_REASONING_RESUME_PARSER", OPENAI_REASONING_HIGH_TRUST
+    ).strip().lower(),
+    "jd_parser": os.getenv(
+        "OPENAI_REASONING_JD_PARSER", OPENAI_REASONING_HIGH_TRUST
+    ).strip().lower(),
     "job": os.getenv("OPENAI_REASONING_JOB", OPENAI_REASONING_DEFAULT).strip().lower(),
     "fit": os.getenv("OPENAI_REASONING_FIT", "low").strip().lower(),
     "tailoring": os.getenv("OPENAI_REASONING_TAILORING", OPENAI_REASONING_DEFAULT).strip().lower(),
@@ -85,6 +93,8 @@ def _load_bool_env(name: str, default: bool = False):
 
 OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
     "profile": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PROFILE", 1800),
+    "resume_parser": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_PARSER", 2600),
+    "jd_parser": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_JD_PARSER", 2200),
     "job": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_JOB", 1800),
     "fit": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_FIT", 1600),
     "tailoring": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_TAILORING", 3200),
