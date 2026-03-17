@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit.errors import StreamlitAPIException
 
 from src.assistant_service import AssistantService
 from src.product_knowledge import retrieve_product_knowledge
@@ -183,7 +184,17 @@ def _render_assistant_loading_indicator(compact=False):
     )
 
 
-def render_assistant_panel(
+def _rerun_assistant_panel(*, compact=False):
+    if compact:
+        try:
+            st.rerun(scope="fragment")
+            return
+        except StreamlitAPIException:
+            pass
+    st.rerun()
+
+
+def _render_assistant_panel_contents(
     current_page,
     workflow_view_model=None,
     artifact=None,
@@ -263,11 +274,11 @@ def render_assistant_panel(
         set_pending_assistant_question(None)
         set_assistant_responding(False)
         set_clear_assistant_input(True)
-        st.rerun()
+        _rerun_assistant_panel(compact=compact)
 
     if ask_clicked:
         if _queue_assistant_question(page_slug=page_slug, question=question):
-            st.rerun()
+            _rerun_assistant_panel(compact=compact)
 
     if pending_question and is_generating:
         if _submit_assistant_question(
@@ -281,4 +292,52 @@ def render_assistant_panel(
             set_pending_assistant_question(None)
             set_assistant_responding(False)
             set_clear_assistant_input(True)
-            st.rerun()
+            _rerun_assistant_panel(compact=compact)
+
+
+@st.fragment
+def _render_compact_assistant_panel_fragment(
+    current_page,
+    workflow_view_model=None,
+    artifact=None,
+    report=None,
+):
+    _render_assistant_panel_contents(
+        current_page,
+        workflow_view_model=workflow_view_model,
+        artifact=artifact,
+        report=report,
+        show_divider=False,
+        show_header=False,
+        compact=True,
+    )
+
+
+def render_assistant_panel(
+    current_page,
+    workflow_view_model=None,
+    artifact=None,
+    report=None,
+    *,
+    show_divider=True,
+    show_header=True,
+    compact=False,
+):
+    if compact:
+        _render_compact_assistant_panel_fragment(
+            current_page,
+            workflow_view_model=workflow_view_model,
+            artifact=artifact,
+            report=report,
+        )
+        return
+
+    _render_assistant_panel_contents(
+        current_page,
+        workflow_view_model=workflow_view_model,
+        artifact=artifact,
+        report=report,
+        show_divider=show_divider,
+        show_header=show_header,
+        compact=compact,
+    )

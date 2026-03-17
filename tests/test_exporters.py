@@ -173,6 +173,7 @@ def test_build_resume_html_renders_structured_modern_resume_sections():
     assert "Core Skills" in html_output
     assert "Contact" in html_output
     assert "resume-modern-contact" in html_output
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in html_output
     assert '<p class="resume-modern-role">' not in html_output
     assert "Chennai, India" in html_output
     assert "Azure AI Fundamentals" in html_output

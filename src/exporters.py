@@ -827,12 +827,12 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 4px; }}
         .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.4pt; }}
         .resume-bullet-list, .resume-contact-list, .resume-plain-list {{ margin: 0; padding-left: 1rem; }}
-        .resume-skill-list {{ list-style: none; margin: 0; padding: 0; display: block; }}
-        .resume-skill-list li {{ margin: 0 0 5px; font-size: 9.3pt; border: 0; padding: 0; }}
+        .resume-skill-list {{ list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; row-gap: 5px; }}
+        .resume-skill-list li {{ margin: 0; font-size: 9.3pt; border: 0; padding: 0; overflow-wrap: anywhere; }}
         .resume-empty {{ color: var(--muted); font-style: italic; }}
         .resume-section + .resume-section {{ margin-top: 12px; }}
         .resume-experience-card + .resume-experience-card, .resume-education-card + .resume-education-card {{ margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }}
-        @media all and (max-width: 720px) {{ .resume-modern-header {{ grid-template-columns: 1fr; }} .resume-modern-body, .resume-modern-main, .resume-modern-side {{ display: block; width: 100%; border-spacing: 0; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }} .resume-modern-summary {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
+        @media all and (max-width: 720px) {{ .resume-modern-header {{ grid-template-columns: 1fr; }} .resume-modern-body, .resume-modern-main, .resume-modern-side {{ display: block; width: 100%; border-spacing: 0; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }} .resume-modern-summary {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} .resume-skill-list {{ grid-template-columns: 1fr; }} }}
     </style>
 </head>
 <body>
