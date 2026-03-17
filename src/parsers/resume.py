@@ -6,7 +6,7 @@ from pypdf import PdfReader
 
 from src.errors import ParsingError
 from src.logging_utils import get_logger, log_event
-from src.parsers.common import decode_text, detect_file_type, read_file_bytes
+from src.parsers.common import decode_text, detect_file_type, normalize_extracted_text, read_file_bytes
 from src.schemas import ResumeDocument
 
 
@@ -20,7 +20,7 @@ def _extract_text_from_pdf(file_bytes):
         raise ParsingError("Failed to open the PDF resume.") from exc
 
     pages = [(page.extract_text() or "").strip() for page in reader.pages]
-    return "\n".join(page for page in pages if page).strip()
+    return normalize_extracted_text("\n".join(page for page in pages if page))
 
 
 def _extract_text_from_docx(file_bytes):
@@ -30,7 +30,7 @@ def _extract_text_from_docx(file_bytes):
         raise ParsingError("Failed to open the DOCX resume.") from exc
 
     paragraphs = [paragraph.text.strip() for paragraph in document.paragraphs]
-    return "\n".join(paragraph for paragraph in paragraphs if paragraph).strip()
+    return normalize_extracted_text("\n".join(paragraph for paragraph in paragraphs if paragraph))
 
 
 def _parse_resume_bytes(file_bytes, file_type, source):
@@ -44,7 +44,7 @@ def _parse_resume_bytes(file_bytes, file_type, source):
         text = _extract_text_from_docx(file_bytes)
         filetype = "DOCX"
     elif file_type == "text/plain":
-        text = decode_text(file_bytes).strip()
+        text = normalize_extracted_text(decode_text(file_bytes).strip())
         filetype = "TXT"
     else:
         raise ParsingError("Unsupported resume file type. Use PDF, DOCX, or TXT.")

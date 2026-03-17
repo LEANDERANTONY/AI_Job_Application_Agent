@@ -7,7 +7,7 @@ from pypdf import PdfReader
 
 from src.errors import ParsingError
 from src.logging_utils import get_logger, log_event
-from src.parsers.common import decode_text, detect_file_type, read_file_bytes
+from src.parsers.common import decode_text, detect_file_type, normalize_extracted_text, read_file_bytes
 from src.taxonomy import HARD_SKILL_KEYWORDS, SOFT_SKILL_KEYWORDS
 from src.utils import match_keywords
 
@@ -17,13 +17,13 @@ LOGGER = get_logger(__name__)
 
 def _parse_jd_bytes(file_bytes, file_type):
     if file_type == "text/plain":
-        text = decode_text(file_bytes)
+        text = normalize_extracted_text(decode_text(file_bytes))
     elif file_type == "application/pdf":
         try:
             pdf = PdfReader(BytesIO(file_bytes))
         except Exception as exc:
             raise ParsingError("Failed to open the PDF job description.") from exc
-        text = "\n".join((page.extract_text() or "").strip() for page in pdf.pages)
+        text = normalize_extracted_text("\n".join((page.extract_text() or "").strip() for page in pdf.pages))
     elif file_type in {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/msword",
@@ -32,9 +32,9 @@ def _parse_jd_bytes(file_bytes, file_type):
             document = docx.Document(BytesIO(file_bytes))
         except Exception as exc:
             raise ParsingError("Failed to open the DOCX job description.") from exc
-        text = "\n".join(
+        text = normalize_extracted_text("\n".join(
             paragraph.text.strip() for paragraph in document.paragraphs if paragraph.text
-        )
+        ))
     else:
         raise ParsingError("Unsupported job-description file type. Use PDF, DOCX, or TXT.")
 
