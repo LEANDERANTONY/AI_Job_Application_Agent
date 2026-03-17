@@ -7,7 +7,7 @@ from src.config import (
 )
 from src.errors import InputValidationError
 from src.schemas import AgentWorkflowResult, CandidateProfile, FitAnalysis, TailoredResumeDraft
-from src.ui.components import render_metric_card, render_section_head
+from src.ui.components import render_metric_card, render_page_divider, render_section_head
 from src.ui.page_artifacts import (
     render_cover_letter_artifact as _render_cover_letter_artifact,
     render_report_package as _render_report_package,
@@ -226,11 +226,10 @@ def _render_profile_snapshot(candidate_profile: CandidateProfile):
 
 
 def render_resume_page():
+    render_page_divider()
     render_section_head("Resume Intake", "Sign in first, then upload your resume to start the AI-assisted workflow.")
-    st.markdown("---")
 
     if not is_authenticated():
-        st.info("Sign in with Google from the sidebar first, then upload your resume.")
         st.file_uploader(
             "Upload your resume file",
             type=["pdf", "docx", "txt"],
@@ -250,6 +249,7 @@ def render_resume_page():
 
 
 def render_job_search_page():
+    render_page_divider()
     render_section_head(
         "Job Search",
         "This stays intentionally light until the fit-analysis workflow is built.",
@@ -368,6 +368,12 @@ def _workflow_progress_palette(title):
             "tag_background": "rgba(37, 99, 235, 0.10)",
             "tag_text": "#1d4ed8",
         },
+        "Cover letter agent": {
+            "accent": "#7c3aed",
+            "surface": "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(245,243,255,0.96))",
+            "tag_background": "rgba(124, 58, 237, 0.10)",
+            "tag_text": "#6d28d9",
+        },
     }
     return palette.get(
         title,
@@ -428,8 +434,8 @@ def _run_supervised_workflow_with_progress(workflow_view_model):
     return workflow_view_model
 
 def render_job_description_page():
+    render_page_divider()
     render_section_head("Job Description Intake", "Load a target role and convert it into structured requirements.")
-    st.markdown("---")
     uploaded_jd = st.file_uploader("Upload Job Description", type=["pdf", "docx", "txt"])
     st.markdown(
         """

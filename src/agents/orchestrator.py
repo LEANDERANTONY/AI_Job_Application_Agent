@@ -280,7 +280,7 @@ class ApplicationOrchestrator:
 
         begin_stage(
             "Cover letter agent",
-            "Writing the approved cover letter from the corrected story and evidence.",
+            "Turning the approved story into a role-specific cover letter that is ready to send.",
         )
         if review_output and review_output.approved:
             cover_letter_output = run_agent_step(

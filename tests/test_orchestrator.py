@@ -267,7 +267,7 @@ def test_orchestrator_reports_progress_updates_for_single_pass_flow():
     )
     assert any(
         title == "Cover letter agent"
-        and detail == "Writing the approved cover letter from the corrected story and evidence."
+        and detail == "Turning the approved story into a role-specific cover letter that is ready to send."
         for title, detail, _ in updates
     )
     assert not any("Sent it back" in detail for _, detail, _ in updates)

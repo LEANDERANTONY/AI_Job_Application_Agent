@@ -49,6 +49,10 @@ def render_section_head(title, subtitle):
     )
 
 
+def render_page_divider():
+    st.markdown('<hr class="page-divider" aria-hidden="true" />', unsafe_allow_html=True)
+
+
 def render_footer():
     st.markdown("---")
     st.caption(

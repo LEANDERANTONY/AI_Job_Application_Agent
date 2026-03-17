@@ -86,8 +86,20 @@ def apply_theme():
             }
             .section-head {
                 border-radius: 18px;
-                padding: 0.95rem 1rem;
-                margin-bottom: 0.8rem;
+                padding: 0.72rem 0.95rem;
+                margin-bottom: 0.65rem;
+            }
+            hr.page-divider,
+            .stMarkdown hr.page-divider,
+            [data-testid="stMarkdownContainer"] hr.page-divider {
+                display: block !important;
+                width: 100% !important;
+                height: 0 !important;
+                border: 0 !important;
+                border-top: 1px solid rgba(148, 163, 184, 0.34) !important;
+                box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+                margin: 0.95rem 0 !important;
+                background: none !important;
             }
             hr,
             .stMarkdown hr,
@@ -96,7 +108,7 @@ def apply_theme():
                 border-top: 1px solid rgba(148, 163, 184, 0.22) !important;
                 margin: 0.9rem 0 !important;
             }
-            .section-head h4 { margin: 0 0 0.2rem 0; color: var(--ink) !important; }
+            .section-head h4 { margin: 0 0 0.12rem 0; color: var(--ink) !important; }
             .section-meta, .metric-note { color: var(--muted) !important; }
             .metric-card {
                 border-radius: 18px;
