@@ -211,7 +211,7 @@ def render_assistant_panel(
     history = get_assistant_history("assistant")
     pending_question = get_pending_assistant_question()
     is_generating = is_assistant_responding()
-    turns_to_render = history[-2:] if compact else history
+    turns_to_render = history
     for turn in turns_to_render:
         with st.chat_message("user"):
             st.write(turn.question)
@@ -227,10 +227,15 @@ def render_assistant_panel(
     question = st.text_input(
         "Ask a question",
         key=question_key,
-        placeholder="Ask about the app, your resume, the cover letter, or the report...",
+        placeholder=(
+            "Ask about the app, your resume, or the current outputs..."
+            if compact
+            else "Ask about the app, your resume, the cover letter, or the report..."
+        ),
         on_change=_handle_assistant_enter_submit,
         args=(page_slug,),
         disabled=is_generating,
+        label_visibility="collapsed" if compact else "visible",
     )
 
     ask_clicked = st.button(

@@ -207,6 +207,23 @@ def apply_theme():
                 margin-top: 1.1rem;
                 margin-bottom: 0.65rem;
             }
+            [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"]:has(.sidebar-assistant-card-header) {
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(148, 163, 184, 0.16);
+                border-radius: 18px;
+                padding: 0.95rem;
+                margin-bottom: 0.9rem;
+            }
+            .sidebar-assistant-card-header {
+                margin-bottom: 0.7rem;
+            }
+            .sidebar-assistant-card-title {
+                font-size: 0.92rem;
+                color: #e7eefc !important;
+                font-weight: 700;
+                margin-bottom: 0.1rem;
+                line-height: 1.35;
+            }
             .sidebar-chat-shell,
             .sidebar-account-shell {
                 margin-bottom: 0.65rem;
@@ -306,6 +323,9 @@ def apply_theme():
                 padding: 0.55rem 0.7rem;
                 margin-bottom: 0.55rem;
             }
+            [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"]:has(.sidebar-assistant-card-header) [data-testid="stChatMessage"] {
+                background: rgba(255, 255, 255, 0.04);
+            }
             [data-testid="stSidebar"] [data-testid="stChatMessage"] p,
             [data-testid="stSidebar"] [data-testid="stChatMessage"] span,
             [data-testid="stSidebar"] [data-testid="stChatMessage"] div,
@@ -318,6 +338,10 @@ def apply_theme():
                 background: rgba(255, 255, 255, 0.08) !important;
                 color: #f8fbff !important;
                 border-color: rgba(148, 163, 184, 0.18) !important;
+            }
+            [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"]:has(.sidebar-assistant-card-header) .stTextInput,
+            [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"]:has(.sidebar-assistant-card-header) .stButton {
+                margin-top: 0.2rem;
             }
             [data-testid="stSidebar"] [data-testid="stWidgetLabel"] {
                 color: #cbd5e1 !important;

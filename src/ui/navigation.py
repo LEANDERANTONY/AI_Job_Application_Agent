@@ -81,20 +81,20 @@ def _render_sidebar_assistant_panel(menu):
     artifact = workflow.build_tailored_resume_artifact_view_model(workflow_view_model)
     report = workflow.build_application_report_view_model(workflow_view_model)
 
-    st.markdown(
-        """
-        <div class="sidebar-card sidebar-chat-shell">
-            <div class="sidebar-kicker">Assistant</div>
-            <div style="font-size:0.92rem; color:#e7eefc; font-weight:700; margin-bottom:0.1rem;">
-                Ask about the app, your resume, or the current outputs
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    with st.expander("Open Chat", expanded=True):
-        from src.ui.page_assistant import render_assistant_panel
+    from src.ui.page_assistant import render_assistant_panel
 
+    with st.container(border=True):
+        st.markdown(
+            """
+            <div class="sidebar-assistant-card-header">
+                <div class="sidebar-kicker">Assistant</div>
+                <div class="sidebar-assistant-card-title">
+                    Ask about the app, your resume, or the current outputs.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         render_assistant_panel(
             menu,
             workflow_view_model=workflow_view_model,

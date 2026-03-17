@@ -56,7 +56,7 @@ def render_page_divider():
 def render_footer():
     st.markdown("---")
     st.caption(
-        "Built by Leander Antony | Streamlit-first, backend-ready AI application workflow"
+        "Built by Leander Antony A | Streamlit-first, backend-ready AI application workflow"
     )
 
 
