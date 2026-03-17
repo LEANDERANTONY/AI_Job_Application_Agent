@@ -63,8 +63,8 @@ def apply_theme():
             }
             .app-hero {
                 border-radius: 24px;
-                padding: 1.4rem 1.5rem;
-                margin-bottom: 1rem;
+                padding: 1.02rem 1.3rem;
+                margin-bottom: 0.82rem;
             }
             .app-kicker, .metric-label {
                 text-transform: uppercase;
@@ -76,11 +76,11 @@ def apply_theme():
                 color: var(--accent-strong);
                 margin-bottom: 0.35rem;
             }
-            .app-hero h1 { color: var(--ink); margin: 0 0 0.4rem 0; }
+            .app-hero h1 { color: var(--ink); margin: 0 0 0.18rem 0; }
             .app-copy {
                 color: #2563eb !important;
-                font-size: 1rem;
-                line-height: 1.6;
+                font-size: 0.96rem;
+                line-height: 1.45;
                 font-weight: 500;
                 margin: 0;
             }

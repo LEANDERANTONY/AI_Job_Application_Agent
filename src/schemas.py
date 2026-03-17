@@ -25,6 +25,7 @@ class WorkExperience:
 class CandidateProfile:
     full_name: str = ""
     location: str = ""
+    contact_lines: List[str] = field(default_factory=list)
     source: str = ""
     resume_text: str = ""
     skills: List[str] = field(default_factory=list)
@@ -148,6 +149,16 @@ class ResumeGenerationAgentOutput:
 
 
 @dataclass
+class CoverLetterAgentOutput:
+    greeting: str = ""
+    opening_paragraph: str = ""
+    body_paragraphs: List[str] = field(default_factory=list)
+    closing_paragraph: str = ""
+    signoff: str = ""
+    signature_name: str = ""
+
+
+@dataclass
 class ReviewAgentOutput:
     approved: bool
     grounding_issues: List[str] = field(default_factory=list)
@@ -177,6 +188,7 @@ class AgentWorkflowResult:
     job: JobAgentOutput = field(default_factory=JobAgentOutput)
     strategy: Optional[StrategyAgentOutput] = None
     resume_generation: Optional[ResumeGenerationAgentOutput] = None
+    cover_letter: Optional[CoverLetterAgentOutput] = None
     review_history: List[ReviewPassResult] = field(default_factory=list)
     attempted_assisted: bool = False
     fallback_reason: str = ""
@@ -185,6 +197,15 @@ class AgentWorkflowResult:
 
 @dataclass
 class ApplicationReport:
+    title: str
+    filename_stem: str
+    summary: str
+    markdown: str
+    plain_text: str
+
+
+@dataclass
+class CoverLetterArtifact:
     title: str
     filename_stem: str
     summary: str
@@ -284,6 +305,7 @@ class SavedWorkspaceRecord:
     workflow_signature: str = ""
     workflow_snapshot_json: str = ""
     report_payload_json: str = ""
+    cover_letter_payload_json: str = ""
     tailored_resume_payload_json: str = ""
     expires_at: str = ""
     updated_at: str = ""

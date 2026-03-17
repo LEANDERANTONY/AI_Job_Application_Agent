@@ -512,6 +512,7 @@ def test_load_saved_workspace_summary_builds_saved_artifacts(monkeypatch):
             return (
                 SimpleNamespace(
                     report_payload_json="report-payload",
+                    cover_letter_payload_json="cover-letter-payload",
                     tailored_resume_payload_json="resume-payload",
                     workflow_snapshot_json="snapshot-payload",
                 ),
@@ -523,15 +524,23 @@ def test_load_saved_workspace_summary_builds_saved_artifacts(monkeypatch):
     monkeypatch.setattr(workflow, "get_auth_service", lambda: object())
     monkeypatch.setattr(workflow, "SavedWorkspaceStore", FakeSavedWorkspaceStore)
     monkeypatch.setattr(workflow, "build_saved_report_from_payload", lambda raw: {"kind": "report", "raw": raw})
+    monkeypatch.setattr(workflow, "build_saved_cover_letter_from_payload", lambda raw: {"kind": "cover_letter", "raw": raw})
     monkeypatch.setattr(workflow, "build_saved_tailored_resume_from_payload", lambda raw: {"kind": "resume", "raw": raw})
-    monkeypatch.setattr(workflow, "build_saved_workflow_snapshot_from_payload", lambda raw: {"kind": "snapshot", "raw": raw})
-
+    snapshot = SimpleNamespace(
+        candidate_profile="candidate",
+        job_description="job",
+        fit_analysis="fit",
+        tailored_draft="draft",
+        agent_result="agent",
+    )
+    monkeypatch.setattr(workflow, "build_saved_workflow_snapshot_from_payload", lambda raw: snapshot)
     summary = workflow.load_saved_workspace_summary()
 
     assert summary["status"] == "available"
     assert summary["report"] == {"kind": "report", "raw": "report-payload"}
+    assert summary["cover_letter"] == {"kind": "cover_letter", "raw": "cover-letter-payload"}
     assert summary["resume"] == {"kind": "resume", "raw": "resume-payload"}
-    assert summary["snapshot"] == {"kind": "snapshot", "raw": "snapshot-payload"}
+    assert summary["snapshot"] == snapshot
 
 
 def test_restore_latest_saved_workspace_reports_expired_snapshot(monkeypatch):

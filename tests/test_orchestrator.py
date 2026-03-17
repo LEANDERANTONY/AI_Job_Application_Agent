@@ -82,6 +82,17 @@ class FakeOpenAIService:
                 "section_order": ["Professional Summary", "Core Skills", "Professional Experience", "Education"],
                 "template_hint": "classic_ats",
             },
+            {
+                "greeting": "Dear Hiring Team",
+                "opening_paragraph": "I am excited to apply for the Machine Learning Engineer role and bring grounded implementation experience.",
+                "body_paragraphs": [
+                    "Lead with production application delivery evidence.",
+                    "Highlight productized ML work using Python and Docker.",
+                ],
+                "closing_paragraph": "I would welcome the opportunity to discuss how my experience can support your team.",
+                "signoff": "Sincerely",
+                "signature_name": "Leander Antony",
+            },
         ]
 
     @staticmethod
@@ -149,6 +160,17 @@ class FakeCorrectionOpenAIService(FakeOpenAIService):
                 "section_order": ["Professional Summary", "Core Skills", "Professional Experience", "Education"],
                 "template_hint": "classic_ats",
             },
+            {
+                "greeting": "Dear Hiring Team",
+                "opening_paragraph": "I am excited to apply for the Machine Learning Engineer role and bring grounded implementation experience.",
+                "body_paragraphs": [
+                    "Lead with delivery evidence in Python and Docker.",
+                    "Highlight production applications that show end-to-end delivery.",
+                ],
+                "closing_paragraph": "I would welcome the opportunity to discuss how my experience can support your team.",
+                "signoff": "Sincerely",
+                "signature_name": "Leander Antony",
+            },
         ]
 
 
@@ -182,6 +204,7 @@ def test_orchestrator_uses_openai_service_when_available():
         "Position the candidate as a grounded implementation-focused ML engineer."
     )
     assert result.resume_generation.professional_summary == "Final tailored summary for the generated resume."
+    assert result.cover_letter.opening_paragraph == "I am excited to apply for the Machine Learning Engineer role and bring grounded implementation experience."
     assert result.review_history == []
 
 
@@ -211,6 +234,8 @@ def test_orchestrator_applies_review_corrections_without_second_pass():
     assert result.review.corrected_tailoring is not None
     assert result.review.corrected_strategy is not None
     assert result.resume_generation.professional_summary == "Resume-ready grounded summary for the role."
+    assert result.cover_letter is not None
+    assert result.cover_letter.body_paragraphs[0] == "Lead with delivery evidence in Python and Docker."
     assert result.review_history == []
 
 
@@ -238,6 +263,11 @@ def test_orchestrator_reports_progress_updates_for_single_pass_flow():
     assert any(
         title == "Gatekeeper agent"
         and detail == "Reviewing the drafted outputs and applying grounded corrections."
+        for title, detail, _ in updates
+    )
+    assert any(
+        title == "Cover letter agent"
+        and detail == "Writing the approved cover letter from the corrected story and evidence."
         for title, detail, _ in updates
     )
     assert not any("Sent it back" in detail for _, detail, _ in updates)

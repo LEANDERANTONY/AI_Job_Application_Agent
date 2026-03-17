@@ -68,13 +68,10 @@ def _description_to_bullets(description: str) -> list[str]:
 
 
 def _build_header(candidate_profile: CandidateProfile) -> ResumeHeader:
-    contact_lines = []
-    if candidate_profile.location:
-        contact_lines.append(candidate_profile.location)
     return ResumeHeader(
         full_name=candidate_profile.full_name,
         location=candidate_profile.location,
-        contact_lines=contact_lines,
+        contact_lines=dedupe_strings(candidate_profile.contact_lines),
     )
 
 
@@ -178,12 +175,10 @@ def _build_resume_markdown(
     theme: str,
 ) -> str:
     theme_config = RESUME_THEMES.get(theme, RESUME_THEMES["classic_ats"])
-    subtitle_parts = [part for part in [job_description.title, header.location] if part]
     header_block = ["# " + (header.full_name or "Candidate")] 
-    if subtitle_parts:
-        header_block.append("**" + " | ".join(subtitle_parts) + "**")
-    if header.contact_lines:
-        header_block.append(safe_join_strings(header.contact_lines, fallback=""))
+    personal_details = [part for part in [header.location] + list(header.contact_lines) if part]
+    if personal_details:
+        header_block.append(safe_join_strings(personal_details, fallback=""))
 
     experience_blocks = []
     for entry in experience_entries:
@@ -223,7 +218,6 @@ def _build_resume_markdown(
             "## Education\n\n" + render_markdown_list(education_lines, "No education entries available."),
             "## Certifications\n\n" + render_markdown_list(certifications, "No certifications listed."),
             "## Change Summary\n\n" + render_markdown_list(change_log, "No change summary available."),
-            "## Validation Notes\n\n" + render_markdown_list(validation_notes, "No validation notes available."),
         ]
     ).strip()
 

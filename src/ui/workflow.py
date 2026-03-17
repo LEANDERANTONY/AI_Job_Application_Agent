@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from src.agents.orchestrator import ApplicationOrchestrator
+from src.cover_letter_builder import build_cover_letter_artifact
 from src.config import (
     AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW,
     DAILY_QUOTA_CACHE_TTL_SECONDS,
@@ -19,6 +20,7 @@ from src.schemas import (
     AgentWorkflowResult,
     ApplicationReport,
     CandidateProfile,
+    CoverLetterArtifact,
     DailyQuotaStatus,
     FitAnalysis,
     JobDescription,
@@ -53,11 +55,13 @@ from src.ui.state import (
     store_resume_intake,
     store_fit_outputs,
     store_job_description_inputs,
+    sync_cover_letter_signature,
     sync_report_signature,
     sync_tailored_resume_signature,
 )
 from src.ui.state import is_authenticated
 from src.ui.workflow_payloads import (
+    build_saved_cover_letter_from_payload,
     WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT,
     WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT,
     WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
@@ -296,14 +300,26 @@ def load_saved_workspace_summary(auth_service=None):
         auth_user_record.id,
     )
     if saved_workspace is None:
-        return {"status": status, "record": None, "report": None, "resume": None}
+        return {"status": status, "record": None, "report": None, "cover_letter": None, "resume": None}
+
+    snapshot = build_saved_workflow_snapshot_from_payload(saved_workspace.workflow_snapshot_json)
+    cover_letter = build_saved_cover_letter_from_payload(saved_workspace.cover_letter_payload_json)
+    if cover_letter is None and snapshot is not None:
+        cover_letter = build_cover_letter_artifact(
+            snapshot.candidate_profile,
+            snapshot.job_description,
+            snapshot.fit_analysis,
+            snapshot.tailored_draft,
+            agent_result=snapshot.agent_result,
+        )
 
     return {
         "status": status,
         "record": saved_workspace,
         "report": build_saved_report_from_payload(saved_workspace.report_payload_json),
         "resume": build_saved_tailored_resume_from_payload(saved_workspace.tailored_resume_payload_json),
-        "snapshot": build_saved_workflow_snapshot_from_payload(saved_workspace.workflow_snapshot_json),
+        "cover_letter": cover_letter,
+        "snapshot": snapshot,
     }
 
 
@@ -401,6 +417,10 @@ def build_saved_report_from_workflow_run(workflow_run: Optional[object]):
     return workflow_history.build_saved_report_from_workflow_run(workflow_run)
 
 
+def build_saved_cover_letter_from_workflow_run(workflow_run: Optional[object]):
+    return workflow_history.build_saved_cover_letter_from_workflow_run(workflow_run)
+
+
 def build_saved_tailored_resume_from_workflow_run(workflow_run: Optional[object]):
     return workflow_history.build_saved_tailored_resume_from_workflow_run(workflow_run)
 
@@ -459,6 +479,25 @@ def build_application_report_view_model(view_model: JobWorkflowViewModel):
     return report
 
 
+def build_cover_letter_artifact_view_model(view_model: JobWorkflowViewModel):
+    if not (
+        view_model.candidate_profile
+        and view_model.job_description
+        and view_model.fit_analysis
+        and view_model.tailored_draft
+    ):
+        return None
+    artifact = build_cover_letter_artifact(
+        view_model.candidate_profile,
+        view_model.job_description,
+        view_model.fit_analysis,
+        view_model.tailored_draft,
+        agent_result=view_model.agent_result,
+    )
+    sync_cover_letter_signature(_report_signature(artifact))
+    return artifact
+
+
 def build_tailored_resume_artifact_view_model(view_model: JobWorkflowViewModel):
     if not (
         view_model.candidate_profile
@@ -485,6 +524,14 @@ def prepare_pdf_package(report: ApplicationReport):
 
 def get_cached_pdf_package():
     return workflow_exports.get_cached_pdf_package()
+
+
+def prepare_cover_letter_pdf_package(artifact: CoverLetterArtifact):
+    return workflow_exports.prepare_cover_letter_pdf_package(artifact)
+
+
+def get_cached_cover_letter_pdf_package():
+    return workflow_exports.get_cached_cover_letter_pdf_package()
 
 
 def prepare_tailored_resume_pdf_package(artifact: TailoredResumeArtifact):

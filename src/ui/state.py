@@ -15,6 +15,8 @@ AGENT_WORKFLOW_SIGNATURE = "agent_workflow_signature"
 AGENT_WORKFLOW_RESULT = "agent_workflow_result"
 APPLICATION_REPORT_SIGNATURE = "application_report_signature"
 APPLICATION_REPORT_PDF_BYTES = "application_report_pdf_bytes"
+COVER_LETTER_SIGNATURE = "cover_letter_signature"
+COVER_LETTER_PDF_BYTES = "cover_letter_pdf_bytes"
 TAILORED_RESUME_SIGNATURE = "tailored_resume_signature"
 TAILORED_RESUME_PDF_BYTES = "tailored_resume_pdf_bytes"
 TAILORED_RESUME_THEME = "tailored_resume_theme"
@@ -22,6 +24,10 @@ EXPORT_BUNDLE_BYTES = "export_bundle_bytes"
 PENDING_BROWSER_DOWNLOAD = "pending_browser_download"
 PRODUCT_HELP_CHAT_HISTORY = "product_help_chat_history"
 APPLICATION_QA_CHAT_HISTORY = "application_qa_chat_history"
+ASSISTANT_CHAT_HISTORY = "assistant_chat_history"
+ASSISTANT_PENDING_QUESTION = "assistant_pending_question"
+ASSISTANT_IS_RESPONDING = "assistant_is_responding"
+ASSISTANT_CLEAR_INPUT = "assistant_clear_input"
 OPENAI_SESSION_USAGE = "openai_session_usage"
 AUTH_ACCESS_TOKEN = "auth_access_token"
 AUTH_REFRESH_TOKEN = "auth_refresh_token"
@@ -227,12 +233,27 @@ def sync_report_signature(signature):
         pop_state(EXPORT_BUNDLE_BYTES, None)
 
 
+def sync_cover_letter_signature(signature):
+    if get_state(COVER_LETTER_SIGNATURE) != signature:
+        set_state(COVER_LETTER_SIGNATURE, signature)
+        pop_state(COVER_LETTER_PDF_BYTES, None)
+        pop_state(EXPORT_BUNDLE_BYTES, None)
+
+
 def get_cached_pdf_bytes():
     return get_state(APPLICATION_REPORT_PDF_BYTES)
 
 
 def set_cached_pdf_bytes(pdf_bytes):
     return set_state(APPLICATION_REPORT_PDF_BYTES, pdf_bytes)
+
+
+def get_cached_cover_letter_pdf_bytes():
+    return get_state(COVER_LETTER_PDF_BYTES)
+
+
+def set_cached_cover_letter_pdf_bytes(pdf_bytes):
+    return set_state(COVER_LETTER_PDF_BYTES, pdf_bytes)
 
 
 def sync_tailored_resume_signature(signature):
@@ -305,10 +326,9 @@ def consume_pending_browser_download():
 
 
 def _assistant_history_key(mode_name):
-    return {
-        "product_help": PRODUCT_HELP_CHAT_HISTORY,
-        "application_qa": APPLICATION_QA_CHAT_HISTORY,
-    }.get(mode_name, PRODUCT_HELP_CHAT_HISTORY)
+    if mode_name in {"product_help", "application_qa", "assistant", None, ""}:
+        return ASSISTANT_CHAT_HISTORY
+    return ASSISTANT_CHAT_HISTORY
 
 
 def get_assistant_history(mode_name):
@@ -323,3 +343,33 @@ def append_assistant_turn(mode_name, turn):
 
 def clear_assistant_history(mode_name):
     return set_state(_assistant_history_key(mode_name), [])
+
+
+def get_pending_assistant_question():
+    return get_state(ASSISTANT_PENDING_QUESTION)
+
+
+def set_pending_assistant_question(question):
+    if question is None:
+        return pop_state(ASSISTANT_PENDING_QUESTION, None)
+    return set_state(ASSISTANT_PENDING_QUESTION, question)
+
+
+def is_assistant_responding():
+    return bool(get_state(ASSISTANT_IS_RESPONDING, False))
+
+
+def set_assistant_responding(is_responding):
+    if not is_responding:
+        return pop_state(ASSISTANT_IS_RESPONDING, None)
+    return set_state(ASSISTANT_IS_RESPONDING, True)
+
+
+def should_clear_assistant_input():
+    return bool(get_state(ASSISTANT_CLEAR_INPUT, False))
+
+
+def set_clear_assistant_input(should_clear):
+    if not should_clear:
+        return pop_state(ASSISTANT_CLEAR_INPUT, None)
+    return set_state(ASSISTANT_CLEAR_INPUT, True)

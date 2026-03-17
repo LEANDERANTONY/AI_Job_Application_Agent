@@ -8,8 +8,15 @@ from src.ui.state import (
     append_assistant_turn,
     clear_assistant_history,
     get_assistant_history,
+    get_pending_assistant_question,
     is_authenticated,
+    is_assistant_responding,
+    set_assistant_responding,
+    set_clear_assistant_input,
     set_openai_session_usage,
+    set_pending_assistant_question,
+    set_state,
+    should_clear_assistant_input,
 )
 from src.ui.workflow import build_ai_session_view_model
 
@@ -23,17 +30,23 @@ def _resolve_assistant_ai_session(workflow_view_model=None):
 def _build_product_help_context(workflow_view_model=None, artifact=None, report=None, ai_session=None):
     session_usage = getattr(ai_session, "usage", {}) or {}
     daily_quota = getattr(ai_session, "daily_quota", None)
+    agent_result = getattr(workflow_view_model, "agent_result", None) if workflow_view_model else None
+    signed_in = is_authenticated()
     return {
         "available_pages": [
             "Upload Resume",
             "Job Search",
             "Manual JD Input",
         ],
-        "signed_in_actions": ["Reload Workspace"] if is_authenticated() else [],
+        "signed_in_actions": ["Reload Workspace"] if signed_in else [],
+        "is_authenticated": signed_in,
+        "resume_upload_requires_login": True,
+        "resume_upload_available": signed_in,
         "has_resume": bool(workflow_view_model and workflow_view_model.candidate_profile),
         "has_job_description": bool(workflow_view_model and workflow_view_model.job_description),
         "has_tailored_resume": bool(artifact),
         "has_report": bool(report),
+        "has_cover_letter": bool(agent_result and getattr(agent_result, "cover_letter", None)),
         "session_usage": {
             "remaining_calls": session_usage.get("remaining_calls"),
             "remaining_total_tokens": session_usage.get("remaining_total_tokens"),
@@ -60,6 +73,7 @@ def _build_product_help_context_for_question(
     ai_session=None,
 ):
     return {
+        "current_page": current_page,
         **_build_product_help_context(
             workflow_view_model=workflow_view_model,
             artifact=artifact,
@@ -70,10 +84,28 @@ def _build_product_help_context_for_question(
     }
 
 
+def _build_assistant_context_for_question(
+    question,
+    *,
+    current_page,
+    workflow_view_model=None,
+    artifact=None,
+    report=None,
+    ai_session=None,
+):
+    return _build_product_help_context_for_question(
+        question,
+        current_page=current_page,
+        workflow_view_model=workflow_view_model,
+        artifact=artifact,
+        report=report,
+        ai_session=ai_session,
+    )
+
+
 def _submit_assistant_question(
     *,
     current_page,
-    mode,
     question,
     history,
     workflow_view_model=None,
@@ -87,35 +119,68 @@ def _submit_assistant_question(
     ai_session = _resolve_assistant_ai_session(workflow_view_model)
     openai_service = ai_session.openai_service if ai_session else None
     assistant = AssistantService(openai_service=openai_service)
-    if mode == "product_help":
-        response = assistant.answer_product_help(
+    response = assistant.answer(
+        normalized_question,
+        current_page=current_page,
+        workflow_view_model=workflow_view_model,
+        report=report,
+        artifact=artifact,
+        history=history,
+        app_context=_build_assistant_context_for_question(
             normalized_question,
             current_page=current_page,
-            history=history,
-            app_context=_build_product_help_context_for_question(
-                normalized_question,
-                current_page=current_page,
-                workflow_view_model=workflow_view_model,
-                artifact=artifact,
-                report=report,
-                ai_session=ai_session,
-            ),
-        )
-    else:
-        response = assistant.answer_application_qa(
-            normalized_question,
-            workflow_view_model,
-            report=report,
+            workflow_view_model=workflow_view_model,
             artifact=artifact,
-            history=history,
-        )
+            report=report,
+            ai_session=ai_session,
+        ),
+    )
     if ai_session and ai_session.openai_service:
         set_openai_session_usage(ai_session.openai_service.get_usage_snapshot())
     append_assistant_turn(
-        mode,
-        AssistantTurn(mode=mode, question=normalized_question, response=response),
+        "assistant",
+        AssistantTurn(mode="assistant", question=normalized_question, response=response),
     )
     return True
+
+
+def _assistant_question_key(page_slug):
+    return "assistant_question_{page}".format(page=page_slug)
+
+
+def _queue_assistant_question(*, page_slug, question=None):
+    normalized_question = str(question or "").strip()
+    if not normalized_question:
+        return False
+    set_pending_assistant_question(normalized_question)
+    set_assistant_responding(True)
+    return True
+
+
+def _handle_assistant_enter_submit(page_slug):
+    _queue_assistant_question(
+        page_slug=page_slug,
+        question=st.session_state.get(_assistant_question_key(page_slug), ""),
+    )
+
+
+def _render_assistant_loading_indicator(compact=False):
+    size = "0.78rem" if compact else "0.9rem"
+    st.markdown(
+        """
+        <div style="display:flex; align-items:center; gap:0.45rem; min-height:1.6rem; margin:0.25rem 0 0.6rem; color:#93c5fd; font-size:0.88rem;">
+            <div style="width:{size}; height:{size}; border-radius:999px; border:2px solid rgba(37,99,235,0.22); border-top-color:#2563eb; animation: assistant-spin 0.85s linear infinite;"></div>
+            <span>Generating response...</span>
+        </div>
+        <style>
+        @keyframes assistant-spin {{
+            from {{ transform: rotate(0deg); }}
+            to {{ transform: rotate(360deg); }}
+        }}
+        </style>
+        """.format(size=size),
+        unsafe_allow_html=True,
+    )
 
 
 def render_assistant_panel(
@@ -133,79 +198,84 @@ def render_assistant_panel(
     if show_header:
         render_section_head(
             "Ask The Assistant",
-            "Use product help for navigation questions or ask grounded questions about the current resume and report.",
+            "Ask about the app, your current fit analysis, tailored resume, cover letter, or application package.",
         )
 
-    mode_options = ["product_help"]
-    if workflow_view_model and workflow_view_model.candidate_profile and workflow_view_model.job_description:
-        mode_options.append("application_qa")
-
     page_slug = current_page.lower().replace(" ", "_")
-    mode_labels = {
-        "product_help": "Using the App",
-        "application_qa": "About My Resume",
-    }
-    if compact:
-        mode_labels = {
-            "product_help": "App",
-            "application_qa": "Resume",
-        }
-    mode = st.radio(
-        "Assistant Mode",
-        mode_options,
-        horizontal=True,
-        key="assistant_mode_{page}".format(page=page_slug),
-        format_func=lambda value: mode_labels[value],
-    )
+    question_key = _assistant_question_key(page_slug)
 
-    history = get_assistant_history(mode)
+    if should_clear_assistant_input():
+        set_state(question_key, "")
+        set_clear_assistant_input(False)
+
+    history = get_assistant_history("assistant")
+    pending_question = get_pending_assistant_question()
+    is_generating = is_assistant_responding()
     turns_to_render = history[-2:] if compact else history
+    transient_messages = st.container()
     for turn in turns_to_render:
         with st.chat_message("user"):
             st.write(turn.question)
         with st.chat_message("assistant"):
             st.write(turn.response.answer)
-            if turn.response.sources:
-                st.caption("Sources: " + ", ".join(turn.response.sources))
 
-    with st.form(
-        key="assistant_form_{page}_{mode}".format(page=page_slug, mode=mode),
-        clear_on_submit=True,
-    ):
-        question = st.text_input(
-            "Ask a question",
-            key="assistant_question_{page}_{mode}".format(page=page_slug, mode=mode),
-            placeholder=(
-                "Ask how to use the app..."
-                if mode == "product_help"
-                else "Ask about your resume, JD, or report..."
-            ),
-        )
-        ask_clicked = st.form_submit_button("Ask" if compact else "Ask Assistant")
+    if pending_question and is_generating:
+        with transient_messages:
+            with st.chat_message("user"):
+                st.write(pending_question)
+            with st.chat_message("assistant"):
+                _render_assistant_loading_indicator(compact=compact)
+
+    question = st.text_input(
+        "Ask a question",
+        key=question_key,
+        placeholder="Ask about the app, your resume, the cover letter, or the report...",
+        on_change=_handle_assistant_enter_submit,
+        args=(page_slug,),
+        disabled=is_generating,
+    )
+
+    ask_clicked = st.button(
+        "Ask" if compact else "Ask Assistant",
+        key="assistant_submit_{page}".format(page=page_slug),
+        use_container_width=True,
+        disabled=is_generating,
+    )
 
     if compact:
         clear_clicked = st.button(
             "Clear",
-            key="clear_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
+            key="clear_assistant_{page}".format(page=page_slug),
             use_container_width=True,
         )
     else:
         clear_clicked = st.button(
             "Clear Chat",
-            key="clear_assistant_{page}_{mode}".format(page=page_slug, mode=mode),
+            key="clear_assistant_{page}".format(page=page_slug),
+            use_container_width=True,
         )
 
     if clear_clicked:
-        clear_assistant_history(mode)
+        clear_assistant_history("assistant")
+        set_pending_assistant_question(None)
+        set_assistant_responding(False)
+        set_clear_assistant_input(True)
         st.rerun()
 
-    if ask_clicked and _submit_assistant_question(
-        current_page=current_page,
-        mode=mode,
-        question=question,
-        history=history,
-        workflow_view_model=workflow_view_model,
-        artifact=artifact,
-        report=report,
-    ):
-        st.rerun()
+    if ask_clicked:
+        if _queue_assistant_question(page_slug=page_slug, question=question):
+            st.rerun()
+
+    if pending_question and is_generating:
+        if _submit_assistant_question(
+            current_page=current_page,
+            question=pending_question,
+            history=history,
+            workflow_view_model=workflow_view_model,
+            artifact=artifact,
+            report=report,
+        ):
+            set_pending_assistant_question(None)
+            set_assistant_responding(False)
+            set_clear_assistant_input(True)
+            st.rerun()

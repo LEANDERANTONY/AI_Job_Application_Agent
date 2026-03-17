@@ -1,5 +1,6 @@
 from typing import Optional
 
+from src.cover_letter_builder import build_cover_letter_artifact
 from src.report_builder import build_application_report
 from src.resume_builder import build_tailored_resume_artifact
 from src.saved_workspace_store import SavedWorkspaceStore
@@ -10,8 +11,10 @@ from src.ui.state import (
     get_tailored_resume_theme,
 )
 from src.ui.workflow_payloads import (
+    WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER,
     WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT,
     WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
+    build_saved_cover_letter_from_payload,
     build_saved_report_from_payload,
     build_saved_tailored_resume_from_payload,
     json_payload,
@@ -41,6 +44,13 @@ def persist_workflow_run(view_model):
         agent_result=view_model.agent_result,
         theme=get_tailored_resume_theme(),
     )
+    cover_letter_artifact = build_cover_letter_artifact(
+        view_model.candidate_profile,
+        view_model.job_description,
+        view_model.fit_analysis,
+        view_model.tailored_draft,
+        agent_result=view_model.agent_result,
+    )
 
     saved_workspace_store = SavedWorkspaceStore(get_auth_service())
     if not saved_workspace_store.is_configured():
@@ -60,6 +70,10 @@ def persist_workflow_run(view_model):
             ),
             "workflow_snapshot_json": workflow_snapshot_json(view_model),
             "report_payload_json": json_payload(WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT, report),
+            "cover_letter_payload_json": json_payload(
+                WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER,
+                cover_letter_artifact,
+            ),
             "tailored_resume_payload_json": json_payload(
                 WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
                 tailored_resume_artifact,
@@ -77,6 +91,12 @@ def build_saved_report_from_workflow_run(workflow_run: Optional[object]):
     if workflow_run is None or not getattr(workflow_run, "report_payload_json", ""):
         return None
     return build_saved_report_from_payload(workflow_run.report_payload_json)
+
+
+def build_saved_cover_letter_from_workflow_run(workflow_run: Optional[object]):
+    if workflow_run is None or not getattr(workflow_run, "cover_letter_payload_json", ""):
+        return None
+    return build_saved_cover_letter_from_payload(workflow_run.cover_letter_payload_json)
 
 
 def build_saved_tailored_resume_from_workflow_run(workflow_run: Optional[object]):

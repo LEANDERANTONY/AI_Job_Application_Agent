@@ -52,6 +52,7 @@ def test_build_product_help_context_includes_reload_action(monkeypatch):
     assert context["has_job_description"] is True
     assert context["has_tailored_resume"] is True
     assert context["has_report"] is True
+    assert context["has_cover_letter"] is False
     assert context["session_usage"]["remaining_calls"] == 10
     assert context["daily_quota"]["plan_tier"] == "free"
 
@@ -72,13 +73,13 @@ def test_build_product_help_context_for_question_includes_retrieved_knowledge(mo
         ai_session=None,
     )
 
+    assert context["current_page"] == "Saved Workspace"
     assert context["knowledge_hits"][0]["source"] == "Saved Workspace"
 
 
 def test_submit_assistant_question_returns_false_for_blank_input():
     submitted = page_assistant._submit_assistant_question(
         current_page="Upload Resume",
-        mode="product_help",
         question="   ",
         history=[],
     )
@@ -97,7 +98,7 @@ def test_submit_assistant_question_appends_turn_and_updates_usage(monkeypatch):
         def __init__(self, openai_service=None):
             captured["openai_service"] = openai_service
 
-        def answer_product_help(self, question, current_page, history=None, app_context=None):
+        def answer(self, question, current_page, workflow_view_model=None, report=None, artifact=None, history=None, app_context=None):
             captured["question"] = question
             captured["current_page"] = current_page
             captured["history"] = history
@@ -111,7 +112,6 @@ def test_submit_assistant_question_appends_turn_and_updates_usage(monkeypatch):
 
     submitted = page_assistant._submit_assistant_question(
         current_page="Upload Resume",
-        mode="product_help",
         question="How do I start?",
         history=[],
     )
@@ -119,5 +119,6 @@ def test_submit_assistant_question_appends_turn_and_updates_usage(monkeypatch):
     assert submitted is True
     assert captured["question"] == "How do I start?"
     assert captured["turn"].question == "How do I start?"
+    assert captured["mode"] == "assistant"
     assert captured["turn"].response.answer == "Use Upload Resume first."
     assert captured["usage"] == {"request_count": 1}

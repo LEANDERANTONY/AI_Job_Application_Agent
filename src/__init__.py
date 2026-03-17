@@ -1,2 +1,2 @@
-"""Core package for the AI Job Application Agent."""
+"""Core package for Application Copilot."""
 

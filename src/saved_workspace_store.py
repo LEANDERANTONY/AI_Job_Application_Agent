@@ -35,6 +35,7 @@ class SavedWorkspaceStore:
             "workflow_signature": str(payload.get("workflow_signature", "") or ""),
             "workflow_snapshot_json": str(payload.get("workflow_snapshot_json", "") or ""),
             "report_payload_json": str(payload.get("report_payload_json", "") or ""),
+            "cover_letter_payload_json": str(payload.get("cover_letter_payload_json", "") or ""),
             "tailored_resume_payload_json": str(payload.get("tailored_resume_payload_json", "") or ""),
             "updated_at": str(payload.get("updated_at") or updated_at.isoformat()),
             "expires_at": str(payload.get("expires_at") or expires_at.isoformat()),
@@ -63,7 +64,7 @@ class SavedWorkspaceStore:
             response = (
                 client.table(self.table_name)
                 .select(
-                    "user_id,job_title,workflow_signature,workflow_snapshot_json,report_payload_json,tailored_resume_payload_json,expires_at,updated_at"
+                    "user_id,job_title,workflow_signature,workflow_snapshot_json,report_payload_json,cover_letter_payload_json,tailored_resume_payload_json,expires_at,updated_at"
                 )
                 .eq("user_id", user_id)
                 .limit(1)
@@ -137,6 +138,7 @@ class SavedWorkspaceStore:
             workflow_signature=str(payload.get("workflow_signature", fallback.get("workflow_signature", "")) or ""),
             workflow_snapshot_json=str(payload.get("workflow_snapshot_json", fallback.get("workflow_snapshot_json", "")) or ""),
             report_payload_json=str(payload.get("report_payload_json", fallback.get("report_payload_json", "")) or ""),
+            cover_letter_payload_json=str(payload.get("cover_letter_payload_json", fallback.get("cover_letter_payload_json", "")) or ""),
             tailored_resume_payload_json=str(payload.get("tailored_resume_payload_json", fallback.get("tailored_resume_payload_json", "")) or ""),
             expires_at=str(payload.get("expires_at", fallback.get("expires_at", "")) or ""),
             updated_at=str(payload.get("updated_at", fallback.get("updated_at", "")) or ""),

@@ -76,6 +76,7 @@ def test_saved_workspace_store_upserts_single_row(monkeypatch):
                             "workflow_signature": "sig-1",
                             "workflow_snapshot_json": "{\"version\": 1}",
                             "report_payload_json": "{\"version\": 1}",
+                            "cover_letter_payload_json": "{\"version\": 1}",
                             "tailored_resume_payload_json": "{\"version\": 1}",
                             "expires_at": "2026-03-16T00:00:00+00:00",
                             "updated_at": "2026-03-15T00:00:00+00:00",
@@ -97,6 +98,7 @@ def test_saved_workspace_store_upserts_single_row(monkeypatch):
             "workflow_signature": "sig-1",
             "workflow_snapshot_json": "snapshot",
             "report_payload_json": "report",
+            "cover_letter_payload_json": "cover-letter",
             "tailored_resume_payload_json": "resume",
         },
     )
@@ -108,6 +110,7 @@ def test_saved_workspace_store_upserts_single_row(monkeypatch):
     assert client.queries[0].lte_filter[0] == "expires_at"
     assert client.queries[1].upsert_conflict == "user_id"
     assert client.queries[1].upsert_payload["user_id"] == "user-123"
+    assert client.queries[1].upsert_payload["cover_letter_payload_json"] == "cover-letter"
     assert client.queries[1].upsert_payload["expires_at"]
 
 
@@ -129,6 +132,7 @@ def test_saved_workspace_store_deletes_expired_rows_on_load(monkeypatch):
                             "workflow_signature": "sig-1",
                             "workflow_snapshot_json": "snapshot",
                             "report_payload_json": "report",
+                            "cover_letter_payload_json": "cover-letter",
                             "tailored_resume_payload_json": "resume",
                             "expires_at": "2026-03-15T00:00:00+00:00",
                             "updated_at": "2026-03-14T00:00:00+00:00",

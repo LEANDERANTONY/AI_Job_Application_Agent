@@ -3,14 +3,18 @@ from dataclasses import replace
 import streamlit as st
 
 from src.errors import ExportError
-from src.exporters import build_report_preview_html, build_resume_preview_html, export_markdown_bytes
+from src.exporters import (
+    build_cover_letter_preview_html,
+    build_report_preview_html,
+    build_resume_preview_html,
+    export_markdown_bytes,
+)
 from src.resume_builder import RESUME_THEMES
-from src.schemas import AgentWorkflowResult, ApplicationReport, TailoredResumeArtifact
+from src.schemas import AgentWorkflowResult, ApplicationReport, CoverLetterArtifact, TailoredResumeArtifact
 from src.ui.components import (
     render_auto_download,
     render_download_button,
     render_html_preview,
-    render_metric_card,
     render_section_head,
 )
 from src.ui.state import (
@@ -22,8 +26,10 @@ from src.ui.state import (
 )
 from src.ui.workflow_signatures import report_signature
 from src.ui.workflow import (
+    get_cached_cover_letter_pdf_package,
     get_cached_pdf_package,
     get_cached_tailored_resume_pdf_package,
+    prepare_cover_letter_pdf_package,
     prepare_pdf_package,
     prepare_tailored_resume_pdf_package,
 )
@@ -143,31 +149,8 @@ def render_report_package(report: ApplicationReport, agent_result: AgentWorkflow
     st.markdown("---")
     render_section_head(
         "Application Package",
-        "Deterministic final assembly for export and recruiter-facing review.",
+        "Recruiter-facing package assembled from the current workflow outputs.",
     )
-
-    cols = st.columns(3)
-    with cols[0]:
-        render_metric_card(
-            "Package Mode",
-            "Agent-Enhanced" if agent_result else "Deterministic",
-            "The report builder assembles a stable package from current workflow outputs.",
-            slim=True,
-        )
-    with cols[1]:
-        render_metric_card(
-            "Export Formats",
-            "Markdown + PDF",
-            "Markdown stays editable. PDF is the polished package for sharing.",
-            slim=True,
-        )
-    with cols[2]:
-        render_metric_card(
-            "Report Status",
-            "Ready",
-            report.summary,
-            slim=True,
-        )
 
     cached_report_pdf = get_cached_pdf_package()
     if cached_report_pdf is None:
@@ -203,6 +186,51 @@ def render_report_package(report: ApplicationReport, agent_result: AgentWorkflow
                 file_name=report.filename_stem + ".pdf",
                 mime="application/pdf",
                 key=_build_download_widget_key("download_pdf_package", report),
+                use_container_width=True,
+            )
+
+
+def render_cover_letter_artifact(artifact: CoverLetterArtifact, agent_result: AgentWorkflowResult = None):
+    st.markdown("---")
+    render_section_head(
+        "Cover Letter",
+        "Review the draft cover letter, then export it as Markdown or PDF.",
+    )
+
+    cached_cover_letter_pdf = get_cached_cover_letter_pdf_package()
+    if cached_cover_letter_pdf is None:
+        try:
+            with st.spinner("Preparing cover letter PDF..."):
+                cached_cover_letter_pdf = prepare_cover_letter_pdf_package(artifact)
+        except ExportError as error:
+            st.warning(error.user_message)
+            cached_cover_letter_pdf = None
+
+    with st.expander("Preview Cover Letter", expanded=False):
+        render_html_preview(
+            build_cover_letter_preview_html(artifact),
+            height=760,
+            scrolling=True,
+        )
+
+    download_col, pdf_col = st.columns(2)
+    with download_col:
+        render_download_button(
+            "Download Cover Letter Markdown",
+            data=export_markdown_bytes(artifact),
+            file_name=artifact.filename_stem + ".md",
+            mime="text/markdown",
+            key=_build_download_widget_key("download_cover_letter_markdown", artifact),
+            use_container_width=True,
+        )
+    with pdf_col:
+        if cached_cover_letter_pdf is not None:
+            render_download_button(
+                "Download Cover Letter PDF",
+                data=cached_cover_letter_pdf,
+                file_name=artifact.filename_stem + ".pdf",
+                mime="application/pdf",
+                key=_build_download_widget_key("download_cover_letter_pdf", artifact),
                 use_container_width=True,
             )
 

@@ -1,11 +1,13 @@
 from src.exporters import export_markdown_bytes, export_pdf_bytes, export_zip_bundle_bytes
-from src.schemas import ApplicationReport, TailoredResumeArtifact
+from src.schemas import ApplicationReport, CoverLetterArtifact, TailoredResumeArtifact
 from src.ui.state import (
     get_cached_export_bundle_bytes,
     get_cached_pdf_bytes,
+    get_cached_cover_letter_pdf_bytes,
     get_cached_tailored_resume_pdf_bytes,
     set_cached_export_bundle_bytes,
     set_cached_pdf_bytes,
+    set_cached_cover_letter_pdf_bytes,
     set_cached_tailored_resume_pdf_bytes,
 )
 
@@ -18,6 +20,16 @@ def prepare_pdf_package(report: ApplicationReport):
 
 def get_cached_pdf_package():
     return get_cached_pdf_bytes()
+
+
+def prepare_cover_letter_pdf_package(artifact: CoverLetterArtifact):
+    pdf_bytes = export_pdf_bytes(artifact)
+    set_cached_cover_letter_pdf_bytes(pdf_bytes)
+    return pdf_bytes
+
+
+def get_cached_cover_letter_pdf_package():
+    return get_cached_cover_letter_pdf_bytes()
 
 
 def prepare_tailored_resume_pdf_package(artifact: TailoredResumeArtifact):

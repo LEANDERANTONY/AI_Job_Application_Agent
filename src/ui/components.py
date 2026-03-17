@@ -9,8 +9,7 @@ def render_intro():
     st.markdown(
         """
         <div class="app-hero">
-            <div class="app-kicker">Application Copilot</div>
-            <h1>AI Job Application Agent</h1>
+            <h1>Application Copilot</h1>
             <p class="app-copy">
                 Ingest your resume, structure a target job description, and prepare
                 the inputs needed for fit analysis, tailoring, and export.

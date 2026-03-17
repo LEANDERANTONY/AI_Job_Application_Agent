@@ -4,6 +4,7 @@ from typing import Any, Dict, Iterable
 
 from src.schemas import (
     CandidateProfile,
+    CoverLetterAgentOutput,
     FitAnalysis,
     FitAgentOutput,
     JobDescription,
@@ -355,36 +356,100 @@ def build_resume_generation_agent_prompt(
     }
 
 
-def build_product_help_assistant_prompt(
-    app_context: Dict[str, Any],
+def build_cover_letter_agent_prompt(
+    candidate_profile: CandidateProfile,
+    job_description: JobDescription,
+    fit_analysis: FitAnalysis,
+    tailored_draft: TailoredResumeDraft,
+    tailoring_output: TailoringAgentOutput,
+    strategy_output: StrategyAgentOutput = None,
+    review_output: ReviewAgentOutput = None,
+    resume_generation_output=None,
+) -> Dict[str, Any]:
+    contract = {
+        "greeting": "salutation such as Dear Hiring Team",
+        "opening_paragraph": "2-4 sentence opening paragraph grounded in the approved workflow outputs",
+        "body_paragraphs": "array of 1-3 grounded body paragraphs connecting evidence to the role",
+        "closing_paragraph": "1-2 sentence closing paragraph with grounded enthusiasm and next-step language",
+        "signoff": "closing signoff such as Sincerely",
+        "signature_name": "candidate name for the signature line",
+    }
+    sections = [
+        ("Candidate Profile", candidate_profile, 1800),
+        ("Job Description", job_description, 1500),
+        ("Deterministic Fit Analysis", fit_analysis, 1400),
+        ("Deterministic Tailored Draft", tailored_draft, 1600),
+        ("Approved Tailoring Output", tailoring_output, 1400),
+    ]
+    if strategy_output:
+        sections.append(("Approved Strategy Output", strategy_output, 1200))
+    if review_output:
+        sections.append(("Review Output", review_output, 1200))
+    if resume_generation_output:
+        sections.append(("Resume Generation Output", resume_generation_output, 1200))
+    user_prompt, metadata = _build_budgeted_user_prompt(sections)
+    return {
+        "system": (
+            "You are the Cover Letter Agent. Write a recruiter-facing cover letter only after the review stage has approved or corrected the upstream outputs. "
+            "Use the approved tailoring, strategy, review, and resume-generation context as the source of truth. "
+            "Do not invent employers, metrics, projects, technologies, or direct experience that are not supported by the provided inputs. "
+            "Keep the result specific to the role, grounded, and ready for packaging into the final artifact. "
+            + _build_contract(contract)
+        ),
+        "user": user_prompt,
+        "expected_keys": list(contract.keys()),
+        "metadata": metadata,
+    }
+
+
+def build_assistant_prompt(
+    assistant_context: Dict[str, Any],
     question: str,
     history: Any = None,
 ) -> Dict[str, Any]:
     contract = {
-        "answer": "short, direct answer explaining how to use the product or what a feature does",
-        "sources": "array of 1-3 relevant product areas or screens used for the answer",
+        "answer": "short, direct grounded answer that can explain product behavior, saved workspace behavior, or the user's current application outputs",
+        "sources": "array of 1-4 relevant pages, artifacts, or workflow signals used for the answer",
         "suggested_follow_ups": "array of 0-3 follow-up questions the user may want to ask next",
     }
     user_prompt = "\n\n".join(
         [
-            _json_block("Product Context", app_context),
+            _json_block("Assistant Context", assistant_context),
             _json_block("User Question", {"question": question}),
         ]
         + ([_json_block("Recent History", history[-4:])] if history else [])
     )
     return {
         "system": (
-            "You are the Product Help Assistant for an AI job application app. "
-            "Explain the current product behavior clearly and only describe features that are actually available in the provided context. "
-            "Use retrieved product knowledge hits when they are provided, but keep runtime session context authoritative for current state such as quotas, page availability, and active artifacts. "
+            "You are the in-app assistant for an AI job application app. "
+            "You answer both product questions and grounded questions about the user's current package in one conversation. "
+            "Explain only features and artifacts that are present in the provided context. "
+            "Use retrieved product knowledge hits when they are provided, but treat runtime session context as authoritative for current state such as quotas, page availability, saved workspace behavior, and active artifacts. "
             "If the user asks about navigation, explain the current sidebar pages and signed-in actions from the provided context. "
-            "If the user asks who you are or what your name is, answer as the in-app Product Help Assistant rather than switching to a generic workflow summary. "
+            "If the user asks about the current resume, cover letter, report, or fit analysis, ground the answer in the workflow context and say directly when evidence is weak or unavailable. "
+            "If the user asks for broader resume or application coaching, you may provide general advice, but anchor it back to the current package when possible and separate general guidance from context-specific recommendations when helpful. "
             "If the user asks about limits, tokens, quota, warnings, or fallback behavior, explain the difference between browser-session assisted budget and account-level daily quota using the provided context. "
+            "If the user asks who you are or what your name is, answer as the in-app assistant for this product. "
             + _build_contract(contract)
         ),
         "user": user_prompt,
         "expected_keys": list(contract.keys()),
     }
+
+
+def build_product_help_assistant_prompt(
+    app_context: Dict[str, Any],
+    question: str,
+    history: Any = None,
+) -> Dict[str, Any]:
+    return build_assistant_prompt(
+        {
+            "assistant_scope": "product_help",
+            "product_context": app_context,
+        },
+        question,
+        history=history,
+    )
 
 
 def build_application_qa_assistant_prompt(
@@ -392,25 +457,11 @@ def build_application_qa_assistant_prompt(
     question: str,
     history: Any = None,
 ) -> Dict[str, Any]:
-    contract = {
-        "answer": "grounded answer that can combine general resume coaching with context-specific recommendations from the user's current package",
-        "sources": "array of 1-4 workflow artifacts or signals used for the answer",
-        "suggested_follow_ups": "array of 0-3 useful next questions or actions",
-    }
-    user_prompt = "\n\n".join(
-        [
-            _json_block("Workflow Context", workflow_context),
-            _json_block("User Question", {"question": question}),
-        ]
-        + ([_json_block("Recent History", history[-4:])] if history else [])
+    return build_assistant_prompt(
+        {
+            "assistant_scope": "application_qa",
+            "workflow_context": workflow_context,
+        },
+        question,
+        history=history,
     )
-    return {
-        "system": (
-            "You are the Application Q&A Assistant. Use the provided workflow context as the grounding source for all context-specific claims. "
-            "If the user asks for broader resume or application coaching, you may provide general guidance, but anchor it back to the user's current package and clearly separate general advice from context-specific recommendations when helpful. "
-            "Do not invent facts about the candidate, JD, or outputs. If evidence is weak, say so directly. "
-            + _build_contract(contract)
-        ),
-        "user": user_prompt,
-        "expected_keys": list(contract.keys()),
-    }

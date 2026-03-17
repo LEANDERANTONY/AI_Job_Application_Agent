@@ -9,6 +9,7 @@ from src.errors import InputValidationError
 from src.schemas import AgentWorkflowResult, CandidateProfile, FitAnalysis, TailoredResumeDraft
 from src.ui.components import render_metric_card, render_section_head
 from src.ui.page_artifacts import (
+    render_cover_letter_artifact as _render_cover_letter_artifact,
     render_report_package as _render_report_package,
     render_tailored_resume_artifact as _render_tailored_resume_artifact,
 )
@@ -18,6 +19,7 @@ from src.ui.state import (
 )
 from src.ui.workflow import (
     build_application_report_view_model,
+    build_cover_letter_artifact_view_model,
     build_job_workflow_view_model,
     build_tailored_resume_artifact_view_model,
     get_resume_page_state,
@@ -103,7 +105,7 @@ def _render_openai_usage(usage):
                 usage.get("remaining_total_tokens"),
                 usage.get("max_total_tokens"),
             ),
-            "Remaining assisted capacity in this browser session before the app falls back to the deterministic path.",
+            "Remaining assisted capacity in this browser session before the workflow switches to the backup path.",
         )
     with cols[2]:
         budget_reached = (
@@ -113,7 +115,7 @@ def _render_openai_usage(usage):
         render_metric_card(
             "Session Assisted Mode",
             "Limit Reached" if budget_reached else "Available",
-            "If this session limit is reached, the workflow remains available in deterministic fallback mode.",
+            "If this session limit is reached, the workflow remains available in backup mode.",
         )
 
     st.caption(
@@ -179,7 +181,7 @@ def _render_daily_quota_status(daily_quota):
 
     if daily_quota.quota_exhausted:
         st.warning(
-            "Your daily assisted limit has been reached. The deterministic workflow remains available, and assisted mode will reset on the next UTC day unless your plan tier changes."
+            "Your daily assisted limit has been reached. The backup workflow remains available, and assisted mode will reset on the next UTC day unless your plan tier changes."
         )
     else:
         st.caption(
@@ -224,8 +226,18 @@ def _render_profile_snapshot(candidate_profile: CandidateProfile):
 
 
 def render_resume_page():
-    render_section_head("Resume Intake", "Parse an existing resume and keep it ready for tailoring.")
+    render_section_head("Resume Intake", "Sign in first, then upload your resume to start the AI-assisted workflow.")
     st.markdown("---")
+
+    if not is_authenticated():
+        st.info("Sign in with Google from the sidebar first, then upload your resume.")
+        st.file_uploader(
+            "Upload your resume file",
+            type=["pdf", "docx", "txt"],
+            disabled=True,
+        )
+        return
+
     resume_document, candidate_profile_resume = get_resume_page_state()
     uploaded_file = st.file_uploader("Upload your resume file", type=["pdf", "docx", "txt"])
     if uploaded_file is not None:
@@ -257,20 +269,20 @@ def render_job_search_page():
 def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
     st.markdown("---")
     render_section_head(
-        "Supervised Agent Workflow",
-        "Specialist agents refine the deterministic baseline while preserving grounded output.",
+        "Agentic Workflow",
+        "AI-assisted analysis turns the parsed inputs into grounded, recruiter-facing guidance.",
     )
 
     if agent_result.mode != "openai":
         if agent_result.attempted_assisted:
             st.warning(
-                "This run started in AI-assisted mode but downgraded to deterministic fallback. Reason: {reason}".format(
+                "This run started in AI-assisted mode but continued in backup mode. Reason: {reason}".format(
                     reason=agent_result.fallback_reason or "The AI-assisted step did not complete successfully."
                 )
             )
         else:
             st.info(
-                "This run used deterministic fallback because AI-assisted execution was not available for this run."
+                "This run used the backup workflow because AI-assisted execution was not available for this run."
             )
 
     cols = st.columns(3)
@@ -284,7 +296,7 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
     with cols[1]:
         render_metric_card("Review Status", _review_status_label(agent_result.review), "The review agent is the final quality gate on the final corrected output.", slim=True)
     with cols[2]:
-        render_metric_card("Model", _simplify_model_name(agent_result.model), "Fallback means deterministic logic only.", slim=True)
+        render_metric_card("Model", _simplify_model_name(agent_result.model), "Backup mode runs without model calls.", slim=True)
 
     if agent_result.fallback_details:
         with st.expander("Fallback Details", expanded=False):
@@ -298,22 +310,6 @@ def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
             st.caption("No recruiter positioning produced.")
         _render_list("Cover Letter Talking Points", agent_result.strategy.cover_letter_talking_points if agent_result.strategy else [], "No cover letter talking points produced.")
         _render_list("Portfolio / Project Emphasis", agent_result.strategy.portfolio_project_emphasis if agent_result.strategy else [], "No portfolio or project emphasis produced.")
-
-    with st.expander("Review Notes", expanded=True):
-        st.markdown("**Tailored Professional Summary**")
-        st.write(agent_result.tailoring.professional_summary)
-        _render_list("Issues Found In Incoming Draft", agent_result.review.grounding_issues, "No grounding issues detected in the incoming draft.")
-        unresolved_issues = getattr(agent_result.review, "unresolved_issues", []) or []
-        if unresolved_issues:
-            _render_list("Unresolved Issues", unresolved_issues, "No unresolved issues remain.")
-        _render_list(
-            "Corrections Applied" if getattr(agent_result.review, "corrected_tailoring", None) or getattr(agent_result.review, "corrected_strategy", None) else "Revision Requests",
-            agent_result.review.revision_requests,
-            "No revisions requested.",
-        )
-        if getattr(agent_result.review, "corrected_tailoring", None) or getattr(agent_result.review, "corrected_strategy", None):
-            st.caption("Review corrections were applied directly to the final tailoring and strategy outputs.")
-        _render_list("Final Notes", agent_result.review.final_notes, "No final notes produced.")
 
 
 def _workflow_progress_palette(title):
@@ -473,11 +469,11 @@ def render_job_description_page():
         return
 
     ai_session = workflow_view_model.ai_session
-    st.caption("Run the supervised workflow explicitly to avoid unnecessary model-backed usage on every rerun.")
+    st.caption("Run the AI-assisted analysis explicitly to avoid unnecessary model-backed usage on every rerun.")
     login_required = assisted_workflow_requires_login() and not is_authenticated()
     if login_required:
-        st.info("Sign in with Google from the sidebar to run the AI-assisted workflow and keep usage tied to your account.")
-    if st.button("Run supervised agent workflow", key="run_supervised_workflow", disabled=login_required):
+        st.info("Sign in with Google from the sidebar to run the AI-assisted analysis and keep usage tied to your account.")
+    if st.button("Run Agentic Analysis", key="run_supervised_workflow", disabled=login_required):
         workflow_view_model = _run_supervised_workflow_with_progress(workflow_view_model)
 
     agent_result = workflow_view_model.agent_result
@@ -485,13 +481,16 @@ def render_job_description_page():
         _render_agent_workflow_result(agent_result)
     else:
         st.info(
-            "{mode} workflow is ready. Run it to generate profile positioning, fit narrative, application strategy guidance, tailored wording, and review notes.".format(
+            "{mode} analysis is ready. Run it to generate findings, application strategy guidance, and tailored output support.".format(
                 mode=ai_session.mode_label
             )
         )
 
     tailored_resume_artifact = build_tailored_resume_artifact_view_model(workflow_view_model)
     _render_tailored_resume_artifact(tailored_resume_artifact, agent_result=agent_result)
+
+    cover_letter_artifact = build_cover_letter_artifact_view_model(workflow_view_model)
+    _render_cover_letter_artifact(cover_letter_artifact, agent_result=agent_result)
 
     report = build_application_report_view_model(workflow_view_model)
     _render_report_package(report, agent_result=agent_result)

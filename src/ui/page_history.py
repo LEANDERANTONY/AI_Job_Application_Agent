@@ -107,6 +107,7 @@ def render_history_page(render_daily_quota_status):
     snapshot = saved_workspace.get("snapshot")
     saved_report = saved_workspace.get("report")
     saved_resume = saved_workspace.get("resume")
+    saved_cover_letter = saved_workspace.get("cover_letter")
 
     status_cols = st.columns(4)
     with status_cols[0]:
@@ -149,7 +150,7 @@ def render_history_page(render_daily_quota_status):
             )
         )
 
-    if saved_report or saved_resume:
+    if saved_report or saved_resume or saved_cover_letter:
         st.caption(
             "Downloads below are regenerated from the current saved workspace payloads, not from your current in-session inputs."
         )
@@ -183,7 +184,22 @@ def render_history_page(render_daily_quota_status):
             mime="application/pdf",
             key="saved_workspace_resume_pdf",
         )
-    if saved_report and saved_resume:
+    if saved_cover_letter:
+        render_download_button(
+            "Download Saved Cover Letter Markdown",
+            data=export_markdown_bytes(saved_cover_letter),
+            file_name=saved_cover_letter.filename_stem + ".md",
+            mime="text/markdown",
+            key="saved_workspace_cover_letter_markdown",
+        )
+        render_download_button(
+            "Download Saved Cover Letter PDF",
+            data=export_pdf_bytes(saved_cover_letter),
+            file_name=saved_cover_letter.filename_stem + ".pdf",
+            mime="application/pdf",
+            key="saved_workspace_cover_letter_pdf",
+        )
+    if saved_report and saved_resume and saved_cover_letter:
         render_download_button(
             "Download Saved Export Bundle",
             data=export_zip_bundle_bytes(
@@ -192,6 +208,8 @@ def render_history_page(render_daily_quota_status):
                     saved_report.filename_stem + ".pdf": export_pdf_bytes(saved_report),
                     saved_resume.filename_stem + ".md": export_markdown_bytes(saved_resume),
                     saved_resume.filename_stem + ".pdf": export_pdf_bytes(saved_resume),
+                    saved_cover_letter.filename_stem + ".md": export_markdown_bytes(saved_cover_letter),
+                    saved_cover_letter.filename_stem + ".pdf": export_pdf_bytes(saved_cover_letter),
                 }
             ),
             file_name=saved_resume.filename_stem.replace("-tailored-resume", "-application-bundle") + ".zip",

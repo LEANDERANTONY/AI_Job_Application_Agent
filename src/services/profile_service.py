@@ -60,6 +60,15 @@ DEGREE_KEYWORDS = (
     "degree",
 )
 
+EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+PHONE_PATTERN = re.compile(
+    r"(?:(?:\+\d{1,3}[\s\-]?)?(?:\(?\d{2,5}\)?[\s\-]?){2,4}\d{2,4})"
+)
+PROFILE_LINK_PATTERN = re.compile(
+    r"\b(?:https?://)?(?:www\.)?(?:linkedin\.com/in/[^\s|•·,;]+|github\.com/[^\s|•·,;]+|[A-Z0-9.-]+\.[A-Z]{2,}(?:/[^\s|•·,;]*)?)\b",
+    re.IGNORECASE,
+)
+
 
 def _normalize_line(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip())
@@ -201,6 +210,21 @@ def _first_meaningful_lines(text: str) -> List[str]:
     return [line.strip() for line in text.splitlines() if line.strip()][:5]
 
 
+def _resume_header_lines(text: str) -> List[str]:
+    lines: List[str] = []
+    for raw_line in text.splitlines():
+        line = _normalize_line(raw_line)
+        if not line:
+            continue
+        maybe_header = _normalize_section_header(line)
+        if maybe_header and lines:
+            break
+        lines.append(line)
+        if len(lines) >= 8:
+            break
+    return lines
+
+
 def _looks_like_name(line: str) -> bool:
     if not line or line.lower() in SECTION_HEADERS:
         return False
@@ -220,12 +244,44 @@ def _extract_name_from_resume(text: str) -> str:
 
 
 def _extract_location_from_resume(text: str) -> str:
-    for line in _first_meaningful_lines(text):
+    for line in _resume_header_lines(text):
         if "@" in line or any(char.isdigit() for char in line):
             continue
         if "," in line and len(line.split()) <= 6:
             return line
     return ""
+
+
+def _extract_contact_lines_from_resume(text: str) -> List[str]:
+    contact_values: List[str] = []
+
+    for line in _resume_header_lines(text):
+        segments = [segment.strip() for segment in re.split(r"[|•·]", line) if segment.strip()]
+        for segment in segments or [line]:
+            for email in EMAIL_PATTERN.findall(segment):
+                contact_values.append(email)
+
+            for link in PROFILE_LINK_PATTERN.findall(segment):
+                lowered_link = link.lower()
+                if "@" in lowered_link:
+                    continue
+                if lowered_link.startswith("www."):
+                    contact_values.append("https://" + link)
+                elif lowered_link.startswith("http://") or lowered_link.startswith("https://"):
+                    contact_values.append(link)
+                elif any(token in lowered_link for token in ("linkedin.com/", "github.com/")):
+                    contact_values.append("https://" + link)
+
+            normalized_segment = segment.lower()
+            if any(token in normalized_segment for token in ("phone", "mobile", "tel", "+")) or re.search(r"\d", segment):
+                phone_match = PHONE_PATTERN.search(segment)
+                if phone_match:
+                    candidate = phone_match.group(0).strip(" -|,;:")
+                    digits_only = re.sub(r"\D", "", candidate)
+                    if len(digits_only) >= 8:
+                        contact_values.append(candidate)
+
+    return dedupe_strings(contact_values)
 
 
 def _collect_resume_signals(
@@ -260,6 +316,7 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
     return CandidateProfile(
         full_name=_extract_name_from_resume(resume_text),
         location=_extract_location_from_resume(resume_text),
+        contact_lines=_extract_contact_lines_from_resume(resume_text),
         source=resume_document.source or "resume_upload",
         resume_text=resume_text,
         skills=detected_skills,

@@ -147,10 +147,12 @@ Responsibilities include:
 
 ### `src/assistant_service.py`
 
-Owns the two-mode grounded assistant used in the UI:
+Owns the unified grounded assistant used in the UI.
 
-- product-help mode (`Using the App`)
-- grounded resume/application Q&A mode (`About My Resume`)
+It answers both:
+
+- product and navigation questions about the current app flow
+- grounded questions about the active fit analysis, tailored resume, cover letter, and application package
 
 This stays separate from the supervised workflow agents because it serves conversational assistance rather than structured workflow output.
 

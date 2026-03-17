@@ -21,6 +21,7 @@ def _build_profile():
         ResumeDocument(
             text=(
                 "Leander Antony\n"
+                "leander@example.com | +91 99999 99999 | github.com/leander-antony\n"
                 "Chennai, India\n"
                 "Python SQL Docker communication\n"
                 "Built production ML applications."
@@ -73,8 +74,12 @@ def test_build_tailored_resume_artifact_includes_sections_and_notes():
     assert "## Professional Summary" in artifact.markdown
     assert "## Professional Experience" in artifact.markdown
     assert "## Change Summary" in artifact.markdown
+    assert "## Validation Notes" not in artifact.markdown
+    assert "Machine Learning Engineer" not in artifact.markdown.split("## Professional Summary", 1)[0]
     assert artifact.change_log
     assert artifact.validation_notes
+    assert "leander@example.com" in artifact.header.contact_lines
+    assert "+91 99999 99999" in artifact.header.contact_lines
 
 
 def test_build_tailored_resume_artifact_prefers_agent_output_when_available():
@@ -127,6 +132,9 @@ def test_build_tailored_resume_artifact_prefers_agent_output_when_available():
     assert artifact.professional_summary == "Agent-enhanced tailored summary."
     assert "Built production ML APIs using Python and Docker." in artifact.markdown
     assert any("review pass" in entry.lower() or "agent" in entry.lower() for entry in artifact.change_log)
+    assert "leander@example.com" in artifact.header.contact_lines
+    assert "+91 99999 99999" in artifact.header.contact_lines
+    assert "https://github.com/leander-antony" in artifact.header.contact_lines
 
 
 def test_build_tailored_resume_artifact_keeps_user_selected_theme_when_agent_hint_differs():

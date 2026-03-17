@@ -112,6 +112,7 @@ create table if not exists public.saved_workspaces (
     workflow_signature text not null default '',
     workflow_snapshot_json text not null default '',
     report_payload_json text not null default '',
+    cover_letter_payload_json text not null default '',
     tailored_resume_payload_json text not null default '',
     expires_at timestamptz not null,
     updated_at timestamptz not null default timezone('utc', now())
@@ -121,6 +122,7 @@ alter table public.saved_workspaces add column if not exists job_title text not 
 alter table public.saved_workspaces add column if not exists workflow_signature text not null default '';
 alter table public.saved_workspaces add column if not exists workflow_snapshot_json text not null default '';
 alter table public.saved_workspaces add column if not exists report_payload_json text not null default '';
+alter table public.saved_workspaces add column if not exists cover_letter_payload_json text not null default '';
 alter table public.saved_workspaces add column if not exists tailored_resume_payload_json text not null default '';
 alter table public.saved_workspaces add column if not exists expires_at timestamptz not null default timezone('utc', now()) + interval '1 day';
 alter table public.saved_workspaces add column if not exists updated_at timestamptz not null default timezone('utc', now());

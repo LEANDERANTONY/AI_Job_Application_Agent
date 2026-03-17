@@ -9,7 +9,7 @@ PRODUCT_KNOWLEDGE_DOCUMENTS = [
         "keywords": ["saved workspace", "reload", "restore", "expires", "24 hours", "snapshot"],
         "content": (
             "Signed-in users keep one saved workspace snapshot for 24 hours. "
-            "Reload Saved Workspace restores that snapshot back into Manual JD Input, including the resume-backed candidate state, fit outputs, and saved supervised workflow result when available."
+            "Reload Saved Workspace restores that snapshot back into Manual JD Input, including the resume-backed candidate state, fit outputs, and saved report, tailored resume, and cover letter artifacts when available."
         ),
     },
     {
@@ -18,7 +18,16 @@ PRODUCT_KNOWLEDGE_DOCUMENTS = [
         "source": "Combined Export",
         "keywords": ["download", "export", "pdf", "bundle", "markdown", "zip"],
         "content": (
-            "Markdown downloads are immediately available. PDF and ZIP bundle actions now present as Download actions from the start, generate bytes on first click with spinner feedback, and then refresh into the browser download control."
+            "Markdown downloads are immediately available for the tailored resume, cover letter, and application package. PDF and ZIP bundle actions present as Download actions from the start, generate bytes on first click with spinner feedback, and then refresh into the browser download control."
+        ),
+    },
+    {
+        "topic": "cover_letter",
+        "title": "Cover Letter Artifact",
+        "source": "Cover Letter",
+        "keywords": ["cover letter", "letter", "application package", "resume preview"],
+        "content": (
+            "The cover letter is a first-class artifact in the JD workflow. It is generated after review-approved workflow outputs exist, appears between Resume Preview and Application Package, and can be downloaded as Markdown or PDF."
         ),
     },
     {
@@ -36,7 +45,7 @@ PRODUCT_KNOWLEDGE_DOCUMENTS = [
         "source": "Manual JD Input",
         "keywords": ["workflow", "supervised", "agent", "review", "fit", "tailoring"],
         "content": (
-            "The supervised workflow runs specialist agents for profile, job, fit, tailoring, strategy, review, and resume generation. If AI-assisted execution fails mid-run, the UI now shows that the workflow downgraded to deterministic fallback and why."
+            "The supervised workflow runs specialist agents for profile, job, fit, tailoring, strategy, review, resume generation, and cover letter generation. The cover letter is generated after review-approved outputs exist. If AI-assisted execution fails mid-run, the UI shows that the workflow downgraded to deterministic fallback and why."
         ),
     },
 ]

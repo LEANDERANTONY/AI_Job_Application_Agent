@@ -22,9 +22,15 @@ OPENAI_MODEL_PRODUCT_HELP = os.getenv(
 OPENAI_MODEL_APPLICATION_QA = os.getenv(
     "OPENAI_MODEL_APPLICATION_QA", OPENAI_MODEL_HIGH_TRUST
 )
+OPENAI_MODEL_ASSISTANT = os.getenv(
+    "OPENAI_MODEL_ASSISTANT", OPENAI_MODEL_APPLICATION_QA
+)
 OPENAI_REASONING_DEFAULT = os.getenv("OPENAI_REASONING_DEFAULT", "medium").strip().lower()
 OPENAI_REASONING_HIGH_TRUST = os.getenv(
     "OPENAI_REASONING_HIGH_TRUST", "high"
+).strip().lower()
+OPENAI_REASONING_ASSISTANT = os.getenv(
+    "OPENAI_REASONING_ASSISTANT", OPENAI_REASONING_DEFAULT
 ).strip().lower()
 OPENAI_MODEL_ROUTING = {
     "profile": os.getenv("OPENAI_MODEL_PROFILE", OPENAI_MODEL_MID_TIER),
@@ -33,9 +39,11 @@ OPENAI_MODEL_ROUTING = {
     "tailoring": os.getenv("OPENAI_MODEL_TAILORING", OPENAI_MODEL_MID_TIER),
     "strategy": os.getenv("OPENAI_MODEL_STRATEGY", OPENAI_MODEL_MID_TIER),
     "review": os.getenv("OPENAI_MODEL_REVIEW", OPENAI_MODEL_HIGH_TRUST),
+    "cover_letter": os.getenv("OPENAI_MODEL_COVER_LETTER", OPENAI_MODEL_HIGH_TRUST),
     "resume_generation": os.getenv(
         "OPENAI_MODEL_RESUME_GENERATION", OPENAI_MODEL_HIGH_TRUST
     ),
+    "assistant": OPENAI_MODEL_ASSISTANT,
     "assistant_product_help": OPENAI_MODEL_PRODUCT_HELP,
     "assistant_application_qa": OPENAI_MODEL_APPLICATION_QA,
 }
@@ -46,9 +54,11 @@ OPENAI_REASONING_ROUTING = {
     "tailoring": os.getenv("OPENAI_REASONING_TAILORING", OPENAI_REASONING_DEFAULT).strip().lower(),
     "strategy": os.getenv("OPENAI_REASONING_STRATEGY", "low").strip().lower(),
     "review": os.getenv("OPENAI_REASONING_REVIEW", OPENAI_REASONING_DEFAULT).strip().lower(),
+    "cover_letter": os.getenv("OPENAI_REASONING_COVER_LETTER", OPENAI_REASONING_DEFAULT).strip().lower(),
     "resume_generation": os.getenv(
         "OPENAI_REASONING_RESUME_GENERATION", OPENAI_REASONING_DEFAULT
     ).strip().lower(),
+    "assistant": OPENAI_REASONING_ASSISTANT,
     "assistant_product_help": os.getenv(
         "OPENAI_REASONING_PRODUCT_HELP", "low"
     ).strip().lower(),
@@ -80,7 +90,12 @@ OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
     "tailoring": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_TAILORING", 3200),
     "strategy": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_STRATEGY", 1500),
     "review": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_REVIEW", 4000),
+    "cover_letter": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_COVER_LETTER", 2200),
     "resume_generation": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_GENERATION", 3000),
+    "assistant": _load_int_env(
+        "OPENAI_MAX_COMPLETION_TOKENS_ASSISTANT",
+        _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
+    ),
     "assistant_product_help": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PRODUCT_HELP", 700),
     "assistant_application_qa": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
 }

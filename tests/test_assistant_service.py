@@ -53,10 +53,10 @@ def _build_view_model():
     )
 
 
-def test_product_help_fallback_explains_report_vs_resume():
+def test_assistant_fallback_explains_report_vs_resume():
     service = AssistantService()
 
-    response = service.answer_product_help(
+    response = service.answer(
         "What is the difference between the report and the resume?",
         current_page="Manual JD Input",
         app_context={},
@@ -64,13 +64,14 @@ def test_product_help_fallback_explains_report_vs_resume():
 
     assert "tailored resume" in response.answer.lower()
     assert "report" in response.answer.lower()
+    assert "cover letter" in response.answer.lower()
     assert response.sources
 
 
-def test_product_help_fallback_explains_navigation():
+def test_assistant_fallback_explains_navigation():
     service = AssistantService()
 
-    response = service.answer_product_help(
+    response = service.answer(
         "Can you explain how the navigation tab works?",
         current_page="Manual JD Input",
         app_context={},
@@ -80,22 +81,22 @@ def test_product_help_fallback_explains_navigation():
     assert "reload workspace" in response.answer.lower()
 
 
-def test_product_help_fallback_answers_assistant_identity_question():
+def test_assistant_fallback_answers_identity_question():
     service = AssistantService()
 
-    response = service.answer_product_help(
+    response = service.answer(
         "Hello what is your name?",
         current_page="Upload Resume",
         app_context={},
     )
 
-    assert "product help assistant" in response.answer.lower()
+    assert "in-app assistant" in response.answer.lower()
 
 
-def test_product_help_fallback_explains_session_and_daily_limits():
+def test_assistant_fallback_explains_session_and_daily_limits():
     service = AssistantService()
 
-    response = service.answer_product_help(
+    response = service.answer(
         "What are the token and daily limits here?",
         current_page="Manual JD Input",
         app_context={},
@@ -106,10 +107,10 @@ def test_product_help_fallback_explains_session_and_daily_limits():
     assert response.sources
 
 
-def test_product_help_fallback_can_use_retrieved_knowledge_for_saved_workspace_expiry():
+def test_assistant_fallback_can_use_retrieved_knowledge_for_saved_workspace_expiry():
     service = AssistantService()
 
-    response = service.answer_product_help(
+    response = service.answer(
         "How long does the saved workspace last?",
         current_page="Saved Workspace",
         app_context={},
@@ -119,12 +120,29 @@ def test_product_help_fallback_can_use_retrieved_knowledge_for_saved_workspace_e
     assert "saved workspace" in response.sources[0].lower()
 
 
-def test_application_qa_fallback_explains_gaps():
+def test_assistant_fallback_knows_resume_upload_requires_login_when_signed_out():
+    service = AssistantService()
+
+    response = service.answer(
+        "How do I upload my resume?",
+        current_page="Upload Resume",
+        app_context={
+            "is_authenticated": False,
+            "resume_upload_requires_login": True,
+        },
+    )
+
+    assert "signing in with google" in response.answer.lower() or "sign in with google" in response.answer.lower()
+    assert "upload resume" in response.answer.lower()
+
+
+def test_assistant_fallback_explains_gaps():
     service = AssistantService()
     view_model = _build_view_model()
 
-    response = service.answer_application_qa(
+    response = service.answer(
         "What are my biggest gaps?",
+        current_page="Manual JD Input",
         workflow_view_model=view_model,
         report=None,
         artifact=SimpleNamespace(highlighted_skills=["Python", "SQL"], validation_notes=[]),
@@ -134,12 +152,13 @@ def test_application_qa_fallback_explains_gaps():
     assert response.sources
 
 
-def test_application_qa_requires_context_when_inputs_missing():
+def test_assistant_requires_context_when_inputs_missing():
     service = AssistantService()
     empty_view_model = SimpleNamespace(candidate_profile=None, job_description=None)
 
-    response = service.answer_application_qa(
+    response = service.answer(
         "Is this safe to submit?",
+        current_page="Manual JD Input",
         workflow_view_model=empty_view_model,
         report=None,
         artifact=None,
@@ -148,12 +167,13 @@ def test_application_qa_requires_context_when_inputs_missing():
     assert "needs both a resume and a job description" in response.answer.lower()
 
 
-def test_application_qa_fallback_supports_broader_resume_coaching():
+def test_assistant_fallback_supports_broader_resume_coaching():
     service = AssistantService()
     view_model = _build_view_model()
 
-    response = service.answer_application_qa(
+    response = service.answer(
         "How can I show cross-functional collaboration without formal work experience?",
+        current_page="Manual JD Input",
         workflow_view_model=view_model,
         report=None,
         artifact=SimpleNamespace(highlighted_skills=["Python", "SQL"], validation_notes=[]),
@@ -164,7 +184,7 @@ def test_application_qa_fallback_supports_broader_resume_coaching():
     assert response.sources
 
 
-def test_product_help_falls_back_when_model_returns_blank_answer():
+def test_assistant_falls_back_when_model_returns_blank_answer():
     class FakeOpenAIService:
         @staticmethod
         def is_available():
@@ -180,7 +200,7 @@ def test_product_help_falls_back_when_model_returns_blank_answer():
 
     service = AssistantService(openai_service=FakeOpenAIService())
 
-    response = service.answer_product_help(
+    response = service.answer(
         "How do I use the report?",
         current_page="Manual JD Input",
         app_context={},
@@ -190,7 +210,7 @@ def test_product_help_falls_back_when_model_returns_blank_answer():
     assert "report" in response.answer.lower()
 
 
-def test_product_help_uses_fast_fail_request_shape():
+def test_assistant_uses_fast_fail_request_shape():
     class FakeOpenAIService:
         def __init__(self):
             self.calls = []
@@ -210,7 +230,7 @@ def test_product_help_uses_fast_fail_request_shape():
     openai_service = FakeOpenAIService()
     service = AssistantService(openai_service=openai_service)
 
-    response = service.answer_product_help(
+    response = service.answer(
         "Where do I start?",
         current_page="Upload Resume",
         app_context={},
@@ -218,7 +238,7 @@ def test_product_help_uses_fast_fail_request_shape():
 
     assert response.answer == "Use Upload Resume first."
     assert len(openai_service.calls) == 1
-    assert openai_service.calls[0]["task_name"] == "assistant_product_help"
+    assert openai_service.calls[0]["task_name"] == "assistant"
     assert openai_service.calls[0]["temperature"] is None
     assert openai_service.calls[0]["allow_output_budget_retry"] is False
 

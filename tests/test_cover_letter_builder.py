@@ -1,6 +1,7 @@
-from src.report_builder import build_application_report
+from src.cover_letter_builder import build_cover_letter_artifact
 from src.schemas import (
     AgentWorkflowResult,
+    CoverLetterAgentOutput,
     FitAgentOutput,
     ReviewAgentOutput,
     StrategyAgentOutput,
@@ -19,6 +20,7 @@ def _build_profile():
             text=(
                 "Leander Antony\n"
                 "Chennai, India\n"
+                "leander@example.com\n"
                 "Python SQL Docker communication\n"
                 "Built production ML applications."
             ),
@@ -26,6 +28,7 @@ def _build_profile():
             source="uploaded",
         )
     )
+    profile.contact_lines = ["leander@example.com", "+91 99999 99999"]
     profile.experience = [
         WorkExperience(
             title="AI Engineer",
@@ -48,38 +51,7 @@ def _build_job():
     )
 
 
-def test_build_application_report_includes_core_sections():
-    candidate_profile = _build_profile()
-    job_description = _build_job()
-    fit_analysis = build_fit_analysis(candidate_profile, job_description)
-    tailored_draft = build_tailored_resume_draft(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-    )
-
-    report = build_application_report(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-        tailored_draft,
-    )
-
-    assert report.title == "Leander Antony - Machine Learning Engineer Application Package"
-    assert report.filename_stem == "leander-antony-machine-learning-engineer"
-    assert "## Candidate Snapshot" in report.markdown
-    assert "Source Signals" not in report.markdown
-    assert "## Tailored Resume Guidance" not in report.markdown
-    assert "## Deterministic Fit Analysis" not in report.markdown
-    assert "## Findings" in report.markdown
-    assert "### How To Address Gaps" in report.markdown
-    assert "## Application Strategy" in report.markdown
-    assert "Status: Not run" in report.markdown
-    assert "Run the AI-assisted workflow" in report.plain_text
-    assert "## Next Actions" not in report.markdown
-
-
-def test_build_application_report_includes_agent_sections_when_available():
+def test_build_cover_letter_artifact_uses_agentic_signals_when_available():
     candidate_profile = _build_profile()
     job_description = _build_job()
     fit_analysis = build_fit_analysis(candidate_profile, job_description)
@@ -100,7 +72,7 @@ def test_build_application_report_includes_agent_sections_when_available():
             professional_summary="Grounded tailored summary.",
             rewritten_bullets=["Built production ML APIs using Python and Docker."],
             highlighted_skills=["Python", "SQL", "Docker"],
-            cover_letter_themes=["Hands-on delivery fit."],
+            cover_letter_themes=["Show evidence of shipping recruiter-ready ML tooling."],
         ),
         strategy=StrategyAgentOutput(
             recruiter_positioning="Position the candidate as an implementation-first ML engineer.",
@@ -114,9 +86,20 @@ def test_build_application_report_includes_agent_sections_when_available():
             revision_requests=[],
             final_notes=["Grounded output."],
         ),
+        cover_letter=CoverLetterAgentOutput(
+            greeting="Dear Hiring Team",
+            opening_paragraph="I am excited to apply for the Machine Learning Engineer role with grounded production evidence.",
+            body_paragraphs=[
+                "Lead with production API delivery evidence.",
+                "Show evidence of shipping recruiter-ready ML tooling.",
+            ],
+            closing_paragraph="I would welcome the opportunity to discuss how my experience can support your team.",
+            signoff="Sincerely",
+            signature_name="Leander Antony",
+        ),
     )
 
-    report = build_application_report(
+    artifact = build_cover_letter_artifact(
         candidate_profile,
         job_description,
         fit_analysis,
@@ -124,22 +107,16 @@ def test_build_application_report_includes_agent_sections_when_available():
         agent_result=agent_result,
     )
 
-    assert "Review Status: Approved" not in report.markdown
-    assert "Built production ML APIs using Python and Docker." not in report.markdown
-    assert "Position the candidate as an implementation-first ML engineer." in report.markdown
-    assert "What To Emphasize" in report.markdown
-    assert "Top Matches" in report.markdown
-    assert "Key Gaps" in report.markdown
-    assert "How To Address Gaps" in report.markdown
-    assert "Tailored Summary" in report.markdown
-    assert "Deterministic Fit Analysis" not in report.markdown
-    assert "## Tailored Resume Guidance" not in report.markdown
-    assert "Review Notes" not in report.markdown
-    assert "Next Actions" not in report.markdown
-    assert "Grounded output." not in report.plain_text
+    assert artifact.title == "Leander Antony - Machine Learning Engineer Cover Letter"
+    assert artifact.filename_stem == "leander-antony-machine-learning-engineer-cover-letter"
+    assert "Dear Hiring Team," in artifact.markdown
+    assert "Lead with production API delivery evidence." in artifact.markdown
+    assert "Show evidence of shipping recruiter-ready ML tooling." in artifact.markdown
+    assert "I am excited to apply for the Machine Learning Engineer role with grounded production evidence." in artifact.markdown
+    assert "Sincerely" in artifact.plain_text
 
 
-def test_build_application_report_marks_approved_after_corrections():
+def test_build_cover_letter_artifact_falls_back_to_workflow_outputs_without_agent_result():
     candidate_profile = _build_profile()
     job_description = _build_job()
     fit_analysis = build_fit_analysis(candidate_profile, job_description)
@@ -148,31 +125,15 @@ def test_build_application_report_marks_approved_after_corrections():
         job_description,
         fit_analysis,
     )
-    agent_result = AgentWorkflowResult(
-        mode="openai",
-        model="gpt-test",
-        fit=FitAgentOutput(fit_summary="Fit summary."),
-        tailoring=TailoringAgentOutput(professional_summary="Corrected summary."),
-        strategy=StrategyAgentOutput(recruiter_positioning="Corrected positioning."),
-        review=ReviewAgentOutput(
-            approved=True,
-            grounding_issues=["Original draft overstated regression experience."],
-            unresolved_issues=[],
-            revision_requests=["Replace unsupported regression references."],
-            final_notes=["Safe after correction."],
-            corrected_tailoring=TailoringAgentOutput(professional_summary="Corrected summary."),
-        ),
-    )
 
-    report = build_application_report(
+    artifact = build_cover_letter_artifact(
         candidate_profile,
         job_description,
         fit_analysis,
         tailored_draft,
-        agent_result=agent_result,
     )
 
-    assert "Approved After Corrections" not in report.markdown
-    assert "Issues Found In Incoming Draft" not in report.markdown
-    assert "Unresolved Issues" not in report.markdown
-    assert "Corrections Applied" not in report.markdown
+    assert "Machine Learning Engineer" in artifact.markdown
+    assert "Leander Antony" in artifact.markdown
+    assert "Thank you for your time and consideration." in artifact.markdown
+    assert artifact.summary.startswith("Grounded cover letter draft")

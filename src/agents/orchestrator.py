@@ -16,6 +16,7 @@ from src.services.fit_service import build_fit_analysis
 from src.services.tailoring_service import build_tailored_resume_draft
 
 from .fit_agent import FitAgent
+from .cover_letter_agent import CoverLetterAgent
 from .resume_generation_agent import ResumeGenerationAgent
 from .review_agent import ReviewAgent
 from .strategy_agent import StrategyAgent
@@ -144,12 +145,14 @@ class ApplicationOrchestrator:
         tailoring_agent = TailoringAgent(openai_service)
         review_agent = ReviewAgent(openai_service)
         strategy_agent = StrategyAgent(openai_service)
+        cover_letter_agent = CoverLetterAgent(openai_service)
 
         final_tailoring_output = None
         final_strategy_output = None
         review_output = None
         resume_generation_output = None
-        total_stage_count = 5
+        cover_letter_output = None
+        total_stage_count = 6
         stage_index = 0
 
         def stage_progress(current_stage_index):
@@ -275,6 +278,26 @@ class ApplicationOrchestrator:
             review_approved=review_output.approved if review_output else False,
         )
 
+        begin_stage(
+            "Cover letter agent",
+            "Writing the approved cover letter from the corrected story and evidence.",
+        )
+        if review_output and review_output.approved:
+            cover_letter_output = run_agent_step(
+                "cover_letter",
+                lambda: cover_letter_agent.run(
+                    candidate_profile,
+                    job_description,
+                    fit_analysis,
+                    tailored_draft,
+                    final_tailoring_output,
+                    final_strategy_output,
+                    review_output,
+                    resume_generation_output,
+                ),
+                review_approved=True,
+            )
+
         log_event(
             LOGGER,
             logging.INFO,
@@ -303,6 +326,7 @@ class ApplicationOrchestrator:
             job=JobAgentOutput(),
             strategy=final_strategy_output,
             resume_generation=resume_generation_output,
+            cover_letter=cover_letter_output,
             review_history=[],
             attempted_assisted=attempted_assisted,
             fallback_reason=fallback_reason,

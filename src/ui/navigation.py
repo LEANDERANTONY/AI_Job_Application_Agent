@@ -86,7 +86,7 @@ def _render_sidebar_assistant_panel(menu):
         <div class="sidebar-card sidebar-chat-shell">
             <div class="sidebar-kicker">Assistant</div>
             <div style="font-size:0.92rem; color:#e7eefc; font-weight:700; margin-bottom:0.1rem;">
-                Ask about the app or the current page context
+                Ask about the app, your resume, or the current outputs
             </div>
         </div>
         """,
@@ -160,7 +160,7 @@ def _render_sidebar_usage_panel(menu):
             )
         if daily_quota.quota_exhausted:
             st.warning(
-                "Your daily assisted quota is exhausted. Deterministic fallback is still available until the next UTC reset."
+                "Your daily assisted quota is exhausted. The backup workflow is still available until the next UTC reset."
             )
     else:
         st.caption("Sign in to see account-level daily quota and keep assisted usage tied to your plan.")
@@ -185,7 +185,7 @@ def _render_sidebar_usage_panel(menu):
 
     if ai_session.budget_reached and ai_session.openai_service.is_available():
         st.warning(
-            "This browser session has reached its assisted limit. The workflow will continue in deterministic fallback mode."
+            "This browser session has reached its assisted limit. The workflow will continue in backup mode."
         )
 
 
@@ -280,7 +280,7 @@ def render_sidebar(auth_service):
             """
             <div class="sidebar-card">
                 <div class="sidebar-kicker">Workspace</div>
-                <div style="font-size:1.02rem; font-weight:700;">AI Job Application Agent</div>
+                <div style="font-size:1.02rem; font-weight:700;">Application Copilot</div>
                 <div style="font-size:0.92rem; color:#cbd5e1; margin-top:0.35rem;">
                     Streamlit-first, backend-ready application workflow.
                 </div>

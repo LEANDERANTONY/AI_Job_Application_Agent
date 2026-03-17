@@ -5,6 +5,7 @@ from src.errors import AgentExecutionError
 from src.logging_utils import get_logger, log_event
 from src.product_knowledge import retrieve_product_knowledge
 from src.prompts import (
+    build_assistant_prompt,
     build_application_qa_assistant_prompt,
     build_product_help_assistant_prompt,
 )
@@ -19,18 +20,40 @@ class AssistantService:
     def __init__(self, openai_service=None):
         self._openai_service = openai_service
 
-    def answer_product_help(self, question, current_page, history=None, app_context=None):
-        app_context = {
+    def answer(
+        self,
+        question,
+        *,
+        current_page,
+        workflow_view_model=None,
+        report=None,
+        artifact=None,
+        history=None,
+        app_context=None,
+        assistant_scope="assistant",
+    ):
+        product_context = {
             **(app_context or {}),
-            "knowledge_hits": retrieve_product_knowledge(question, current_page=current_page),
+            "knowledge_hits": (app_context or {}).get(
+                "knowledge_hits",
+                retrieve_product_knowledge(question, current_page=current_page),
+            ),
+        }
+        workflow_context = self._build_workflow_context(
+            workflow_view_model,
+            report=report,
+            artifact=artifact,
+        )
+        assistant_context = {
+            "assistant_scope": assistant_scope,
+            "current_page": current_page,
+            "product_context": product_context,
+            "workflow_context": workflow_context,
         }
         if self._openai_service and self._openai_service.is_available():
             try:
-                prompt = build_product_help_assistant_prompt(
-                    {
-                        "current_page": current_page,
-                        **app_context,
-                    },
+                prompt = build_assistant_prompt(
+                    assistant_context,
                     question,
                     history=history,
                 )
@@ -40,48 +63,49 @@ class AssistantService:
                     expected_keys=prompt["expected_keys"],
                     temperature=None,
                     max_completion_tokens=get_openai_max_completion_tokens_for_task(
-                        "assistant_product_help"
+                        "assistant"
                     ),
-                    task_name="assistant_product_help",
+                    task_name="assistant",
                     allow_output_budget_retry=False,
-                )
-                return self._build_response(payload, max_sources=3)
-            except AgentExecutionError as exc:
-                self._log_assistant_fallback("assistant_product_help", exc)
-        return self._fallback_product_help(question, current_page, app_context=app_context)
-
-    def answer_application_qa(self, question, workflow_view_model, report=None, artifact=None, history=None):
-        if self._openai_service and self._openai_service.is_available():
-            try:
-                prompt = build_application_qa_assistant_prompt(
-                    self._build_application_qa_context(
-                        workflow_view_model,
-                        report=report,
-                        artifact=artifact,
-                    ),
-                    question,
-                    history=history,
-                )
-                payload = self._openai_service.run_json_prompt(
-                    prompt["system"],
-                    prompt["user"],
-                    expected_keys=prompt["expected_keys"],
-                    temperature=None,
-                    max_completion_tokens=get_openai_max_completion_tokens_for_task(
-                        "assistant_application_qa"
-                    ),
-                    task_name="assistant_application_qa",
                 )
                 return self._build_response(payload, max_sources=4)
             except AgentExecutionError as exc:
-                self._log_assistant_fallback("assistant_application_qa", exc)
-        return self._fallback_application_qa(question, workflow_view_model, artifact)
+                self._log_assistant_fallback("assistant", exc)
+        return self._fallback_unified(
+            question,
+            current_page=current_page,
+            workflow_view_model=workflow_view_model,
+            artifact=artifact,
+            report=report,
+            app_context=product_context,
+        )
+
+    def answer_product_help(self, question, current_page, history=None, app_context=None):
+        return self.answer(
+            question,
+            current_page=current_page,
+            history=history,
+            app_context=app_context,
+            assistant_scope="product_help",
+        )
+
+    def answer_application_qa(self, question, workflow_view_model, report=None, artifact=None, history=None):
+        return self.answer(
+            question,
+            current_page="Manual JD Input",
+            workflow_view_model=workflow_view_model,
+            report=report,
+            artifact=artifact,
+            history=history,
+            assistant_scope="application_qa",
+        )
 
     @staticmethod
-    def _build_application_qa_context(workflow_view_model, report=None, artifact=None):
+    def _build_workflow_context(workflow_view_model, report=None, artifact=None):
         fit_analysis = getattr(workflow_view_model, "fit_analysis", None) if workflow_view_model else None
         agent_result = getattr(workflow_view_model, "agent_result", None) if workflow_view_model else None
         review = getattr(agent_result, "review", None) if agent_result else None
+        cover_letter = getattr(agent_result, "cover_letter", None) if agent_result else None
         return {
             "job_description": AssistantService._to_context_payload(getattr(workflow_view_model, "job_description", None) if workflow_view_model else None),
             "candidate_profile": AssistantService._to_context_payload(getattr(workflow_view_model, "candidate_profile", None) if workflow_view_model else None),
@@ -91,12 +115,36 @@ class AssistantService:
             "report_summary": getattr(report, "summary", None),
             "tailored_resume_summary": getattr(artifact, "summary", None),
             "tailored_resume_validation_notes": getattr(artifact, "validation_notes", []),
+            "cover_letter_summary": AssistantService._build_cover_letter_summary(cover_letter),
+            "has_cover_letter": cover_letter is not None,
             "current_highlighted_skills": list(getattr(artifact, "highlighted_skills", []) or getattr(fit_analysis, "matched_hard_skills", [])[:6]),
             "fit_gaps": list(getattr(fit_analysis, "missing_hard_skills", []) or getattr(fit_analysis, "gaps", [])[:6]) if fit_analysis else [],
             "review_approved": bool(getattr(review, "approved", False)) if review else False,
             "review_revision_requests": list(getattr(review, "revision_requests", []) or []),
             "review_grounding_issues": list(getattr(review, "grounding_issues", []) or []),
         }
+
+    @staticmethod
+    def _build_application_qa_context(workflow_view_model, report=None, artifact=None):
+        return AssistantService._build_workflow_context(
+            workflow_view_model,
+            report=report,
+            artifact=artifact,
+        )
+
+    @staticmethod
+    def _build_cover_letter_summary(cover_letter):
+        if cover_letter is None:
+            return None
+        paragraphs = [
+            str(getattr(cover_letter, "opening_paragraph", "")).strip(),
+            *[str(item).strip() for item in getattr(cover_letter, "body_paragraphs", []) if str(item).strip()],
+            str(getattr(cover_letter, "closing_paragraph", "")).strip(),
+        ]
+        paragraphs = [item for item in paragraphs if item]
+        if not paragraphs:
+            return None
+        return " ".join(paragraphs[:2])
 
     @staticmethod
     def _to_context_payload(value):
@@ -137,13 +185,21 @@ class AssistantService:
         )
 
     @staticmethod
-    def _fallback_product_help(question, current_page, app_context=None):
+    def _fallback_unified(
+        question,
+        *,
+        current_page,
+        workflow_view_model=None,
+        artifact=None,
+        report=None,
+        app_context=None,
+    ):
         normalized = str(question or "").lower()
         app_context = app_context or {}
         knowledge_hits = list(app_context.get("knowledge_hits", []) or [])
         if "your name" in normalized or "who are you" in normalized:
             return AssistantResponse(
-                answer="I am the in-app Product Help Assistant for the AI Job Application Agent. I can explain the current workflow, navigation, reload behavior, and the difference between the generated outputs.",
+                answer="I am the in-app assistant for Application Copilot. I can explain how the product works and answer grounded questions about your current fit analysis, tailored resume, cover letter, and application package.",
                 sources=[current_page, "Upload Resume", "Manual JD Input"],
                 suggested_follow_ups=["How does the navigation work?", "What does Reload Saved Workspace do?"],
             )
@@ -154,6 +210,14 @@ class AssistantService:
                 suggested_follow_ups=["What does Reload Workspace do?", "What happens after I reload a saved workspace?"],
             )
         if "resume" in normalized and ("upload" in normalized or "where" in normalized):
+            resume_requires_login = bool(app_context.get("resume_upload_requires_login", False))
+            is_signed_in = bool(app_context.get("is_authenticated", False))
+            if resume_requires_login and not is_signed_in:
+                return AssistantResponse(
+                    answer="Start by signing in with Google from the sidebar. Resume upload is now login-first, so once you are signed in you can return to Upload Resume and upload your PDF, DOCX, or TXT resume.",
+                    sources=["Upload Resume", "Account Panel"],
+                    suggested_follow_ups=["Where do I sign in?", "What can I do after I log in?"],
+                )
             return AssistantResponse(
                 answer="Start on Upload Resume. You can choose a sample file or upload your own PDF, DOCX, or TXT resume, then move to Manual JD Input once the resume is parsed.",
                 sources=["Upload Resume", "Manual JD Input"],
@@ -161,20 +225,26 @@ class AssistantService:
             )
         if "job description" in normalized or "jd" in normalized:
             return AssistantResponse(
-                answer="Use Manual JD Input to upload a JD file, select a sample JD, or paste JD text directly. Once the JD is loaded, the app builds the fit snapshot and tailored outputs from that structured role data.",
+                answer="Use Manual JD Input to upload a JD file, select a sample JD, or paste JD text directly. Once the JD is loaded, the app builds the fit snapshot, supervised workflow outputs, tailored resume, cover letter, and application package from that structured role data.",
                 sources=["Manual JD Input", "Readiness Snapshot"],
                 suggested_follow_ups=["What is the supervised workflow?", "What do I get at the end?"],
             )
-        if "report" in normalized:
+        if "cover letter" in normalized or ("letter" in normalized and "cover" in normalized):
             return AssistantResponse(
-                answer="Use the application package report to review the fit summary, strategy guidance, review notes, and rationale behind the tailored resume wording. It is the explanation layer, while the tailored resume is the direct-use artifact.",
-                sources=["Application Package", "Readiness Snapshot", "Tailored Resume Draft"],
+                answer="The cover letter is a first-class artifact in the JD flow. After review-approved workflow outputs exist, it appears between Resume Preview and Application Package and can be downloaded as Markdown or PDF.",
+                sources=["Cover Letter", "Resume Preview", "Application Package"],
+                suggested_follow_ups=["Is the cover letter saved with the workspace?", "What inputs shape the cover letter?"],
+            )
+        if "report" in normalized or "application package" in normalized:
+            return AssistantResponse(
+                answer="Use the application package report to review the fit summary, strategy guidance, review notes, and rationale behind the tailored resume and cover letter wording. It is the explanation layer, while the tailored resume and cover letter are the direct-use artifacts.",
+                sources=["Application Package", "Readiness Snapshot", "Tailored Resume Draft", "Cover Letter"],
                 suggested_follow_ups=["What is the difference between the report and the resume?", "Can I download the report as PDF?"],
             )
         if "difference" in normalized or ("report" in normalized and "resume" in normalized):
             return AssistantResponse(
-                answer="The tailored resume is the direct-use artifact, while the report explains the fit, strategy, review notes, and why the resume was shaped that way. You can preview both in the page before downloading either one.",
-                sources=["Tailored Resume Draft", "Application Package"],
+                answer="The tailored resume and cover letter are the direct-use artifacts, while the report explains the fit, strategy, review notes, and why those outputs were shaped that way. You can preview all of them in the page before downloading.",
+                sources=["Tailored Resume Draft", "Cover Letter", "Application Package"],
                 suggested_follow_ups=["Which one should I submit?", "Can I download the report as PDF?"],
             )
         if "template" in normalized or "theme" in normalized:
@@ -197,10 +267,24 @@ class AssistantService:
             )
         if "job search" in normalized:
             return AssistantResponse(
-                answer="Job Search is still a placeholder entry point. The active production path today is resume upload, JD input, fit analysis, supervised workflow, and export.",
+                answer="Job Search is still a placeholder entry point. The active production path today is: sign in, upload a resume, load a job description, run the AI-assisted analysis, and then review the tailored outputs.",
                 sources=["Job Search", "Upload Resume", "Manual JD Input"],
                 suggested_follow_ups=["What is the current happy path?", "How do I generate both outputs?"],
             )
+        if "saved workspace" in normalized or "reload workspace" in normalized or "restore" in normalized:
+            return AssistantResponse(
+                answer="Signed-in users keep one saved workspace snapshot for 24 hours. Reload Workspace restores the saved resume-backed candidate state, fit outputs, and any saved report, tailored resume, and cover letter artifacts back into the JD flow.",
+                sources=["Saved Workspace", "Manual JD Input"],
+                suggested_follow_ups=["How long does the saved workspace last?", "What gets restored into the JD page?"],
+            )
+        contextual_response = AssistantService._fallback_output_qa(
+            normalized,
+            workflow_view_model,
+            artifact,
+            report=report,
+        )
+        if contextual_response is not None:
+            return contextual_response
         if knowledge_hits:
             primary_hit = knowledge_hits[0]
             return AssistantResponse(
@@ -209,20 +293,29 @@ class AssistantService:
                 suggested_follow_ups=["Can you explain that step-by-step?", "What page should I use for that?"],
             )
         return AssistantResponse(
-            answer="The current flow is: upload a resume, load a job description, review the fit snapshot, optionally run the supervised workflow, inspect the tailored resume and report, then download only if you want to keep them.",
-            sources=[current_page, "Readiness Snapshot", "Tailored Resume Draft", "Application Package"],
-            suggested_follow_ups=["How do I use the supervised workflow?", "What is the difference between the two outputs?"],
+            answer="The current flow is: sign in, upload a resume, load a job description, review the fit snapshot, optionally run the AI-assisted analysis, inspect the tailored resume, cover letter, and application package, then download only the artifacts you want to keep.",
+            sources=[current_page, "Readiness Snapshot", "Tailored Resume Draft", "Cover Letter", "Application Package"],
+            suggested_follow_ups=["How do I use the AI-assisted analysis?", "What is the difference between the two outputs?"],
         )
 
     @staticmethod
-    def _fallback_application_qa(question, workflow_view_model, artifact):
-        normalized = str(question or "").lower()
+    def _fallback_product_help(question, current_page, app_context=None):
+        return AssistantService._fallback_unified(
+            question,
+            current_page=current_page,
+            app_context=app_context,
+        )
+
+    @staticmethod
+    def _fallback_output_qa(normalized, workflow_view_model, artifact, report=None):
         if not workflow_view_model or not workflow_view_model.candidate_profile or not workflow_view_model.job_description:
-            return AssistantResponse(
-                answer="Application Q&A needs both a resume and a job description loaded first. Once those are available, I can answer questions about the fit snapshot, tailored resume, and report.",
-                sources=["Upload Resume", "Manual JD Input"],
-                suggested_follow_ups=["How do I load the job description?", "What happens after I upload a resume?"],
-            )
+            if any(keyword in normalized for keyword in ("resume", "report", "cover letter", "fit", "submit", "gap", "bullet", "rewrite")):
+                return AssistantResponse(
+                    answer="The assistant needs both a resume and a job description loaded first. Once those are available, I can answer grounded questions about the fit snapshot, tailored resume, cover letter, and application package.",
+                    sources=["Upload Resume", "Manual JD Input"],
+                    suggested_follow_ups=["How do I load the job description?", "What happens after I upload a resume?"],
+                )
+            return None
 
         fit_analysis = workflow_view_model.fit_analysis
         agent_result = workflow_view_model.agent_result
@@ -283,18 +376,31 @@ class AssistantService:
             )
         if "which" in normalized and ("output" in normalized or "download" in normalized):
             return AssistantResponse(
-                answer="Use the tailored resume if you want a ready-to-use JD-aligned resume, use the report if you want the reasoning and improvement guidance, or use the combined export if you want both together.",
-                sources=["Tailored Resume Draft", "Application Package", "Combined Export"],
+                answer="Use the tailored resume if you want a ready-to-use JD-aligned resume, use the cover letter if you also want role-specific outreach text, use the report if you want the reasoning and improvement guidance, or use the combined export if you want everything together.",
+                sources=["Tailored Resume Draft", "Cover Letter", "Application Package", "Combined Export"],
                 suggested_follow_ups=["Can I preview both before downloading?", "Which one is better for manual editing?"],
             )
         return AssistantResponse(
             answer=(
-                "Right now your package centers on a fit score of {score}/100 with readiness marked as {label}. The tailored resume emphasizes {skills}, and the report captures the broader strategy and review context."
+                "Right now your package centers on a fit score of {score}/100 with readiness marked as {label}. The tailored resume emphasizes {skills}, the cover letter follows the approved workflow outputs when available, and the report captures the broader strategy and review context."
             ).format(
                 score=fit_analysis.overall_score,
                 label=fit_analysis.readiness_label,
                 skills=", ".join(highlighted_skills) or "the strongest matched skills",
             ),
-            sources=["Readiness Snapshot", "Tailored Resume Draft", "Application Package"],
+            sources=["Readiness Snapshot", "Tailored Resume Draft", "Cover Letter", "Application Package"],
             suggested_follow_ups=["What are my biggest remaining gaps?", "Why were these skills emphasized?"],
+        )
+
+    @staticmethod
+    def _fallback_application_qa(question, workflow_view_model, artifact):
+        return AssistantService._fallback_output_qa(
+            str(question or "").lower(),
+            workflow_view_model,
+            artifact,
+        ) or AssistantService._fallback_unified(
+            question,
+            current_page="Manual JD Input",
+            workflow_view_model=workflow_view_model,
+            artifact=artifact,
         )

@@ -36,13 +36,15 @@ def _build_summary(
     fit_analysis: FitAnalysis,
     agent_result: Optional[AgentWorkflowResult],
 ) -> str:
-    mode = "Agent-enhanced" if agent_result else "Deterministic"
+    if agent_result:
+        return (
+            "Application package for {role} built with AI-assisted analysis, including findings and application strategy guidance.".format(
+                role=job_description.title or "the target role",
+            )
+        )
     return (
-        "{mode} application package for {role} with fit score {score}/100 ({label}).".format(
-            mode=mode,
+        "Application package for {role}. Run the AI-assisted workflow to populate the candidate-facing findings and application strategy sections.".format(
             role=job_description.title or "the target role",
-            score=fit_analysis.overall_score,
-            label=fit_analysis.readiness_label,
         )
     )
 
@@ -61,12 +63,6 @@ def _build_candidate_section(candidate_profile: CandidateProfile) -> str:
             "- Experience Entries: {value}".format(value=len(candidate_profile.experience)),
             "- Certifications: {value}".format(
                 value=safe_join_strings(candidate_profile.certifications, fallback="None listed", limit=6)
-            ),
-            "",
-            "### Source Signals",
-            render_markdown_list(
-                candidate_profile.source_signals,
-                "No source signals available.",
             ),
         ]
     )
@@ -90,10 +86,10 @@ def _build_job_section(job_description: JobDescription) -> str:
                 value=safe_join_strings(requirements.soft_skills, fallback="None extracted", limit=8)
             ),
             "",
-            "### Must-Have Themes",
+            "### Priority Requirements",
             render_markdown_list(requirements.must_haves, "No explicit must-have lines extracted."),
             "",
-            "### Nice-To-Have Themes",
+            "### Additional Signals",
             render_markdown_list(
                 requirements.nice_to_haves,
                 "No explicit nice-to-have lines extracted.",
@@ -102,192 +98,87 @@ def _build_job_section(job_description: JobDescription) -> str:
     )
 
 
-def _build_fit_section(fit_analysis: FitAnalysis) -> str:
+def _build_findings_section(
+    tailored_draft: TailoredResumeDraft,
+    agent_result: Optional[AgentWorkflowResult],
+) -> str:
+    if not agent_result:
+        return "\n".join(
+            [
+                "## Findings",
+                "",
+                "- Status: Not run",
+                "- Note: Run the AI-assisted workflow to add top matches, key gaps, emphasis guidance, and strategy guidance.",
+                "",
+                "### How To Address Gaps",
+                render_markdown_list(
+                    tailored_draft.gap_mitigation_steps,
+                    "No gap mitigation steps prepared.",
+                ),
+            ]
+        )
+
     return "\n".join(
         [
-            "## Deterministic Fit Analysis",
+            "## Findings",
             "",
-            "- Fit Score: {score}/100".format(score=fit_analysis.overall_score),
-            "- Readiness: {label}".format(label=fit_analysis.readiness_label),
-            "- Experience Signal: {value}".format(value=fit_analysis.experience_signal),
+            "### Fit Summary",
+            agent_result.fit.fit_summary or "No fit summary produced.",
             "",
-            "### Matched Hard Skills",
-            render_markdown_list(
-                fit_analysis.matched_hard_skills,
-                "No matched hard-skill evidence found.",
-            ),
+            "### Top Matches",
+            render_markdown_list(agent_result.fit.top_matches, "No top matches produced."),
             "",
-            "### Missing Hard Skills",
-            render_markdown_list(
-                fit_analysis.missing_hard_skills,
-                "No hard-skill gaps detected.",
-            ),
+            "### Key Gaps",
+            render_markdown_list(agent_result.fit.key_gaps, "No key gaps produced."),
             "",
-            "### Strengths",
-            render_markdown_list(fit_analysis.strengths, "No strengths surfaced."),
-            "",
-            "### Gaps",
-            render_markdown_list(fit_analysis.gaps, "No major gaps surfaced."),
-            "",
-            "### Recommendations",
-            render_markdown_list(
-                fit_analysis.recommendations,
-                "No recommendations available.",
-            ),
-        ]
-    )
-
-
-def _build_tailoring_section(tailored_draft: TailoredResumeDraft) -> str:
-    return "\n".join(
-        [
-            "## Tailored Resume Guidance",
-            "",
-            "### Professional Summary Draft",
-            tailored_draft.professional_summary or "No professional summary drafted.",
-            "",
-            "### Highlighted Skills",
-            render_markdown_list(
-                tailored_draft.highlighted_skills,
-                "No highlighted skills prepared.",
-            ),
-            "",
-            "### Priority Bullets",
-            render_markdown_list(
-                tailored_draft.priority_bullets,
-                "No priority bullets prepared.",
-            ),
-            "",
-            "### Gap Mitigation Steps",
+            "### How To Address Gaps",
             render_markdown_list(
                 tailored_draft.gap_mitigation_steps,
                 "No gap mitigation steps prepared.",
             ),
+            "",
+            "### Tailored Summary",
+            agent_result.tailoring.professional_summary
+            or "No tailored professional summary produced.",
+            "",
+            "### What To Emphasize",
+            render_markdown_list(
+                agent_result.tailoring.cover_letter_themes,
+                "No messaging priorities produced.",
+            ),
         ]
     )
 
 
-def _build_agent_section(agent_result: Optional[AgentWorkflowResult]) -> str:
+def _build_strategy_section(agent_result: Optional[AgentWorkflowResult]) -> str:
     if not agent_result:
         return "\n".join(
             [
-                "## Supervised Workflow",
+                "## Application Strategy",
                 "",
-                "- Status: Not run",
-                "- Note: Run the supervised workflow to add fit narrative, tailored wording, strategy guidance, and review notes.",
+                "Run the AI-assisted workflow to add recruiter-facing strategy guidance.",
             ]
         )
 
-    unresolved_issues = getattr(agent_result.review, "unresolved_issues", []) or []
-    corrected_tailoring = getattr(agent_result.review, "corrected_tailoring", None)
-    corrected_strategy = getattr(agent_result.review, "corrected_strategy", None)
-
     return "\n".join(
         [
-            "## Supervised Workflow",
+            "## Application Strategy",
             "",
-            "- Mode: {value}".format(value=agent_result.mode),
-            "- Model: {value}".format(value=agent_result.model),
-            "- Review Status: {value}".format(
-                value=_review_status_label(agent_result.review)
-            ),
-            "",
-            "### Fit Narrative",
-            agent_result.fit.fit_summary or "No fit summary produced.",
-            "",
-            "#### Top Matches",
-            render_markdown_list(agent_result.fit.top_matches, "No top matches produced."),
-            "",
-            "#### Key Gaps",
-            render_markdown_list(agent_result.fit.key_gaps, "No key gaps produced."),
-            "",
-            "### Tailoring Output",
-            agent_result.tailoring.professional_summary
-            or "No tailored professional summary produced.",
-            "",
-            "#### Rewritten Bullets",
-            render_markdown_list(
-                agent_result.tailoring.rewritten_bullets,
-                "No rewritten bullets produced.",
-            ),
-            "",
-            "#### Cover Letter Themes",
-            render_markdown_list(
-                agent_result.tailoring.cover_letter_themes,
-                "No cover letter themes produced.",
-            ),
-            "",
-            "### Application Strategy",
             agent_result.strategy.recruiter_positioning
             if agent_result.strategy
             else "No recruiter positioning produced.",
             "",
-            "#### Cover Letter Talking Points",
+            "### Cover Letter Talking Points",
             render_markdown_list(
                 agent_result.strategy.cover_letter_talking_points if agent_result.strategy else [],
                 "No cover letter talking points produced.",
             ),
             "",
-            "#### Portfolio / Project Emphasis",
+            "### Portfolio / Project Emphasis",
             render_markdown_list(
                 agent_result.strategy.portfolio_project_emphasis if agent_result.strategy else [],
                 "No portfolio or project emphasis produced.",
             ),
-            "",
-            "### Review Notes",
-            "#### Issues Found In Incoming Draft",
-            render_markdown_list(
-                agent_result.review.grounding_issues,
-                "No grounding issues detected in the incoming draft.",
-            ),
-            "",
-            "#### Unresolved Issues",
-            render_markdown_list(
-                unresolved_issues,
-                "No unresolved issues remain after review corrections.",
-            ),
-            "",
-            "#### {label}".format(
-                label="Corrections Applied" if corrected_tailoring or corrected_strategy else "Revision Requests"
-            ),
-            render_markdown_list(
-                agent_result.review.revision_requests,
-                "No revisions requested.",
-            ),
-            "",
-            "#### Corrected Tailoring Applied",
-            "Yes" if corrected_tailoring else "No direct corrections applied.",
-            "",
-            "#### Corrected Strategy Applied",
-            "Yes" if corrected_strategy else "No direct corrections applied.",
-            "",
-            "#### Final Notes",
-            render_markdown_list(agent_result.review.final_notes, "No final notes produced."),
-        ]
-    )
-
-
-def _build_next_actions(
-    fit_analysis: FitAnalysis,
-    agent_result: Optional[AgentWorkflowResult],
-) -> str:
-    items = []
-    if fit_analysis.missing_hard_skills:
-        items.append(
-            "Tighten evidence around: " + safe_join_strings(fit_analysis.missing_hard_skills, limit=4) + "."
-        )
-    if not agent_result:
-        items.append("Run the supervised workflow before sharing or exporting the package.")
-    elif not agent_result.review.approved:
-        unresolved_issues = getattr(agent_result.review, "unresolved_issues", []) or []
-        revision_requests = getattr(agent_result.review, "revision_requests", []) or []
-        items.extend((unresolved_issues or revision_requests)[:2])
-    items.append("Export the package and use it to guide resume edits and recruiter outreach.")
-    return "\n".join(
-        [
-            "## Next Actions",
-            "",
-            render_markdown_list(items, "No next actions available."),
         ]
     )
 
@@ -315,10 +206,8 @@ def build_application_report(
             summary,
             _build_candidate_section(candidate_profile),
             _build_job_section(job_description),
-            _build_fit_section(fit_analysis),
-            _build_tailoring_section(tailored_draft),
-            _build_agent_section(agent_result),
-            _build_next_actions(fit_analysis, agent_result),
+            _build_findings_section(tailored_draft, agent_result),
+            _build_strategy_section(agent_result),
         ]
     ).strip()
 

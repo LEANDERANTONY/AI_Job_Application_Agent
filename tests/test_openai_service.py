@@ -271,7 +271,7 @@ def test_openai_service_uses_medium_reasoning_for_review_tasks():
     assert client.responses.calls[0]["reasoning"] == {"effort": "medium"}
 
 
-def test_openai_service_uses_low_reasoning_for_product_help_tasks():
+def test_openai_service_uses_default_reasoning_for_unified_assistant_task():
     client = FakeClient([_build_response('{"approved": true}', response_id="resp_low")])
     service = OpenAIService(client=client)
 
@@ -279,12 +279,12 @@ def test_openai_service_uses_low_reasoning_for_product_help_tasks():
         "system",
         "user",
         expected_keys=["approved"],
-        task_name="assistant_product_help",
+        task_name="assistant",
         temperature=None,
     )
 
     assert payload["approved"] is True
-    assert client.responses.calls[0]["reasoning"] == {"effort": "low"}
+    assert client.responses.calls[0]["reasoning"] == {"effort": "medium"}
     assert "temperature" not in client.responses.calls[0]
 
 

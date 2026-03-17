@@ -6,6 +6,8 @@ from src.schemas import (
     AgentWorkflowResult,
     ApplicationReport,
     CandidateProfile,
+    CoverLetterArtifact,
+    CoverLetterAgentOutput,
     EducationEntry,
     FitAgentOutput,
     FitAnalysis,
@@ -28,6 +30,7 @@ from src.schemas import (
 WORKFLOW_HISTORY_PAYLOAD_VERSION = 1
 WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT = "workflow_snapshot"
 WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT = "application_report"
+WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER = "cover_letter_artifact"
 WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME = "tailored_resume_artifact"
 
 
@@ -140,7 +143,7 @@ def inspect_saved_payload(raw_payload: str, expected_kind: str):
             "supported": True,
             "version": version,
             "label": "v{version} Current".format(version=version),
-            "message": "This saved run uses the current versioned payload envelope for deterministic historical regeneration.",
+            "message": "This saved run uses the current versioned payload envelope for historical regeneration.",
             "data": payload_data,
             "storage": "versioned",
         }
@@ -168,6 +171,7 @@ def get_saved_workflow_payload_status(workflow_run: Optional[object]):
     for raw_payload, expected_kind in (
         (getattr(workflow_run, "workflow_snapshot_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT),
         (getattr(workflow_run, "report_payload_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT),
+        (getattr(workflow_run, "cover_letter_payload_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER),
         (getattr(workflow_run, "tailored_resume_payload_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME),
     ):
         inspection = inspect_saved_payload(raw_payload, expected_kind)
@@ -198,7 +202,7 @@ def get_saved_workflow_payload_status(workflow_run: Optional[object]):
         return {
             "label": "v{version} Current".format(version=WORKFLOW_HISTORY_PAYLOAD_VERSION),
             "supported": True,
-            "message": "This saved run uses the current versioned payload envelope for deterministic historical regeneration.",
+            "message": "This saved run uses the current versioned payload envelope for historical regeneration.",
         }
     if versions == {0}:
         return {
@@ -221,6 +225,20 @@ def build_saved_report_from_payload(raw_payload: str):
     return ApplicationReport(
         title=str(payload.get("title", "Saved Application Report") or "Saved Application Report"),
         filename_stem=str(payload.get("filename_stem", "saved-application-report") or "saved-application-report"),
+        summary=str(payload.get("summary", "") or ""),
+        markdown=str(payload.get("markdown", "") or ""),
+        plain_text=str(payload.get("plain_text", "") or ""),
+    )
+
+
+def build_saved_cover_letter_from_payload(raw_payload: str):
+    inspection = inspect_saved_payload(raw_payload, WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER)
+    if not inspection["supported"]:
+        return None
+    payload = inspection["data"] or {}
+    return CoverLetterArtifact(
+        title=str(payload.get("title", "Saved Cover Letter") or "Saved Cover Letter"),
+        filename_stem=str(payload.get("filename_stem", "saved-cover-letter") or "saved-cover-letter"),
         summary=str(payload.get("summary", "") or ""),
         markdown=str(payload.get("markdown", "") or ""),
         plain_text=str(payload.get("plain_text", "") or ""),
@@ -266,6 +284,7 @@ def _build_candidate_profile(payload: dict):
     return CandidateProfile(
         full_name=str(payload.get("full_name", "") or ""),
         location=str(payload.get("location", "") or ""),
+        contact_lines=[str(item) for item in payload.get("contact_lines", []) or []],
         source=str(payload.get("source", "") or ""),
         resume_text=str(payload.get("resume_text", "") or ""),
         skills=[str(item) for item in payload.get("skills", []) or []],
@@ -409,6 +428,19 @@ def _build_resume_generation_output(payload):
     )
 
 
+def _build_cover_letter_output(payload):
+    if not payload:
+        return None
+    return CoverLetterAgentOutput(
+        greeting=str(payload.get("greeting", "") or ""),
+        opening_paragraph=str(payload.get("opening_paragraph", "") or ""),
+        body_paragraphs=[str(item) for item in payload.get("body_paragraphs", []) or []],
+        closing_paragraph=str(payload.get("closing_paragraph", "") or ""),
+        signoff=str(payload.get("signoff", "") or ""),
+        signature_name=str(payload.get("signature_name", "") or ""),
+    )
+
+
 def _build_review_pass_result(payload: dict):
     return ReviewPassResult(
         pass_index=int(payload.get("pass_index", 0) or 0),
@@ -431,5 +463,6 @@ def _build_agent_result(payload):
         review=_build_review_output(payload.get("review") or {}),
         strategy=_build_strategy_output(payload.get("strategy")),
         resume_generation=_build_resume_generation_output(payload.get("resume_generation")),
+        cover_letter=_build_cover_letter_output(payload.get("cover_letter")),
         review_history=[_build_review_pass_result(item) for item in payload.get("review_history", []) or []],
     )

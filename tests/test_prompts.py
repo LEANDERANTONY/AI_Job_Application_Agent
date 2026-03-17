@@ -1,4 +1,5 @@
 from src.prompts import (
+    build_assistant_prompt,
     build_application_qa_assistant_prompt,
     build_fit_agent_prompt,
     build_review_agent_prompt,
@@ -49,13 +50,19 @@ def test_application_qa_prompt_allows_grounded_general_coaching():
     assert "general advice" in prompt["system"]
 
 
-def test_product_help_prompt_mentions_retrieved_knowledge_hits():
-    prompt = build_application_qa_assistant_prompt(
-        workflow_context={"candidate_profile": {"summary": "Built dashboards"}},
-        question="How do I show collaboration without formal experience?",
+def test_unified_assistant_prompt_mentions_retrieved_knowledge_hits_and_cover_letter():
+    prompt = build_assistant_prompt(
+        assistant_context={
+            "current_page": "Manual JD Input",
+            "product_context": {"knowledge_hits": [{"source": "Cover Letter"}]},
+            "workflow_context": {"has_cover_letter": True},
+        },
+        question="How does the cover letter fit into this flow?",
     )
 
-    assert prompt
+    assert "retrieved product knowledge hits" in prompt["system"]
+    assert "cover letter" in prompt["system"].lower()
+    assert "Assistant Context" in prompt["user"]
 
 
 def test_strategy_prompt_uses_current_grounded_sections_only():

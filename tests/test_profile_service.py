@@ -9,6 +9,7 @@ def test_build_candidate_profile_from_resume_extracts_core_signals():
     document = ResumeDocument(
         text=(
             "Leander Antony\n"
+            "leander@example.com | +91 99999 99999 | linkedin.com/in/leander-antony\n"
             "Chennai, India\n"
             "Machine Learning Engineer\n"
             "Python SQL Docker communication"
@@ -21,6 +22,9 @@ def test_build_candidate_profile_from_resume_extracts_core_signals():
 
     assert profile.full_name == "Leander Antony"
     assert profile.location == "Chennai, India"
+    assert "leander@example.com" in profile.contact_lines
+    assert "+91 99999 99999" in profile.contact_lines
+    assert "https://linkedin.com/in/leander-antony" in profile.contact_lines
     assert {"Python", "SQL", "Docker", "communication"}.issubset(set(profile.skills))
     assert "Resume parsed from PDF upload." in profile.source_signals
 

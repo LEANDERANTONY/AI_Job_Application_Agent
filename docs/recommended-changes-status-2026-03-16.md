@@ -333,6 +333,12 @@ Current evidence:
 
 These items come from the later code-quality and testing follow-up section of `improvements.md`, not the original top 21 user-facing recommendations.
 
+Repository-use note:
+
+- `docs/pdf_template/` contains local reference template PDFs used by the team during export/template work
+- `docs/pdf_rendered/` contains locally generated rendered-output PDFs used for inspection during PDF/export tuning
+- both folders are support assets for our internal workflow and are not intended to be tracked as normal source changes
+
 ### A. Extract duplicated builder utility wrappers
 
 Status: `Completed in current follow-up pass`
