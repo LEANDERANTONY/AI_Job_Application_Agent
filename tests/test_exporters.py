@@ -67,24 +67,29 @@ def test_build_report_html_contains_structure():
     assert "<ul>" in html_output or "<ol>" in html_output
     assert "@page {" in html_output
     assert "margin: 0;" in html_output
+    assert 'class="report-intro"' in html_output
+    assert "#0b1220" in html_output
     assert "border-radius: 18px;" not in html_output
-    assert "linear-gradient(180deg" not in html_output
 
 
 def test_build_cover_letter_preview_html_contains_structure():
     artifact = CoverLetterArtifact(
-        title="Candidate Cover Letter",
+        title="Leander Antony - Data Analyst Cover Letter",
         filename_stem="candidate-cover-letter",
         summary="Grounded cover letter draft.",
-        markdown="# Candidate Cover Letter\n\nDear Hiring Team,\n\nI am excited to apply for the role.",
-        plain_text="Candidate Cover Letter\n\nDear Hiring Team,\n\nI am excited to apply for the role.",
+        markdown="# Leander Antony - Data Analyst Cover Letter\n\nDear Hiring Team,\n\nI am excited to apply for the role.",
+        plain_text="Leander Antony - Data Analyst Cover Letter\n\nDear Hiring Team,\n\nI am excited to apply for the role.",
     )
 
     html_output = build_cover_letter_preview_html(artifact)
 
-    assert "<h1>" in html_output
-    assert artifact.title in html_output
+    assert 'class="cover-letter-title"' in html_output
+    assert "Leander Antony" in html_output
+    assert 'class="cover-letter-role"' in html_output
+    assert "Data Analyst" in html_output
     assert "Dear Hiring Team" in html_output
+    assert 'class="cover-letter-greeting-break"' in html_output
+    assert "font-size: 11.4pt;" in html_output
 
 
 def test_build_resume_html_uses_beige_template_for_modern_professional():
@@ -251,7 +256,7 @@ def test_export_pdf_bytes_passes_tailored_resume_artifact_to_generator():
     assert mock_generate_pdf.call_args.kwargs["document_kind"] == "tailored_resume"
 
 
-def test_export_pdf_bytes_treats_cover_letter_as_report_document():
+def test_export_pdf_bytes_treats_cover_letter_as_cover_letter_document():
     artifact = CoverLetterArtifact(
         title="Candidate Cover Letter",
         filename_stem="candidate-cover-letter",
@@ -265,7 +270,7 @@ def test_export_pdf_bytes_treats_cover_letter_as_report_document():
 
     assert pdf_bytes == b"%PDF-cover-letter"
     assert mock_generate_pdf.call_args.kwargs["artifact"] is None
-    assert mock_generate_pdf.call_args.kwargs["document_kind"] == "report"
+    assert mock_generate_pdf.call_args.kwargs["document_kind"] == "cover_letter"
 
 
 @patch("src.exporters._generate_pdf_with_weasyprint", side_effect=RuntimeError("renderer unavailable"))

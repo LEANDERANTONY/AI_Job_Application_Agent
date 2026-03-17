@@ -62,7 +62,13 @@ def export_text_bytes(report: ApplicationReport | CoverLetterArtifact | Tailored
 def export_pdf_bytes(report: ApplicationReport | CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
     try:
         theme = getattr(report, "theme", None)
-        document_kind = "tailored_resume" if isinstance(report, TailoredResumeArtifact) else "report"
+        document_kind = (
+            "tailored_resume"
+            if isinstance(report, TailoredResumeArtifact)
+            else "cover_letter"
+            if isinstance(report, CoverLetterArtifact)
+            else "report"
+        )
         artifact = report if isinstance(report, TailoredResumeArtifact) else None
         return generate_pdf(
             report.markdown,
@@ -99,7 +105,7 @@ def build_report_preview_html(report: ApplicationReport) -> str:
 
 
 def build_cover_letter_preview_html(artifact: CoverLetterArtifact) -> str:
-    return _build_report_html(artifact.markdown, title=artifact.title)
+    return _build_cover_letter_html(artifact.markdown, title=artifact.title)
 
 
 def export_zip_bundle_bytes(file_map: dict[str, bytes]) -> bytes:
@@ -114,8 +120,170 @@ def _paragraph_text(text):
     return html.escape(text or "")
 
 
+def _style_report_intro_block(body_html: str) -> str:
+    match = re.match(
+        r"\s*(<h1>.*?</h1>)(\s*<p>.*?</p>)?",
+        body_html or "",
+        flags=re.DOTALL,
+    )
+    if not match:
+        return body_html
+
+    intro_html = "".join(part for part in match.groups() if part)
+    wrapped_intro = '<section class="report-intro">{content}</section>'.format(content=intro_html)
+    return (body_html or "").replace(match.group(0), wrapped_intro, 1)
+
+
+def _style_cover_letter_body(body_html: str) -> str:
+    styled_body = re.sub(
+        r"\s*<h1>.*?</h1>",
+        "",
+        body_html or "",
+        count=1,
+        flags=re.DOTALL,
+    ).strip()
+    greeting_match = re.search(r"<p>.*?</p>", styled_body, flags=re.DOTALL)
+    if greeting_match:
+        greeting_html = '<div class="cover-letter-greeting-break"></div>{content}'.format(
+            content=greeting_match.group(0)
+        )
+        styled_body = styled_body.replace(greeting_match.group(0), greeting_html, 1)
+    return styled_body
+
+
+def _split_cover_letter_title(title: str) -> tuple[str, str]:
+    normalized_title = str(title or "Cover Letter").strip() or "Cover Letter"
+    if " - " in normalized_title and normalized_title.lower().endswith(" cover letter"):
+        name, role_with_suffix = normalized_title.split(" - ", 1)
+        role = role_with_suffix[: -len(" Cover Letter")].strip()
+        return name.strip() or normalized_title, role or "Cover Letter"
+    if normalized_title.lower().endswith(" cover letter"):
+        headline = normalized_title[: -len(" Cover Letter")].strip()
+        return headline or normalized_title, "Cover Letter"
+    return normalized_title, ""
+
+
+def _build_cover_letter_html(text, title="Cover Letter"):
+    safe_title = html.escape(title or "Cover Letter")
+    header_title, header_subtitle = _split_cover_letter_title(title)
+    body_html = _style_cover_letter_body(_MARKDOWN.render(text or ""))
+
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>{title}</title>
+    <style>
+        :root {{
+            --ink: #221912;
+            --muted: #6b5648;
+            --accent: #8f6845;
+            --line: #d7c2af;
+            --paper: #fffdf9;
+            --surface: #fffdfa;
+        }}
+
+        @page {{
+            size: A4;
+            margin: 0;
+        }}
+
+        * {{
+            box-sizing: border-box;
+        }}
+
+        body {{
+            margin: 0;
+            font-family: Georgia, "Times New Roman", serif;
+            color: var(--ink);
+            background: var(--paper);
+            line-height: 1.72;
+            font-size: 11.4pt;
+        }}
+
+        .cover-letter-shell {{
+            width: 100%;
+            min-height: 100vh;
+            background: var(--surface);
+            padding: 18mm 16mm 18mm;
+        }}
+
+        .cover-letter-header {{
+            margin: 0 0 18px;
+        }}
+
+        .cover-letter-title {{
+            margin: 0;
+            font-size: 17.5pt;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: var(--ink);
+        }}
+
+        .cover-letter-role {{
+            margin: 4px 0 0;
+            font-size: 10.8pt;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }}
+
+        .cover-letter-greeting-break {{
+            width: auto;
+            border-top: 3px solid var(--accent);
+            margin: 8px -16mm 14px;
+        }}
+
+        p {{
+            margin: 0 0 12px;
+        }}
+
+        strong {{
+            color: #17100b;
+        }}
+
+        em {{
+            color: var(--muted);
+        }}
+
+        ul, ol {{
+            margin: 0 0 12px 1.25rem;
+            padding: 0;
+        }}
+
+        li {{
+            margin: 0 0 6px;
+        }}
+    </style>
+</head>
+<body>
+    <main class="cover-letter-shell">
+        <header class="cover-letter-header">
+            <h1 class="cover-letter-title">{header_title}</h1>
+            {header_subtitle}
+        </header>
+        {body}
+    </main>
+</body>
+</html>
+""".format(
+                                title=safe_title,
+                                header_title=html.escape(header_title),
+                                header_subtitle=(
+                                                '<p class="cover-letter-role">{subtitle}</p>'.format(
+                                                                subtitle=html.escape(header_subtitle)
+                                                )
+                                                if header_subtitle
+                                                else ""
+                                ),
+                                body=body_html,
+                )
+
+
 def _build_report_html(text, title="AI Job Application Package"):
     body_html = _MARKDOWN.render(text or "")
+    body_html = _style_report_intro_block(body_html)
     safe_title = html.escape(title or "AI Job Application Package")
 
     return """
@@ -128,9 +296,11 @@ def _build_report_html(text, title="AI Job Application Package"):
     :root {{
       --ink: #142033;
       --muted: #5b6b83;
-      --accent: #1d4ed8;
+            --accent: #1b2a46;
+        --subsection-accent: #4f78b5;
       --accent-strong: #2563eb;
       --line: #d9e0e7;
+            --section-line: #1b2a46;
             --paper: #ffffff;
             --surface: #ffffff;
       --surface-soft: #eef4ff;
@@ -161,6 +331,28 @@ def _build_report_html(text, title="AI Job Application Package"):
             padding: 16mm 14mm 18mm;
     }}
 
+        .report-intro {{
+            background: linear-gradient(180deg, #070a10 0%, #0b1220 100%);
+            border: 0;
+            border-bottom: 1px solid #1b2a46;
+            border-radius: 0;
+            padding: 16mm 14mm 12mm;
+            margin: -16mm -14mm 18px;
+        }}
+
+        .report-intro h1 {{
+            color: #e8eef8;
+            margin-bottom: 10px;
+        }}
+
+        .report-intro p {{
+            color: #cfdced;
+        }}
+
+        .report-intro p:last-child {{
+            margin-bottom: 0;
+        }}
+
     .report-shell::before {{
             content: none;
     }}
@@ -181,17 +373,20 @@ def _build_report_html(text, title="AI Job Application Package"):
 
     h2 {{
       font-size: 15pt;
+            color: var(--accent);
       margin-top: 22px;
       margin-bottom: 10px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--line);
+            padding: 0 14mm 9px;
+            margin-left: -14mm;
+            margin-right: -14mm;
+            border-bottom: 2.5px solid var(--section-line);
     }}
 
     h3 {{
       font-size: 11.8pt;
       margin-top: 14px;
       margin-bottom: 6px;
-      color: var(--accent);
+            color: var(--subsection-accent);
     }}
 
     p {{
@@ -265,7 +460,7 @@ def _build_report_html(text, title="AI Job Application Package"):
 
     hr {{
       border: 0;
-      border-top: 1px solid var(--line);
+            border-top: 2.5px solid var(--section-line);
       margin: 16px 0;
     }}
   </style>
@@ -418,6 +613,7 @@ def _build_structured_resume_body_modern(artifact: TailoredResumeArtifact):
     <section class="resume-modern-header">
         <div class="resume-modern-identity">
             <h1>{name}</h1>
+            {location}
         </div>
         {contact_panel}
     </section>
@@ -449,6 +645,13 @@ def _build_structured_resume_body_modern(artifact: TailoredResumeArtifact):
     </section>
     """.format(
         name=name,
+        location=(
+            '<p class="resume-modern-location">{location}</p>'.format(
+                location=html.escape(artifact.header.location)
+            )
+            if artifact.header.location
+            else ""
+        ),
         contact_panel=(
             '<aside class="resume-modern-contact"><h2>Contact</h2>{contact}</aside>'.format(contact=contact_html)
             if contact_html
@@ -538,15 +741,16 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
             --accent-soft: #ead8c8;
             --paper: #f6efe8;
             --line: #d8c3b0;
+            --contact-line: #c9ad92;
             --surface: #fffaf6;
         }}
         * {{ box-sizing: border-box; }}
         html, body {{ margin: 0; padding: 0; }}
-        body {{ font-family: Georgia, "Times New Roman", serif; color: var(--ink); background: var(--paper); font-size: 10.2pt; line-height: 1.56; }}
-        .resume-shell {{ min-height: 297mm; background: linear-gradient(180deg, #fbf2ea 0%, #f2e3d4 100%); padding: 14mm 16mm 14mm; }}
-        .resume-shell::before {{ content: ""; display: block; height: 9px; width: 72%; border-radius: 999px; background: linear-gradient(90deg, #1f1812 0%, #8b5e3c 58%, #c89b77 100%); margin: 0 0 14px auto; }}
+        body {{ font-family: Georgia, "Times New Roman", serif; color: var(--ink); background: #f6efe8; font-size: 10.2pt; line-height: 1.56; }}
+        .resume-shell {{ background: #f6efe8; padding: 14mm 16mm 14mm; }}
+        .resume-shell::before {{ content: ""; display: block; height: 9px; width: 100%; border-radius: 999px; background: linear-gradient(90deg, #1f1812 0%, #8b5e3c 58%, #c89b77 100%); margin: 0 0 14px; }}
         h1 {{ font-size: 28pt; letter-spacing: 0.04em; margin: 0 0 8px; text-transform: uppercase; color: #24170f; }}
-        h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: 0.24em; color: var(--accent); margin: 20px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }}
+        h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: 0.24em; color: var(--accent); margin: 20px 0 8px; padding-bottom: 5px; border-bottom: 2px solid var(--line); }}
         h3 {{ font-size: 11pt; margin: 12px 0 5px; color: #4d3526; }}
         p {{ margin: 0 0 9px; }}
         ul {{ margin: 0 0 10px 1rem; padding: 0; }}
@@ -557,13 +761,15 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         hr {{ border: 0; border-top: 1px solid var(--line); margin: 16px 0; }}
         blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid #c89b77; background: var(--accent-soft); color: #5d493b; }}
         .resume-modern-header {{ display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(190px, 0.75fr); gap: 20px; align-items: start; }}
-        .resume-modern-role {{ margin: 0 0 6px; color: #4d3526; font-size: 10.4pt; text-transform: uppercase; letter-spacing: 0.14em; }}
         .resume-modern-location {{ margin: 0; color: var(--muted); font-size: 9.8pt; }}
-        .resume-modern-contact {{ border-left: 1px solid rgba(160, 107, 68, 0.22); padding-left: 14px; }}
-        .resume-modern-contact h2 {{ margin-top: 4px; }}
-        .resume-modern-summary {{ margin-top: 10px; max-width: 88%; }}
-        .resume-modern-body {{ display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(180px, 0.78fr); gap: 26px; align-items: start; margin-top: 8px; }}
-        .resume-modern-main, .resume-modern-side {{ min-width: 0; }}
+        .resume-modern-contact {{ border-left: 2px solid var(--contact-line); padding-left: 14px; }}
+        .resume-modern-contact h2 {{ margin-top: 4px; border-bottom: 2px solid var(--contact-line); }}
+        .resume-modern-summary {{ margin-top: 10px; width: 100%; max-width: 100%; }}
+        .resume-modern-summary h2 {{ border-bottom: 2px solid var(--line); }}
+        .resume-modern-body {{ display: table; width: 100%; table-layout: fixed; margin-top: 8px; border-collapse: separate; border-spacing: 0; }}
+        .resume-modern-main, .resume-modern-side {{ display: table-cell; vertical-align: top; min-width: 0; }}
+        .resume-modern-main {{ width: 65%; padding-right: 13px; }}
+        .resume-modern-side {{ width: 35%; padding-left: 13px; }}
         .resume-role-row {{ display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }}
         .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 4px; }}
         .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.4pt; }}
@@ -572,8 +778,8 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         .resume-skill-list li {{ margin: 0 0 5px; font-size: 9.3pt; border: 0; padding: 0; }}
         .resume-empty {{ color: var(--muted); font-style: italic; }}
         .resume-section + .resume-section {{ margin-top: 12px; }}
-        .resume-experience-card + .resume-experience-card, .resume-education-card + .resume-education-card {{ margin-top: 10px; }}
-        @media all and (max-width: 720px) {{ .resume-modern-header, .resume-modern-body {{ grid-template-columns: 1fr; }} .resume-modern-summary {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
+        .resume-experience-card + .resume-experience-card, .resume-education-card + .resume-education-card {{ margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }}
+        @media all and (max-width: 720px) {{ .resume-modern-header {{ grid-template-columns: 1fr; }} .resume-modern-body, .resume-modern-main, .resume-modern-side {{ display: block; width: 100%; border-spacing: 0; margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }} .resume-modern-summary {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
     </style>
 </head>
 <body>
@@ -961,6 +1167,8 @@ def _build_pdf_html(text, title, theme=None, document_kind="report"):
     return (
         _build_resume_html(text, title=title, theme=theme or "classic_ats")
         if document_kind == "tailored_resume"
+        else _build_cover_letter_html(text, title=title)
+        if document_kind == "cover_letter"
         else _build_report_html(text, title=title)
     )
 
@@ -972,6 +1180,8 @@ def _generate_pdf_with_weasyprint(text, title, theme=None, document_kind="report
     html_document = (
         _build_resume_html(text, title=title, theme=theme or "classic_ats", artifact=artifact)
         if document_kind == "tailored_resume"
+        else _build_cover_letter_html(text, title=title)
+        if document_kind == "cover_letter"
         else _build_report_html(text, title=title)
     )
 
