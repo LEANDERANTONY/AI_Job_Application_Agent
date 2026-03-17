@@ -280,7 +280,7 @@ def render_sidebar(auth_service):
             """
             <div class="sidebar-card">
                 <div class="sidebar-kicker">Workspace</div>
-                <div style="font-size:1.02rem; font-weight:700;">Application Copilot</div>
+                <div style="font-size:1.02rem; font-weight:700;">Job Application Copilot</div>
                 <div style="font-size:0.92rem; color:#cbd5e1; margin-top:0.35rem;">
                     Streamlit-first, backend-ready application workflow.
                 </div>

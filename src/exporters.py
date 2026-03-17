@@ -134,6 +134,36 @@ def _style_report_intro_block(body_html: str) -> str:
     return (body_html or "").replace(match.group(0), wrapped_intro, 1)
 
 
+def _split_application_report_title(title: str) -> tuple[str, str]:
+    normalized_title = str(title or "AI Job Application Package").strip() or "AI Job Application Package"
+    if " - " in normalized_title and normalized_title.lower().endswith(" application package"):
+        name, role_with_suffix = normalized_title.split(" - ", 1)
+        role = role_with_suffix[: -len(" Application Package")].strip()
+        return name.strip() or normalized_title, role or ""
+    return normalized_title, ""
+
+
+def _style_report_intro_block_with_header(body_html: str, title: str) -> str:
+    match = re.match(
+        r"\s*(<h1>.*?</h1>)(\s*<p>.*?</p>)?",
+        body_html or "",
+        flags=re.DOTALL,
+    )
+    if not match:
+        return body_html
+
+    header_title, header_subtitle = _split_application_report_title(title)
+    intro_parts = ['<h1>{title}</h1>'.format(title=html.escape(header_title))]
+    if header_subtitle:
+        intro_parts.append(
+            '<p class="report-intro-role">{subtitle}</p>'.format(subtitle=html.escape(header_subtitle))
+        )
+    if match.group(2):
+        intro_parts.append(match.group(2).strip())
+    wrapped_intro = '<section class="report-intro">{content}</section>'.format(content="".join(intro_parts))
+    return (body_html or "").replace(match.group(0), wrapped_intro, 1)
+
+
 def _style_cover_letter_body(body_html: str) -> str:
     styled_body = re.sub(
         r"\s*<h1>.*?</h1>",
@@ -148,6 +178,13 @@ def _style_cover_letter_body(body_html: str) -> str:
             content=greeting_match.group(0)
         )
         styled_body = styled_body.replace(greeting_match.group(0), greeting_html, 1)
+    signoff_match = re.search(r"<p>([^<]+),\s*([^<]+)</p>\s*$", styled_body, flags=re.DOTALL)
+    if signoff_match:
+        signoff_html = '<div class="cover-letter-signoff"><p>{line_one},</p><p>{line_two}</p></div>'.format(
+            line_one=html.escape(signoff_match.group(1).strip()),
+            line_two=html.escape(signoff_match.group(2).strip()),
+        )
+        styled_body = re.sub(r"<p>([^<]+),\s*([^<]+)</p>\s*$", signoff_html, styled_body, count=1, flags=re.DOTALL)
     return styled_body
 
 
@@ -235,6 +272,14 @@ def _build_cover_letter_html(text, title="Cover Letter"):
             margin: 8px -16mm 14px;
         }}
 
+        .cover-letter-signoff p {{
+            margin: 0 0 6px;
+        }}
+
+        .cover-letter-signoff p:last-child {{
+            margin-bottom: 0;
+        }}
+
         p {{
             margin: 0 0 12px;
         }}
@@ -283,7 +328,7 @@ def _build_cover_letter_html(text, title="Cover Letter"):
 
 def _build_report_html(text, title="AI Job Application Package"):
     body_html = _MARKDOWN.render(text or "")
-    body_html = _style_report_intro_block(body_html)
+    body_html = _style_report_intro_block_with_header(body_html, title)
     safe_title = html.escape(title or "AI Job Application Package")
 
     return """
@@ -342,7 +387,16 @@ def _build_report_html(text, title="AI Job Application Package"):
 
         .report-intro h1 {{
             color: #e8eef8;
+            font-size: 17.5pt;
             margin-bottom: 10px;
+        }}
+
+        .report-intro-role {{
+            margin: -2px 0 10px;
+            font-size: 10.8pt;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #cfdced;
         }}
 
         .report-intro p {{
@@ -590,8 +644,6 @@ def _build_resume_skills_inline_html(skills):
 def _build_structured_resume_body_modern(artifact: TailoredResumeArtifact):
     name = html.escape(artifact.header.full_name or artifact.title or "Candidate")
     contact_values = []
-    if artifact.header.location:
-        contact_values.append(artifact.header.location)
     contact_values.extend(item for item in artifact.header.contact_lines if str(item or "").strip())
     contact_html = (
         _build_resume_section_list(contact_values, "", class_name="resume-contact-list")
@@ -618,13 +670,13 @@ def _build_structured_resume_body_modern(artifact: TailoredResumeArtifact):
         {contact_panel}
     </section>
     <section class="resume-modern-summary">
-        <h2>Professional Summary</h2>
+        <h2>Summary</h2>
         <p>{summary}</p>
     </section>
     <section class="resume-modern-body">
         <div class="resume-modern-main">
             <section class="resume-section">
-                <h2>Professional Experience</h2>
+                <h2>Experience</h2>
                 {experience}
             </section>
         </div>
@@ -684,16 +736,16 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         <h1>{name}</h1>
         {contact_block}
     </section>
-    <section class="resume-classic-section">
+    <section class="resume-classic-section resume-classic-section--plain-head">
         <h2>Summary</h2>
         <p>{summary}</p>
     </section>
-    <section class="resume-classic-section">
+    <section class="resume-classic-section resume-classic-section--plain-head">
         <h2>Core Skills</h2>
         {skills}
     </section>
     <section class="resume-classic-section">
-        <h2>Professional Experience</h2>
+        <h2>Experience</h2>
         {experience}
     </section>
     <section class="resume-classic-section">
@@ -749,7 +801,7 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         body {{ font-family: Georgia, "Times New Roman", serif; color: var(--ink); background: #f6efe8; font-size: 10.2pt; line-height: 1.56; }}
         .resume-shell {{ background: #f6efe8; padding: 14mm 16mm 14mm; }}
         .resume-shell::before {{ content: ""; display: block; height: 9px; width: 100%; border-radius: 999px; background: linear-gradient(90deg, #1f1812 0%, #8b5e3c 58%, #c89b77 100%); margin: 0 0 14px; }}
-        h1 {{ font-size: 28pt; letter-spacing: 0.04em; margin: 0 0 8px; text-transform: uppercase; color: #24170f; }}
+        h1 {{ font-size: 17.5pt; letter-spacing: 0.04em; margin: 0 0 8px; text-transform: uppercase; color: #24170f; }}
         h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: 0.24em; color: var(--accent); margin: 20px 0 8px; padding-bottom: 5px; border-bottom: 2px solid var(--line); }}
         h3 {{ font-size: 11pt; margin: 12px 0 5px; color: #4d3526; }}
         p {{ margin: 0 0 9px; }}
@@ -760,16 +812,17 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         code {{ background: #f2e7dc; border: 1px solid #e1cfbf; border-radius: 4px; padding: 0.08rem 0.28rem; }}
         hr {{ border: 0; border-top: 1px solid var(--line); margin: 16px 0; }}
         blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid #c89b77; background: var(--accent-soft); color: #5d493b; }}
-        .resume-modern-header {{ display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(190px, 0.75fr); gap: 20px; align-items: start; }}
+        .resume-modern-header {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 1fr); gap: 18px; align-items: start; }}
         .resume-modern-location {{ margin: 0; color: var(--muted); font-size: 9.8pt; }}
         .resume-modern-contact {{ border-left: 2px solid var(--contact-line); padding-left: 14px; }}
         .resume-modern-contact h2 {{ margin-top: 4px; border-bottom: 2px solid var(--contact-line); }}
+        .resume-modern-contact .resume-contact-list li {{ margin: 0 0 3px; }}
         .resume-modern-summary {{ margin-top: 10px; width: 100%; max-width: 100%; }}
         .resume-modern-summary h2 {{ border-bottom: 2px solid var(--line); }}
         .resume-modern-body {{ display: table; width: 100%; table-layout: fixed; margin-top: 8px; border-collapse: separate; border-spacing: 0; }}
         .resume-modern-main, .resume-modern-side {{ display: table-cell; vertical-align: top; min-width: 0; }}
-        .resume-modern-main {{ width: 65%; padding-right: 13px; }}
-        .resume-modern-side {{ width: 35%; padding-left: 13px; }}
+        .resume-modern-main {{ width: 70%; padding-right: 14px; }}
+        .resume-modern-side {{ width: 30%; padding-left: 12px; }}
         .resume-role-row {{ display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }}
         .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 4px; }}
         .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.4pt; }}
@@ -797,7 +850,7 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
     <style>
         @page {{ size: A4; margin: 0; }}
         :root {{
-            --ink: #10213f;
+            --ink: #221912;
             --muted: #4f678c;
             --accent: #2563eb;
             --accent-soft: #dbeafe;
@@ -806,13 +859,13 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         }}
         * {{ box-sizing: border-box; }}
         html, body {{ margin: 0; padding: 0; }}
-        body {{ font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: #edf5ff; font-size: 10pt; line-height: 1.42; }}
-        .resume-shell {{ position: relative; min-height: 297mm; background: linear-gradient(135deg, #eef6ff 0%, #ffffff 25%, #ffffff 100%); padding: 13mm 15mm 13mm; overflow: hidden; }}
+        body {{ font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: #fffdf9; font-size: 10pt; line-height: 1.42; }}
+        .resume-shell {{ position: relative; min-height: 297mm; background: #fffdfa; padding: 13mm 15mm 13mm; overflow: hidden; }}
         .resume-shell::before {{ content: none; }}
         .resume-shell::after {{ content: none; }}
-        h1 {{ font-size: 25pt; margin: 0 0 5px; letter-spacing: 0.1em; color: #0f172a; text-transform: uppercase; }}
-        h2 {{ font-size: 10pt; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.18em; color: #17356a; padding-bottom: 3px; border-bottom: 1px solid #b8c7dc; }}
-        h3 {{ font-size: 10.5pt; margin: 10px 0 4px; color: #17356a; }}
+        h1 {{ font-size: 17.5pt; margin: 0 0 5px; letter-spacing: 0.1em; color: #0f172a; text-transform: uppercase; }}
+        h2 {{ font-size: 10pt; margin: 0 -15mm 6px; text-transform: uppercase; letter-spacing: 0.18em; color: #9a7350; padding: 0 15mm 3px; border-bottom: 2px solid #d4beab; }}
+        h3 {{ font-size: 10.5pt; margin: 10px 0 4px; color: #5d4330; }}
         p {{ margin: 0 0 6px; }}
         ul {{ margin: 0 0 8px 1rem; padding: 0; }}
         li {{ margin: 0 0 3px; }}
@@ -821,19 +874,23 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         code {{ background: #eef5ff; border: 1px solid #d3e5ff; border-radius: 4px; padding: 0.08rem 0.28rem; }}
         hr {{ border: 0; border-top: 1px solid var(--line); margin: 14px 0; }}
         blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: #24497b; }}
-        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 92px 10px 0; border-bottom: 2px solid #17356a; }}
+        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: 3px solid #8f6845; }}
         .resume-classic-role {{ font-size: 10.2pt; color: #3d5a80; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; }}
         .resume-contact-inline {{ color: #314760; font-size: 9.2pt; line-height: 1.5; max-width: 88%; }}
-        .resume-skill-inline {{ color: #17356a; font-size: 9.5pt; line-height: 1.7; }}
+        .resume-skill-inline {{ color: #0f172a; font-size: 9.5pt; line-height: 1.7; }}
         .resume-classic-section {{ position: relative; z-index: 1; margin-top: 12px; }}
-        .resume-experience-card, .resume-education-card {{ background: rgba(255,255,255,0.92); border: 1px solid rgba(37, 99, 235, 0.12); border-radius: 10px; padding: 10px 11px; }}
+        .resume-classic-section--plain-head h2 {{ border-bottom: 0; padding-bottom: 0; }}
+        .resume-experience-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
+        .resume-education-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
         .resume-role-row {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
         .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 4px; }}
-        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.2pt; }}
+        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: #6b5648; font-size: 9.2pt; }}
         .resume-bullet-list, .resume-contact-list, .resume-plain-list {{ margin: 0; padding-left: 1rem; }}
-        .resume-empty {{ color: var(--muted); font-style: italic; }}
-        .resume-experience-card + .resume-experience-card, .resume-education-card + .resume-education-card {{ margin-top: 10px; }}
-        @media all and (max-width: 720px) {{ .resume-classic-header {{ padding-right: 0; }} .resume-contact-inline {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
+        .resume-empty {{ color: #6b5648; font-style: italic; }}
+        .resume-experience-card + .resume-experience-card {{ position: relative; margin-top: 10px; padding-top: 10px; }}
+        .resume-experience-card + .resume-experience-card::before {{ content: ""; position: absolute; top: 0; left: 12px; right: 12px; border-top: 1px solid #d4beab; }}
+        .resume-education-card + .resume-education-card {{ margin-top: 10px; }}
+        @media all and (max-width: 720px) {{ .resume-classic-header {{ padding: 0 15mm 10px; margin: 0 -15mm; }} .resume-contact-inline {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
     </style>
 </head>
 <body>

@@ -110,6 +110,8 @@ def test_build_cover_letter_artifact_uses_agentic_signals_when_available():
     assert artifact.title == "Leander Antony - Machine Learning Engineer Cover Letter"
     assert artifact.filename_stem == "leander-antony-machine-learning-engineer-cover-letter"
     assert "Dear Hiring Team," in artifact.markdown
+    assert "leander@example.com" not in artifact.markdown
+    assert "+91 99999 99999" not in artifact.markdown
     assert "Lead with production API delivery evidence." in artifact.markdown
     assert "Show evidence of shipping recruiter-ready ML tooling." in artifact.markdown
     assert "I am excited to apply for the Machine Learning Engineer role with grounded production evidence." in artifact.markdown
@@ -135,5 +137,6 @@ def test_build_cover_letter_artifact_falls_back_to_workflow_outputs_without_agen
 
     assert "Machine Learning Engineer" in artifact.markdown
     assert "Leander Antony" in artifact.markdown
+    assert "leander@example.com" not in artifact.markdown
     assert "Thank you for your time and consideration." in artifact.markdown
     assert artifact.summary.startswith("Grounded cover letter draft")

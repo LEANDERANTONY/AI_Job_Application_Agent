@@ -138,7 +138,7 @@ def _initialize_auth():
 def main():
     configure_logging()
     st.set_page_config(
-        page_title="Application Copilot",
+        page_title="Job Application Copilot",
         page_icon="AI",
         layout="wide",
         initial_sidebar_state="expanded",

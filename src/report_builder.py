@@ -36,15 +36,16 @@ def _build_summary(
     fit_analysis: FitAnalysis,
     agent_result: Optional[AgentWorkflowResult],
 ) -> str:
+    role = job_description.title or "the target role"
     if agent_result:
         return (
-            "Application package for {role} built with AI-assisted analysis, including findings and application strategy guidance.".format(
-                role=job_description.title or "the target role",
+            "Application strategy for {role}, summarizing grounded findings, positioning guidance, and evidence-backed priorities for this role.".format(
+                role=role,
             )
         )
     return (
-        "Application package for {role}. Run the AI-assisted workflow to populate the candidate-facing findings and application strategy sections.".format(
-            role=job_description.title or "the target role",
+        "Application strategy for {role}, organizing the current resume and job signals into a focused findings and positioning brief.".format(
+            role=role,
         )
     )
 
@@ -107,8 +108,8 @@ def _build_findings_section(
             [
                 "## Findings",
                 "",
-                "- Status: Not run",
-                "- Note: Run the AI-assisted workflow to add top matches, key gaps, emphasis guidance, and strategy guidance.",
+                "- Status: Drafted from the current resume and role inputs",
+                "- Note: This version reflects the currently available evidence and positioning signals.",
                 "",
                 "### How To Address Gaps",
                 render_markdown_list(
@@ -156,7 +157,7 @@ def _build_strategy_section(agent_result: Optional[AgentWorkflowResult]) -> str:
             [
                 "## Application Strategy",
                 "",
-                "Run the AI-assisted workflow to add recruiter-facing strategy guidance.",
+                "Current positioning guidance is based on the available resume and role evidence.",
             ]
         )
 

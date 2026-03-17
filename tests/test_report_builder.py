@@ -74,8 +74,9 @@ def test_build_application_report_includes_core_sections():
     assert "## Findings" in report.markdown
     assert "### How To Address Gaps" in report.markdown
     assert "## Application Strategy" in report.markdown
-    assert "Status: Not run" in report.markdown
-    assert "Run the AI-assisted workflow" in report.plain_text
+    assert "Status: Drafted from the current resume and role inputs" in report.markdown
+    assert "Application strategy for Machine Learning Engineer" in report.plain_text
+    assert "Run the AI-assisted workflow" not in report.plain_text
     assert "## Next Actions" not in report.markdown
 
 
@@ -137,6 +138,7 @@ def test_build_application_report_includes_agent_sections_when_available():
     assert "Review Notes" not in report.markdown
     assert "Next Actions" not in report.markdown
     assert "Grounded output." not in report.plain_text
+    assert "Application strategy for Machine Learning Engineer" in report.plain_text
 
 
 def test_build_application_report_marks_approved_after_corrections():

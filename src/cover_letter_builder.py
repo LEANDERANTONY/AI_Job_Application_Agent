@@ -23,8 +23,6 @@ def _build_agent_generated_markdown(
     cover_letter_output: CoverLetterAgentOutput,
 ) -> str:
     parts = ["# " + title]
-    if contact_line:
-        parts.extend([contact_line, ""])
     if cover_letter_output.greeting:
         parts.append(cover_letter_output.greeting.rstrip(",") + ",")
     if cover_letter_output.opening_paragraph:
@@ -189,8 +187,6 @@ def build_cover_letter_artifact(
             markdown=markdown,
             plain_text=markdown_to_text(markdown, strip_bold=True),
         )
-    if contact_line:
-        markdown_parts.extend([contact_line, ""])
     markdown_parts.extend(
         [
             _opening_paragraph(job_description, tailored_draft, agent_result),

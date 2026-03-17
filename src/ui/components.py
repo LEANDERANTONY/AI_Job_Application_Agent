@@ -9,10 +9,10 @@ def render_intro():
     st.markdown(
         """
         <div class="app-hero">
-            <h1>Application Copilot</h1>
+            <h1>Job Application Copilot</h1>
             <p class="app-copy">
-                Ingest your resume, structure a target job description, and prepare
-                the inputs needed for fit analysis, tailoring, and export.
+                Ingest your resume and job description, prepare a targeted resume
+                and application strategy, and apply for jobs with grounded materials.
             </p>
         </div>
         """,
