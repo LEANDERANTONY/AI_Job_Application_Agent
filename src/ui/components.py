@@ -49,19 +49,6 @@ def render_section_head(title, subtitle):
     )
 
 
-def render_agent_brief(agent_name, title, description):
-    st.markdown(
-        f"""
-        <div class="parser-agent-brief">
-            <div class="parser-agent-pill">{agent_name}</div>
-            <div class="parser-agent-title">{title}</div>
-            <div class="parser-agent-copy">{description}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def render_page_divider():
     st.markdown('<hr class="page-divider" aria-hidden="true" />', unsafe_allow_html=True)
 

@@ -7,9 +7,7 @@ from src.schemas import (
     CoverLetterAgentOutput,
     FitAnalysis,
     FitAgentOutput,
-    JDParserAgentOutput,
     JobDescription,
-    ResumeDocument,
     ReviewAgentOutput,
     StrategyAgentOutput,
     TailoredResumeDraft,
@@ -162,68 +160,6 @@ def build_profile_agent_prompt(candidate_profile: CandidateProfile) -> Dict[str,
         ),
         "user": _json_block("Candidate Profile", candidate_profile),
         "expected_keys": list(contract.keys()),
-    }
-
-
-def build_resume_parser_agent_prompt(
-    resume_document: ResumeDocument,
-    candidate_profile: CandidateProfile,
-) -> Dict[str, Any]:
-    contract = {
-        "full_name": "corrected candidate name or the incoming value when no clear correction exists",
-        "location": "corrected location string or the incoming value when no clear correction exists",
-        "contact_lines": "array of verified contact lines only",
-        "skills": "array of verified reusable skills grounded in the resume text",
-        "experience": "array of verified work experience objects with keys title, organization, location, description, start, end",
-        "education": "array of verified education objects with keys institution, degree, field_of_study, start, end",
-        "certifications": "array of verified certification strings",
-        "verification_notes": "array of 0-4 brief notes describing only the corrections you made or the ambiguities you left unchanged",
-    }
-    user_prompt, metadata = _build_budgeted_user_prompt(
-        [
-            ("Resume Document", resume_document, 3600),
-            ("Deterministic Candidate Profile", candidate_profile, 2400),
-        ]
-    )
-    return {
-        "system": (
-            "You are the Resume Parser Agent. Verify the structured resume parse against the source resume text. "
-            "Do not overthink. Keep fields unchanged unless the resume text shows a clear error or omission. "
-            "Do not invent achievements, employers, dates, degrees, skills, locations, or certifications. "
-            "Prefer small corrections to full rewrites, and preserve the deterministic parser output when the source text is ambiguous. "
-            + _build_contract(contract)
-        ),
-        "user": user_prompt,
-        "expected_keys": list(contract.keys()),
-        "metadata": metadata,
-    }
-
-
-def build_jd_parser_agent_prompt(job_description: JobDescription) -> Dict[str, Any]:
-    contract = {
-        "title": "corrected title or the incoming title when no clear correction exists",
-        "location": "corrected location string or the incoming value when no clear correction exists",
-        "hard_skills": "array of verified hard skills grounded in the JD text",
-        "soft_skills": "array of verified soft skills grounded in the JD text",
-        "experience_requirement": "verified experience requirement string or empty string when not explicit",
-        "must_haves": "array of verified must-have requirement lines",
-        "nice_to_haves": "array of verified preferred or bonus requirement lines",
-        "verification_notes": "array of 0-4 brief notes describing only the corrections you made or the ambiguities you left unchanged",
-    }
-    user_prompt, metadata = _build_budgeted_user_prompt(
-        [("Deterministic Job Description", job_description, 3600)]
-    )
-    return {
-        "system": (
-            "You are the JD Parser Agent. Verify the structured job description parse against the provided JD text. "
-            "Do not overthink. Keep fields unchanged unless the JD shows a clear error or omission. "
-            "Do not invent requirements, skills, locations, seniority, or experience thresholds. "
-            "Prefer small corrections to full rewrites, and preserve the deterministic parse when the JD is ambiguous. "
-            + _build_contract(contract)
-        ),
-        "user": user_prompt,
-        "expected_keys": list(contract.keys()),
-        "metadata": metadata,
     }
 
 

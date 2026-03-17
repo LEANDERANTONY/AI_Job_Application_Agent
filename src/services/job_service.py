@@ -1,6 +1,5 @@
 from typing import Iterable, List
 
-from src.agents.jd_parser_agent import JDParserAgent
 from src.errors import InputValidationError
 from src.parsers.jd import clean_text, extract_job_details
 from src.schemas import JobDescription, JobRequirements
@@ -17,11 +16,7 @@ def _extract_requirement_lines(cleaned_text: str, markers: Iterable[str]) -> Lis
     return dedupe_strings(matches[:5])
 
 
-def build_job_description_from_text(
-    raw_text: str,
-    openai_service=None,
-    verify_with_agent: bool = True,
-) -> JobDescription:
+def build_job_description_from_text(raw_text: str) -> JobDescription:
     if not isinstance(raw_text, str):
         raise TypeError("raw_text must be a string.")
 
@@ -39,7 +34,7 @@ def build_job_description_from_text(
         ["preferred", "nice to have", "bonus", "plus", "good to have"],
     )
 
-    job_description = JobDescription(
+    return JobDescription(
         title=extracted.get("title", "Unknown Role"),
         raw_text=raw_text,
         cleaned_text=cleaned_text,
@@ -52,8 +47,3 @@ def build_job_description_from_text(
             nice_to_haves=nice_to_haves,
         ),
     )
-
-    if verify_with_agent:
-        job_description = JDParserAgent(openai_service).run(job_description)
-
-    return job_description

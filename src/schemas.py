@@ -75,7 +75,6 @@ class JobDescription:
     cleaned_text: str
     location: Optional[str] = None
     requirements: JobRequirements = field(default_factory=JobRequirements)
-    parsing_notes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -111,35 +110,11 @@ class ProfileAgentOutput:
 
 
 @dataclass
-class ResumeParserAgentOutput:
-    full_name: str = ""
-    location: str = ""
-    contact_lines: List[str] = field(default_factory=list)
-    skills: List[str] = field(default_factory=list)
-    experience: List[WorkExperience] = field(default_factory=list)
-    education: List[EducationEntry] = field(default_factory=list)
-    certifications: List[str] = field(default_factory=list)
-    verification_notes: List[str] = field(default_factory=list)
-
-
-@dataclass
 class JobAgentOutput:
     requirement_summary: str = ""
     priority_skills: List[str] = field(default_factory=list)
     must_have_themes: List[str] = field(default_factory=list)
     messaging_guidance: List[str] = field(default_factory=list)
-
-
-@dataclass
-class JDParserAgentOutput:
-    title: str = ""
-    location: str = ""
-    hard_skills: List[str] = field(default_factory=list)
-    soft_skills: List[str] = field(default_factory=list)
-    experience_requirement: str = ""
-    must_haves: List[str] = field(default_factory=list)
-    nice_to_haves: List[str] = field(default_factory=list)
-    verification_notes: List[str] = field(default_factory=list)
 
 
 @dataclass
