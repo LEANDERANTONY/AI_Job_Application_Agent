@@ -212,7 +212,6 @@ def render_assistant_panel(
     pending_question = get_pending_assistant_question()
     is_generating = is_assistant_responding()
     turns_to_render = history[-2:] if compact else history
-    transient_messages = st.container()
     for turn in turns_to_render:
         with st.chat_message("user"):
             st.write(turn.question)
@@ -220,11 +219,10 @@ def render_assistant_panel(
             st.write(turn.response.answer)
 
     if pending_question and is_generating:
-        with transient_messages:
-            with st.chat_message("user"):
-                st.write(pending_question)
-            with st.chat_message("assistant"):
-                _render_assistant_loading_indicator(compact=compact)
+        with st.chat_message("user"):
+            st.write(pending_question)
+        with st.chat_message("assistant"):
+            _render_assistant_loading_indicator(compact=compact)
 
     question = st.text_input(
         "Ask a question",
