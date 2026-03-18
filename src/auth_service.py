@@ -120,6 +120,27 @@ def _consume_pkce_flow(flow_id: str):
         return str(row[0])
 
 
+def _consume_latest_pkce_flow():
+    expires_before = int(time.time()) - _PKCE_FLOW_TTL_SECONDS
+    with _open_pkce_flow_store() as connection:
+        connection.execute("DELETE FROM pkce_flows WHERE created_at < ?", (expires_before,))
+        row = connection.execute(
+            """
+            SELECT flow_id, code_verifier
+            FROM pkce_flows
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is None:
+            return None
+        connection.execute("DELETE FROM pkce_flows WHERE flow_id = ?", (str(row[0]),))
+        return {
+            "auth_flow": str(row[0]),
+            "code_verifier": str(row[1]),
+        }
+
+
 def _serialize_pkce_cookie_payload(auth_flow: str, code_verifier: str):
     payload = json.dumps(
         {
@@ -208,6 +229,7 @@ class AuthService:
     def exchange_code_for_session(self, auth_code: str, auth_flow: Optional[str] = None):
         redirect_to = self.redirect_url
         code_verifier = None
+        cookie_payload = self._get_pkce_cookie_payload(auth_flow)
         if auth_flow:
             auth_flow = str(auth_flow)
             redirect_to = _with_query_params(self.redirect_url, auth_flow=auth_flow)
@@ -216,8 +238,19 @@ class AuthService:
                 code_verifier = _consume_pkce_flow(auth_flow)
         if not code_verifier:
             code_verifier = get_auth_pkce_code_verifier()
-        if not code_verifier and auth_flow:
-            code_verifier = self._get_code_verifier_from_cookie(auth_flow)
+        if not code_verifier and cookie_payload:
+            code_verifier = cookie_payload.get("code_verifier")
+            if not auth_flow:
+                auth_flow = cookie_payload.get("auth_flow")
+                if auth_flow:
+                    redirect_to = _with_query_params(self.redirect_url, auth_flow=auth_flow)
+        if not code_verifier and not auth_flow:
+            latest_flow = _consume_latest_pkce_flow()
+            if latest_flow:
+                auth_flow = latest_flow.get("auth_flow")
+                code_verifier = latest_flow.get("code_verifier")
+                if auth_flow:
+                    redirect_to = _with_query_params(self.redirect_url, auth_flow=auth_flow)
         if not code_verifier:
             raise AppError("Google sign-in session expired. Start the sign-in flow again.")
         client = self._create_client()
@@ -275,13 +308,13 @@ class AuthService:
         )
 
     @staticmethod
-    def _get_code_verifier_from_cookie(auth_flow: str):
+    def _get_pkce_cookie_payload(auth_flow: Optional[str] = None):
         payload = _deserialize_pkce_cookie_payload(get_request_cookie(_PKCE_COOKIE_NAME))
         if payload is None:
             return None
-        if payload.get("auth_flow") != auth_flow:
+        if auth_flow and payload.get("auth_flow") != auth_flow:
             return None
-        return payload.get("code_verifier")
+        return payload
 
     @staticmethod
     def _extract_oauth_url(response: Any):
