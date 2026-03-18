@@ -1,3 +1,5 @@
+import re
+
 from src.config import get_openai_max_completion_tokens_for_task
 from src.prompts import build_cover_letter_agent_prompt
 from src.schemas import (
@@ -13,6 +15,10 @@ from src.schemas import (
 )
 
 from .common import coerce_string, coerce_string_list, unique_strings
+
+
+_THIRD_PERSON_SELF_REFERENCE_RE = re.compile(r"\b(he|his|him|she|her)\b", re.IGNORECASE)
+_CANDIDATE_LABEL_RE = re.compile(r"\b(the candidate|this candidate)\b", re.IGNORECASE)
 
 
 class CoverLetterAgent:
@@ -49,7 +55,7 @@ class CoverLetterAgent:
                 task_name="cover_letter",
                 metadata=prompt.get("metadata"),
             )
-            return CoverLetterAgentOutput(
+            output = CoverLetterAgentOutput(
                 greeting=coerce_string(payload.get("greeting"), default="Dear Hiring Team"),
                 opening_paragraph=coerce_string(payload.get("opening_paragraph")),
                 body_paragraphs=coerce_string_list(payload.get("body_paragraphs"), limit=3),
@@ -57,6 +63,17 @@ class CoverLetterAgent:
                 signoff=coerce_string(payload.get("signoff"), default="Sincerely"),
                 signature_name=coerce_string(payload.get("signature_name"), default=candidate_profile.full_name or "Candidate"),
             )
+            if self._contains_third_person_self_reference(candidate_profile, output):
+                return self._fallback(
+                    candidate_profile,
+                    job_description,
+                    fit_analysis,
+                    tailored_draft,
+                    tailoring_output,
+                    strategy_output,
+                    resume_generation_output,
+                )
+            return output
         return self._fallback(
             candidate_profile,
             job_description,
@@ -66,6 +83,26 @@ class CoverLetterAgent:
             strategy_output,
             resume_generation_output,
         )
+
+    @staticmethod
+    def _contains_third_person_self_reference(
+        candidate_profile: CandidateProfile,
+        cover_letter_output: CoverLetterAgentOutput,
+    ) -> bool:
+        text_blocks = [
+            cover_letter_output.opening_paragraph,
+            *cover_letter_output.body_paragraphs,
+            cover_letter_output.closing_paragraph,
+        ]
+        combined_text = " ".join(str(block or "").strip() for block in text_blocks if str(block or "").strip())
+        if not combined_text:
+            return False
+        candidate_name = str(candidate_profile.full_name or "").strip()
+        if candidate_name and candidate_name.lower() in combined_text.lower():
+            return True
+        if _CANDIDATE_LABEL_RE.search(combined_text):
+            return True
+        return _THIRD_PERSON_SELF_REFERENCE_RE.search(combined_text) is not None
 
     @staticmethod
     def _fallback(

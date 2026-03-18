@@ -347,6 +347,7 @@ def build_resume_generation_agent_prompt(
         "system": (
             "You are the Resume Generation Agent. Produce the final tailored resume content from grounded upstream analysis. "
             "You may rewrite, reorder, and emphasize, but you must not invent employers, achievements, dates, metrics, or unsupported skills. "
+            "Write in standard resume style: no first-person or third-person pronouns, no full-name self-reference inside the summary or bullets, and no cover-letter phrasing. "
             "Keep the output ATS-safe and recruiter-readable. "
             + _build_contract(contract)
         ),
@@ -391,6 +392,8 @@ def build_cover_letter_agent_prompt(
     return {
         "system": (
             "You are the Cover Letter Agent. Write a recruiter-facing cover letter only after the review stage has approved or corrected the upstream outputs. "
+            "Write entirely in first person from the candidate's perspective. "
+            "Do not describe the candidate as he, she, him, his, her, or by full name anywhere in the letter body; reserve the candidate name for the signature line only. "
             "Use the approved tailoring, strategy, review, and resume-generation context as the source of truth. "
             "Do not invent employers, metrics, projects, technologies, or direct experience that are not supported by the provided inputs. "
             "Keep the result specific to the role, grounded, and ready for packaging into the final artifact. "

@@ -1,7 +1,9 @@
 from src.prompts import (
     build_assistant_prompt,
     build_application_qa_assistant_prompt,
+    build_cover_letter_agent_prompt,
     build_fit_agent_prompt,
+    build_resume_generation_agent_prompt,
     build_review_agent_prompt,
     build_strategy_agent_prompt,
 )
@@ -95,3 +97,29 @@ def test_review_prompt_allows_null_corrections_when_no_rewrite_is_needed():
     assert "null when no strategy changes are needed" in prompt["system"]
     assert "unresolved_issues" in prompt["system"]
     assert "Approve when the final corrected wording stays grounded" in prompt["system"]
+
+
+def test_cover_letter_prompt_requires_first_person_voice():
+    prompt = build_cover_letter_agent_prompt(
+        candidate_profile={"full_name": "Leander Antony"},
+        job_description={"title": "Data Scientist"},
+        fit_analysis={"experience_signal": "Grounded ML project experience."},
+        tailored_draft={"professional_summary": "Project-based ML candidate."},
+        tailoring_output={"professional_summary": "Grounded summary."},
+    )
+
+    assert "Write entirely in first person from the candidate's perspective" in prompt["system"]
+    assert "Do not describe the candidate as he, she, him, his, her, or by full name" in prompt["system"]
+
+
+def test_resume_generation_prompt_requires_pronoun_free_resume_style():
+    prompt = build_resume_generation_agent_prompt(
+        candidate_profile={"full_name": "Leander Antony"},
+        job_description={"title": "Data Scientist"},
+        fit_analysis={"matched_hard_skills": ["Python"]},
+        tailored_draft={"professional_summary": "Grounded draft summary."},
+        tailoring_output={"professional_summary": "Grounded summary."},
+    )
+
+    assert "no first-person or third-person pronouns" in prompt["system"]
+    assert "no full-name self-reference inside the summary or bullets" in prompt["system"]
