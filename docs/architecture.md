@@ -2,8 +2,6 @@
 
 This document describes the current runtime architecture of the AI Job Application Agent.
 
-For the broader delivery direction and longer-term platform strategy, see [docs/project_strategy.md](project_strategy.md).
-
 ## System Goal
 
 The app helps a candidate:
@@ -13,7 +11,7 @@ The app helps a candidate:
 - upload or paste a job description
 - generate deterministic fit and tailoring state from those inputs
 - run a supervised assisted workflow on demand
-- review the tailored resume, cover letter, and application package
+- review the tailored resume, cover letter, and application strategy
 - export those artifacts as Markdown or PDF
 - reload the latest saved workspace snapshot back into `Manual JD Input`
 
@@ -29,7 +27,7 @@ The current codebase is a Streamlit-first product shell around backend-ready par
 6. Deterministic services build the job model, fit analysis, and first tailoring draft.
 7. The supervised workflow can be triggered explicitly from the JD page.
 8. The orchestrator runs `fit`, `tailoring`, `strategy`, `review`, `resume_generation`, and `cover_letter` through the routed OpenAI service when available, with deterministic fallback where supported.
-9. Builders assemble the current workflow state into a tailored resume artifact, cover letter artifact, and application package.
+9. Builders assemble the current workflow state into a tailored resume artifact, cover letter artifact, and application strategy report.
 10. Export helpers produce Markdown and PDF bytes for the current session.
 11. For authenticated users, usage events and the latest saved workspace snapshot are persisted in Supabase Postgres.
 12. The sidebar `Reload Workspace` action restores that latest saved snapshot back into `Manual JD Input`.
@@ -106,14 +104,14 @@ Responsibilities include:
 - task-aware model routing
 - Responses API calls
 - GPT-5 reasoning-effort routing
-- session usage tracking
+- usage accounting for current runtime metadata
 - optional persisted usage-event callbacks
 - optional daily-quota preflight checks
 - incomplete-response retry handling
 
 ### Builders and Exporters
 
-- `src/report_builder.py`: deterministic application-package assembly
+- `src/report_builder.py`: deterministic application-strategy report assembly
 - `src/resume_builder.py`: deterministic tailored-resume assembly
 - `src/cover_letter_builder.py`: deterministic grounded cover-letter assembly
 - `src/exporters.py`: Markdown/PDF export helpers and HTML preview generation
@@ -231,10 +229,17 @@ These tests are intentionally fast and fixture-light so they can run locally and
 
 ## Next Architecture Step
 
-The next meaningful expansion is delivery hardening and product polish rather than another big workflow redesign. The main targets are:
+The next meaningful expansion is still product hardening on the current stack, followed by backend extraction when concurrency and product-control needs justify it.
+
+Near-term targets:
 
 - deployment hardening for the hosted Render environment
-- keeping saved-workspace payload compatibility safe over time
 - tighter UX around reload, quotas, and artifact review
-- optional object storage only if binary retention becomes a real requirement
-- later API extraction only when multiple clients or async execution justify it
+- continued saved-workspace payload compatibility safety
+
+Later extraction targets:
+
+- FastAPI boundary for orchestration, auth-owned persistence, and export jobs
+- Docker as the standard service runtime
+- background execution for long-running workflow jobs
+- keeping Streamlit as a client during the transition

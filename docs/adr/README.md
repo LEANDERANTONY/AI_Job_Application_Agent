@@ -2,6 +2,8 @@
 
 This directory tracks the architectural decisions that shape the AI Job Application Agent.
 
+The ADRs are historical records. Some superseded ADRs still describe earlier product stages, but the accepted set below reflects the current architecture direction.
+
 ## Accepted
 
 - [ADR-001: Lightweight document parsing for MVP](ADR-001-lightweight-document-parsing.md)

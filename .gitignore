@@ -170,9 +170,11 @@ cython_debug/
 
 # Local planning notes
 improvements.md
+deployment-plan.md
+docs/project_strategy.md
+docs/recommended-changes-status-2026-03-16.md
 docs/supabase-setup-checklist.md
 docs/pdf_template/*.pdf
-docs/pdf_rendered/*.pdf
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
@@ -250,6 +252,8 @@ artifacts/
 exports/
 reports/
 
-# Local/private sample resumes
-static/demo_resume/*
-!static/demo_resume/.gitkeep
+# Keep tracked demo assets
+!static/demo_job_description/
+!static/demo_job_description/**
+!static/demo_resume/
+!static/demo_resume/**

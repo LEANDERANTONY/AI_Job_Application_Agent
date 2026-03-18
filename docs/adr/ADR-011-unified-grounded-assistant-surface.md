@@ -13,7 +13,7 @@ The product originally exposed one assistant surface with two explicit modes:
 
 That separation helped at first, but the product has since changed in ways that made the split less useful and more brittle:
 
-- the JD flow now exposes multiple first-class artifacts, including the tailored resume, cover letter, and application package
+- the JD flow now exposes multiple first-class artifacts, including the tailored resume, cover letter, and application strategy report
 - saved workspace restore is now a first-class authenticated behavior and part of the normal user flow
 - assistant prompts and static product knowledge had started to drift from the actual runtime experience because the same feature had to be described in two separate assistant paths
 - the UI forced users to decide which assistant mode they needed before asking a question, even when many questions naturally span both product usage and current-output interpretation

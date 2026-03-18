@@ -2,6 +2,11 @@
 
 This document tracks notable implementation milestones and technical decisions.
 
+Historical note:
+
+- earlier entries reflect the product and architecture assumptions at the time they were written
+- later entries supersede earlier history when the product direction changed, especially around LinkedIn import, workflow history, session-level quota UX, and persistence structure
+
 ## Day 1: Project Setup and Resume Parsing
 
 - Initialized the repository, virtual environment, license, and Streamlit shell.
@@ -418,3 +423,32 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
   - one latest reloadable saved workspace per user
   - current Render + Docker + Supabase deployment path
 - Removed broken README/checklist references to docs that are no longer in the repo.
+
+## Day 29: Render Auth Stabilization And Saved Usage Refresh
+
+- Stabilized Google sign-in on Render across the Supabase callback flow.
+- Fixed PKCE callback persistence issues caused by the hosted Streamlit redirect/runtime model.
+- Fixed the sign-in button navigation regression after the callback hardening changes.
+- Added a server-side fallback path so the auth code exchange no longer depends only on a returned custom query parameter.
+- Fixed same-session quota refresh behavior after successful assisted workflow runs so the sidebar reflects updated account state without requiring a fresh login.
+
+## Day 30: Login-Required AI Features And Quota Simplification
+
+- Made the in-app assistant login-required in the active product.
+- Simplified quota UX so the product now presents account-level daily quota as the main user-facing assisted limit.
+- Removed browser-session assisted budget from the live UI and current product copy.
+- Re-aligned assistant fallback behavior, product knowledge, prompt guidance, and README language around the authenticated quota model.
+
+## Day 31: Public Repo Cleanup And README Rebuild
+
+- Rebuilt the public README around the live product:
+  - badges
+  - Render app link
+  - screenshot story
+  - sample rendered PDF links
+- Added the screenshot and rendered-PDF assets to tracked repo content for GitHub presentation.
+- Moved tracked demo resume PDFs under `static/demo_resume/` so demo assets live with the app inputs instead of under old PDF-template docs.
+- Re-baselined the roadmap around:
+  - finishing the job-application product
+  - hardening the current Render-hosted Streamlit stack
+  - later FastAPI + Docker backend extraction

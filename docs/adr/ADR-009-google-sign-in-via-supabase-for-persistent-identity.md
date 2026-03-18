@@ -13,7 +13,7 @@ Session-based Streamlit state is sufficient for local prototype flow, but it is 
 - per-user usage tracking
 - plan-based or daily assisted limits
 - cross-device continuity
-- saved workflow history and artifacts
+- saved workspace continuity
 - future subscriptions or billing entitlements
 
 The product direction now includes assisted workflow usage tracking and eventually monetization. That makes browser-only session identity too weak to govern product access and usage.
@@ -44,13 +44,13 @@ Rejected for the current phase because it is slower to deliver and unnecessary b
 
 ### 3. Use Firebase Auth as the first path
 
-Considered viable, but not chosen initially because Supabase better aligns with the need for relational product data such as usage records, workflow runs, and entitlement state.
+Considered viable, but not chosen initially because Supabase better aligns with the need for relational product data such as usage records, saved workspace state, and entitlement state.
 
 ## Consequences
 
 - auth becomes a first-class product concern rather than a later add-on
 - usage limits can evolve from session-based estimates to real per-user enforcement
-- saved artifacts and workflow history can attach to a stable account identity
+- saved workspace state can attach to a stable account identity
 - the app will need secure handling of auth sessions and user-owned data
 - backend persistence becomes part of the product foundation even while Streamlit remains the UI shell
 - Google sign-in should be implemented before daily quotas or billing so those later systems rest on real identity

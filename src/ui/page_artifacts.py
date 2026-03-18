@@ -148,8 +148,8 @@ def _render_resume_variant_preview(artifact: TailoredResumeArtifact):
 def render_report_package(report: ApplicationReport, agent_result: AgentWorkflowResult = None):
     st.markdown("---")
     render_section_head(
-        "Application Package",
-        "Recruiter-facing package assembled from the current workflow outputs.",
+        "Application Strategy",
+        "Grounded report generated from the agentic workflow outputs.",
     )
 
     cached_report_pdf = get_cached_pdf_package()
@@ -161,7 +161,7 @@ def render_report_package(report: ApplicationReport, agent_result: AgentWorkflow
             st.warning(error.user_message)
             cached_report_pdf = None
 
-    with st.expander("Preview Application Package", expanded=False):
+    with st.expander("Preview Application Strategy", expanded=False):
         render_html_preview(
             build_report_preview_html(report),
             height=760,

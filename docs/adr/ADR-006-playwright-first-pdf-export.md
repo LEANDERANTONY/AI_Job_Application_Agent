@@ -8,7 +8,7 @@ Superseded on March 16, 2026
 
 This ADR captured the earlier browser-rendering decision before the Windows runtime work on March 16, 2026 moved the product to a WeasyPrint-first exporter.
 
-The application package can already be assembled deterministically as Markdown, but recruiter-facing output also needs a polished PDF form.
+The application strategy report can already be assembled deterministically as Markdown, but recruiter-facing output also needs a polished PDF form.
 
 Plain-text export is not sufficient for the product direction because:
 
@@ -24,7 +24,7 @@ Use Playwright/Chromium as the primary PDF backend for application-package expor
 
 The export flow is:
 
-1. build the deterministic application package as Markdown
+1. build the deterministic application strategy report as Markdown
 2. render that Markdown into styled HTML/CSS
 3. print the HTML through Chromium when available
 4. fall back to ReportLab if the browser backend is unavailable or fails

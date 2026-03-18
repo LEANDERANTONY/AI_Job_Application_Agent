@@ -28,7 +28,7 @@ Specific implications:
 - business logic should move into `src/` services and agent modules
 - the app keeps sidebar navigation because the product has multiple workflows
 - Redis is deferred until background jobs or shared cache become necessary
-- Docker is deferred until standalone backend services make it useful
+- Docker is not required to justify the initial product, but remains the right runtime boundary once backend extraction becomes real
 - Next.js is the preferred frontend target when the app outgrows Streamlit
 
 ## Consequences
@@ -54,5 +54,6 @@ The codebase should now evolve toward:
 - service modules
 - supervised agent orchestration
 - deterministic report assembly
+- backend-ready persistence and export boundaries
 
 That work will make the later FastAPI and Next.js migration much easier.

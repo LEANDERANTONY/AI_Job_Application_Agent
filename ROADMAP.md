@@ -1,114 +1,74 @@
 # Roadmap
 
-This roadmap reflects the agreed implementation sequence for the AI Job Application Agent.
+This roadmap reflects the current product state and the next major build priorities for the AI Job Application Agent.
 
-The more complete strategy document lives in [docs/project_strategy.md](docs/project_strategy.md). This file keeps the high-level execution order short and scannable.
+## Now: Finish The Job-Application Product
 
-## Phase 1: Streamlit Product Shell
+Current product baseline:
 
-- Keep sidebar navigation because the app has multiple workflows
-- Move the app to a wide layout
-- Apply the GitHub-agent visual system to the main content area
-- Keep Streamlit as the first deployment target
+- Google sign-in via Supabase
+- login-required AI workflow and assistant
+- resume upload plus manual JD flow
+- supervised agentic analysis
+- tailored resume generation
+- cover letter generation
+- application strategy report
+- latest saved-workspace reload
+- Render-hosted Docker deployment
 
-Status:
-- Completed
+Highest-priority remaining product work:
 
-## Phase 2: Add Shared Domain Models
-
-- Introduce `src/schemas.py` for candidate, job, fit, and tailored-output objects
-- Introduce `src/errors.py` for typed failures
-- Normalize resume and JD outputs into shared internal models
-
-Status:
-- Completed
-
-## Phase 3: Build the First Real Agent Workflow
-
-- Add `src/openai_service.py`
-- Add `src/prompts.py`
-- Add supervised specialist agents:
-  - profile
-  - job
-  - fit
-  - tailoring
-  - review
-- Add an orchestrator entrypoint for end-to-end runs
+- turn `Job Search` from a placeholder into a real job-application input path or remove it
+- tighten the end-to-end job-application flow for normal users, not just demo usage
+- keep exported outputs visually strong and operationally reliable
+- improve artifact naming, copy, and review UX where the product still feels internal or MVP-like
+- continue refining grounded assistant behavior around the active outputs
 
 Status:
-- Core workflow foundation implemented
-- Deterministic and supervised workflow layers implemented
-- Review-loop refinement implemented
-- Resume generation and strategy layers implemented
 
-## Phase 4: Deterministic Reports and Exports
+- Active delivery focus
 
-- Add `src/report_builder.py`
-- Render structured fit and tailoring results in deterministic sections
-- Add Markdown export first
-- Add PDF export once the report structure is stable
+## Next: Production Hardening On The Current Stack
 
-Status:
-- Deterministic report assembly implemented
-- Tailored resume builder implemented
-- Markdown, PDF, and ZIP export implemented
-
-## Phase 5: Grounded Assistance and Model Controls
-
-- Add the two-mode assistant panel for product help and grounded resume/application Q&A
-- Route assisted tasks across model tiers instead of relying on one global model
-- Track assisted usage at the session level
+- keep the Streamlit + Render + Supabase deployment reliable
+- harden saved-workspace persistence and reload behavior
+- improve deployment and runtime observability
+- keep auth, quota refresh, and export paths stable under hosted conditions
+- add more smoke-test discipline around the hosted workflow
 
 Status:
-- Implemented
 
-## Phase 6: Auth, Quotas, and History Persistence
-
-- Add Google sign-in through Supabase
-- Persist lightweight app-user records
-- Persist usage events and enforce daily plan-based quotas
-- Persist workflow runs and artifact metadata
-- Add a dedicated History page
-- Regenerate historical downloads from saved workflow payloads instead of current session state
-
-Status:
-- Implemented in the codebase
-- Supabase project bootstrap remains operator setup work
-
-## Phase 7: Deployment Hardening
-
-- Align the local Python version with the deployment runtime
-- Finalize deployment configuration for Streamlit hosting
-- Publish the first hosted MVP
-- Gather product feedback before expanding infrastructure
-
-Status:
-- Next active delivery focus
-
-## Phase 8: Persistence Hardening
-
-- Add payload versioning and compatibility handling for saved workflow reconstruction
-- Tighten migration guidance for existing Supabase projects
-- Consider object storage only if binary artifact retention becomes necessary
-
-Status:
 - In progress
 
-## Phase 9: Backend Extraction
+## Later: Extract A Real Backend
 
-- Expose core orchestration through FastAPI
-- Reuse the existing service, builder, and store boundaries
-- Add Redis only if background jobs or shared cache become necessary
-- Keep Streamlit usable as a demo or internal client during the transition
+The next major architecture step is a backend extraction when the product needs more than a single Streamlit session model can comfortably support.
+
+Targets:
+
+- expose orchestration, persistence, and export boundaries through FastAPI
+- keep Docker as the standard runtime and deployment unit
+- support background jobs for long-running workflow execution
+- enable better concurrency, including assistant interactions that do not block on the main workflow
+- keep Streamlit usable as a demo or internal client during the transition
+
+Triggers that justify this step:
+
+- need for parallel user interactions during workflow execution
+- need for non-Streamlit clients
+- heavier persistence and job-control requirements
+- more production-grade operational control than Streamlit alone provides
 
 Status:
-- Deferred until a second client or async execution is justified
 
-## Phase 10: Production Frontend
+- Planned, not started
 
-- Build a Next.js frontend if the app outgrows Streamlit
-- Connect it to the FastAPI backend
-- Move the public-facing product UI to the new frontend when ready
+## Future: Dedicated Frontend
+
+- move the public product UI to a dedicated frontend only when the current UX clearly outgrows Streamlit
+- keep the backend API stable first
+- treat a React or Next.js frontend as a second-stage product investment, not the immediate next step
 
 Status:
-- Deferred
+
+- Deferred until backend extraction is real
