@@ -112,12 +112,12 @@ def test_assistant_fallback_can_use_retrieved_knowledge_for_saved_workspace_expi
 
     response = service.answer(
         "How long does the saved workspace last?",
-        current_page="Saved Workspace",
+        current_page="Manual JD Input",
         app_context={},
     )
 
     assert "24 hours" in response.answer.lower()
-    assert "saved workspace" in response.sources[0].lower()
+    assert "reload workspace" in response.sources[0].lower()
 
 
 def test_assistant_fallback_knows_resume_upload_requires_login_when_signed_out():

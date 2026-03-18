@@ -406,3 +406,15 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Updated the Supabase bootstrap so expired saved workspaces become unreadable exactly at `expires_at` through RLS.
 - Added a Supabase scheduled cleanup job that deletes expired saved-workspace rows every 5 minutes, even if the user never returns.
 - Kept the app-side save/load purge as a backup cleanup path in case the scheduled job is temporarily unavailable.
+
+## Day 28: Saved Workspace UX Simplification And Doc Re-Baseline
+
+- Removed the dead dedicated saved-workspace page and its unused test path because the product now restores the latest saved snapshot only through the sidebar `Reload Workspace` action.
+- Removed history-only helper paths that were left behind from the earlier `workflow_runs` era.
+- Updated the assistant and retrieved product knowledge so they describe the current reload flow accurately and no longer mention the removed page or the old live `ProfileAgent` / `JobAgent` path.
+- Re-baselined the active docs around the real shipped state:
+  - login-first resume intake
+  - no separate history tab
+  - one latest reloadable saved workspace per user
+  - current Render + Docker + Supabase deployment path
+- Removed broken README/checklist references to docs that are no longer in the repo.

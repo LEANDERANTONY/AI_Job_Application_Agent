@@ -61,12 +61,6 @@ from src.ui.state import (
 )
 from src.ui.state import is_authenticated
 from src.ui.workflow_payloads import (
-    build_saved_cover_letter_from_payload,
-    WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT,
-    WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT,
-    WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
-    WORKFLOW_HISTORY_PAYLOAD_VERSION,
-    build_saved_report_from_payload,
     build_saved_tailored_resume_from_payload,
     build_saved_workflow_snapshot_from_payload,
     get_saved_workflow_payload_status,
@@ -280,49 +274,6 @@ def _persist_workflow_run(view_model: JobWorkflowViewModel):
     return workflow_history.persist_workflow_run(view_model)
 
 
-def refresh_authenticated_history(selected_workflow_run_id: Optional[str] = None):
-    return workflow_history.refresh_authenticated_history(selected_workflow_run_id)
-
-
-def load_saved_workspace_summary(auth_service=None):
-    auth_user_record = get_app_user_record()
-    access_token, refresh_token = get_auth_tokens()
-    if auth_user_record is None or not access_token or not refresh_token:
-        return {"status": "unauthenticated", "record": None, "report": None, "resume": None}
-
-    saved_workspace_store = SavedWorkspaceStore(auth_service or get_auth_service())
-    if not saved_workspace_store.is_configured():
-        return {"status": "unconfigured", "record": None, "report": None, "resume": None}
-
-    saved_workspace, status = saved_workspace_store.load_workspace(
-        access_token,
-        refresh_token,
-        auth_user_record.id,
-    )
-    if saved_workspace is None:
-        return {"status": status, "record": None, "report": None, "cover_letter": None, "resume": None}
-
-    snapshot = build_saved_workflow_snapshot_from_payload(saved_workspace.workflow_snapshot_json)
-    cover_letter = build_saved_cover_letter_from_payload(saved_workspace.cover_letter_payload_json)
-    if cover_letter is None and snapshot is not None:
-        cover_letter = build_cover_letter_artifact(
-            snapshot.candidate_profile,
-            snapshot.job_description,
-            snapshot.fit_analysis,
-            snapshot.tailored_draft,
-            agent_result=snapshot.agent_result,
-        )
-
-    return {
-        "status": status,
-        "record": saved_workspace,
-        "report": build_saved_report_from_payload(saved_workspace.report_payload_json),
-        "resume": build_saved_tailored_resume_from_payload(saved_workspace.tailored_resume_payload_json),
-        "cover_letter": cover_letter,
-        "snapshot": snapshot,
-    }
-
-
 def restore_latest_saved_workspace(auth_service=None):
     auth_user_record = get_app_user_record()
     access_token, refresh_token = get_auth_tokens()
@@ -411,18 +362,6 @@ def restore_latest_saved_workspace(auth_service=None):
     }
     set_workspace_restore_notice(result)
     return result
-
-
-def build_saved_report_from_workflow_run(workflow_run: Optional[object]):
-    return workflow_history.build_saved_report_from_workflow_run(workflow_run)
-
-
-def build_saved_cover_letter_from_workflow_run(workflow_run: Optional[object]):
-    return workflow_history.build_saved_cover_letter_from_workflow_run(workflow_run)
-
-
-def build_saved_tailored_resume_from_workflow_run(workflow_run: Optional[object]):
-    return workflow_history.build_saved_tailored_resume_from_workflow_run(workflow_run)
 
 
 def run_supervised_workflow(

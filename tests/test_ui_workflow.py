@@ -8,7 +8,7 @@ from src.schemas import (
     JobRequirements,
     ResumeDocument,
 )
-from src.ui import workflow_history, workflow_intake
+from src.ui import workflow_intake
 from src.ui import workflow
 
 
@@ -210,51 +210,6 @@ def test_run_supervised_workflow_refreshes_daily_quota_after_authenticated_run(m
     assert captured["persisted"] is refreshed_view_model
 
 
-def test_refresh_authenticated_history_is_noop_under_saved_workspace_model(monkeypatch):
-    resolved_runs, resolved_artifacts = workflow.refresh_authenticated_history("run-2")
-
-    assert resolved_runs == []
-    assert resolved_artifacts == []
-
-
-def test_refresh_authenticated_history_clears_state_without_auth(monkeypatch):
-    resolved_runs, resolved_artifacts = workflow.refresh_authenticated_history()
-
-    assert resolved_runs == []
-    assert resolved_artifacts == []
-
-
-def test_build_saved_documents_from_workflow_run_payloads():
-    workflow_run = SimpleNamespace(
-        report_payload_json='{"version": 1, "kind": "application_report", "data": {"title": "Saved Report", "filename_stem": "saved-report", "summary": "summary", "markdown": "# Report", "plain_text": "Report"}}',
-        tailored_resume_payload_json='{"version": 1, "kind": "tailored_resume_artifact", "data": {"title": "Saved Resume", "filename_stem": "saved-resume", "summary": "summary", "markdown": "# Resume", "plain_text": "Resume", "theme": "modern_professional"}}',
-    )
-
-    saved_report = workflow.build_saved_report_from_workflow_run(workflow_run)
-    saved_resume = workflow.build_saved_tailored_resume_from_workflow_run(workflow_run)
-
-    assert saved_report.title == "Saved Report"
-    assert saved_report.filename_stem == "saved-report"
-    assert saved_resume.title == "Saved Resume"
-    assert saved_resume.theme == "modern_professional"
-
-
-def test_build_saved_documents_supports_legacy_payloads():
-    workflow_run = SimpleNamespace(
-        report_payload_json='{"title": "Legacy Report", "filename_stem": "legacy-report", "summary": "summary", "markdown": "# Report", "plain_text": "Report"}',
-        tailored_resume_payload_json='{"title": "Legacy Resume", "filename_stem": "legacy-resume", "summary": "summary", "markdown": "# Resume", "plain_text": "Resume", "theme": "classic_ats"}',
-    )
-
-    status = workflow.get_saved_workflow_payload_status(workflow_run)
-    saved_report = workflow.build_saved_report_from_workflow_run(workflow_run)
-    saved_resume = workflow.build_saved_tailored_resume_from_workflow_run(workflow_run)
-
-    assert status["supported"] is True
-    assert status["label"] == "Legacy v0"
-    assert saved_report.filename_stem == "legacy-report"
-    assert saved_resume.filename_stem == "legacy-resume"
-
-
 def test_saved_payload_status_blocks_unsupported_future_version():
     workflow_run = SimpleNamespace(
         report_payload_json='{"version": 99, "kind": "application_report", "data": {"title": "Future Report"}}',
@@ -264,7 +219,6 @@ def test_saved_payload_status_blocks_unsupported_future_version():
 
     assert status["supported"] is False
     assert status["label"] == "v99 Unsupported"
-    assert workflow.build_saved_report_from_workflow_run(workflow_run) is None
 
 
 def test_refresh_daily_quota_status_uses_quota_service(monkeypatch):
@@ -498,49 +452,6 @@ def test_restore_latest_saved_workspace_restores_snapshot(monkeypatch):
     assert captured["theme"] == "modern_professional"
     assert captured["menu"] == "Manual JD Input"
     assert result["level"] == "success"
-
-
-def test_load_saved_workspace_summary_builds_saved_artifacts(monkeypatch):
-    class FakeSavedWorkspaceStore:
-        def __init__(self, auth_service):
-            self.auth_service = auth_service
-
-        def is_configured(self):
-            return True
-
-        def load_workspace(self, access_token, refresh_token, user_id):
-            return (
-                SimpleNamespace(
-                    report_payload_json="report-payload",
-                    cover_letter_payload_json="cover-letter-payload",
-                    tailored_resume_payload_json="resume-payload",
-                    workflow_snapshot_json="snapshot-payload",
-                ),
-                "available",
-            )
-
-    monkeypatch.setattr(workflow, "get_app_user_record", lambda: SimpleNamespace(id="user-123"))
-    monkeypatch.setattr(workflow, "get_auth_tokens", lambda: ("access-token", "refresh-token"))
-    monkeypatch.setattr(workflow, "get_auth_service", lambda: object())
-    monkeypatch.setattr(workflow, "SavedWorkspaceStore", FakeSavedWorkspaceStore)
-    monkeypatch.setattr(workflow, "build_saved_report_from_payload", lambda raw: {"kind": "report", "raw": raw})
-    monkeypatch.setattr(workflow, "build_saved_cover_letter_from_payload", lambda raw: {"kind": "cover_letter", "raw": raw})
-    monkeypatch.setattr(workflow, "build_saved_tailored_resume_from_payload", lambda raw: {"kind": "resume", "raw": raw})
-    snapshot = SimpleNamespace(
-        candidate_profile="candidate",
-        job_description="job",
-        fit_analysis="fit",
-        tailored_draft="draft",
-        agent_result="agent",
-    )
-    monkeypatch.setattr(workflow, "build_saved_workflow_snapshot_from_payload", lambda raw: snapshot)
-    summary = workflow.load_saved_workspace_summary()
-
-    assert summary["status"] == "available"
-    assert summary["report"] == {"kind": "report", "raw": "report-payload"}
-    assert summary["cover_letter"] == {"kind": "cover_letter", "raw": "cover-letter-payload"}
-    assert summary["resume"] == {"kind": "resume", "raw": "resume-payload"}
-    assert summary["snapshot"] == snapshot
 
 
 def test_restore_latest_saved_workspace_reports_expired_snapshot(monkeypatch):

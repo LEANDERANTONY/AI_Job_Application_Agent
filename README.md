@@ -13,8 +13,9 @@ The repository now follows the same product-style structure as the GitHub Portfo
 
 ## Current Features
 
+- Sign in with Google via Supabase from the sidebar account panel
 - Upload and parse resumes from PDF, DOCX, or TXT
-- Upload, sample-load, or paste a job description
+- Upload or paste a job description
 - Clean job-description text and extract simple signals:
   - title
   - location
@@ -31,23 +32,20 @@ The repository now follows the same product-style structure as the GitHub Portfo
   - strategy
   - review
   - resume generation
+  - cover letter
 - Let the review stage directly correct tailoring and strategy outputs before final resume generation instead of rerunning the full workflow loop
 - Use OpenAI when configured, with deterministic fallback when it is not
 - Route different assisted tasks to different model tiers instead of relying on one global model
 - Route GPT-5 reasoning effort by task, with low effort on fit and strategy, medium effort on tailoring, review, and final resume generation, and higher-trust routing kept for the final grounding stages
 - Use the OpenAI Responses API for assisted JSON generation and usage tracking
 - Build a tailored resume artifact from the current workflow state
+- Build a grounded cover letter artifact from the current workflow state
 - Preview the tailored resume directly in the app before export
-- Compare the original resume text against the tailored resume with a unified diff and similarity metrics
 - Build an application package / strategy report from the current workflow state
-- Download the tailored resume and the report as Markdown or PDF
-- Download both artifacts together as a ZIP bundle
-- Save one reloadable authenticated workspace snapshot per user for 24 hours and reload it on demand from the sidebar
-- Ask a built-in two-mode assistant for:
-  - product help (`Using the App`)
-  - grounded application Q&A (`About My Resume`)
-- Sign in with Google via Supabase from the sidebar account panel
-- Gate the AI-assisted workflow behind authenticated account state while keeping deterministic exploration available without login
+- Download the tailored resume, cover letter, and report as Markdown or PDF
+- Save one reloadable authenticated workspace snapshot per user for 24 hours and restore it through the sidebar `Reload Workspace` action into `Manual JD Input`
+- Ask one unified grounded assistant about product behavior, your resume, or the current outputs
+- Keep resume intake login-first so saved-workspace reloads, quotas, and assisted usage stay tied to the same account state
 - Show remaining assisted session capacity in the UI without exposing cost
 - Persist parsed and normalized inputs across Streamlit navigation with session state
 - Run on a modular structure with UI, parser, and service layers already separated
@@ -66,7 +64,7 @@ Recent deterministic parser hardening kept in the current baseline:
 - resume parsing remains hardened against real PDF fixtures from the demo set
 - JD parsing is validated against real TXT, PDF, and DOCX sample descriptions in `static/demo_job_description/`
 
-Google sign-in is integrated alongside persisted per-user usage tracking, plan-based daily quotas, and a single reloadable saved workspace backed by Supabase Postgres. Each successful workflow run overwrites the prior saved workspace for that user, and the saved workspace expires after 24 hours by default.
+Google sign-in is integrated alongside persisted per-user usage tracking, plan-based daily quotas, and a single reloadable saved workspace backed by Supabase Postgres. Each successful workflow run overwrites the prior saved workspace for that user, and the saved workspace expires after 24 hours by default. The current UX intentionally keeps this as a sidebar reload action only; there is no separate saved-workspace or history page.
 
 ## Strategy
 
@@ -116,10 +114,10 @@ See [docs/architecture.md](docs/architecture.md) for the runtime overview.
 
 Architectural decisions are tracked in [docs/adr/README.md](docs/adr/README.md).
 
-Related planning and sizing docs:
+Related operator docs:
 
-- [docs/model-latency-and-cost-estimates.md](docs/model-latency-and-cost-estimates.md)
-- [docs/google-signin-implementation-plan.md](docs/google-signin-implementation-plan.md)
+- [docs/supabase-setup-checklist.md](docs/supabase-setup-checklist.md)
+- [deployment-plan.md](deployment-plan.md)
 
 ## Roadmap
 
@@ -139,14 +137,13 @@ uv sync --group dev
 .venv\Scripts\activate
 ```
 
-### 3. Install Chromium for polished PDF export
+### 3. Install the local WeasyPrint runtime
 
-```powershell
-```
+PDF export uses WeasyPrint first and falls back to ReportLab only when the HTML-to-PDF runtime is unavailable.
 
-PDF export now uses WeasyPrint first and falls back to ReportLab if the HTML renderer is unavailable.
+For local Windows development, install the GTK/Pango runtime libraries WeasyPrint needs. If those native libraries are missing, local PDF export will fall back to ReportLab until they are installed.
 
-On Windows, WeasyPrint also needs GTK/Pango runtime libraries available on the machine. If those native libraries are missing, the app will fall back to ReportLab until they are installed.
+For hosted deployment, the chosen path is to package the WeasyPrint runtime inside the Render Docker image so the PDF stack is controlled rather than host-dependent.
 
 ### 4. Optional configuration
 
@@ -155,19 +152,15 @@ Environment variables can be stored in [`.env.example`](.env.example):
 For local development, create a private `.env` file in the repo root and copy the keys you need from `.env.example`.
 That file is already ignored by git.
 
-Required for a minimal deploy:
-
-- none
-
-Required only for AI-assisted features:
-
-- `OPENAI_API_KEY`
-
-Required only after you create a Supabase project and want authenticated features:
+Required for the active authenticated workflow:
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_AUTH_REDIRECT_URL`
+
+Required only for AI-assisted features:
+
+- `OPENAI_API_KEY`
 
 Optional runtime and routing settings:
 
@@ -232,9 +225,7 @@ Current default output-token caps are also tuned by task rather than kept unifor
 - `review`: 4000
 - `resume_generation`: 3000
 
-The current app also does not require Supabase for a first hosted deploy. If Supabase is not configured yet, the app can still run the non-authenticated product shell and deterministic workflow. Google sign-in, saved-workspace reloads, and account-level quotas remain inactive until Supabase is configured.
-
-If you plan to deploy before creating Supabase, set `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW=false` so the AI-assisted workflow button is not blocked by the missing login layer. Once Supabase exists, turn it back on if you want assisted usage tied to authenticated accounts.
+The current UI keeps resume intake behind authenticated account state. That means Supabase is effectively required for the active resume-led workflow, even though the Streamlit shell itself can still boot without it. Once Supabase is configured, Google sign-in, saved-workspace reload, and account-level quotas all run through the same account model.
 
 To enable Google sign-in, configure Supabase Auth with the Google provider and set:
 
@@ -244,20 +235,11 @@ To enable Google sign-in, configure Supabase Auth with the Google provider and s
 
 The local sign-in flow now preserves Supabase PKCE verifier state across the redirect and Streamlit rerun cycle. If that state expires, the app fails closed with a clean retry message instead of silently leaving the sidebar in a broken signed-out state.
 
-Local runs now load a private repo-root `.env` file automatically. On Streamlit Community Cloud, keep using the Secrets manager; those environment variables are still read through the same `os.getenv(...)` path.
+Local runs now load a private repo-root `.env` file automatically. On Render, put the same values into the Render environment configuration; those variables are still read through the same `os.getenv(...)` path.
 
 For the concrete operator checklist, see [docs/supabase-setup-checklist.md](docs/supabase-setup-checklist.md).
 
 To enable the full authenticated persistence path in one step, apply [docs/supabase-bootstrap.sql](docs/supabase-bootstrap.sql) in the Supabase SQL Editor. That bootstrap script creates `app_users`, `usage_events`, and `saved_workspaces` for the active product path.
-
-If you prefer incremental setup, the same schema is still split across:
-
-- [docs/supabase-app-users.sql](docs/supabase-app-users.sql)
-- [docs/supabase-usage-events.sql](docs/supabase-usage-events.sql)
-
-To enable persistent account sync after login, create the `app_users` table in Supabase and keep `SUPABASE_APP_USERS_TABLE` aligned with its name. The authenticated user now syncs a lightweight app-level account record on sign-in and session restore.
-
-To persist assisted usage in the external database, also create the `usage_events` table from [docs/supabase-usage-events.sql](docs/supabase-usage-events.sql). The app writes insert-only usage records for authenticated assisted requests, which is the right foundation for later daily rollups and quota enforcement.
 
 The app now enforces authenticated daily assisted limits from persisted usage. Free-tier defaults and paid-tier defaults are configured through environment variables, and admin/internal plan tiers remain unrestricted.
 
@@ -267,7 +249,7 @@ For product testing, keep internal accounts and quota-test accounts separate:
 - use a second Google account that is not allowlisted when you want to validate normal free-tier quota exhaustion, reset timing, and fallback messaging
 - do not add that quota-test account to `AUTH_INTERNAL_USER_EMAILS`, or it will bypass the very limits you are trying to test
 
-Authenticated assisted runs now persist one reloadable workspace payload in Supabase. The sidebar account panel exposes an explicit `Reload Saved Workspace` action, and the dedicated `Saved Workspace` page lets the user inspect expiry status and regenerate downloads from that one saved payload instead of the current in-session inputs.
+Authenticated assisted runs now persist one reloadable workspace payload in Supabase. The sidebar account panel exposes a `Reload Workspace` action that restores the latest saved snapshot directly into `Manual JD Input`; there is no separate saved-workspace page.
 
 The saved workspace is overwritten by each new successful workflow run for the same user. By default it is retained for 24 hours. After `expires_at`, Supabase Row Level Security stops serving it immediately, and a scheduled cleanup job removes expired rows from the table every 5 minutes. The app also purges expired rows on save/load as a backup cleanup path.
 
@@ -275,16 +257,17 @@ New saved workflow payloads are written through a versioned JSON envelope, while
 
 This keeps storage cheap: the app stores one structured workspace payload per user in Postgres, regenerates PDFs on demand, and avoids storing large binary artifacts unless that tradeoff becomes necessary later.
 
-If `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW` is left at its default value of `true`, the AI-assisted workflow button is disabled until the user signs in. Resume parsing and deterministic JD analysis remain available without login.
+If `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW` is left at its default value of `true`, the AI-assisted workflow button is disabled until the user signs in. In the current UI, resume upload is also login-first.
 
 ## Deployment Notes
 
-- [`.streamlit/config.toml`](.streamlit/config.toml) is now included for a hosted Streamlit deployment baseline.
-- Chosen first deployment target: Streamlit Community Cloud.
-- Keep Playwright/Chromium enabled on that target, matching the existing GitHub agent deployment pattern.
-- ReportLab remains the automatic fallback if the browser backend is unavailable at runtime.
-- Hosted AI-assisted flows now use the stabilized Responses API path with reasoning routing, GPT-5 parameter fallback handling, and incomplete-response retries.
-- A later Docker move is still optional, but it is no longer required for the preferred PDF path.
+- [`.streamlit/config.toml`](.streamlit/config.toml) remains the Streamlit app baseline, but the chosen first hosted target is now Render.
+- Chosen first deployment target: Render Docker web service.
+- Chosen persistence and auth target: Supabase free tier.
+- Hosted PDF generation should be treated as WeasyPrint-required, with the native runtime bundled in the Docker image.
+- ReportLab remains in the codebase only as resilience fallback, not as the intended hosted renderer.
+- Hosted AI-assisted flows use the stabilized Responses API path with task-level reasoning routing, GPT-5 parameter fallback handling, and incomplete-response retries.
+- The concrete deployment sequence is documented in [deployment-plan.md](deployment-plan.md).
 
 ## Run the App
 
@@ -294,17 +277,15 @@ uv run streamlit run app.py
 
 Then:
 
-1. Upload a resume
-2. Open `Manual JD Input`
-3. Upload or paste a job description
-4. Review the extracted signals, fit snapshot, and tailoring guidance
-5. Sign in with Google from the sidebar if assisted workflow is enabled
-6. Run the supervised workflow for agent-refined output, review notes, strategy guidance, and final tailored resume generation
-7. Preview the tailored resume and the application package in-page
-8. Compare the original resume against the tailored output if needed
-9. Use the assistant panel for product help or grounded application Q&A
-10. Download the resume, the report, or the combined export bundle
-11. Open `History` to revisit authenticated workflow runs and regenerate saved downloads
+1. Sign in with Google from the sidebar
+2. Upload a resume
+3. Open `Manual JD Input`
+4. Upload or paste a job description
+5. Run the supervised workflow for agent-refined output, review notes, strategy guidance, tailored resume generation, and cover letter generation
+6. Preview the tailored resume, cover letter, and application package in-page
+7. Use the assistant panel for product help or grounded output questions
+8. Download the resume, cover letter, or report as needed
+9. Use `Reload Workspace` from the sidebar when you want to restore the latest saved run into the JD flow
 
 ## Testing
 

@@ -61,20 +61,20 @@ def test_build_product_help_context_for_question_includes_retrieved_knowledge(mo
     monkeypatch.setattr(
         page_assistant,
         "retrieve_product_knowledge",
-        lambda question, current_page="": [{"title": "Saved Workspace", "source": "Saved Workspace", "content": "Restores saved state."}],
+        lambda question, current_page="": [{"title": "Reload Workspace", "source": "Reload Workspace", "content": "Restores saved state."}],
     )
 
     context = page_assistant._build_product_help_context_for_question(
         "How long does the saved workspace last?",
-        current_page="Saved Workspace",
+        current_page="Manual JD Input",
         workflow_view_model=None,
         artifact=None,
         report=None,
         ai_session=None,
     )
 
-    assert context["current_page"] == "Saved Workspace"
-    assert context["knowledge_hits"][0]["source"] == "Saved Workspace"
+    assert context["current_page"] == "Manual JD Input"
+    assert context["knowledge_hits"][0]["source"] == "Reload Workspace"
 
 
 def test_submit_assistant_question_returns_false_for_blank_input():

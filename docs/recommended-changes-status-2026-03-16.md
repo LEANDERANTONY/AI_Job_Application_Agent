@@ -211,9 +211,9 @@ Status: `Completed in stepwise pass`
 
 Changes made:
 
-- clarified that the page is for inspection and download regeneration of the latest saved snapshot
-- added a direct in-page reload action
-- updated page copy so the difference between inspect/download and restore/reload is explicit
+- clarified the earlier saved-workspace inspection page and added a direct reload action during that pass
+- later product simplification removed that separate page entirely
+- the current product keeps only the sidebar `Reload Workspace` action and restores the latest saved snapshot straight into `Manual JD Input`
 
 Checkpoint:
 
@@ -438,7 +438,8 @@ Status: `Mostly implemented earlier`
 Findings:
 
 - `src/ui/pages.py` is no longer the earlier ~1,240-line monolith referenced in the re-assessment; it is now 408 lines
-- page-specific responsibilities were already split into `src/ui/page_artifacts.py`, `src/ui/page_assistant.py`, and `src/ui/page_history.py`
+- page-specific responsibilities were already split into `src/ui/page_artifacts.py` and `src/ui/page_assistant.py`
+- the earlier `src/ui/page_history.py` module was later removed when the separate saved-workspace page was dropped
 - the remaining `src/ui/pages.py` file is still a central composition layer, but the bulk split work had already happened before this follow-up pass
 
 Current evidence:
@@ -446,7 +447,6 @@ Current evidence:
 - `src/ui/pages.py`
 - `src/ui/page_artifacts.py`
 - `src/ui/page_assistant.py`
-- `src/ui/page_history.py`
 
 ### H. UI workflow split was already partially completed earlier
 

@@ -1,5 +1,3 @@
-from typing import Optional
-
 from src.cover_letter_builder import build_cover_letter_artifact
 from src.report_builder import build_application_report
 from src.resume_builder import build_tailored_resume_artifact
@@ -14,9 +12,6 @@ from src.ui.workflow_payloads import (
     WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER,
     WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT,
     WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
-    build_saved_cover_letter_from_payload,
-    build_saved_report_from_payload,
-    build_saved_tailored_resume_from_payload,
     json_payload,
     workflow_snapshot_json,
 )
@@ -81,25 +76,3 @@ def persist_workflow_run(view_model):
         },
     )
     return saved_workspace
-
-
-def refresh_authenticated_history(selected_workflow_run_id: Optional[str] = None):
-    return [], []
-
-
-def build_saved_report_from_workflow_run(workflow_run: Optional[object]):
-    if workflow_run is None or not getattr(workflow_run, "report_payload_json", ""):
-        return None
-    return build_saved_report_from_payload(workflow_run.report_payload_json)
-
-
-def build_saved_cover_letter_from_workflow_run(workflow_run: Optional[object]):
-    if workflow_run is None or not getattr(workflow_run, "cover_letter_payload_json", ""):
-        return None
-    return build_saved_cover_letter_from_payload(workflow_run.cover_letter_payload_json)
-
-
-def build_saved_tailored_resume_from_workflow_run(workflow_run: Optional[object]):
-    if workflow_run is None or not getattr(workflow_run, "tailored_resume_payload_json", ""):
-        return None
-    return build_saved_tailored_resume_from_payload(workflow_run.tailored_resume_payload_json)

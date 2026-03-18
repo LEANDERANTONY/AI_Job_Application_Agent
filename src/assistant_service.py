@@ -201,7 +201,7 @@ class AssistantService:
             return AssistantResponse(
                 answer="I am the in-app assistant for Application Copilot. I can explain how the product works and answer grounded questions about your current fit analysis, tailored resume, cover letter, and application package.",
                 sources=[current_page, "Upload Resume", "Manual JD Input"],
-                suggested_follow_ups=["How does the navigation work?", "What does Reload Saved Workspace do?"],
+                suggested_follow_ups=["How does the navigation work?", "What does Reload Workspace do?"],
             )
         if "navigation" in normalized or "nav" in normalized or "tab" in normalized or "sidebar" in normalized:
             return AssistantResponse(
@@ -219,13 +219,13 @@ class AssistantService:
                     suggested_follow_ups=["Where do I sign in?", "What can I do after I log in?"],
                 )
             return AssistantResponse(
-                answer="Start on Upload Resume. You can choose a sample file or upload your own PDF, DOCX, or TXT resume, then move to Manual JD Input once the resume is parsed.",
+                answer="Start on Upload Resume. Once you are signed in, upload your PDF, DOCX, or TXT resume, then move to Manual JD Input after the resume is parsed.",
                 sources=["Upload Resume", "Manual JD Input"],
                 suggested_follow_ups=["What happens after I upload my resume?", "How do I add a job description?"],
             )
         if "job description" in normalized or "jd" in normalized:
             return AssistantResponse(
-                answer="Use Manual JD Input to upload a JD file, select a sample JD, or paste JD text directly. Once the JD is loaded, the app builds the fit snapshot, supervised workflow outputs, tailored resume, cover letter, and application package from that structured role data.",
+                answer="Use Manual JD Input to upload a JD file or paste JD text directly. Once the JD is loaded, the app builds the fit snapshot, supervised workflow outputs, tailored resume, cover letter, and application package from that structured role data.",
                 sources=["Manual JD Input", "Readiness Snapshot"],
                 suggested_follow_ups=["What is the supervised workflow?", "What do I get at the end?"],
             )
@@ -274,7 +274,7 @@ class AssistantService:
         if "saved workspace" in normalized or "reload workspace" in normalized or "restore" in normalized:
             return AssistantResponse(
                 answer="Signed-in users keep one saved workspace snapshot for 24 hours. Reload Workspace restores the saved resume-backed candidate state, fit outputs, and any saved report, tailored resume, and cover letter artifacts back into the JD flow.",
-                sources=["Saved Workspace", "Manual JD Input"],
+                sources=["Reload Workspace", "Manual JD Input"],
                 suggested_follow_ups=["How long does the saved workspace last?", "What gets restored into the JD page?"],
             )
         contextual_response = AssistantService._fallback_output_qa(

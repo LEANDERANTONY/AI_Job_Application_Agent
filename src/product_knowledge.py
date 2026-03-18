@@ -4,12 +4,21 @@ import re
 PRODUCT_KNOWLEDGE_DOCUMENTS = [
     {
         "topic": "saved_workspace",
-        "title": "Saved Workspace Reload And Expiry",
-        "source": "Saved Workspace",
-        "keywords": ["saved workspace", "reload", "restore", "expires", "24 hours", "snapshot"],
+        "title": "Reload Workspace",
+        "source": "Reload Workspace",
+        "keywords": [
+            "saved workspace",
+            "reload",
+            "restore",
+            "expires",
+            "24 hours",
+            "snapshot",
+            "previous work",
+            "earlier work",
+        ],
         "content": (
             "Signed-in users keep one saved workspace snapshot for 24 hours. "
-            "Reload Saved Workspace restores that snapshot back into Manual JD Input, including the resume-backed candidate state, fit outputs, and saved report, tailored resume, and cover letter artifacts when available."
+            "The sidebar Reload Workspace action restores that snapshot back into Manual JD Input, including the resume-backed candidate state, fit outputs, and the latest saved artifacts when available."
         ),
     },
     {
@@ -45,7 +54,7 @@ PRODUCT_KNOWLEDGE_DOCUMENTS = [
         "source": "Manual JD Input",
         "keywords": ["workflow", "supervised", "agent", "review", "fit", "tailoring"],
         "content": (
-            "The supervised workflow runs specialist agents for profile, job, fit, tailoring, strategy, review, resume generation, and cover letter generation. The cover letter is generated after review-approved outputs exist. If AI-assisted execution fails mid-run, the UI shows that the workflow downgraded to deterministic fallback and why."
+            "The supervised workflow runs specialist agents for fit, tailoring, strategy, review, resume generation, and cover letter generation. The cover letter is generated after review-approved outputs exist. If AI-assisted execution fails mid-run, the UI shows that the workflow downgraded to deterministic fallback and why."
         ),
     },
 ]
