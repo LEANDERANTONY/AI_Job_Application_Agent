@@ -185,6 +185,53 @@ def test_exchange_code_for_session_uses_cookie_payload_when_session_state_is_mis
     assert session.user.user_id == "user-123"
 
 
+def test_exchange_code_for_session_uses_local_flow_store_when_memory_is_missing(monkeypatch, tmp_path):
+    response = SimpleNamespace(
+        session=SimpleNamespace(
+            access_token="access-token",
+            refresh_token="refresh-token",
+            user=SimpleNamespace(
+                id="user-123",
+                email="user@example.com",
+                user_metadata={"full_name": "Leander Antony"},
+            ),
+        )
+    )
+    auth_client = FakeAuthClient(exchange_response=response)
+
+    monkeypatch.setattr(
+        "src.auth_service.create_client",
+        lambda *args, **kwargs: FakeSupabaseClient(auth_client),
+    )
+    monkeypatch.setattr("src.auth_service.ClientOptions", lambda **kwargs: kwargs)
+    monkeypatch.setattr("src.auth_service.get_auth_pkce_code_verifier", lambda: None)
+    monkeypatch.setattr("src.auth_service.get_request_cookie", lambda key, default=None: None)
+    monkeypatch.setattr("src.auth_service.set_auth_pkce_code_verifier", lambda value: None)
+    monkeypatch.setattr(
+        auth_service_module,
+        "_PKCE_FLOW_STORE_PATH",
+        tmp_path / "auth.sqlite3",
+    )
+
+    auth_service_module._store_pkce_flow("flow-123", "stored-verifier")
+
+    service = AuthService(
+        supabase_url="https://project.supabase.co",
+        supabase_anon_key="anon-key",
+        redirect_url="http://localhost:8501",
+    )
+
+    session = service.exchange_code_for_session("auth-code", auth_flow="flow-123")
+
+    assert auth_client.exchange_payload == {
+        "auth_code": "auth-code",
+        "code_verifier": "stored-verifier",
+        "redirect_to": "http://localhost:8501?auth_flow=flow-123",
+    }
+    assert session.user.user_id == "user-123"
+    assert auth_service_module._consume_pkce_flow("flow-123") is None
+
+
 def test_exchange_code_for_session_requires_pkce_verifier(monkeypatch):
     auth_client = FakeAuthClient(exchange_response=None)
 

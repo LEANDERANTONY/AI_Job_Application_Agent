@@ -1,6 +1,10 @@
 import base64
 import json
+import sqlite3
+import tempfile
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
@@ -67,6 +71,53 @@ class StreamlitSessionStorage:
 _PKCE_CODE_VERIFIER_CACHE: dict[str, str] = {}
 _PKCE_COOKIE_NAME = "auth_pkce_flow"
 _PKCE_COOKIE_MAX_AGE_SECONDS = 600
+_PKCE_FLOW_STORE_PATH = Path(tempfile.gettempdir()) / "ai_job_application_agent_auth.sqlite3"
+_PKCE_FLOW_TTL_SECONDS = 900
+
+
+def _open_pkce_flow_store():
+    connection = sqlite3.connect(_PKCE_FLOW_STORE_PATH, timeout=5)
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pkce_flows (
+            flow_id TEXT PRIMARY KEY,
+            code_verifier TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    return connection
+
+
+def _store_pkce_flow(flow_id: str, code_verifier: str):
+    now = int(time.time())
+    expires_before = now - _PKCE_FLOW_TTL_SECONDS
+    with _open_pkce_flow_store() as connection:
+        connection.execute(
+            """
+            INSERT INTO pkce_flows (flow_id, code_verifier, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(flow_id) DO UPDATE SET
+                code_verifier = excluded.code_verifier,
+                created_at = excluded.created_at
+            """,
+            (flow_id, code_verifier, now),
+        )
+        connection.execute("DELETE FROM pkce_flows WHERE created_at < ?", (expires_before,))
+
+
+def _consume_pkce_flow(flow_id: str):
+    expires_before = int(time.time()) - _PKCE_FLOW_TTL_SECONDS
+    with _open_pkce_flow_store() as connection:
+        connection.execute("DELETE FROM pkce_flows WHERE created_at < ?", (expires_before,))
+        row = connection.execute(
+            "SELECT code_verifier FROM pkce_flows WHERE flow_id = ?",
+            (flow_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        connection.execute("DELETE FROM pkce_flows WHERE flow_id = ?", (flow_id,))
+        return str(row[0])
 
 
 def _serialize_pkce_cookie_payload(auth_flow: str, code_verifier: str):
@@ -139,6 +190,7 @@ class AuthService:
         if not code_verifier:
             raise AppError("Unable to start Google sign-in right now.")
         _PKCE_CODE_VERIFIER_CACHE[flow_id] = code_verifier
+        _store_pkce_flow(flow_id, code_verifier)
         url = self._extract_oauth_url(response)
         if not url:
             raise AppError("Unable to start Google sign-in right now.")
@@ -160,6 +212,8 @@ class AuthService:
             auth_flow = str(auth_flow)
             redirect_to = _with_query_params(self.redirect_url, auth_flow=auth_flow)
             code_verifier = _PKCE_CODE_VERIFIER_CACHE.pop(auth_flow, None)
+            if not code_verifier:
+                code_verifier = _consume_pkce_flow(auth_flow)
         if not code_verifier:
             code_verifier = get_auth_pkce_code_verifier()
         if not code_verifier and auth_flow:

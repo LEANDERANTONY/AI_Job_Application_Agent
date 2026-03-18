@@ -98,6 +98,8 @@ def _initialize_auth():
                 "auth_sign_in_failed",
                 "Google sign-in failed during code exchange.",
                 error=error.user_message,
+                auth_code_present=bool(auth_code),
+                auth_flow_present=bool(auth_flow),
             )
         finally:
             _clear_auth_query_params()
