@@ -98,6 +98,6 @@ def test_strategy_agent_run_uses_openai_payload_when_available():
     )
 
     assert captured["task_name"] == "strategy"
-    assert captured["max_completion_tokens"] == 2500
+    assert captured["max_completion_tokens"] == 1500
     assert result.cover_letter_talking_points == ["Lead with delivery outcomes"]
     assert result.portfolio_project_emphasis == ["Platform APIs"]
