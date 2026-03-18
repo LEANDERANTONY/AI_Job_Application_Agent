@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ai-job-application-agent
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: STREAMLIT_SERVER_HEADLESS
+        value: "true"
+      - key: AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW
+        value: "true"
+      - key: AUTH_DEFAULT_PLAN_TIER
+        value: "free"
+      - key: AUTH_DEFAULT_ACCOUNT_STATUS
+        value: "active"
+      - key: SAVED_WORKSPACE_TTL_HOURS
+        value: "24"
+      - key: SUPABASE_APP_USERS_TABLE
+        value: app_users
+      - key: SUPABASE_USAGE_EVENTS_TABLE
+        value: usage_events
+      - key: SUPABASE_SAVED_WORKSPACES_TABLE
+        value: saved_workspaces
