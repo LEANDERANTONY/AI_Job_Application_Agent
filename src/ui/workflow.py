@@ -7,8 +7,6 @@ from src.cover_letter_builder import build_cover_letter_artifact
 from src.config import (
     AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW,
     DAILY_QUOTA_CACHE_TTL_SECONDS,
-    OPENAI_MAX_CALLS_PER_SESSION,
-    OPENAI_MAX_TOKENS_PER_SESSION,
 )
 from src.errors import AgentExecutionError, AppError, InputValidationError
 from src.openai_service import OpenAIService
@@ -73,7 +71,6 @@ from src.ui.workflow_signatures import workflow_signature as _workflow_signature
 class AISessionViewModel:
     usage: dict
     mode_label: str
-    budget_reached: bool
     openai_service: OpenAIService
     daily_quota: Optional[DailyQuotaStatus] = None
 
@@ -166,10 +163,7 @@ def resolve_job_description_input(uploaded_jd=None, selected_sample="None", past
 
 
 def build_ai_session_view_model(auth_service=None):
-    usage = get_openai_session_usage(
-        OPENAI_MAX_CALLS_PER_SESSION,
-        OPENAI_MAX_TOKENS_PER_SESSION,
-    )
+    usage = get_openai_session_usage()
     usage_event_recorder = None
     quota_checker = None
     daily_quota = get_daily_quota_status()
@@ -208,23 +202,14 @@ def build_ai_session_view_model(auth_service=None):
                 )
 
     openai_service = OpenAIService(
-        usage_budget={
-            "max_calls": usage.get("max_calls"),
-            "max_total_tokens": usage.get("max_total_tokens"),
-        },
         starting_usage=usage,
         usage_event_recorder=usage_event_recorder,
         quota_checker=quota_checker,
-    )
-    budget_reached = (
-        usage.get("remaining_calls") == 0
-        or usage.get("remaining_total_tokens") == 0
     )
     mode_label = "AI-assisted" if openai_service.is_available() else "Fallback-ready"
     return AISessionViewModel(
         usage=usage,
         mode_label=mode_label,
-        budget_reached=budget_reached,
         openai_service=openai_service,
         daily_quota=daily_quota,
     )

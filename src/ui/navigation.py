@@ -113,7 +113,6 @@ def _render_sidebar_usage_panel(menu):
 
     ai_session = workflow.build_ai_session_view_model()
     daily_quota = ai_session.daily_quota
-    usage = ai_session.usage
 
     st.markdown(
         """
@@ -128,7 +127,7 @@ def _render_sidebar_usage_panel(menu):
     )
 
     if daily_quota:
-        top_row = st.columns(4, gap="small")
+        top_row = st.columns(3, gap="small")
         with top_row[0]:
             _render_sidebar_usage_stat(
                 "Daily Runs",
@@ -146,48 +145,16 @@ def _render_sidebar_usage_panel(menu):
             )
         with top_row[2]:
             _render_sidebar_usage_stat(
-                "Session Runs",
-                _format_remaining_capacity(usage.get("remaining_calls"), usage.get("max_calls")),
-                "Browser-session runs left.",
-            )
-        with top_row[3]:
-            _render_sidebar_usage_stat(
-                "Session Capacity",
-                _format_remaining_capacity(
-                    usage.get("remaining_total_tokens"),
-                    usage.get("max_total_tokens"),
-                ),
-                "Browser-session token budget left.",
+                "Plan Tier",
+                str(daily_quota.plan_tier or "Unknown").title(),
+                "Account-level assisted quota is tied to the signed-in plan.",
             )
         if daily_quota.quota_exhausted:
             st.warning(
                 "Your daily assisted quota is exhausted. The backup workflow is still available until the next UTC reset."
             )
     else:
-        st.caption("Sign in to see account-level daily quota and keep assisted usage tied to your plan.")
-
-    if not daily_quota:
-        session_row = st.columns(2, gap="small")
-        with session_row[0]:
-            _render_sidebar_usage_stat(
-                "Session Runs",
-                _format_remaining_capacity(usage.get("remaining_calls"), usage.get("max_calls")),
-                "Browser-session runs left.",
-            )
-        with session_row[1]:
-            _render_sidebar_usage_stat(
-                "Session Capacity",
-                _format_remaining_capacity(
-                    usage.get("remaining_total_tokens"),
-                    usage.get("max_total_tokens"),
-                ),
-                "Browser-session token budget left.",
-            )
-
-    if ai_session.budget_reached and ai_session.openai_service.is_available():
-        st.warning(
-            "This browser session has reached its assisted limit. The workflow will continue in backup mode."
-        )
+        st.caption("Sign in to see your account-level assisted quota.")
 
 
 def _render_account_panel(auth_service):

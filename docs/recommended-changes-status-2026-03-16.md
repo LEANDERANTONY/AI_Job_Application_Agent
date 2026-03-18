@@ -28,6 +28,11 @@ Checkpoint:
 
 Status: `Completed in stepwise pass`
 
+Current note:
+
+- the product no longer exposes a browser-session assisted budget in the live UI
+- assisted workflow and assistant usage are now treated as login-required account features, with the persisted daily quota as the main user-facing limit
+
 Changes made:
 
 - expanded product-help prompt guidance for limit, quota, warning, and fallback questions

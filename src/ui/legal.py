@@ -78,7 +78,7 @@ def get_privacy_policy_markdown():
         - OpenAI for optional AI-assisted workflow steps and assistant responses
         - Render for hosted application infrastructure
 
-        Resume content, job-description content, and generated application materials are sent to OpenAI only when you explicitly run AI-assisted features or use the in-app assistant while AI support is enabled. Deterministic parsing and non-assisted flows do not require OpenAI.
+        Resume content, job-description content, and generated application materials are sent to OpenAI only when you are signed in and explicitly run AI-assisted features or use the in-app assistant while AI support is enabled. Deterministic parsing and non-assisted flows do not require OpenAI.
 
         Google sign-in is mediated through Supabase Auth. The app itself does not directly handle your Google password.
 
@@ -101,7 +101,7 @@ def get_privacy_policy_markdown():
 
         ## Your choices
 
-        You may use the non-authenticated parts of the app without Google sign-in, subject to the app's current feature configuration. If you do not want resume or job-description content processed by OpenAI, do not run the AI-assisted workflow or assistant features.
+        You may use the non-authenticated parts of the app without Google sign-in, subject to the app's current feature configuration. AI-assisted workflow and assistant features require login. If you do not want resume or job-description content processed by OpenAI, do not run those assisted features.
 
         ## Contact
 

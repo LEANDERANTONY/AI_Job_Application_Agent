@@ -45,7 +45,7 @@ PRODUCT_KNOWLEDGE_DOCUMENTS = [
         "source": "Quota State",
         "keywords": ["quota", "limit", "token", "budget", "daily", "session"],
         "content": (
-            "The product enforces two assisted limits: a browser-session budget and an authenticated account-level daily quota. Either limit can force assisted features to fall back to deterministic behavior until the relevant limit resets."
+            "AI-assisted features require a signed-in account and use the authenticated account-level daily quota for the current plan tier. When that daily quota is exhausted, assisted features remain unavailable until the next UTC reset or a plan change."
         ),
     },
     {

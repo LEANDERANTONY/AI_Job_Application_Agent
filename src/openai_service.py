@@ -6,8 +6,6 @@ from typing import Callable, Iterable, Optional
 from openai import OpenAI
 
 from src.config import (
-    OPENAI_MAX_CALLS_PER_SESSION,
-    OPENAI_MAX_TOKENS_PER_SESSION,
     OPENAI_MODEL_DEFAULT,
     describe_openai_model_policy,
     get_openai_model_for_task,
@@ -43,11 +41,7 @@ class OpenAIService:
         self.default_model = model or OPENAI_MODEL_DEFAULT
         self.model = self.default_model
         self._client = client if client is not None else None
-        self._usage_budget = {
-            "max_calls": OPENAI_MAX_CALLS_PER_SESSION,
-            "max_total_tokens": OPENAI_MAX_TOKENS_PER_SESSION,
-        }
-        self._usage_budget.update(usage_budget or {})
+        self._usage_budget = dict(usage_budget or {})
         self._usage_totals = {
             "request_count": 0,
             "prompt_tokens": 0,

@@ -93,7 +93,7 @@ def test_assistant_fallback_answers_identity_question():
     assert "in-app assistant" in response.answer.lower()
 
 
-def test_assistant_fallback_explains_session_and_daily_limits():
+def test_assistant_fallback_explains_daily_limits():
     service = AssistantService()
 
     response = service.answer(
@@ -102,8 +102,8 @@ def test_assistant_fallback_explains_session_and_daily_limits():
         app_context={},
     )
 
-    assert "browser-session" in response.answer.lower()
     assert "daily quota" in response.answer.lower()
+    assert "signed-in account" in response.answer.lower()
     assert response.sources
 
 

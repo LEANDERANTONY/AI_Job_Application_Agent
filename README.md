@@ -45,8 +45,7 @@ The repository now follows the same product-style structure as the GitHub Portfo
 - Download the tailored resume, cover letter, and report as Markdown or PDF
 - Save one reloadable authenticated workspace snapshot per user for 24 hours and restore it through the sidebar `Reload Workspace` action into `Manual JD Input`
 - Ask one unified grounded assistant about product behavior, your resume, or the current outputs
-- Keep resume intake login-first so saved-workspace reloads, quotas, and assisted usage stay tied to the same account state
-- Show remaining assisted session capacity in the UI without exposing cost
+- Require login for all AI-assisted workflow and assistant usage so quotas stay tied to the same account state
 - Persist parsed and normalized inputs across Streamlit navigation with session state
 - Run on a modular structure with UI, parser, and service layers already separated
 
@@ -181,8 +180,6 @@ Optional runtime and routing settings:
 - `OPENAI_REASONING_RESUME_GENERATION`
 - `OPENAI_REASONING_PRODUCT_HELP`
 - `OPENAI_REASONING_APPLICATION_QA`
-- `OPENAI_MAX_CALLS_PER_SESSION`
-- `OPENAI_MAX_TOKENS_PER_SESSION`
 - `APP_BASE_URL`
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
@@ -257,7 +254,7 @@ New saved workflow payloads are written through a versioned JSON envelope, while
 
 This keeps storage cheap: the app stores one structured workspace payload per user in Postgres, regenerates PDFs on demand, and avoids storing large binary artifacts unless that tradeoff becomes necessary later.
 
-If `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW` is left at its default value of `true`, the AI-assisted workflow button is disabled until the user signs in. In the current UI, resume upload is also login-first.
+If `AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW` is left at its default value of `true`, the AI-assisted workflow button is disabled until the user signs in. In the current UI, resume upload and the in-app assistant are also login-first.
 
 ## Deployment Notes
 

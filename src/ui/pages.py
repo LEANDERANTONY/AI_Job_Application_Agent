@@ -90,63 +90,6 @@ def _review_status_label(review):
     return "Needs Revision"
 
 
-def _render_openai_usage(usage):
-    cols = st.columns(3)
-    with cols[0]:
-        render_metric_card(
-            "Browser Session Runs Left",
-            _format_remaining_capacity(usage.get("remaining_calls"), usage.get("max_calls")),
-            "Estimated assisted runs still available in this browser session.",
-        )
-    with cols[1]:
-        render_metric_card(
-            "Browser Session Capacity Left",
-            _format_remaining_capacity(
-                usage.get("remaining_total_tokens"),
-                usage.get("max_total_tokens"),
-            ),
-            "Remaining assisted capacity in this browser session before the workflow switches to the backup path.",
-        )
-    with cols[2]:
-        budget_reached = (
-            usage.get("remaining_calls") == 0
-            or usage.get("remaining_total_tokens") == 0
-        )
-        render_metric_card(
-            "Session Assisted Mode",
-            "Limit Reached" if budget_reached else "Available",
-            "If this session limit is reached, the workflow remains available in backup mode.",
-        )
-
-    st.caption(
-        "Browser-session safeguards only apply to this session. Daily quota is account-level and is enforced across signed-in sessions."
-    )
-
-    last_metadata = usage.get("last_response_metadata") or {}
-    if last_metadata:
-        detail_parts = [
-            "Latest assisted step used {tokens} tokens and finished with status `{status}`.".format(
-                tokens=last_metadata.get("total_tokens", 0),
-                status=last_metadata.get("status") or "unknown",
-            )
-        ]
-        estimated_input_chars = last_metadata.get("estimated_input_chars")
-        if estimated_input_chars:
-            detail_parts.append(
-                "Estimated prompt size was {chars} characters.".format(
-                    chars=estimated_input_chars
-                )
-            )
-        compacted_sections = last_metadata.get("compacted_sections")
-        if compacted_sections not in (None, "", 0, "0"):
-            detail_parts.append(
-                "Compaction was applied to {count} section(s).".format(
-                    count=compacted_sections
-                )
-            )
-        st.caption(" ".join(detail_parts))
-
-
 def _render_daily_quota_status(daily_quota):
     if not daily_quota:
         return
@@ -481,6 +424,8 @@ def render_job_description_page():
         st.info("Sign in with Google from the sidebar to run the AI-assisted analysis and keep usage tied to your account.")
     if st.button("Run Agentic Analysis", key="run_supervised_workflow", disabled=login_required):
         workflow_view_model = _run_supervised_workflow_with_progress(workflow_view_model)
+        if workflow_view_model.agent_result:
+            st.rerun()
 
     agent_result = workflow_view_model.agent_result
     if agent_result:

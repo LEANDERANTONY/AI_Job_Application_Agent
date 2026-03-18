@@ -24,13 +24,6 @@ def test_resolve_assistant_ai_session_builds_shared_session_when_missing(monkeyp
 def test_build_product_help_context_includes_reload_action(monkeypatch):
     monkeypatch.setattr(page_assistant, "is_authenticated", lambda: True)
     ai_session = SimpleNamespace(
-        usage={
-            "remaining_calls": 10,
-            "remaining_total_tokens": 50000,
-            "max_calls": 24,
-            "max_total_tokens": 120000,
-        },
-        budget_reached=False,
         daily_quota=SimpleNamespace(
             plan_tier="free",
             remaining_calls=5,
@@ -53,7 +46,7 @@ def test_build_product_help_context_includes_reload_action(monkeypatch):
     assert context["has_tailored_resume"] is True
     assert context["has_report"] is True
     assert context["has_cover_letter"] is False
-    assert context["session_usage"]["remaining_calls"] == 10
+    assert context["assistant_requires_login"] is True
     assert context["daily_quota"]["plan_tier"] == "free"
 
 
@@ -87,6 +80,18 @@ def test_submit_assistant_question_returns_false_for_blank_input():
     assert submitted is False
 
 
+def test_submit_assistant_question_returns_false_when_signed_out(monkeypatch):
+    monkeypatch.setattr(page_assistant, "is_authenticated", lambda: False)
+
+    submitted = page_assistant._submit_assistant_question(
+        current_page="Upload Resume",
+        question="How do I start?",
+        history=[],
+    )
+
+    assert submitted is False
+
+
 def test_submit_assistant_question_appends_turn_and_updates_usage(monkeypatch):
     captured = {}
     fake_response = SimpleNamespace(answer="Use Upload Resume first.", sources=["Upload Resume"], suggested_follow_ups=[])
@@ -105,6 +110,7 @@ def test_submit_assistant_question_appends_turn_and_updates_usage(monkeypatch):
             captured["app_context"] = app_context
             return fake_response
 
+    monkeypatch.setattr(page_assistant, "is_authenticated", lambda: True)
     monkeypatch.setattr(page_assistant, "_resolve_assistant_ai_session", lambda workflow_view_model=None: fake_session)
     monkeypatch.setattr(page_assistant, "AssistantService", FakeAssistantService)
     monkeypatch.setattr(page_assistant, "append_assistant_turn", lambda mode, turn: captured.update({"mode": mode, "turn": turn}))

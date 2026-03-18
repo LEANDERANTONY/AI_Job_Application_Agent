@@ -261,9 +261,9 @@ class AssistantService:
             or ("ai" in normalized and "warning" in normalized)
         ):
             return AssistantResponse(
-                answer="The app has two separate assisted limits. First, there is a browser-session budget that tracks model calls and tokens for the current session. Second, signed-in users can also have an account-level daily quota. If either limit is reached, the app can downgrade assisted features to deterministic fallback mode until the session resets, the next UTC quota window starts, or the plan tier is changed.",
-                sources=["Browser Session Runs Left", "Daily Workflow Runs Left", "Quota State"],
-                suggested_follow_ups=["What runs without AI?", "What happens when the daily quota is exhausted?"],
+                answer="AI-assisted features are tied to your signed-in account and are governed by the daily quota for your plan. When that daily quota is exhausted, assisted features stay unavailable until the next UTC reset or until the plan tier changes.",
+                sources=["Daily Workflow Runs Left", "Daily Capacity Left", "Quota State"],
+                suggested_follow_ups=["What happens when the daily quota is exhausted?", "Which features require login?"],
             )
         if "job search" in normalized:
             return AssistantResponse(

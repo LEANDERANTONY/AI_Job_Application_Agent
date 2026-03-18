@@ -431,7 +431,7 @@ def build_assistant_prompt(
             "If the user asks about navigation, explain the current sidebar pages and signed-in actions from the provided context. "
             "If the user asks about the current resume, cover letter, report, or fit analysis, ground the answer in the workflow context and say directly when evidence is weak or unavailable. "
             "If the user asks for broader resume or application coaching, you may provide general advice, but anchor it back to the current package when possible and separate general guidance from context-specific recommendations when helpful. "
-            "If the user asks about limits, tokens, quota, warnings, or fallback behavior, explain the difference between browser-session assisted budget and account-level daily quota using the provided context. "
+            "If the user asks about limits, tokens, quota, warnings, or fallback behavior, explain the signed-in account-level daily quota using the provided context and do not describe any browser-session budget model. "
             "If the user asks who you are or what your name is, answer as the in-app assistant for this product. "
             + _build_contract(contract)
         ),

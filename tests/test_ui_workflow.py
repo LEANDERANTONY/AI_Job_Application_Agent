@@ -323,10 +323,6 @@ def test_build_ai_session_view_model_uses_cached_quota_without_refresh(monkeypat
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "total_tokens": 0,
-        "max_calls": 24,
-        "max_total_tokens": 120000,
-        "remaining_calls": 24,
-        "remaining_total_tokens": 120000,
         "last_response_metadata": {},
     })
     monkeypatch.setattr(workflow, "get_daily_quota_status", lambda: daily_quota)
@@ -347,6 +343,7 @@ def test_build_ai_session_view_model_uses_cached_quota_without_refresh(monkeypat
     view_model = workflow.build_ai_session_view_model()
 
     assert view_model.daily_quota is daily_quota
+    assert view_model.usage["request_count"] == 0
 
 
 def test_build_ai_session_view_model_accepts_injected_auth_service(monkeypatch):
@@ -364,10 +361,6 @@ def test_build_ai_session_view_model_accepts_injected_auth_service(monkeypatch):
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "total_tokens": 0,
-        "max_calls": 24,
-        "max_total_tokens": 120000,
-        "remaining_calls": 24,
-        "remaining_total_tokens": 120000,
         "last_response_metadata": {},
     })
     monkeypatch.setattr(workflow, "get_daily_quota_status", lambda: None)

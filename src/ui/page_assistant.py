@@ -29,7 +29,6 @@ def _resolve_assistant_ai_session(workflow_view_model=None):
 
 
 def _build_product_help_context(workflow_view_model=None, artifact=None, report=None, ai_session=None):
-    session_usage = getattr(ai_session, "usage", {}) or {}
     daily_quota = getattr(ai_session, "daily_quota", None)
     agent_result = getattr(workflow_view_model, "agent_result", None) if workflow_view_model else None
     signed_in = is_authenticated()
@@ -48,13 +47,7 @@ def _build_product_help_context(workflow_view_model=None, artifact=None, report=
         "has_tailored_resume": bool(artifact),
         "has_report": bool(report),
         "has_cover_letter": bool(agent_result and getattr(agent_result, "cover_letter", None)),
-        "session_usage": {
-            "remaining_calls": session_usage.get("remaining_calls"),
-            "remaining_total_tokens": session_usage.get("remaining_total_tokens"),
-            "max_calls": session_usage.get("max_calls"),
-            "max_total_tokens": session_usage.get("max_total_tokens"),
-            "budget_reached": bool(getattr(ai_session, "budget_reached", False)),
-        },
+        "assistant_requires_login": True,
         "daily_quota": {
             "plan_tier": None if not daily_quota else daily_quota.plan_tier,
             "remaining_calls": None if not daily_quota else daily_quota.remaining_calls,
@@ -115,6 +108,8 @@ def _submit_assistant_question(
 ):
     normalized_question = str(question or "").strip()
     if not normalized_question:
+        return False
+    if not is_authenticated():
         return False
 
     ai_session = _resolve_assistant_ai_session(workflow_view_model)
@@ -211,6 +206,9 @@ def _render_assistant_panel_contents(
             "Ask The Assistant",
             "Ask about the app, your current fit analysis, tailored resume, cover letter, or application package.",
         )
+    if not is_authenticated():
+        st.info("This feature can only be used after logging in.")
+        return
 
     page_slug = current_page.lower().replace(" ", "_")
     question_key = _assistant_question_key(page_slug)

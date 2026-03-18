@@ -92,7 +92,7 @@ def consume_pending_menu():
     return pop_state(PENDING_MENU, None)
 
 
-def get_openai_session_usage(default_max_calls, default_max_total_tokens):
+def get_openai_session_usage(default_max_calls=None, default_max_total_tokens=None):
     return ensure_state(
         OPENAI_SESSION_USAGE,
         {
