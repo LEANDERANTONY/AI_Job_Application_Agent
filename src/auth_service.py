@@ -1,3 +1,5 @@
+import base64
+import json
 from dataclasses import dataclass
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -9,7 +11,11 @@ from src.config import (
     SUPABASE_URL,
 )
 from src.errors import AppError
-from src.ui.state import get_auth_pkce_code_verifier, set_auth_pkce_code_verifier
+from src.ui.state import (
+    get_auth_pkce_code_verifier,
+    get_request_cookie,
+    set_auth_pkce_code_verifier,
+)
 
 try:
     from supabase import create_client
@@ -34,6 +40,15 @@ class AuthSession:
     user: AuthUser
 
 
+@dataclass
+class AuthSignInRequest:
+    url: str
+    auth_flow: str
+    cookie_name: str
+    cookie_value: str
+    cookie_max_age_seconds: int
+
+
 class StreamlitSessionStorage:
     def get_item(self, key: str):
         if key.endswith("-code-verifier"):
@@ -50,6 +65,44 @@ class StreamlitSessionStorage:
 
 
 _PKCE_CODE_VERIFIER_CACHE: dict[str, str] = {}
+_PKCE_COOKIE_NAME = "auth_pkce_flow"
+_PKCE_COOKIE_MAX_AGE_SECONDS = 600
+
+
+def _serialize_pkce_cookie_payload(auth_flow: str, code_verifier: str):
+    payload = json.dumps(
+        {
+            "auth_flow": auth_flow,
+            "code_verifier": code_verifier,
+        },
+        separators=(",", ":"),
+    )
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _deserialize_pkce_cookie_payload(cookie_value: Optional[str]):
+    if not cookie_value:
+        return None
+
+    padding = "=" * (-len(cookie_value) % 4)
+    try:
+        payload = base64.urlsafe_b64decode(f"{cookie_value}{padding}").decode("utf-8")
+        parsed = json.loads(payload)
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+
+    auth_flow = parsed.get("auth_flow")
+    code_verifier = parsed.get("code_verifier")
+    if not auth_flow or not code_verifier:
+        return None
+
+    return {
+        "auth_flow": str(auth_flow),
+        "code_verifier": str(code_verifier),
+    }
 
 
 def _with_query_params(url: str, **params: str):
@@ -73,7 +126,7 @@ class AuthService:
     def is_configured(self):
         return bool(self.supabase_url and self.supabase_anon_key)
 
-    def get_google_sign_in_url(self):
+    def get_google_sign_in_request(self):
         client = self._create_client()
         flow_id = uuid4().hex
         response = client.auth.sign_in_with_oauth(
@@ -89,7 +142,16 @@ class AuthService:
         url = self._extract_oauth_url(response)
         if not url:
             raise AppError("Unable to start Google sign-in right now.")
-        return url
+        return AuthSignInRequest(
+            url=url,
+            auth_flow=flow_id,
+            cookie_name=_PKCE_COOKIE_NAME,
+            cookie_value=_serialize_pkce_cookie_payload(flow_id, code_verifier),
+            cookie_max_age_seconds=_PKCE_COOKIE_MAX_AGE_SECONDS,
+        )
+
+    def get_google_sign_in_url(self):
+        return self.get_google_sign_in_request().url
 
     def exchange_code_for_session(self, auth_code: str, auth_flow: Optional[str] = None):
         redirect_to = self.redirect_url
@@ -100,6 +162,8 @@ class AuthService:
             code_verifier = _PKCE_CODE_VERIFIER_CACHE.pop(auth_flow, None)
         if not code_verifier:
             code_verifier = get_auth_pkce_code_verifier()
+        if not code_verifier and auth_flow:
+            code_verifier = self._get_code_verifier_from_cookie(auth_flow)
         if not code_verifier:
             raise AppError("Google sign-in session expired. Start the sign-in flow again.")
         client = self._create_client()
@@ -155,6 +219,15 @@ class AuthService:
                 storage=StreamlitSessionStorage(),
             ),
         )
+
+    @staticmethod
+    def _get_code_verifier_from_cookie(auth_flow: str):
+        payload = _deserialize_pkce_cookie_payload(get_request_cookie(_PKCE_COOKIE_NAME))
+        if payload is None:
+            return None
+        if payload.get("auth_flow") != auth_flow:
+            return None
+        return payload.get("code_verifier")
 
     @staticmethod
     def _extract_oauth_url(response: Any):

@@ -4,6 +4,7 @@ import streamlit as st
 
 from src.errors import AppError
 from src.ui import workflow
+from src.ui.components import render_cookie_redirect_button
 from src.ui.state import CURRENT_MENU, consume_pending_menu, get_current_menu, set_current_menu
 from src.ui.state import (
     JOB_DESCRIPTION_RAW,
@@ -266,12 +267,18 @@ def _render_account_panel(auth_service):
         return
 
     try:
-        sign_in_url = auth_service.get_google_sign_in_url()
+        sign_in_request = auth_service.get_google_sign_in_request()
     except AppError as error:
         st.warning(error.user_message)
         return
 
-    st.link_button("Continue With Google", sign_in_url, use_container_width=True)
+    render_cookie_redirect_button(
+        "Continue With Google",
+        sign_in_request.url,
+        sign_in_request.cookie_name,
+        sign_in_request.cookie_value,
+        cookie_max_age_seconds=sign_in_request.cookie_max_age_seconds,
+    )
 
 
 def render_sidebar(auth_service):

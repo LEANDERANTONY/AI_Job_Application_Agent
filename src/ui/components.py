@@ -1,5 +1,6 @@
 import base64
 import json
+from html import escape
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -114,4 +115,61 @@ def render_html_preview(html_document, height=720, scrolling=True):
         html_document,
         height=height,
         scrolling=scrolling,
+    )
+
+
+@st.fragment
+def render_cookie_redirect_button(
+    label,
+    url,
+    cookie_name,
+    cookie_value,
+    cookie_max_age_seconds=600,
+):
+    button_id = f"cookie-redirect-{abs(hash((label, url, cookie_name)))}"
+    components.html(
+        f"""
+        <div style="padding:0; margin:0;">
+            <button
+                id="{button_id}"
+                type="button"
+                style="
+                    width:100%;
+                    border:none;
+                    border-radius:0.55rem;
+                    background:#2563eb;
+                    color:#ffffff;
+                    cursor:pointer;
+                    font-size:0.96rem;
+                    font-weight:700;
+                    line-height:1.2;
+                    padding:0.72rem 0.9rem;
+                "
+            >
+                {escape(label)}
+            </button>
+        </div>
+        <script>
+        (function() {{
+            const button = document.getElementById({json.dumps(button_id)});
+            if (!button) {{
+                return;
+            }}
+            button.addEventListener("click", function() {{
+                const secure = window.location.protocol === "https:" ? "; Secure" : "";
+                document.cookie =
+                    {json.dumps(cookie_name)}
+                    + "="
+                    + {json.dumps(cookie_value)}
+                    + "; path=/; max-age="
+                    + {int(cookie_max_age_seconds)}
+                    + "; SameSite=Lax"
+                    + secure;
+                window.top.location.assign({json.dumps(url)});
+            }});
+        }})();
+        </script>
+        """,
+        height=56,
+        scrolling=False,
     )

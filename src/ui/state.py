@@ -45,6 +45,22 @@ def get_state(key, default=None):
     return st.session_state.get(key, default)
 
 
+def get_request_cookie(key, default=None):
+    context = getattr(st, "context", None)
+    if context is None:
+        return default
+    try:
+        cookies = context.cookies
+    except Exception:
+        return default
+    if cookies is None:
+        return default
+    try:
+        return cookies.get(key, default)
+    except Exception:
+        return default
+
+
 def set_state(key, value):
     st.session_state[key] = value
     return value

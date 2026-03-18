@@ -15,6 +15,17 @@ def test_ensure_state_sets_default_once(monkeypatch):
     assert fake_streamlit.session_state["example"] == {"count": 1}
 
 
+def test_get_request_cookie_reads_streamlit_context(monkeypatch):
+    fake_streamlit = SimpleNamespace(
+        session_state={},
+        context=SimpleNamespace(cookies={"auth_pkce_flow": "cookie-payload"}),
+    )
+    monkeypatch.setattr(state, "st", fake_streamlit)
+
+    assert state.get_request_cookie("auth_pkce_flow") == "cookie-payload"
+    assert state.get_request_cookie("missing", "fallback") == "fallback"
+
+
 def test_set_and_clear_authenticated_session(monkeypatch):
     fake_streamlit = SimpleNamespace(session_state={})
     monkeypatch.setattr(state, "st", fake_streamlit)

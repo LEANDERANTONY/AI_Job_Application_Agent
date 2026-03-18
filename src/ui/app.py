@@ -37,7 +37,7 @@ def _query_param_value(key):
 
 
 def _clear_auth_query_params():
-    for key in ("code", "error", "error_code", "error_description"):
+    for key in ("auth_flow", "code", "error", "error_code", "error_description"):
         try:
             del st.query_params[key]
         except KeyError:
