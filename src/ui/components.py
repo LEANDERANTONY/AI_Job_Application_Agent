@@ -4,6 +4,8 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
+from src.ui.legal import get_homepage_url, get_privacy_policy_url
+
 
 def render_intro():
     st.markdown(
@@ -55,9 +57,13 @@ def render_page_divider():
 
 def render_footer():
     st.markdown("---")
-    st.caption(
-        "Built by Leander Antony A | Streamlit-first, backend-ready AI application workflow"
-    )
+    homepage_url = get_homepage_url()
+    privacy_url = get_privacy_policy_url()
+    footer_parts = ["Built by Leander Antony A"]
+    if homepage_url:
+        footer_parts.append("[Home]({url})".format(url=homepage_url))
+    footer_parts.append("[Privacy Policy]({url})".format(url=privacy_url))
+    st.caption(" | ".join(footer_parts))
 
 
 @st.fragment

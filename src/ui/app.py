@@ -7,6 +7,7 @@ from src.ui.components import (
     render_footer,
     render_intro,
 )
+from src.ui.legal import render_privacy_policy_page
 from src.ui.navigation import render_sidebar
 from src.ui.pages import (
     render_job_description_page,
@@ -144,6 +145,10 @@ def main():
         initial_sidebar_state="expanded",
     )
     apply_theme()
+    if _query_param_value("view") == "privacy":
+        render_privacy_policy_page()
+        render_footer()
+        return
     auth_service = _initialize_auth()
     menu = render_sidebar(auth_service=auth_service)
     render_intro()
