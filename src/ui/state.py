@@ -39,6 +39,8 @@ DAILY_QUOTA_STATUS = "daily_quota_status"
 DAILY_QUOTA_STATUS_REFRESHED_AT = "daily_quota_status_refreshed_at"
 WORKSPACE_RESTORE_NOTICE = "workspace_restore_notice"
 MANUAL_JD_UTILITY_PANEL_OPEN = "manual_jd_utility_panel_open"
+JOB_SEARCH_IMPORT_NOTICE = "job_search_import_notice"
+IMPORTED_JOB_POSTING = "imported_job_posting"
 
 
 def get_state(key, default=None):
@@ -210,6 +212,26 @@ def set_workspace_restore_notice(notice):
     if notice is None:
         return pop_state(WORKSPACE_RESTORE_NOTICE, None)
     return set_state(WORKSPACE_RESTORE_NOTICE, notice)
+
+
+def get_job_search_import_notice():
+    return get_state(JOB_SEARCH_IMPORT_NOTICE)
+
+
+def set_job_search_import_notice(notice):
+    if notice is None:
+        return pop_state(JOB_SEARCH_IMPORT_NOTICE, None)
+    return set_state(JOB_SEARCH_IMPORT_NOTICE, notice)
+
+
+def get_imported_job_posting():
+    return get_state(IMPORTED_JOB_POSTING)
+
+
+def set_imported_job_posting(job_posting):
+    if job_posting is None:
+        return pop_state(IMPORTED_JOB_POSTING, None)
+    return set_state(IMPORTED_JOB_POSTING, job_posting)
 
 
 def store_resume_intake(resume_document, candidate_profile_resume):

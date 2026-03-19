@@ -78,6 +78,58 @@ class JobDescription:
 
 
 @dataclass
+class JobSearchQuery:
+    query: str
+    location: str = ""
+    source_filters: List[str] = field(default_factory=list)
+    remote_only: bool = False
+    posted_within_days: Optional[int] = None
+    page_size: int = 20
+
+
+@dataclass
+class JobPosting:
+    id: str
+    source: str
+    title: str
+    company: str
+    location: str = ""
+    employment_type: str = ""
+    url: str = ""
+    summary: str = ""
+    description_text: str = ""
+    posted_at: str = ""
+    scraped_at: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class JobSearchResult:
+    query: JobSearchQuery
+    results: List[JobPosting] = field(default_factory=list)
+    total_results: int = 0
+    source_status: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class JobSourceSearchResponse:
+    source: str
+    results: List[JobPosting] = field(default_factory=list)
+    status: str = "ok"
+    error_message: str = ""
+    source_details: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class JobResolutionResult:
+    source: str
+    status: str = "ok"
+    job_posting: Optional[JobPosting] = None
+    error_message: str = ""
+    source_details: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class FitAnalysis:
     target_role: str
     overall_score: int

@@ -1,7 +1,7 @@
 import pytest
 
 from src.errors import InputValidationError
-from src.services.job_service import build_job_description_from_text
+from src.services.job_service import build_job_description_from_text, extract_job_summary_sections
 
 
 def test_build_job_description_from_text_extracts_requirement_signals():
@@ -44,4 +44,41 @@ def test_build_job_description_from_text_deduplicates_requirement_lines():
     assert job_description.requirements.must_haves == [
         "Required: Python and SQL.",
         "Must have production API experience.",
+    ]
+
+
+def test_extract_job_summary_sections_maps_heading_aliases():
+    cleaned_text = (
+        "Sr. AI Engineer We’re building Navi for post-purchase resolution. "
+        "What You’ll Work On Design and build conversational AI agents. "
+        "Build RAG pipelines for grounded responses. "
+        "What We’re Looking For Have strong Python skills. "
+        "Have production LLM experience. "
+        "Signals That You’ll Thrive Here You’ve worked in startup environments."
+    )
+
+    sections = extract_job_summary_sections(cleaned_text, title="Sr. AI Engineer")
+
+    assert [section["title"] for section in sections] == [
+        "Overview",
+        "What You'll Work On",
+        "What They're Looking For",
+        "Good Signals",
+    ]
+    assert any("conversational AI agents" in item for item in sections[1]["items"])
+    assert any("Python skills" in item for item in sections[2]["items"])
+
+
+def test_extract_job_summary_sections_falls_back_to_overview():
+    cleaned_text = (
+        "Backend Engineer focused on building internal tooling and APIs for analytics teams."
+    )
+
+    sections = extract_job_summary_sections(cleaned_text, title="Backend Engineer")
+
+    assert sections == [
+        {
+            "title": "Overview",
+            "items": ["focused on building internal tooling and APIs for analytics teams."],
+        }
     ]

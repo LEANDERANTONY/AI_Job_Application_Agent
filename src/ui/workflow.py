@@ -7,6 +7,7 @@ from src.cover_letter_builder import build_cover_letter_artifact
 from src.config import (
     AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW,
     DAILY_QUOTA_CACHE_TTL_SECONDS,
+    is_job_search_backend_enabled,
 )
 from src.errors import AgentExecutionError, AppError, InputValidationError
 from src.openai_service import OpenAIService
@@ -160,6 +161,10 @@ def resolve_job_description_input(uploaded_jd=None, selected_sample="None", past
         selected_sample=selected_sample,
         pasted_text=pasted_text,
     )
+
+
+def job_search_backend_enabled():
+    return is_job_search_backend_enabled()
 
 
 def build_ai_session_view_model(auth_service=None):

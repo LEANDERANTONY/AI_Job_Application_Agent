@@ -21,3 +21,7 @@ class AgentExecutionError(AppError):
 
 class ExportError(AppError):
     """Raised when a report export cannot be generated safely."""
+
+
+class BackendIntegrationError(AppError):
+    """Raised when a backend-owned service request fails or returns invalid data."""

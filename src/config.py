@@ -119,6 +119,13 @@ SUPABASE_USAGE_EVENTS_TABLE = os.getenv(
 SUPABASE_SAVED_WORKSPACES_TABLE = os.getenv(
     "SUPABASE_SAVED_WORKSPACES_TABLE", "saved_workspaces"
 ).strip()
+ENABLE_JOB_SEARCH_BACKEND = _load_bool_env("ENABLE_JOB_SEARCH_BACKEND", False)
+JOB_BACKEND_BASE_URL = os.getenv("JOB_BACKEND_BASE_URL", "http://localhost:8000").strip()
+GREENHOUSE_BOARD_TOKENS = tuple(
+    token.strip()
+    for token in os.getenv("GREENHOUSE_BOARD_TOKENS", "").split(",")
+    if token.strip()
+)
 SAVED_WORKSPACE_TTL_HOURS = _load_int_env("SAVED_WORKSPACE_TTL_HOURS", 24)
 AUTH_DEFAULT_PLAN_TIER = os.getenv("AUTH_DEFAULT_PLAN_TIER", "free").strip()
 AUTH_DEFAULT_ACCOUNT_STATUS = os.getenv(
@@ -218,6 +225,10 @@ def is_supabase_auth_configured():
 
 def assisted_workflow_requires_login():
     return AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW
+
+
+def is_job_search_backend_enabled():
+    return ENABLE_JOB_SEARCH_BACKEND
 
 
 def list_demo_files(directory: Path, suffixes):

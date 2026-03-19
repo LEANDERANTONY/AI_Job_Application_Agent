@@ -1,11 +1,13 @@
 from html import escape
+import re
 
 import streamlit as st
 
 from src.config import (
     assisted_workflow_requires_login,
 )
-from src.errors import InputValidationError
+from src.errors import BackendIntegrationError, InputValidationError
+from src.job_backend_client import resolve_job_url as resolve_job_url_via_backend
 from src.schemas import AgentWorkflowResult, CandidateProfile, FitAnalysis, TailoredResumeDraft
 from src.ui.components import render_metric_card, render_page_divider, render_section_head
 from src.ui.page_artifacts import (
@@ -14,8 +16,12 @@ from src.ui.page_artifacts import (
     render_tailored_resume_artifact as _render_tailored_resume_artifact,
 )
 from src.ui.state import (
+    get_imported_job_posting,
+    get_job_search_import_notice,
     is_authenticated,
     request_menu_navigation,
+    set_imported_job_posting,
+    set_job_search_import_notice,
 )
 from src.ui.workflow import (
     build_application_report_view_model,
@@ -23,10 +29,13 @@ from src.ui.workflow import (
     build_job_workflow_view_model,
     build_tailored_resume_artifact_view_model,
     get_resume_page_state,
+    job_search_backend_enabled,
     resolve_job_description_input,
     run_supervised_workflow,
+    store_job_description_inputs,
     use_uploaded_resume,
 )
+from src.services.job_service import build_job_description_from_text, extract_job_summary_sections
 
 
 def _go_to(menu_name):
@@ -41,6 +50,151 @@ def _render_list(title, items, empty_state):
             st.markdown(f"- {item}")
     else:
         st.caption(empty_state)
+
+
+def _extract_compensation_text(text):
+    normalized = " ".join(str(text or "").split())
+    if not normalized:
+        return ""
+
+    range_match = re.search(
+        r"([A-Z][A-Za-z ]*Pay Range\s*)?([$€£]\s?\d[\d,]*(?:\.\d+)?\s*(?:-|–|—|to)\s*[$€£]?\s?\d[\d,]*(?:\.\d+)?\s*(?:USD|CAD|EUR|GBP|AUD|INR)?)",
+        normalized,
+        re.IGNORECASE,
+    )
+    if range_match:
+        prefix = (range_match.group(1) or "").strip()
+        amount = (range_match.group(2) or "").strip()
+        return f"{prefix} {amount}".strip()
+
+    comp_match = re.search(
+        r"((?:salary|compensation|pay range)[^.:]{0,30}[:\-]?\s*[$€£]?\s?\d[\d,]*(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*[$€£]?\s?\d[\d,]*(?:\.\d+)?)?(?:\s*(?:USD|CAD|EUR|GBP|AUD|INR|per year|annually))?)",
+        normalized,
+        re.IGNORECASE,
+    )
+    if comp_match:
+        return comp_match.group(1).strip()
+
+    return ""
+
+
+def _render_job_summary_sections(text, title, empty_state):
+    st.markdown("**Job Summary**")
+    sections = extract_job_summary_sections(text, title=title)
+    if not sections:
+        st.caption(empty_state)
+        return
+
+    for section in sections:
+        section_title = section.get("title") or "Overview"
+        items = [str(item).strip() for item in section.get("items", []) if str(item).strip()]
+        if not items:
+            continue
+        st.markdown(f"**{section_title}**")
+        body = "".join(
+            """
+            <div style="
+                display:flex;
+                align-items:flex-start;
+                gap:0.55rem;
+                margin:0 0 0.52rem 0;
+                color:#e7eefc;
+                line-height:1.7;
+            ">
+                <div style="
+                    width:0.38rem;
+                    height:0.38rem;
+                    min-width:0.38rem;
+                    border-radius:999px;
+                    background:#60a5fa;
+                    margin-top:0.56rem;
+                "></div>
+                <div>{text}</div>
+            </div>
+            """.format(text=escape(item))
+            for item in items
+        )
+        st.markdown(
+            """
+            <div style="
+                background:rgba(255,255,255,0.05);
+                border:1px solid rgba(148, 163, 184, 0.18);
+                border-radius:14px;
+                padding:0.82rem 0.95rem 0.38rem;
+                margin:0.15rem 0 0.7rem 0;
+            ">
+                {body}
+            </div>
+            """.format(body=body),
+            unsafe_allow_html=True,
+        )
+
+
+def _render_imported_job_summary(imported_job_posting, job_description):
+    if not imported_job_posting:
+        return
+
+    requirements = job_description.requirements
+    company = imported_job_posting.get("company") or "Unknown"
+    location = imported_job_posting.get("location") or job_description.location or "Unknown"
+    employment_type = imported_job_posting.get("employment_type") or "Not specified"
+    metadata = imported_job_posting.get("metadata") or {}
+    departments = [str(item) for item in metadata.get("departments", []) if str(item).strip()]
+    offices = [str(item) for item in metadata.get("offices", []) if str(item).strip()]
+    posted_at = imported_job_posting.get("posted_at") or "Unknown"
+    compensation = _extract_compensation_text(job_description.cleaned_text) or "Not listed"
+    role_with_company = job_description.title or "Unknown"
+    if company and company != "Unknown":
+        role_with_company = f"{role_with_company} at {company}"
+
+    top_cols = st.columns(3)
+    with top_cols[0]:
+        render_metric_card("Target Role", role_with_company, "Primary role for this JD.", dense=True, slim=True)
+    with top_cols[1]:
+        render_metric_card("Compensation", compensation, "Compensation details from the JD.", dense=True, slim=True)
+    with top_cols[2]:
+        render_metric_card("Location", location, "Imported job location.", dense=True, slim=True)
+
+    detail_cols = st.columns(3)
+    with detail_cols[0]:
+        render_metric_card("Employment", employment_type, "Employment type if available.", dense=True, slim=True)
+    with detail_cols[1]:
+        render_metric_card(
+            "Posted",
+            posted_at[:10] if posted_at and posted_at != "Unknown" else "Unknown",
+            "Posting date from provider.",
+            dense=True,
+            slim=True,
+        )
+    with detail_cols[2]:
+        render_metric_card(
+            "Experience",
+            requirements.experience_requirement or "Not explicit",
+            "Experience signal from the JD.",
+            dense=True,
+            slim=True,
+        )
+
+    with st.expander("Review Imported Job Details", expanded=False):
+        url = imported_job_posting.get("url") or ""
+        if url:
+            st.markdown(f"**Job URL:** {url}")
+        if departments:
+            st.markdown(f"**Departments:** {', '.join(departments)}")
+        if offices:
+            st.markdown(f"**Offices:** {', '.join(offices)}")
+
+        skill_cols = st.columns(2)
+        with skill_cols[0]:
+            _render_list("Hard Skills Required", requirements.hard_skills, "No hard skills extracted yet.")
+        with skill_cols[1]:
+            _render_list("Soft Skills Required", requirements.soft_skills, "No soft skills extracted yet.")
+
+        _render_job_summary_sections(
+            job_description.cleaned_text,
+            title=job_description.title,
+            empty_state="No job summary available.",
+        )
 
 
 def _format_remaining_capacity(remaining, limit):
@@ -195,19 +349,73 @@ def render_job_search_page():
     render_page_divider()
     render_section_head(
         "Job Search",
-        "This stays intentionally light until the fit-analysis workflow is built.",
+        "Paste a supported job URL here and load it into the existing JD workflow.",
     )
     left_col, right_col = st.columns([1.2, 1.0])
     with left_col:
-        st.text_input("Enter job title")
-        st.text_input("Enter location")
-        st.button("Search")
-        st.info("Job search integration is still a placeholder.")
+        backend_enabled = job_search_backend_enabled()
+        job_url = st.text_input(
+            "Paste Job URL",
+            placeholder="Paste a supported job URL, for example a Greenhouse posting.",
+            disabled=not backend_enabled,
+        )
+        import_clicked = st.button(
+            "Load Job Into JD Flow",
+            disabled=not backend_enabled,
+        )
+        notice = get_job_search_import_notice()
+        if notice:
+            level = notice.get("level", "info")
+            message = notice.get("message", "")
+            if message:
+                if level == "success":
+                    st.success(message)
+                elif level == "warning":
+                    st.warning(message)
+                else:
+                    st.info(message)
+        if not backend_enabled:
+            st.info("Job backend integration is disabled in the current environment.")
+        elif import_clicked:
+            try:
+                response_payload = resolve_job_url_via_backend(job_url)
+                if response_payload.get("status") != "ok" or not response_payload.get("job_posting"):
+                    raise BackendIntegrationError(
+                        response_payload.get("error_message")
+                        or "That job URL could not be resolved into a supported posting."
+                    )
+                job_posting = response_payload["job_posting"]
+                job_text = str(job_posting.get("description_text", "") or "").strip()
+                if not job_text:
+                    raise BackendIntegrationError("Resolved job posting did not include usable description text.")
+                job_description = build_job_description_from_text(job_text)
+                source_label = "Imported from {source}".format(
+                    source=str(job_posting.get("source", "backend")).title()
+                )
+                store_job_description_inputs(job_text, source_label, job_description)
+                set_imported_job_posting(job_posting)
+                set_job_search_import_notice(
+                    {
+                        "level": "success",
+                        "message": "Imported {title} and loaded it into Manual JD Input.".format(
+                            title=job_posting.get("title", "job posting")
+                        ),
+                    }
+                )
+                _go_to("Manual JD Input")
+            except BackendIntegrationError as error:
+                set_job_search_import_notice(
+                    {
+                        "level": "warning",
+                        "message": error.user_message,
+                    }
+                )
+                st.rerun()
     with right_col:
         render_metric_card(
             "Search Layer",
-            "Planned",
-            "Real provider integrations come after fit analysis and tailoring are stable.",
+            "Backend-Ready" if job_search_backend_enabled() else "Disabled",
+            "Job URL import is feature-flagged and uses the FastAPI backend when enabled.",
         )
 def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
     st.markdown("---")
@@ -396,6 +604,11 @@ def render_job_description_page():
         pasted_text=pasted_text,
     )
 
+    imported_job_posting = get_imported_job_posting()
+    if imported_job_posting and not (jd_source and str(jd_source).startswith("Imported from ")):
+        set_imported_job_posting(None)
+        imported_job_posting = None
+
     st.caption(f"JD Source: {jd_source if jd_text else 'None'}")
     st.markdown("---")
     workflow_view_model = build_job_workflow_view_model(jd_text, jd_source)
@@ -404,13 +617,21 @@ def render_job_description_page():
 
     job_description = workflow_view_model.job_description
 
-    cols = st.columns(3)
-    with cols[0]:
-        render_metric_card("Target Role", job_description.title or "Unknown", "Structured title extracted from the JD.", dense=True, slim=True)
-    with cols[1]:
-        render_metric_card("Hard Skills", str(len(job_description.requirements.hard_skills)), "Matched hard-skill keywords.", dense=True, slim=True)
-    with cols[2]:
-        render_metric_card("Soft Skills", str(len(job_description.requirements.soft_skills)), "Matched soft-skill keywords.", dense=True, slim=True)
+    display_title = job_description.title or "Unknown"
+    if (not job_description.title or job_description.title.lower() == "unknown role") and imported_job_posting:
+        display_title = imported_job_posting.get("title") or display_title
+    job_description.title = display_title
+
+    if imported_job_posting:
+        _render_imported_job_summary(imported_job_posting, job_description)
+    else:
+        cols = st.columns(3)
+        with cols[0]:
+            render_metric_card("Target Role", display_title, "Structured title extracted from the JD.", dense=True, slim=True)
+        with cols[1]:
+            render_metric_card("Hard Skills", str(len(job_description.requirements.hard_skills)), "Matched hard-skill keywords.", dense=True, slim=True)
+        with cols[2]:
+            render_metric_card("Soft Skills", str(len(job_description.requirements.soft_skills)), "Matched soft-skill keywords.", dense=True, slim=True)
 
     candidate_profile = workflow_view_model.candidate_profile
     if not candidate_profile:
