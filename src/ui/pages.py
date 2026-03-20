@@ -1,4 +1,5 @@
 from html import escape
+import hashlib
 import re
 
 import streamlit as st
@@ -17,24 +18,32 @@ from src.ui.page_artifacts import (
 )
 from src.ui.state import (
     get_imported_job_posting,
+    get_imported_job_summary_signature,
+    get_imported_job_summary_view,
     get_job_search_import_notice,
     is_authenticated,
     request_menu_navigation,
     set_imported_job_posting,
+    set_imported_job_summary_signature,
+    set_imported_job_summary_view,
     set_job_search_import_notice,
+    set_openai_session_usage,
 )
 from src.ui.workflow import (
+    build_ai_session_view_model,
     build_application_report_view_model,
     build_cover_letter_artifact_view_model,
     build_job_workflow_view_model,
     build_tailored_resume_artifact_view_model,
     get_resume_page_state,
     job_search_backend_enabled,
+    refresh_daily_quota_status,
     resolve_job_description_input,
     run_supervised_workflow,
     store_job_description_inputs,
     use_uploaded_resume,
 )
+from src.services.jd_summary_service import generate_job_summary_view
 from src.services.job_service import build_job_description_from_text, extract_job_summary_sections
 
 
@@ -78,12 +87,73 @@ def _extract_compensation_text(text):
     return ""
 
 
-def _render_job_summary_sections(text, title, empty_state):
+def _job_summary_signature(job_description, imported_job_posting):
+    source_job_id = ""
+    if imported_job_posting:
+        source_job_id = str(imported_job_posting.get("id", "") or "").strip()
+    payload = "||".join(
+        [
+            source_job_id,
+            str(job_description.title or ""),
+            str(job_description.location or ""),
+            str(job_description.cleaned_text or ""),
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _resolve_imported_job_summary_view(job_description, imported_job_posting):
+    deterministic_sections = extract_job_summary_sections(
+        job_description.cleaned_text,
+        title=job_description.title,
+    )
+    deterministic_view = {"mode": "deterministic", "sections": deterministic_sections}
+    if not imported_job_posting:
+        return deterministic_view
+
+    signature = _job_summary_signature(job_description, imported_job_posting)
+    cached_signature = get_imported_job_summary_signature()
+    cached_view = get_imported_job_summary_view()
+    if cached_signature == signature and cached_view:
+        return cached_view
+
+    if not is_authenticated():
+        set_imported_job_summary_signature(signature)
+        set_imported_job_summary_view(deterministic_view)
+        return deterministic_view
+
+    ai_session = build_ai_session_view_model()
+    openai_service = ai_session.openai_service if ai_session else None
+    if not openai_service or not openai_service.is_available():
+        set_imported_job_summary_signature(signature)
+        set_imported_job_summary_view(deterministic_view)
+        return deterministic_view
+
+    with st.spinner("Generating readable job summary..."):
+        summary_view = generate_job_summary_view(
+            openai_service=openai_service,
+            job_description=job_description,
+            imported_job_posting=imported_job_posting,
+        )
+    set_openai_session_usage(openai_service.get_usage_snapshot())
+    refresh_daily_quota_status(force=True)
+    set_imported_job_summary_signature(signature)
+    set_imported_job_summary_view(summary_view)
+    return summary_view
+
+
+def _render_job_summary_sections(summary_view, empty_state):
     st.markdown("**Job Summary**")
-    sections = extract_job_summary_sections(text, title=title)
+    sections = list((summary_view or {}).get("sections") or [])
     if not sections:
         st.caption(empty_state)
         return
+
+    mode = str((summary_view or {}).get("mode", "deterministic"))
+    if mode == "ai":
+        st.caption("Readable summary generated from the imported JD. Workflow analysis still uses the deterministic parsed JD.")
+    else:
+        st.caption("Showing the deterministic structured JD view.")
 
     for section in sections:
         section_title = section.get("title") or "Overview"
@@ -190,9 +260,9 @@ def _render_imported_job_summary(imported_job_posting, job_description):
         with skill_cols[1]:
             _render_list("Soft Skills Required", requirements.soft_skills, "No soft skills extracted yet.")
 
+        summary_view = _resolve_imported_job_summary_view(job_description, imported_job_posting)
         _render_job_summary_sections(
-            job_description.cleaned_text,
-            title=job_description.title,
+            summary_view,
             empty_state="No job summary available.",
         )
 

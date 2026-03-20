@@ -41,6 +41,8 @@ WORKSPACE_RESTORE_NOTICE = "workspace_restore_notice"
 MANUAL_JD_UTILITY_PANEL_OPEN = "manual_jd_utility_panel_open"
 JOB_SEARCH_IMPORT_NOTICE = "job_search_import_notice"
 IMPORTED_JOB_POSTING = "imported_job_posting"
+IMPORTED_JOB_SUMMARY_SIGNATURE = "imported_job_summary_signature"
+IMPORTED_JOB_SUMMARY_VIEW = "imported_job_summary_view"
 
 
 def get_state(key, default=None):
@@ -232,6 +234,26 @@ def set_imported_job_posting(job_posting):
     if job_posting is None:
         return pop_state(IMPORTED_JOB_POSTING, None)
     return set_state(IMPORTED_JOB_POSTING, job_posting)
+
+
+def get_imported_job_summary_signature():
+    return get_state(IMPORTED_JOB_SUMMARY_SIGNATURE)
+
+
+def set_imported_job_summary_signature(signature):
+    if signature is None:
+        return pop_state(IMPORTED_JOB_SUMMARY_SIGNATURE, None)
+    return set_state(IMPORTED_JOB_SUMMARY_SIGNATURE, signature)
+
+
+def get_imported_job_summary_view():
+    return get_state(IMPORTED_JOB_SUMMARY_VIEW)
+
+
+def set_imported_job_summary_view(summary_view):
+    if summary_view is None:
+        return pop_state(IMPORTED_JOB_SUMMARY_VIEW, None)
+    return set_state(IMPORTED_JOB_SUMMARY_VIEW, summary_view)
 
 
 def store_resume_intake(resume_document, candidate_profile_resume):
