@@ -43,6 +43,7 @@ JOB_SEARCH_IMPORT_NOTICE = "job_search_import_notice"
 IMPORTED_JOB_POSTING = "imported_job_posting"
 IMPORTED_JOB_SUMMARY_SIGNATURE = "imported_job_summary_signature"
 IMPORTED_JOB_SUMMARY_VIEW = "imported_job_summary_view"
+JOB_SEARCH_RESULTS = "job_search_results"
 
 
 def get_state(key, default=None):
@@ -254,6 +255,16 @@ def set_imported_job_summary_view(summary_view):
     if summary_view is None:
         return pop_state(IMPORTED_JOB_SUMMARY_VIEW, None)
     return set_state(IMPORTED_JOB_SUMMARY_VIEW, summary_view)
+
+
+def get_job_search_results():
+    return get_state(JOB_SEARCH_RESULTS)
+
+
+def set_job_search_results(results):
+    if results is None:
+        return pop_state(JOB_SEARCH_RESULTS, None)
+    return set_state(JOB_SEARCH_RESULTS, results)
 
 
 def store_resume_intake(resume_document, candidate_profile_resume):

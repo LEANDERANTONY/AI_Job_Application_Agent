@@ -3,10 +3,13 @@ from src.schemas import JobSearchQuery
 
 
 class _FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, status_code=200):
         self._payload = payload
+        self.status_code = status_code
 
     def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError("request failed")
         return None
 
     def json(self):
@@ -26,7 +29,11 @@ class _FakeSession:
                 "timeout": timeout,
             }
         )
-        return _FakeResponse(self.payload)
+        if callable(self.payload):
+            payload = self.payload(url, params)
+        else:
+            payload = self.payload
+        return _FakeResponse(payload)
 
 
 def test_greenhouse_adapter_returns_normalized_results():
@@ -142,3 +149,166 @@ def test_greenhouse_adapter_repairs_common_html_and_mojibake_artifacts():
     assert response.job_posting is not None
     assert response.job_posting.company == "Narvar"
     assert "We’re building agentic AI — with Python." in response.job_posting.description_text
+
+
+def test_greenhouse_adapter_matches_query_terms_without_exact_phrase():
+    fake_session = _FakeSession(
+        {
+            "jobs": [
+                {
+                    "id": 1,
+                    "internal_job_id": 101,
+                    "title": "Senior Backend Platform Engineer",
+                    "updated_at": "2026-03-19T09:00:00Z",
+                    "requisition_id": "REQ-1",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://boards.greenhouse.io/example/jobs/1",
+                    "language": "en",
+                    "metadata": {"company_name": "Example"},
+                    "content": "<p>Build APIs and backend services with Python.</p>",
+                    "departments": [{"name": "Engineering"}],
+                    "offices": [{"name": "Remote"}],
+                }
+            ]
+        }
+    )
+    adapter = GreenhouseJobSourceAdapter(
+        board_tokens=["example"],
+        http_session=fake_session,
+    )
+
+    response = adapter.search(
+        JobSearchQuery(query="backend engineer", page_size=10)
+    )
+
+    assert response.status == "ok"
+    assert len(response.results) == 1
+    assert response.results[0].title == "Senior Backend Platform Engineer"
+
+
+def test_greenhouse_adapter_sorts_results_by_recency_across_boards():
+    payloads = {
+        "alpha": {
+            "jobs": [
+                {
+                    "id": 1,
+                    "internal_job_id": 101,
+                    "title": "Software Engineer",
+                    "updated_at": "2026-03-18T09:00:00Z",
+                    "requisition_id": "REQ-1",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://boards.greenhouse.io/alpha/jobs/1",
+                    "language": "en",
+                    "metadata": {"company_name": "Alpha"},
+                    "content": "<p>Software engineer role.</p>",
+                    "departments": [{"name": "Engineering"}],
+                    "offices": [{"name": "Remote"}],
+                },
+                {
+                    "id": 2,
+                    "internal_job_id": 102,
+                    "title": "Senior Software Engineer",
+                    "updated_at": "2026-03-17T09:00:00Z",
+                    "requisition_id": "REQ-2",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://boards.greenhouse.io/alpha/jobs/2",
+                    "language": "en",
+                    "metadata": {"company_name": "Alpha"},
+                    "content": "<p>Senior software engineer role.</p>",
+                    "departments": [{"name": "Engineering"}],
+                    "offices": [{"name": "Remote"}],
+                },
+            ]
+        },
+        "beta": {
+            "jobs": [
+                {
+                    "id": 3,
+                    "internal_job_id": 201,
+                    "title": "Software Engineer II",
+                    "updated_at": "2026-03-20T08:00:00Z",
+                    "requisition_id": "REQ-3",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://boards.greenhouse.io/beta/jobs/3",
+                    "language": "en",
+                    "metadata": {"company_name": "Beta"},
+                    "content": "<p>Software engineer role.</p>",
+                    "departments": [{"name": "Engineering"}],
+                    "offices": [{"name": "Remote"}],
+                },
+                {
+                    "id": 4,
+                    "internal_job_id": 202,
+                    "title": "Principal Software Engineer",
+                    "updated_at": "2026-03-19T08:00:00Z",
+                    "requisition_id": "REQ-4",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://boards.greenhouse.io/beta/jobs/4",
+                    "language": "en",
+                    "metadata": {"company_name": "Beta"},
+                    "content": "<p>Principal software engineer role.</p>",
+                    "departments": [{"name": "Engineering"}],
+                    "offices": [{"name": "Remote"}],
+                },
+            ]
+        },
+    }
+
+    def payload_for_url(url, params):
+        if "/boards/alpha/jobs" in url:
+            return payloads["alpha"]
+        if "/boards/beta/jobs" in url:
+            return payloads["beta"]
+        return {"jobs": []}
+
+    adapter = GreenhouseJobSourceAdapter(
+        board_tokens=["alpha", "beta"],
+        http_session=_FakeSession(payload_for_url),
+    )
+
+    response = adapter.search(JobSearchQuery(query="software engineer", page_size=4))
+
+    assert response.status == "ok"
+    assert [result.title for result in response.results] == [
+        "Software Engineer II",
+        "Principal Software Engineer",
+        "Software Engineer",
+        "Senior Software Engineer",
+    ]
+
+
+def test_greenhouse_adapter_handles_list_metadata_payloads():
+    fake_session = _FakeSession(
+        {
+            "jobs": [
+                {
+                    "id": 55,
+                    "internal_job_id": 77,
+                    "title": "Backend Engineer",
+                    "updated_at": "2026-03-19T09:00:00Z",
+                    "requisition_id": "REQ-55",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://boards.greenhouse.io/example/jobs/55",
+                    "language": "en",
+                    "company_name": "Example Corp",
+                    "metadata": [
+                        {"name": "Time Type", "value": "Full time"},
+                        {"name": "Department", "value": "Engineering"},
+                    ],
+                    "content": "<p>Build backend systems with Python.</p>",
+                    "departments": [{"name": "Engineering"}],
+                    "offices": [{"name": "Remote"}],
+                }
+            ]
+        }
+    )
+    adapter = GreenhouseJobSourceAdapter(
+        board_tokens=["example"],
+        http_session=fake_session,
+    )
+
+    response = adapter.search(JobSearchQuery(query="backend engineer", page_size=10))
+
+    assert response.status == "ok"
+    assert response.results[0].company == "Example Corp"
+    assert response.results[0].employment_type == "Full time"

@@ -15,6 +15,7 @@ _GREENHOUSE_JOB_URL_RE = re.compile(
     r"^/([^/]+)/jobs/(\d+)",
     re.IGNORECASE,
 )
+_QUERY_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
 def _repair_mojibake(text: str) -> str:
@@ -62,6 +63,115 @@ def _normalize_company_name(value: str, fallback: str) -> str:
     return fallback.replace("-", " ").replace("_", " ").title()
 
 
+def _normalize_metadata_lookup(metadata_payload) -> dict[str, str]:
+    if isinstance(metadata_payload, dict):
+        return {
+            str(key).strip().lower(): str(value).strip()
+            for key, value in metadata_payload.items()
+            if str(key).strip() and value is not None
+        }
+    if isinstance(metadata_payload, list):
+        lookup = {}
+        for item in metadata_payload:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("name", "") or "").strip().lower()
+            value = item.get("value")
+            if key and value is not None:
+                lookup[key] = str(value).strip()
+        return lookup
+    return {}
+
+
+def _extract_query_terms(value: str) -> list[str]:
+    return _QUERY_TOKEN_RE.findall(str(value or "").lower())
+
+
+def _parse_posted_at(value: str):
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        if raw_value.endswith("Z"):
+            raw_value = raw_value[:-1] + "+00:00"
+        return datetime.fromisoformat(raw_value)
+    except ValueError:
+        return None
+
+
+def _is_remote_job(job_posting: JobPosting) -> bool:
+    haystack = " ".join(
+        [
+            job_posting.title,
+            job_posting.location,
+            job_posting.summary,
+        ]
+    ).lower()
+    return "remote" in haystack
+
+
+def _matches_query(job_posting: JobPosting, normalized_query: str, query_terms: list[str]) -> bool:
+    haystack = " ".join(
+        [
+            job_posting.title,
+            job_posting.company,
+            job_posting.location,
+            job_posting.summary,
+            job_posting.description_text,
+        ]
+    ).lower()
+    if normalized_query and normalized_query in haystack:
+        return True
+    if query_terms and all(term in haystack for term in query_terms):
+        return True
+    return not normalized_query
+
+
+def _matches_location(job_posting: JobPosting, normalized_location: str, location_terms: list[str]) -> bool:
+    haystack = " ".join(
+        [
+            job_posting.location,
+            job_posting.summary,
+            job_posting.description_text,
+        ]
+    ).lower()
+    if normalized_location and normalized_location in haystack:
+        return True
+    if location_terms and all(term in haystack for term in location_terms):
+        return True
+    return not normalized_location
+
+
+def _matches_posted_window(job_posting: JobPosting, posted_within_days: int | None) -> bool:
+    if posted_within_days is None:
+        return True
+    posted_at = _parse_posted_at(job_posting.posted_at)
+    if posted_at is None:
+        return False
+    if posted_at.tzinfo is None:
+        posted_at = posted_at.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - posted_at.astimezone(timezone.utc)
+    return age.days <= max(0, int(posted_within_days))
+
+
+def _job_sort_key(job_posting: JobPosting, normalized_query: str, query_terms: list[str]) -> tuple:
+    title = str(job_posting.title or "").lower()
+    summary = str(job_posting.summary or "").lower()
+    posted_at = _parse_posted_at(job_posting.posted_at)
+    posted_ts = posted_at.timestamp() if posted_at is not None else 0.0
+    exact_phrase_in_title = int(bool(normalized_query and normalized_query in title))
+    exact_phrase_anywhere = int(bool(normalized_query and (normalized_query in summary or normalized_query in title)))
+    title_term_hits = sum(1 for term in query_terms if term in title)
+    summary_term_hits = sum(1 for term in query_terms if term in summary)
+    return (
+        posted_ts,
+        exact_phrase_in_title,
+        exact_phrase_anywhere,
+        title_term_hits,
+        summary_term_hits,
+    )
+
+
 class GreenhouseJobSourceAdapter(JobSourceAdapter):
     source_name = "greenhouse"
     _API_BASE_URL = "https://boards-api.greenhouse.io/v1/boards/{token}/jobs"
@@ -82,6 +192,8 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
 
         normalized_query = str(query.query or "").strip().lower()
         normalized_location = str(query.location or "").strip().lower()
+        query_terms = _extract_query_terms(normalized_query)
+        location_terms = _extract_query_terms(normalized_location)
         postings: list[JobPosting] = []
         board_statuses: dict[str, str] = {}
 
@@ -99,37 +211,31 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
 
             payload = response.json()
             matched_any = False
+            matched_results: list[JobPosting] = []
             for job_payload in payload.get("jobs", []) or []:
                 job_posting = self._to_job_posting(board_token, job_payload)
-                haystack = " ".join(
-                    [
-                        job_posting.title,
-                        job_posting.company,
-                        job_posting.location,
-                        job_posting.summary,
-                        job_posting.description_text,
-                    ]
-                ).lower()
-                if normalized_query and normalized_query not in haystack:
+                if not _matches_query(job_posting, normalized_query, query_terms):
                     continue
-                if normalized_location and normalized_location not in haystack:
+                if not _matches_location(job_posting, normalized_location, location_terms):
+                    continue
+                if query.remote_only and not _is_remote_job(job_posting):
+                    continue
+                if not _matches_posted_window(job_posting, query.posted_within_days):
                     continue
                 matched_any = True
-                postings.append(job_posting)
-                if len(postings) >= query.page_size:
-                    board_statuses[board_token] = "matched"
-                    return JobSourceSearchResponse(
-                        source=self.source_name,
-                        results=postings,
-                        status="ok",
-                        source_details=board_statuses,
-                    )
+                matched_results.append(job_posting)
             if matched_any:
+                postings.extend(matched_results)
                 board_statuses[board_token] = "matched"
             elif payload.get("jobs"):
                 board_statuses[board_token] = "no_match"
             else:
                 board_statuses[board_token] = "empty"
+        postings.sort(
+            key=lambda posting: _job_sort_key(posting, normalized_query, query_terms),
+            reverse=True,
+        )
+        postings = postings[: query.page_size]
 
         overall_status = "ok"
         if board_statuses and all(status == "error" for status in board_statuses.values()):
@@ -181,9 +287,12 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
 
     def _to_job_posting(self, board_token: str, job_payload: dict) -> JobPosting:
         location_payload = job_payload.get("location") or {}
-        metadata = job_payload.get("metadata") or {}
+        metadata_lookup = _normalize_metadata_lookup(job_payload.get("metadata"))
         company_name = _normalize_company_name(
-            metadata.get("company_name") or metadata.get("company") or "",
+            job_payload.get("company_name")
+            or metadata_lookup.get("company_name")
+            or metadata_lookup.get("company")
+            or "",
             fallback=board_token,
         )
         normalized_title = _normalize_text(job_payload.get("title", ""))
@@ -200,7 +309,12 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
             title=normalized_title,
             company=company_name,
             location=normalized_location,
-            employment_type=str(metadata.get("employment_type", "")).strip(),
+            employment_type=(
+                metadata_lookup.get("employment_type")
+                or metadata_lookup.get("time type")
+                or metadata_lookup.get("employment type")
+                or ""
+            ).strip(),
             url=normalized_url,
             summary=normalized_content[:280],
             description_text=normalized_content,
