@@ -186,6 +186,40 @@ def test_greenhouse_adapter_matches_query_terms_without_exact_phrase():
     assert response.results[0].title == "Senior Backend Platform Engineer"
 
 
+def test_greenhouse_adapter_avoids_false_positive_without_title_signal():
+    fake_session = _FakeSession(
+        {
+            "jobs": [
+                {
+                    "id": 1,
+                    "internal_job_id": 101,
+                    "title": "Account Executive",
+                    "updated_at": "2026-03-19T09:00:00Z",
+                    "requisition_id": "REQ-1",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://boards.greenhouse.io/example/jobs/1",
+                    "language": "en",
+                    "metadata": {"company_name": "Example"},
+                    "content": "<p>Help customers unlock more value from their data platform and engineering teams.</p>",
+                    "departments": [{"name": "Sales"}],
+                    "offices": [{"name": "Remote"}],
+                }
+            ]
+        }
+    )
+    adapter = GreenhouseJobSourceAdapter(
+        board_tokens=["example"],
+        http_session=fake_session,
+    )
+
+    response = adapter.search(
+        JobSearchQuery(query="data engineer", page_size=10)
+    )
+
+    assert response.status == "ok"
+    assert response.results == []
+
+
 def test_greenhouse_adapter_sorts_results_by_recency_across_boards():
     payloads = {
         "alpha": {

@@ -113,6 +113,172 @@ def _extract_compensation_text(text):
     return ""
 
 
+def _format_short_posted_label(posted_at):
+    normalized = str(posted_at or "").strip()
+    if not normalized:
+        return ""
+    return normalized[:10]
+
+
+def _build_job_search_badges(job_posting):
+    metadata = job_posting.get("metadata") or {}
+    badges = []
+
+    location = str(job_posting.get("location", "") or "").strip()
+    employment_type = str(job_posting.get("employment_type", "") or "").strip()
+    posted_label = _format_short_posted_label(job_posting.get("posted_at"))
+    compensation = _extract_compensation_text(job_posting.get("description_text", "") or "")
+
+    if employment_type:
+        badges.append(employment_type)
+    if location:
+        badges.append(location)
+    if posted_label:
+        badges.append(f"Posted {posted_label}")
+    if compensation:
+        badges.append(compensation)
+
+    departments = [str(item).strip() for item in metadata.get("departments", []) if str(item).strip()]
+    if departments:
+        badges.append(departments[0])
+
+    unique_badges = []
+    seen = set()
+    for badge in badges:
+        lowered = badge.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        unique_badges.append(badge)
+    return unique_badges[:5]
+
+
+def _render_badge_row(badges):
+    if not badges:
+        return
+    badge_markup = "".join(
+        """
+        <span style="
+            display:inline-block;
+            background:rgba(96, 165, 250, 0.12);
+            color:#dbeafe;
+            border:1px solid rgba(96, 165, 250, 0.22);
+            border-radius:999px;
+            padding:0.18rem 0.55rem;
+            margin:0 0.38rem 0.38rem 0;
+            font-size:0.74rem;
+            font-weight:700;
+            line-height:1.3;
+        ">{badge}</span>
+        """.format(badge=escape(str(badge)))
+        for badge in badges
+    )
+    st.markdown(badge_markup, unsafe_allow_html=True)
+
+
+def _render_job_search_source_status(search_results_payload):
+    source_status = dict((search_results_payload or {}).get("source_status") or {})
+    if not source_status:
+        return
+
+    board_statuses = {
+        key: value
+        for key, value in source_status.items()
+        if key not in {"backend", "greenhouse", "lever"}
+    }
+    if not board_statuses:
+        return
+
+    matched_count = sum(1 for value in board_statuses.values() if value == "matched")
+    no_match_count = sum(1 for value in board_statuses.values() if value == "no_match")
+    empty_count = sum(1 for value in board_statuses.values() if value == "empty")
+    error_count = sum(1 for value in board_statuses.values() if value == "error")
+    searched_count = len(board_statuses)
+
+    st.markdown("### Search Coverage")
+    coverage_cols = st.columns(4)
+    coverage_cards = [
+        ("Boards Searched", str(searched_count), "Configured boards checked for this search."),
+        ("Matched Boards", str(matched_count), "Boards that returned at least one matching role."),
+        ("No Match", str(no_match_count + empty_count), "Boards checked but without current matching roles."),
+        ("Unavailable", str(error_count), "Boards that failed to respond right now."),
+    ]
+    for col, (label, value, note) in zip(coverage_cols, coverage_cards):
+        with col:
+            render_metric_card(label, value, note, dense=True, slim=True)
+
+    if error_count:
+        failed_boards = sorted(key for key, value in board_statuses.items() if value == "error")
+        st.caption("Unavailable right now: {boards}".format(boards=", ".join(failed_boards)))
+
+
+def _render_job_search_context_panel(backend_enabled):
+    render_metric_card(
+        "Search Layer",
+        "Backend-Ready" if backend_enabled else "Disabled",
+        "Search and URL import both use the FastAPI job backend when enabled.",
+    )
+    render_metric_card(
+        "Active Sources",
+        "Greenhouse + Lever",
+        "Current search runs across the configured Greenhouse boards and Lever sites for technical roles.",
+        dense=True,
+        slim=True,
+    )
+    render_metric_card(
+        "Default Ordering",
+        "Most Recent First",
+        "Matching jobs are shown in descending posted order so fresh roles surface first.",
+        dense=True,
+        slim=True,
+    )
+    with st.expander("Search Tips", expanded=True):
+        st.markdown("- Use broad searches like `software engineer`, `backend engineer`, or `data scientist`.")
+        st.markdown("- Add a location only when you want to narrow results; leaving it blank keeps the search broad.")
+        st.markdown("- Paste a direct Greenhouse or Lever job URL when you already know the exact role to analyze.")
+
+
+def _render_job_search_results_header(search_results_payload):
+    query_payload = dict((search_results_payload or {}).get("query") or {})
+    results = list((search_results_payload or {}).get("results") or [])
+    query_label = str(query_payload.get("query", "") or "").strip()
+    location_label = str(query_payload.get("location", "") or "").strip()
+    posted_within_days = query_payload.get("posted_within_days")
+    remote_only = bool(query_payload.get("remote_only"))
+
+    summary_bits = []
+    if query_label:
+        summary_bits.append("Query: {query}".format(query=query_label))
+    if location_label:
+        summary_bits.append("Location: {location}".format(location=location_label))
+    if remote_only:
+        summary_bits.append("Remote only")
+    if posted_within_days:
+        summary_bits.append("Last {days} days".format(days=posted_within_days))
+
+    render_section_head(
+        "Matching Jobs",
+        " | ".join(summary_bits) if summary_bits else "Current search results from the active backend query.",
+    )
+    result_cols = st.columns(2)
+    with result_cols[0]:
+        render_metric_card(
+            "Jobs Found",
+            str(len(results)),
+            "Current result count returned by the backend search.",
+            dense=True,
+            slim=True,
+        )
+    with result_cols[1]:
+        render_metric_card(
+            "Sort Order",
+            "Newest First",
+            "Search results are currently sorted by the freshest matching postings.",
+            dense=True,
+            slim=True,
+        )
+
+
 def _render_summary_cards(cards, columns_per_row=3):
     visible_cards = [
         (label, value, note)
@@ -436,12 +602,11 @@ def _render_profile_snapshot(candidate_profile: CandidateProfile):
 def _render_job_search_result_card(job_posting, index):
     company = str(job_posting.get("company", "") or "Unknown")
     title = str(job_posting.get("title", "") or "Unknown role")
-    location = str(job_posting.get("location", "") or "Location not listed")
     source = str(job_posting.get("source", "") or "backend").title()
-    posted_at = str(job_posting.get("posted_at", "") or "").strip()
     summary = str(job_posting.get("summary", "") or "").strip()
     if len(summary) > 220:
         summary = summary[:220].rsplit(" ", 1)[0].strip() + "..."
+    badges = _build_job_search_badges(job_posting)
 
     st.markdown(
         """
@@ -453,29 +618,27 @@ def _render_job_search_result_card(job_posting, index):
             margin:0 0 0.8rem 0;
         ">
             <div style="font-size:1rem; font-weight:800; color:#e7eefc; margin-bottom:0.2rem;">{title}</div>
-            <div style="font-size:0.92rem; color:#93c5fd; font-weight:700; margin-bottom:0.25rem;">{company}</div>
-            <div style="font-size:0.82rem; color:#cbd5e1; margin-bottom:0.45rem;">{location}</div>
-            <div style="font-size:0.78rem; color:#94a3b8; margin-bottom:0.55rem;">Source: {source}{posted}</div>
+            <div style="font-size:0.92rem; color:#93c5fd; font-weight:700; margin-bottom:0.35rem;">{company}</div>
+            <div style="font-size:0.78rem; color:#94a3b8; margin-bottom:0.55rem;">Source: {source}</div>
             <div style="font-size:0.85rem; color:#e2e8f0; line-height:1.55;">{summary}</div>
         </div>
         """.format(
             title=escape(title),
             company=escape(company),
-            location=escape(location),
             source=escape(source),
-            posted="" if not posted_at else " | Posted: " + escape(posted_at[:10]),
             summary=escape(summary or "No summary available."),
         ),
         unsafe_allow_html=True,
     )
+    _render_badge_row(badges)
     actions = st.columns([1.0, 1.0])
     with actions[0]:
-        if st.button("Load Into JD Flow", key=f"job_search_load_{index}"):
+        if st.button("Use This Job", key=f"job_search_load_{index}"):
             _load_job_posting_into_jd_flow(job_posting)
     with actions[1]:
         job_url = str(job_posting.get("url", "") or "").strip()
         if job_url:
-            st.link_button("Open Job Post", job_url, use_container_width=True)
+            st.link_button("Open Posting", job_url, use_container_width=True)
 
 
 def render_resume_page():
@@ -510,6 +673,10 @@ def render_job_search_page():
     left_col, right_col = st.columns([1.2, 1.0])
     with left_col:
         backend_enabled = job_search_backend_enabled()
+        render_section_head(
+            "Search Boards",
+            "Find recent engineering roles across the configured backend-connected boards.",
+        )
         search_query = st.text_input(
             "Search Query",
             placeholder="Software engineer, backend engineer, data scientist, machine learning engineer...",
@@ -543,6 +710,11 @@ def render_job_search_page():
             disabled=not backend_enabled,
             key="job_search_submit",
         )
+        st.markdown("---")
+        render_section_head(
+            "Direct Import",
+            "Already have a supported job link? Load it straight into the JD workflow.",
+        )
         job_url = st.text_input(
             "Paste Job URL",
             placeholder="Paste a supported job URL, for example a Greenhouse posting.",
@@ -574,7 +746,7 @@ def render_job_search_page():
                         remote_only=remote_only,
                         posted_within_days=posted_within_days,
                         page_size=12,
-                        source_filters=["greenhouse"],
+                        source_filters=["greenhouse", "lever"],
                     )
                     set_job_search_results(response_payload)
                     set_job_search_import_notice(
@@ -615,15 +787,27 @@ def render_job_search_page():
         search_results_payload = get_job_search_results() or {}
         search_results = list(search_results_payload.get("results", []) or [])
         if search_results:
-            st.markdown("### Matching Jobs")
+            result_actions = st.columns([1.0, 1.0, 3.0])
+            with result_actions[0]:
+                clear_results_clicked = st.button("Clear Results", key="job_search_clear_results")
+            if clear_results_clicked:
+                set_job_search_results(None)
+                set_job_search_import_notice(None)
+                st.rerun()
+            _render_job_search_source_status(search_results_payload)
+            _render_job_search_results_header(search_results_payload)
             for index, job_posting in enumerate(search_results):
                 _render_job_search_result_card(job_posting, index)
+        elif search_results_payload:
+            clear_results_clicked = st.button("Clear Results", key="job_search_clear_results_empty")
+            if clear_results_clicked:
+                set_job_search_results(None)
+                set_job_search_import_notice(None)
+                st.rerun()
+            _render_job_search_source_status(search_results_payload)
+            st.info("No current jobs matched this search. Try a broader query or location.")
     with right_col:
-        render_metric_card(
-            "Search Layer",
-            "Backend-Ready" if job_search_backend_enabled() else "Disabled",
-            "Search and URL import both use the FastAPI job backend when enabled.",
-        )
+        _render_job_search_context_panel(job_search_backend_enabled())
 def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
     st.markdown("---")
     render_section_head(

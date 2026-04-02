@@ -145,6 +145,194 @@ def test_render_job_search_page_imports_backend_job_and_navigates(monkeypatch):
     assert rerun_calls["count"] == 1
 
 
+def test_render_job_search_page_shows_search_coverage_for_results(monkeypatch):
+    captured = {"metrics": [], "markdown": []}
+
+    class FakeColumn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_st = SimpleNamespace()
+    fake_st.columns = lambda spec: [FakeColumn() for _ in range(spec if isinstance(spec, int) else len(spec))]
+    fake_st.checkbox = lambda *args, **kwargs: False
+    fake_st.selectbox = lambda *args, **kwargs: None
+    fake_st.text_input = lambda *args, **kwargs: ""
+    fake_st.button = lambda *args, **kwargs: False
+    fake_st.info = lambda *args, **kwargs: None
+    fake_st.markdown = lambda *args, **kwargs: captured["markdown"].append(args[0] if args else "")
+    fake_st.success = lambda *args, **kwargs: None
+    fake_st.warning = lambda *args, **kwargs: None
+    fake_st.link_button = lambda *args, **kwargs: None
+    fake_st.caption = lambda *args, **kwargs: None
+    fake_st.expander = lambda *args, **kwargs: FakeColumn()
+    fake_st.rerun = lambda: None
+
+    monkeypatch.setattr(pages, "st", fake_st)
+    monkeypatch.setattr(pages, "render_page_divider", lambda: None)
+    monkeypatch.setattr(pages, "render_section_head", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pages,
+        "render_metric_card",
+        lambda label, value, *args, **kwargs: captured["metrics"].append((label, value)),
+    )
+    monkeypatch.setattr(pages, "job_search_backend_enabled", lambda: True)
+    monkeypatch.setattr(pages, "get_job_search_import_notice", lambda: None)
+    monkeypatch.setattr(
+        pages,
+        "get_job_search_results",
+        lambda: {
+            "results": [
+                {
+                    "title": "Software Engineer",
+                    "company": "Glean",
+                    "source": "greenhouse",
+                    "location": "Remote",
+                    "description_text": "Software engineer role with Python.",
+                    "summary": "Software engineer role with Python.",
+                    "metadata": {"departments": ["Engineering"]},
+                }
+            ],
+            "source_status": {
+                "backend": "ready",
+                "greenhouse": "ok",
+                "gleanwork": "matched",
+                "narvar": "no_match",
+                "wayve": "error",
+                "figma": "empty",
+            },
+        },
+    )
+
+    pages.render_job_search_page()
+
+    assert ("Boards Searched", "4") in captured["metrics"]
+    assert ("Matched Boards", "1") in captured["metrics"]
+    assert ("No Match", "2") in captured["metrics"]
+    assert ("Unavailable", "1") in captured["metrics"]
+    assert "### Search Coverage" in captured["markdown"]
+
+
+def test_render_job_search_page_shows_empty_state_for_no_results(monkeypatch):
+    captured = {"info": []}
+
+    class FakeColumn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_st = SimpleNamespace()
+    fake_st.columns = lambda spec: [FakeColumn() for _ in range(spec if isinstance(spec, int) else len(spec))]
+    fake_st.checkbox = lambda *args, **kwargs: False
+    fake_st.selectbox = lambda *args, **kwargs: None
+    fake_st.text_input = lambda *args, **kwargs: ""
+    fake_st.button = lambda *args, **kwargs: False
+    fake_st.info = lambda message, *args, **kwargs: captured["info"].append(message)
+    fake_st.markdown = lambda *args, **kwargs: None
+    fake_st.success = lambda *args, **kwargs: None
+    fake_st.warning = lambda *args, **kwargs: None
+    fake_st.link_button = lambda *args, **kwargs: None
+    fake_st.caption = lambda *args, **kwargs: None
+    fake_st.expander = lambda *args, **kwargs: FakeColumn()
+    fake_st.rerun = lambda: None
+
+    monkeypatch.setattr(pages, "st", fake_st)
+    monkeypatch.setattr(pages, "render_page_divider", lambda: None)
+    monkeypatch.setattr(pages, "render_section_head", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pages, "render_metric_card", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pages, "job_search_backend_enabled", lambda: True)
+    monkeypatch.setattr(pages, "get_job_search_import_notice", lambda: None)
+    monkeypatch.setattr(
+        pages,
+        "get_job_search_results",
+        lambda: {
+            "results": [],
+            "source_status": {"backend": "ready", "greenhouse": "ok", "narvar": "no_match"},
+        },
+    )
+
+    pages.render_job_search_page()
+
+    assert any("No current jobs matched this search." in message for message in captured["info"])
+
+
+def test_render_job_search_page_can_clear_results(monkeypatch):
+    captured = {"cleared_results": 0, "cleared_notice": 0, "reruns": 0}
+
+    class StopRender(Exception):
+        pass
+
+    class FakeColumn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_st = SimpleNamespace()
+    fake_st.columns = lambda spec: [FakeColumn() for _ in range(spec if isinstance(spec, int) else len(spec))]
+    fake_st.checkbox = lambda *args, **kwargs: False
+    fake_st.selectbox = lambda *args, **kwargs: None
+    fake_st.text_input = lambda *args, **kwargs: ""
+    fake_st.button = lambda label, **kwargs: label == "Clear Results"
+    fake_st.info = lambda *args, **kwargs: None
+    fake_st.markdown = lambda *args, **kwargs: None
+    fake_st.success = lambda *args, **kwargs: None
+    fake_st.warning = lambda *args, **kwargs: None
+    fake_st.link_button = lambda *args, **kwargs: None
+    fake_st.caption = lambda *args, **kwargs: None
+    fake_st.expander = lambda *args, **kwargs: FakeColumn()
+    fake_st.rerun = lambda: (_ for _ in ()).throw(StopRender())
+
+    monkeypatch.setattr(pages, "st", fake_st)
+    monkeypatch.setattr(pages, "render_page_divider", lambda: None)
+    monkeypatch.setattr(pages, "render_section_head", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pages, "render_metric_card", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pages, "job_search_backend_enabled", lambda: True)
+    monkeypatch.setattr(pages, "get_job_search_import_notice", lambda: None)
+    monkeypatch.setattr(
+        pages,
+        "get_job_search_results",
+        lambda: {
+            "results": [
+                {
+                    "title": "Software Engineer",
+                    "company": "Glean",
+                    "source": "greenhouse",
+                    "location": "Remote",
+                    "description_text": "Software engineer role with Python.",
+                    "summary": "Software engineer role with Python.",
+                    "metadata": {},
+                }
+            ],
+            "source_status": {"backend": "ready", "greenhouse": "ok", "gleanwork": "matched"},
+        },
+    )
+    monkeypatch.setattr(
+        pages,
+        "set_job_search_results",
+        lambda payload: captured.update({"cleared_results": captured["cleared_results"] + (1 if payload is None else 0)}),
+    )
+    monkeypatch.setattr(
+        pages,
+        "set_job_search_import_notice",
+        lambda payload: captured.update({"cleared_notice": captured["cleared_notice"] + (1 if payload is None else 0)}),
+    )
+
+    try:
+        pages.render_job_search_page()
+    except StopRender:
+        captured["reruns"] += 1
+
+    assert captured["cleared_results"] == 1
+    assert captured["cleared_notice"] == 1
+    assert captured["reruns"] == 1
+
+
 def test_render_job_description_page_shows_imported_job_review(monkeypatch):
     captured = {"metrics": [], "lists": [], "expanders": []}
 
@@ -316,6 +504,7 @@ def test_render_job_search_page_shows_backend_search_results(monkeypatch):
     fake_st.success = lambda *args, **kwargs: None
     fake_st.warning = lambda *args, **kwargs: None
     fake_st.link_button = lambda *args, **kwargs: None
+    fake_st.expander = lambda *args, **kwargs: FakeColumn()
     fake_st.rerun = lambda: None
 
     monkeypatch.setattr(pages, "st", fake_st)

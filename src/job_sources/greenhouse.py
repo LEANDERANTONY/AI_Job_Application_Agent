@@ -16,6 +16,43 @@ _GREENHOUSE_JOB_URL_RE = re.compile(
     re.IGNORECASE,
 )
 _QUERY_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_GENERIC_ROLE_TERMS = {
+    "engineer",
+    "engineering",
+    "developer",
+    "development",
+    "software",
+    "scientist",
+    "analyst",
+    "manager",
+    "technical",
+    "lead",
+    "senior",
+    "staff",
+    "principal",
+    "fullstack",
+    "full",
+    "stack",
+}
+_TECHNICAL_TITLE_PATTERNS = (
+    re.compile(r"\bengineer\b"),
+    re.compile(r"\bengineering\b"),
+    re.compile(r"\bdeveloper\b"),
+    re.compile(r"\bdevops\b"),
+    re.compile(r"\bscientist\b"),
+    re.compile(r"\banalyst\b"),
+    re.compile(r"\barchitect\b"),
+    re.compile(r"\bsre\b"),
+    re.compile(r"\bqa\b"),
+    re.compile(r"\bfront[\s-]?end\b"),
+    re.compile(r"\bback[\s-]?end\b"),
+    re.compile(r"\bfull[\s-]?stack\b"),
+    re.compile(r"\bplatform\b"),
+    re.compile(r"\bmachine learning\b"),
+    re.compile(r"\bml\b"),
+    re.compile(r"\bai\b"),
+    re.compile(r"\bdata (?:engineer|engineering|scientist|science|analyst|analytics|architect)\b"),
+)
 
 
 def _repair_mojibake(text: str) -> str:
@@ -110,7 +147,18 @@ def _is_remote_job(job_posting: JobPosting) -> bool:
     return "remote" in haystack
 
 
+def _has_technical_title_signal(job_posting: JobPosting) -> bool:
+    title = str(job_posting.title or "").lower()
+    return any(pattern.search(title) for pattern in _TECHNICAL_TITLE_PATTERNS)
+
+
 def _matches_query(job_posting: JobPosting, normalized_query: str, query_terms: list[str]) -> bool:
+    title_haystack = " ".join(
+        [
+            job_posting.title,
+            job_posting.company,
+        ]
+    ).lower()
     haystack = " ".join(
         [
             job_posting.title,
@@ -122,7 +170,9 @@ def _matches_query(job_posting: JobPosting, normalized_query: str, query_terms: 
     ).lower()
     if normalized_query and normalized_query in haystack:
         return True
-    if query_terms and all(term in haystack for term in query_terms):
+    significant_terms = [term for term in query_terms if term not in _GENERIC_ROLE_TERMS]
+    title_signal_terms = significant_terms or query_terms
+    if query_terms and all(term in haystack for term in query_terms) and any(term in title_haystack for term in title_signal_terms):
         return True
     return not normalized_query
 
@@ -214,6 +264,8 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
             matched_results: list[JobPosting] = []
             for job_payload in payload.get("jobs", []) or []:
                 job_posting = self._to_job_posting(board_token, job_payload)
+                if not _has_technical_title_signal(job_posting):
+                    continue
                 if not _matches_query(job_posting, normalized_query, query_terms):
                     continue
                 if not _matches_location(job_posting, normalized_location, location_terms):

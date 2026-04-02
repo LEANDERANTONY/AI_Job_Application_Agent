@@ -70,3 +70,51 @@ def test_job_search_service_resolves_url_with_first_matching_source():
 
     assert result.source == "fake"
     assert result.status == "ok"
+
+
+def test_job_search_service_sorts_results_recent_first_across_sources():
+    class FakeSource(JobSourceAdapter):
+        def __init__(self, source_name, posting):
+            self.source_name = source_name
+            self._posting = posting
+
+        def can_resolve_url(self, url: str) -> bool:
+            return False
+
+        def search(self, query):
+            from src.schemas import JobPosting, JobSourceSearchResponse
+
+            return JobSourceSearchResponse(
+                source=self.source_name,
+                status="ok",
+                results=[
+                    JobPosting(
+                        id=f"{self.source_name}:1",
+                        source=self.source_name,
+                        title=self._posting["title"],
+                        company=self._posting["company"],
+                        posted_at=self._posting["posted_at"],
+                    )
+                ],
+                source_details={self.source_name: "matched"},
+            )
+
+        def resolve_url(self, url: str):
+            raise AssertionError("resolve should not run")
+
+    service = JobSearchService(
+        sources=[
+            FakeSource(
+                "greenhouse",
+                {"title": "Older Role", "company": "Alpha", "posted_at": "2026-03-18T09:00:00+00:00"},
+            ),
+            FakeSource(
+                "lever",
+                {"title": "Newer Role", "company": "Beta", "posted_at": "2026-03-20T09:00:00+00:00"},
+            ),
+        ]
+    )
+
+    result = service.search(JobSearchQuery(query="engineer", page_size=10))
+
+    assert [posting.title for posting in result.results] == ["Newer Role", "Older Role"]

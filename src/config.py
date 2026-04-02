@@ -129,6 +129,11 @@ GREENHOUSE_BOARD_TOKENS = tuple(
     for token in os.getenv("GREENHOUSE_BOARD_TOKENS", "").split(",")
     if token.strip()
 )
+LEVER_SITE_NAMES = tuple(
+    token.strip()
+    for token in os.getenv("LEVER_SITE_NAMES", "").split(",")
+    if token.strip()
+)
 SAVED_WORKSPACE_TTL_HOURS = _load_int_env("SAVED_WORKSPACE_TTL_HOURS", 24)
 AUTH_DEFAULT_PLAN_TIER = os.getenv("AUTH_DEFAULT_PLAN_TIER", "free").strip()
 AUTH_DEFAULT_ACCOUNT_STATUS = os.getenv(

@@ -1,5 +1,28 @@
+from datetime import datetime, timezone
+
 from src.job_sources.registry import build_default_job_sources
 from src.schemas import JobResolutionResult, JobSearchQuery, JobSearchResult
+
+
+def _parse_posted_at(value: str):
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        if raw_value.endswith("Z"):
+            raw_value = raw_value[:-1] + "+00:00"
+        return datetime.fromisoformat(raw_value)
+    except ValueError:
+        return None
+
+
+def _posted_timestamp(value: str) -> float:
+    parsed = _parse_posted_at(value)
+    if parsed is None:
+        return 0.0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
 
 
 class JobSearchService:
@@ -33,6 +56,7 @@ class JobSearchService:
             source_status[source.source_name] = response.status
             source_status.update(response.source_details)
             results.extend(response.results)
+        results.sort(key=lambda posting: _posted_timestamp(getattr(posting, "posted_at", "")), reverse=True)
         results = results[: normalized_query.page_size]
         return JobSearchResult(
             query=normalized_query,
