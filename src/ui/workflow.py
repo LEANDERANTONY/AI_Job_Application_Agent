@@ -37,6 +37,7 @@ from src.ui.state import (
     AGENT_WORKFLOW_RESULT,
     get_app_user_record,
     get_auth_tokens,
+    get_imported_job_posting,
     get_daily_quota_status,
     get_daily_quota_status_refreshed_at,
     get_openai_session_usage,
@@ -48,6 +49,9 @@ from src.ui.state import (
     set_agent_workflow_result,
     set_daily_quota_status,
     set_daily_quota_status_refreshed_at,
+    set_imported_job_posting,
+    set_imported_job_summary_signature,
+    set_imported_job_summary_view,
     set_openai_session_usage,
     set_tailored_resume_theme,
     set_workspace_restore_notice,
@@ -87,6 +91,7 @@ class JobWorkflowViewModel:
     tailored_resume_artifact: Optional[TailoredResumeArtifact] = None
     agent_result: Optional[AgentWorkflowResult] = None
     ai_session: Optional[AISessionViewModel] = None
+    imported_job_posting: Optional[dict] = None
 
 
 WorkflowProgressCallback = Callable[[str, str, int], None]
@@ -231,6 +236,7 @@ def build_job_workflow_view_model(jd_text, jd_source):
 
     view_model.job_description = job_description
     view_model.candidate_profile = candidate_profile
+    view_model.imported_job_posting = get_imported_job_posting()
     if not candidate_profile:
         return view_model
 
@@ -328,6 +334,9 @@ def restore_latest_saved_workspace(auth_service=None):
         saved_snapshot.job_description,
     )
     store_fit_outputs(saved_snapshot.fit_analysis, saved_snapshot.tailored_draft)
+    set_imported_job_posting(saved_snapshot.imported_job_posting)
+    set_imported_job_summary_signature(None)
+    set_imported_job_summary_view(None)
     reset_agent_workflow_if_signature_changed(
         _workflow_signature(
             saved_snapshot.candidate_profile,

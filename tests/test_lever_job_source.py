@@ -146,3 +146,141 @@ def test_lever_adapter_avoids_false_positive_without_title_signal():
 
     assert response.status == "ok"
     assert response.results == []
+
+
+def test_lever_adapter_respects_role_family_for_data_engineer_queries():
+    fake_session = _FakeSession(
+        [
+            {
+                "id": "manager-1",
+                "text": "Engineering Manager - Data Partnerships",
+                "categories": {
+                    "commitment": "Employee: Full Time",
+                    "location": "Remote",
+                    "team": "Engineering",
+                },
+                "descriptionPlain": "Lead data partnership initiatives.",
+                "descriptionBodyPlain": "Lead data partnership initiatives.",
+                "additionalPlain": "",
+                "hostedUrl": "https://jobs.lever.co/example/manager-1",
+                "applyUrl": "https://jobs.lever.co/example/manager-1/apply",
+                "workplaceType": "remote",
+                "createdAt": 1774015783631,
+                "lists": [],
+            },
+            {
+                "id": "de-1",
+                "text": "Senior Data Engineer",
+                "categories": {
+                    "commitment": "Employee: Full Time",
+                    "location": "Remote",
+                    "team": "Engineering",
+                },
+                "descriptionPlain": "Build ETL pipelines and warehouse systems.",
+                "descriptionBodyPlain": "Build ETL pipelines and warehouse systems.",
+                "additionalPlain": "",
+                "hostedUrl": "https://jobs.lever.co/example/de-1",
+                "applyUrl": "https://jobs.lever.co/example/de-1/apply",
+                "workplaceType": "remote",
+                "createdAt": 1774015783632,
+                "lists": [],
+            },
+        ]
+    )
+    adapter = LeverJobSourceAdapter(site_names=["example"], http_session=fake_session)
+
+    response = adapter.search(JobSearchQuery(query="data engineer", page_size=10))
+
+    assert [posting.title for posting in response.results] == ["Senior Data Engineer"]
+
+
+def test_lever_adapter_filters_ai_engineer_queries_away_from_non_engineering_ai_roles():
+    fake_session = _FakeSession(
+        [
+            {
+                "id": "pm-1",
+                "text": "Staff Product Manager, Applied AI",
+                "categories": {
+                    "commitment": "Employee: Full Time",
+                    "location": "Remote",
+                    "team": "Product",
+                },
+                "descriptionPlain": "Drive applied AI product strategy.",
+                "descriptionBodyPlain": "Drive applied AI product strategy.",
+                "additionalPlain": "",
+                "hostedUrl": "https://jobs.lever.co/example/pm-1",
+                "applyUrl": "https://jobs.lever.co/example/pm-1/apply",
+                "workplaceType": "remote",
+                "createdAt": 1774015783631,
+                "lists": [],
+            },
+            {
+                "id": "ai-1",
+                "text": "Applied AI, Forward Deployed AI Engineer",
+                "categories": {
+                    "commitment": "Employee: Full Time",
+                    "location": "Remote",
+                    "team": "Engineering",
+                },
+                "descriptionPlain": "Build and deploy AI systems.",
+                "descriptionBodyPlain": "Build and deploy AI systems.",
+                "additionalPlain": "",
+                "hostedUrl": "https://jobs.lever.co/example/ai-1",
+                "applyUrl": "https://jobs.lever.co/example/ai-1/apply",
+                "workplaceType": "remote",
+                "createdAt": 1774015783632,
+                "lists": [],
+            },
+        ]
+    )
+    adapter = LeverJobSourceAdapter(site_names=["example"], http_session=fake_session)
+
+    response = adapter.search(JobSearchQuery(query="ai engineer", page_size=10))
+
+    assert [posting.title for posting in response.results] == ["Applied AI, Forward Deployed AI Engineer"]
+
+
+def test_lever_adapter_keeps_machine_learning_family_narrower_than_generic_ai():
+    fake_session = _FakeSession(
+        [
+            {
+                "id": "ai-1",
+                "text": "Applied AI, Forward Deployed AI Engineer",
+                "categories": {
+                    "commitment": "Employee: Full Time",
+                    "location": "Remote",
+                    "team": "Engineering",
+                },
+                "descriptionPlain": "Build and deploy AI systems.",
+                "descriptionBodyPlain": "Build and deploy AI systems.",
+                "additionalPlain": "",
+                "hostedUrl": "https://jobs.lever.co/example/ai-1",
+                "applyUrl": "https://jobs.lever.co/example/ai-1/apply",
+                "workplaceType": "remote",
+                "createdAt": 1774015783631,
+                "lists": [],
+            },
+            {
+                "id": "ml-1",
+                "text": "Senior Machine Learning Engineer",
+                "categories": {
+                    "commitment": "Employee: Full Time",
+                    "location": "Remote",
+                    "team": "Engineering",
+                },
+                "descriptionPlain": "Build ML systems and model pipelines.",
+                "descriptionBodyPlain": "Build ML systems and model pipelines.",
+                "additionalPlain": "",
+                "hostedUrl": "https://jobs.lever.co/example/ml-1",
+                "applyUrl": "https://jobs.lever.co/example/ml-1/apply",
+                "workplaceType": "remote",
+                "createdAt": 1774015783632,
+                "lists": [],
+            },
+        ]
+    )
+    adapter = LeverJobSourceAdapter(site_names=["example"], http_session=fake_session)
+
+    response = adapter.search(JobSearchQuery(query="machine learning engineer", page_size=10))
+
+    assert [posting.title for posting in response.results] == ["Senior Machine Learning Engineer"]

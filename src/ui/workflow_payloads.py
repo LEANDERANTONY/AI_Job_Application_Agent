@@ -57,6 +57,7 @@ def workflow_snapshot_json(view_model):
         "fit_analysis": asdict(view_model.fit_analysis),
         "tailored_draft": asdict(view_model.tailored_draft),
         "agent_result": asdict(view_model.agent_result) if view_model.agent_result else None,
+        "imported_job_posting": getattr(view_model, "imported_job_posting", None),
     }
     return versioned_payload(WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT, payload)
 
@@ -277,7 +278,30 @@ def build_saved_workflow_snapshot_from_payload(raw_payload: str):
         fit_analysis=_build_fit_analysis(fit_analysis),
         tailored_draft=_build_tailored_draft(tailored_draft),
         agent_result=_build_agent_result(payload.get("agent_result")),
+        imported_job_posting=_build_imported_job_posting(payload.get("imported_job_posting")),
     )
+
+
+def _build_imported_job_posting(payload):
+    if not isinstance(payload, dict):
+        return None
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    return {
+        "id": str(payload.get("id", "") or ""),
+        "source": str(payload.get("source", "") or ""),
+        "title": str(payload.get("title", "") or ""),
+        "company": str(payload.get("company", "") or ""),
+        "location": str(payload.get("location", "") or ""),
+        "employment_type": str(payload.get("employment_type", "") or ""),
+        "url": str(payload.get("url", "") or ""),
+        "summary": str(payload.get("summary", "") or ""),
+        "description_text": str(payload.get("description_text", "") or ""),
+        "posted_at": str(payload.get("posted_at", "") or ""),
+        "scraped_at": str(payload.get("scraped_at", "") or ""),
+        "metadata": metadata,
+    }
 
 
 def _build_candidate_profile(payload: dict):

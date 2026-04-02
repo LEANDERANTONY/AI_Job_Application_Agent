@@ -7,6 +7,7 @@ import requests
 
 from src.config import GREENHOUSE_BOARD_TOKENS
 from src.job_sources.base import JobSourceAdapter
+from src.job_sources.matching import detect_role_families, extract_query_terms, title_matches_role_families
 from src.schemas import JobPosting, JobResolutionResult, JobSearchQuery, JobSourceSearchResponse
 
 
@@ -15,7 +16,6 @@ _GREENHOUSE_JOB_URL_RE = re.compile(
     r"^/([^/]+)/jobs/(\d+)",
     re.IGNORECASE,
 )
-_QUERY_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _GENERIC_ROLE_TERMS = {
     "engineer",
     "engineering",
@@ -118,12 +118,6 @@ def _normalize_metadata_lookup(metadata_payload) -> dict[str, str]:
                 lookup[key] = str(value).strip()
         return lookup
     return {}
-
-
-def _extract_query_terms(value: str) -> list[str]:
-    return _QUERY_TOKEN_RE.findall(str(value or "").lower())
-
-
 def _parse_posted_at(value: str):
     raw_value = str(value or "").strip()
     if not raw_value:
@@ -242,8 +236,9 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
 
         normalized_query = str(query.query or "").strip().lower()
         normalized_location = str(query.location or "").strip().lower()
-        query_terms = _extract_query_terms(normalized_query)
-        location_terms = _extract_query_terms(normalized_location)
+        query_terms = extract_query_terms(normalized_query)
+        location_terms = extract_query_terms(normalized_location)
+        role_families = detect_role_families(normalized_query)
         postings: list[JobPosting] = []
         board_statuses: dict[str, str] = {}
 
@@ -265,6 +260,8 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
             for job_payload in payload.get("jobs", []) or []:
                 job_posting = self._to_job_posting(board_token, job_payload)
                 if not _has_technical_title_signal(job_posting):
+                    continue
+                if not title_matches_role_families(job_posting.title, role_families):
                     continue
                 if not _matches_query(job_posting, normalized_query, query_terms):
                     continue

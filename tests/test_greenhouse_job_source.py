@@ -220,6 +220,51 @@ def test_greenhouse_adapter_avoids_false_positive_without_title_signal():
     assert response.results == []
 
 
+def test_greenhouse_adapter_respects_role_family_for_data_engineer_queries():
+    fake_session = _FakeSession(
+        {
+            "jobs": [
+                {
+                    "id": 1,
+                    "internal_job_id": 101,
+                    "title": "Engineering Manager - Data Partnerships",
+                    "updated_at": "2026-03-19T09:00:00Z",
+                    "requisition_id": "REQ-1",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://boards.greenhouse.io/example/jobs/1",
+                    "language": "en",
+                    "metadata": {"company_name": "Example"},
+                    "content": "<p>Lead data partnerships across the business.</p>",
+                    "departments": [{"name": "Engineering"}],
+                    "offices": [{"name": "Remote"}],
+                },
+                {
+                    "id": 2,
+                    "internal_job_id": 102,
+                    "title": "Senior Data Engineer",
+                    "updated_at": "2026-03-19T09:00:00Z",
+                    "requisition_id": "REQ-2",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://boards.greenhouse.io/example/jobs/2",
+                    "language": "en",
+                    "metadata": {"company_name": "Example"},
+                    "content": "<p>Build ETL pipelines and platform data systems.</p>",
+                    "departments": [{"name": "Engineering"}],
+                    "offices": [{"name": "Remote"}],
+                },
+            ]
+        }
+    )
+    adapter = GreenhouseJobSourceAdapter(
+        board_tokens=["example"],
+        http_session=fake_session,
+    )
+
+    response = adapter.search(JobSearchQuery(query="data engineer", page_size=10))
+
+    assert [posting.title for posting in response.results] == ["Senior Data Engineer"]
+
+
 def test_greenhouse_adapter_sorts_results_by_recency_across_boards():
     payloads = {
         "alpha": {

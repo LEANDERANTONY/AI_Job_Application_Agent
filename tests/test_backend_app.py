@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from backend.app import app
+from backend.routers.jobs import get_job_search_service
 
 
 client = TestClient(app)
@@ -16,15 +17,38 @@ def test_backend_health_endpoint_reports_service_status():
 
 
 def test_job_search_endpoint_returns_placeholder_backend_response():
-    response = client.post(
-        "/api/jobs/search",
-        json={
-            "query": "machine learning engineer",
-            "location": "Bengaluru",
-            "remote_only": True,
-            "page_size": 10,
-        },
-    )
+    class FakeService:
+        def search(self, query):
+            from src.schemas import JobPosting, JobSearchResult
+
+            return JobSearchResult(
+                query=query,
+                results=[
+                    JobPosting(
+                        id="demo:1",
+                        source="demo",
+                        title="Machine Learning Engineer",
+                        company="Demo Company",
+                        location="Bengaluru",
+                    )
+                ],
+                total_results=1,
+                source_status={"backend": "ready", "demo": "ok"},
+            )
+
+    app.dependency_overrides[get_job_search_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/api/jobs/search",
+            json={
+                "query": "machine learning engineer",
+                "location": "Bengaluru",
+                "remote_only": True,
+                "page_size": 10,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_job_search_service, None)
 
     assert response.status_code == 200
     payload = response.json()

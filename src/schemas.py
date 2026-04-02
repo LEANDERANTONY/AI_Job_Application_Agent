@@ -348,6 +348,7 @@ class SavedWorkflowSnapshot:
     fit_analysis: FitAnalysis
     tailored_draft: TailoredResumeDraft
     agent_result: Optional[AgentWorkflowResult] = None
+    imported_job_posting: Optional[dict[str, Any]] = None
 
 
 @dataclass
