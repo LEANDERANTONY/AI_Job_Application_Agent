@@ -8,6 +8,7 @@ The app helps a candidate:
 
 - sign in with Google
 - upload and parse a resume
+- search technical jobs or import a supported job link
 - upload or paste a job description
 - generate deterministic fit and tailoring state from those inputs
 - run a supervised assisted workflow on demand
@@ -23,13 +24,13 @@ The current codebase is a Streamlit-first product shell around backend-ready par
 2. The user signs in from the sidebar account panel.
 3. The user uploads a resume on `Upload Resume`.
 4. The app parses the resume and builds a normalized candidate profile.
-5. The user opens `Manual JD Input` and uploads or pastes a job description.
+5. The user can search configured Greenhouse/Lever sources from `Job Search`, paste a supported job URL, or continue manually in `Manual JD Input`.
 6. Deterministic services build the job model, fit analysis, and first tailoring draft.
 7. The supervised workflow can be triggered explicitly from the JD page.
 8. The orchestrator runs `fit`, `tailoring`, `strategy`, `review`, `resume_generation`, and `cover_letter` through the routed OpenAI service when available, with deterministic fallback where supported.
 9. Builders assemble the current workflow state into a tailored resume artifact, cover letter artifact, and application strategy report.
 10. Export helpers produce Markdown and PDF bytes for the current session.
-11. For authenticated users, usage events and the latest saved workspace snapshot are persisted in Supabase Postgres.
+11. For authenticated users, usage events, the latest saved workspace snapshot, and saved-job shortlist records are persisted in Supabase Postgres when the relevant tables are provisioned.
 12. The sidebar `Reload Workspace` action restores that latest saved snapshot back into `Manual JD Input`.
 
 ## Main Modules
@@ -125,6 +126,7 @@ The exporter is WeasyPrint-first with ReportLab fallback.
 - `src/usage_store.py`: persists authenticated assisted usage events
 - `src/quota_service.py`: computes daily quota state from persisted usage
 - `src/saved_workspace_store.py`: persists and loads the latest reloadable workspace snapshot
+- `src/saved_jobs_store.py`: persists and loads shortlisted jobs separately from the workspace snapshot
 
 ### `src/config.py`
 
@@ -188,6 +190,7 @@ Persistent authenticated state includes:
 - `app_users`
 - `usage_events`
 - `saved_workspaces`
+- `saved_jobs` when the shortlist table is provisioned
 
 Each `saved_workspaces` row stores one latest snapshot per user, including:
 
@@ -197,6 +200,15 @@ Each `saved_workspaces` row stores one latest snapshot per user, including:
 - `cover_letter_payload_json`
 - `tailored_resume_payload_json`
 - `expires_at`
+
+Each `saved_jobs` row stores one shortlisted posting per user and normalized job id, including:
+
+- source/provider identity
+- job title, company, location, and employment type
+- source URL
+- normalized summary and full description text
+- provider metadata
+- saved and updated timestamps
 
 That split is deliberate. Current work stays fast inside Streamlit reruns, while quotas and the latest reloadable snapshot live in Supabase.
 
@@ -221,11 +233,11 @@ These tests are intentionally fast and fixture-light so they can run locally and
 
 ## Current Constraints
 
-- `Job Search` is still a placeholder rather than a real provider integration.
 - Resume intake is currently login-first in the active UI.
 - The product stores only one latest saved workspace snapshot per user; it does not expose a separate history browser.
 - Large binary artifacts are not stored in object storage; PDFs are regenerated on demand.
 - Streamlit remains the only runtime client even though the service boundaries are backend-ready.
+- Saved-job persistence requires a dedicated Supabase table before the shortlist feature can be fully used in a hosted environment.
 
 ## Next Architecture Step
 

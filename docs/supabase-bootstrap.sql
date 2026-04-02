@@ -118,6 +118,25 @@ create table if not exists public.saved_workspaces (
     updated_at timestamptz not null default timezone('utc', now())
 );
 
+create table if not exists public.saved_jobs (
+    user_id uuid not null references auth.users (id) on delete cascade,
+    job_id text not null,
+    source text not null default '',
+    title text not null default '',
+    company text not null default '',
+    location text not null default '',
+    employment_type text not null default '',
+    url text not null default '',
+    summary text not null default '',
+    description_text text not null default '',
+    posted_at text not null default '',
+    scraped_at text not null default '',
+    metadata jsonb not null default '{}'::jsonb,
+    saved_at timestamptz not null default timezone('utc', now()),
+    updated_at timestamptz not null default timezone('utc', now()),
+    primary key (user_id, job_id)
+);
+
 alter table public.saved_workspaces add column if not exists job_title text not null default '';
 alter table public.saved_workspaces add column if not exists workflow_signature text not null default '';
 alter table public.saved_workspaces add column if not exists workflow_snapshot_json text not null default '';
@@ -131,6 +150,7 @@ create index if not exists saved_workspaces_expires_at_idx
 on public.saved_workspaces (expires_at);
 
 alter table public.saved_workspaces enable row level security;
+alter table public.saved_jobs enable row level security;
 
 create extension if not exists pg_cron with schema extensions;
 
@@ -182,6 +202,35 @@ with check (auth.uid() = user_id);
 drop policy if exists "users can delete own saved workspace" on public.saved_workspaces;
 create policy "users can delete own saved workspace"
 on public.saved_workspaces
+for delete
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "users can read own saved jobs" on public.saved_jobs;
+create policy "users can read own saved jobs"
+on public.saved_jobs
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+drop policy if exists "users can insert own saved jobs" on public.saved_jobs;
+create policy "users can insert own saved jobs"
+on public.saved_jobs
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists "users can update own saved jobs" on public.saved_jobs;
+create policy "users can update own saved jobs"
+on public.saved_jobs
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "users can delete own saved jobs" on public.saved_jobs;
+create policy "users can delete own saved jobs"
+on public.saved_jobs
 for delete
 to authenticated
 using (auth.uid() = user_id);

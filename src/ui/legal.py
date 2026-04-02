@@ -56,8 +56,11 @@ def get_privacy_policy_markdown():
         If you are signed in and use the authenticated workflow, the app can store your latest saved workspace so you can reload it later. That saved workspace can contain:
 
         - normalized resume and job-description data
+        - imported job metadata such as title, company, source, location, and job URL when the JD came from a supported provider
         - workflow state
         - generated report, cover-letter, and tailored-resume payloads
+
+        If shortlist persistence is enabled in the active deployment, the app can also store saved job postings you explicitly add from the Job Search page so you can revisit them later.
 
         ## How the app uses your information
 

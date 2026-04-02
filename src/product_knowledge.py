@@ -18,7 +18,16 @@ PRODUCT_KNOWLEDGE_DOCUMENTS = [
         ],
         "content": (
             "Signed-in users keep one saved workspace snapshot for 24 hours. "
-            "The sidebar Reload Workspace action restores that snapshot back into Manual JD Input, including the resume-backed candidate state, fit outputs, and the latest saved artifacts when available."
+            "The sidebar Reload Workspace action restores that snapshot back into Manual JD Input, including the resume-backed candidate state, fit outputs, imported job context when available, and the latest saved artifacts."
+        ),
+    },
+    {
+        "topic": "job_search",
+        "title": "Job Search",
+        "source": "Job Search",
+        "keywords": ["job search", "search jobs", "greenhouse", "lever", "shortlist", "saved jobs"],
+        "content": (
+            "Job Search is a real input path in the current branch. It can search configured Greenhouse boards and Lever sites for technical roles, import supported job URLs directly into the JD flow, and let signed-in users keep a shortlist of saved jobs for later."
         ),
     },
     {

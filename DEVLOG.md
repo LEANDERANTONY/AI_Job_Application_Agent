@@ -452,3 +452,29 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
   - finishing the job-application product
   - hardening the current Render-hosted Streamlit stack
   - later FastAPI + Docker backend extraction
+
+## Day 32: FastAPI Job Backend Foundation
+
+- Added an in-repo FastAPI backend skeleton under `backend/` with:
+  - `/api/health`
+  - `/api/jobs/search`
+  - `/api/jobs/resolve`
+- Added shared job-search schemas and provider boundaries for backend-owned job discovery.
+- Wired the first real provider path through Greenhouse board/job resolution.
+- Added deterministic Greenhouse normalization and imported-job review rendering in the JD flow.
+
+## Day 33: Multi-Provider Search And JD Review Expansion
+
+- Added Lever as provider `#2` behind the same adapter contract as Greenhouse.
+- Turned `Job Search` into a real backend-powered search surface instead of a placeholder.
+- Added recent-first search ordering and stronger role-family matching for technical roles.
+- Extended the JD review panel so manual and imported JD flows both render readable summaries before analysis.
+- Persisted imported job metadata inside the saved-workspace snapshot so `Reload Workspace` restores the full imported-job context.
+
+## Day 34: Saved Jobs Shortlist And Search UX Polish
+
+- Added a Supabase-backed `saved_jobs` persistence layer for shortlisted jobs.
+- Added save/remove actions directly on job-search result cards for authenticated users.
+- Added a `Saved Jobs` panel on the Job Search page so shortlisted roles can be revisited and loaded back into the JD workflow later.
+- Added deterministic in-card job preview rendering so users can inspect skills, compensation, location, and structured summary before import.
+- Polished result-card clarity around remote/location signals and saved-state visibility.

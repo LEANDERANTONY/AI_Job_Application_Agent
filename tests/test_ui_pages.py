@@ -408,6 +408,7 @@ def test_render_job_search_result_card_saves_job(monkeypatch):
 
     fake_st = SimpleNamespace()
     fake_st.markdown = lambda *args, **kwargs: None
+    fake_st.caption = lambda *args, **kwargs: None
     fake_st.columns = lambda spec: [FakeColumn() for _ in range(spec if isinstance(spec, int) else len(spec))]
     fake_st.button = lambda label, **kwargs: label == "Save Job"
     fake_st.link_button = lambda *args, **kwargs: None
@@ -436,6 +437,108 @@ def test_render_job_search_result_card_saves_job(monkeypatch):
 
     assert captured["persisted"] == "greenhouse:narvar:1"
     assert captured["reruns"] == 1
+
+
+def test_render_job_search_result_card_shows_preview_panel(monkeypatch):
+    captured = {"expanders": [], "lists": [], "metrics": []}
+
+    class FakeColumn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_st = SimpleNamespace()
+    fake_st.markdown = lambda *args, **kwargs: None
+    fake_st.caption = lambda *args, **kwargs: None
+    fake_st.columns = lambda spec: [FakeColumn() for _ in range(spec if isinstance(spec, int) else len(spec))]
+    fake_st.button = lambda *args, **kwargs: False
+    fake_st.link_button = lambda *args, **kwargs: None
+    fake_st.expander = lambda label, **kwargs: captured["expanders"].append(label) or FakeColumn()
+
+    monkeypatch.setattr(pages, "st", fake_st)
+    monkeypatch.setattr(pages, "_render_badge_row", lambda badges: None)
+    monkeypatch.setattr(pages, "is_authenticated", lambda: True)
+    monkeypatch.setattr(
+        pages,
+        "build_job_description_from_text",
+        lambda text: SimpleNamespace(
+            title="Backend Engineer",
+            location="Remote",
+            cleaned_text=text,
+            requirements=SimpleNamespace(
+                hard_skills=["Python", "SQL"],
+                soft_skills=["Communication"],
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        pages,
+        "extract_job_summary_sections",
+        lambda text, title="": [{"title": "Overview", "items": ["Build backend systems", "Own APIs"]}],
+    )
+    monkeypatch.setattr(
+        pages,
+        "render_metric_card",
+        lambda label, value, *args, **kwargs: captured["metrics"].append((label, value)),
+    )
+    monkeypatch.setattr(
+        pages,
+        "_render_list",
+        lambda title, items, empty_state: captured["lists"].append((title, list(items))),
+    )
+
+    pages._render_job_search_result_card(
+        {
+            "id": "greenhouse:glean:1",
+            "title": "Software Engineer, Backend",
+            "company": "Glean",
+            "source": "greenhouse",
+            "summary": "Backend role working on distributed systems.",
+            "description_text": "Backend engineer role with Python, SQL, and API ownership.",
+            "location": "Remote",
+            "posted_at": "2026-03-19T09:00:00Z",
+        },
+        0,
+    )
+
+    assert "Preview Role" in captured["expanders"]
+    assert ("Hard Skills Required", ["Python", "SQL"]) in captured["lists"]
+    assert ("Soft Skills Required", ["Communication"]) in captured["lists"]
+
+
+def test_build_job_search_badges_normalizes_remote_signal():
+    badges = pages._build_job_search_badges(
+        {
+            "location": "Remote - Canada",
+            "employment_type": "Full-time",
+            "posted_at": "2026-03-19T09:00:00Z",
+            "description_text": "",
+            "metadata": {},
+        }
+    )
+
+    assert "Remote" in badges
+    assert "Remote - Canada" not in badges
+
+
+def test_build_job_result_meta_line_prioritizes_scanable_context():
+    meta_line = pages._build_job_result_meta_line(
+        {
+            "source": "greenhouse",
+            "location": "Hybrid - Bengaluru",
+            "employment_type": "Full-time",
+            "posted_at": "2026-03-19T09:00:00Z",
+        },
+        saved=True,
+    )
+
+    assert "Saved" in meta_line
+    assert "Hybrid" in meta_line
+    assert "Full-time" in meta_line
+    assert "Posted 2026-03-19" in meta_line
+    assert "Greenhouse" in meta_line
 
 
 def test_render_job_description_page_shows_imported_job_review(monkeypatch):

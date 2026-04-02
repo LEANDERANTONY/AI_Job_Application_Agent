@@ -9,6 +9,9 @@ Current product baseline:
 - Google sign-in via Supabase
 - login-required AI workflow and assistant
 - resume upload plus manual JD flow
+- backend-powered job search across Greenhouse and Lever
+- direct job-link import into the JD flow
+- saved-jobs shortlist on the feature branch
 - supervised agentic analysis
 - tailored resume generation
 - cover letter generation
@@ -18,8 +21,9 @@ Current product baseline:
 
 Highest-priority remaining product work:
 
-- turn `Job Search` from a placeholder into a real job-application input path or remove it
-- tighten the end-to-end job-application flow for normal users, not just demo usage
+- tighten the end-to-end search -> shortlist -> import -> analysis flow for normal users
+- polish search-result cards, shortlist UX, and JD preview clarity
+- add the Supabase `saved_jobs` table and policies when this branch is ready for production
 - keep exported outputs visually strong and operationally reliable
 - improve artifact naming, copy, and review UX where the product still feels internal or MVP-like
 - continue refining grounded assistant behavior around the active outputs
@@ -32,6 +36,7 @@ Status:
 
 - keep the Streamlit + Render + Supabase deployment reliable
 - harden saved-workspace persistence and reload behavior
+- validate saved-job persistence and restore flows under hosted conditions
 - improve deployment and runtime observability
 - keep auth, quota refresh, and export paths stable under hosted conditions
 - add more smoke-test discipline around the hosted workflow
@@ -61,7 +66,7 @@ Triggers that justify this step:
 
 Status:
 
-- Planned, not started
+- In progress on the feature branch
 
 ## Future: Dedicated Frontend
 

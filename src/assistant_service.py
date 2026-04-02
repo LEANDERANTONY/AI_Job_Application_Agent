@@ -205,7 +205,7 @@ class AssistantService:
             )
         if "navigation" in normalized or "nav" in normalized or "tab" in normalized or "sidebar" in normalized:
             return AssistantResponse(
-                answer="The sidebar navigation is the main way to move through the product. Upload Resume is where you parse your resume, Job Search is the placeholder search entry, and Manual JD Input is where you load and analyze the target role. If you are signed in, the account panel also exposes Reload Workspace to restore your latest saved account snapshot directly into the JD flow.",
+                answer="The sidebar navigation is the main way to move through the product. Upload Resume is where you parse your resume, Job Search is where you search or import supported roles, and Manual JD Input is where you load and analyze the target role. If you are signed in, the account panel also exposes Reload Workspace to restore your latest saved account snapshot directly into the JD flow.",
                 sources=["Upload Resume", "Job Search", "Manual JD Input"],
                 suggested_follow_ups=["What does Reload Workspace do?", "What happens after I reload a saved workspace?"],
             )
@@ -267,13 +267,13 @@ class AssistantService:
             )
         if "job search" in normalized:
             return AssistantResponse(
-                answer="Job Search is still a placeholder entry point. The active production path today is: sign in, upload a resume, load a job description, run the AI-assisted analysis, and then review the tailored outputs.",
+                answer="Use Job Search to search configured technical-role sources, paste a supported job URL, or shortlist interesting roles for later. Once you choose a role, load it into the JD flow and continue through the same analysis, resume, cover letter, and application-strategy path.",
                 sources=["Job Search", "Upload Resume", "Manual JD Input"],
-                suggested_follow_ups=["What is the current happy path?", "How do I generate both outputs?"],
+                suggested_follow_ups=["Can I save jobs for later?", "What happens after I load a role into the JD flow?"],
             )
         if "saved workspace" in normalized or "reload workspace" in normalized or "restore" in normalized:
             return AssistantResponse(
-                answer="Signed-in users keep one saved workspace snapshot for 24 hours. Reload Workspace restores the saved resume-backed candidate state, fit outputs, and any saved report, tailored resume, and cover letter artifacts back into the JD flow.",
+                answer="Signed-in users keep one saved workspace snapshot for 24 hours. Reload Workspace restores the saved resume-backed candidate state, fit outputs, imported job context when applicable, and any saved report, tailored resume, and cover letter artifacts back into the JD flow.",
                 sources=["Reload Workspace", "Manual JD Input"],
                 suggested_follow_ups=["How long does the saved workspace last?", "What gets restored into the JD page?"],
             )

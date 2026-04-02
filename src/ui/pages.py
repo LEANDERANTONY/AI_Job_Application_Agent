@@ -130,11 +130,44 @@ def _format_short_posted_label(posted_at):
     return normalized[:10]
 
 
-def _build_job_search_badges(job_posting):
+def _normalize_workplace_label(location, remote_only=False):
+    normalized = str(location or "").strip()
+    lowered = normalized.lower()
+    if remote_only:
+        return "Remote"
+    if any(token in lowered for token in ("remote", "work from home", "wfh", "distributed")):
+        return "Remote"
+    if "hybrid" in lowered:
+        return "Hybrid"
+    if normalized:
+        return normalized
+    return ""
+
+
+def _format_saved_label(saved_at):
+    normalized = str(saved_at or "").strip()
+    if not normalized:
+        return "Saved"
+    return "Saved {date}".format(date=normalized[:10])
+
+
+def _saved_job_ids(saved_jobs=None):
+    items = list(saved_jobs) if saved_jobs is not None else list(get_saved_jobs() or [])
+    return {
+        str(job.get("id", "") or "").strip()
+        for job in items
+        if str(job.get("id", "") or "").strip()
+    }
+
+
+def _build_job_search_badges(job_posting, *, saved=False):
     metadata = job_posting.get("metadata") or {}
     badges = []
 
-    location = str(job_posting.get("location", "") or "").strip()
+    location = _normalize_workplace_label(
+        job_posting.get("location", ""),
+        remote_only=bool(job_posting.get("remote_only")),
+    )
     employment_type = str(job_posting.get("employment_type", "") or "").strip()
     posted_label = _format_short_posted_label(job_posting.get("posted_at"))
     compensation = _extract_compensation_text(job_posting.get("description_text", "") or "")
@@ -151,6 +184,8 @@ def _build_job_search_badges(job_posting):
     departments = [str(item).strip() for item in metadata.get("departments", []) if str(item).strip()]
     if departments:
         badges.append(departments[0])
+    if saved:
+        badges.insert(0, _format_saved_label(job_posting.get("saved_at")))
 
     unique_badges = []
     seen = set()
@@ -161,6 +196,28 @@ def _build_job_search_badges(job_posting):
         seen.add(lowered)
         unique_badges.append(badge)
     return unique_badges[:5]
+
+
+def _build_job_result_meta_line(job_posting, *, saved=False):
+    source = str(job_posting.get("source", "") or "backend").title()
+    location = _normalize_workplace_label(
+        job_posting.get("location", ""),
+        remote_only=bool(job_posting.get("remote_only")),
+    )
+    employment_type = str(job_posting.get("employment_type", "") or "").strip()
+    posted_label = _format_short_posted_label(job_posting.get("posted_at"))
+
+    segments = []
+    if saved:
+        segments.append(_format_saved_label(job_posting.get("saved_at")))
+    if location:
+        segments.append(location)
+    if employment_type:
+        segments.append(employment_type)
+    if posted_label:
+        segments.append(f"Posted {posted_label}")
+    segments.append(source)
+    return " | ".join(segment for segment in segments if segment)
 
 
 def _render_badge_row(badges):
@@ -184,6 +241,48 @@ def _render_badge_row(badges):
         for badge in badges
     )
     st.markdown(badge_markup, unsafe_allow_html=True)
+
+
+def _render_job_preview_panel(job_posting, index):
+    description_text = str(job_posting.get("description_text", "") or "").strip()
+    if not description_text:
+        return
+
+    job_description = build_job_description_from_text(description_text)
+    sections = extract_job_summary_sections(
+        job_description.cleaned_text,
+        title=job_description.title or str(job_posting.get("title", "") or ""),
+    )
+    compensation = _extract_compensation_text(job_description.cleaned_text)
+    posted_label = _format_short_posted_label(job_posting.get("posted_at"))
+
+    with st.expander("Preview Role", expanded=False):
+        preview_cards = [
+            ("Role", job_description.title or str(job_posting.get("title", "") or ""), "Normalized role title."),
+            ("Location", job_description.location or str(job_posting.get("location", "") or ""), "Location detected from the posting."),
+            ("Posted", posted_label, "Posting date reported by the provider."),
+            ("Compensation", compensation, "Compensation text detected from the JD."),
+        ]
+        _render_summary_cards(preview_cards, columns_per_row=2)
+
+        skill_cols = st.columns(2)
+        with skill_cols[0]:
+            _render_list(
+                "Hard Skills Required",
+                job_description.requirements.hard_skills[:8],
+                "No explicit hard skills extracted yet.",
+            )
+        with skill_cols[1]:
+            _render_list(
+                "Soft Skills Required",
+                job_description.requirements.soft_skills[:8],
+                "No explicit soft skills extracted yet.",
+            )
+
+        _render_job_summary_sections(
+            {"mode": "deterministic", "sections": sections},
+            empty_state="No preview summary available for this job yet.",
+        )
 
 
 def _render_job_search_source_status(search_results_payload):
@@ -664,6 +763,7 @@ def _saved_job_record_to_posting(record):
         "posted_at": str(payload.get("posted_at", "") or ""),
         "scraped_at": str(payload.get("scraped_at", "") or ""),
         "metadata": payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+        "saved_at": str(payload.get("saved_at", "") or ""),
     }
 
 
@@ -719,7 +819,7 @@ def _remove_saved_job(job_posting):
     )
 
 
-def _render_saved_jobs_panel():
+def _render_saved_jobs_panel(saved_jobs=None):
     render_section_head(
         "Saved Jobs",
         "Return to shortlisted roles, re-open the posting, or load one back into the JD workflow.",
@@ -741,7 +841,7 @@ def _render_saved_jobs_panel():
                 st.info(message)
         set_saved_jobs_notice(None)
 
-    saved_jobs = _load_saved_jobs()
+    saved_jobs = list(saved_jobs) if saved_jobs is not None else _load_saved_jobs()
     if not saved_jobs:
         st.caption("No saved jobs yet. Save roles from search results to build your shortlist.")
         return
@@ -760,11 +860,13 @@ def _render_saved_jobs_panel():
 def _render_job_search_result_card(job_posting, index, saved=False):
     company = str(job_posting.get("company", "") or "Unknown")
     title = str(job_posting.get("title", "") or "Unknown role")
-    source = str(job_posting.get("source", "") or "backend").title()
     summary = str(job_posting.get("summary", "") or "").strip()
     if len(summary) > 220:
         summary = summary[:220].rsplit(" ", 1)[0].strip() + "..."
-    badges = _build_job_search_badges(job_posting)
+    job_id = str(job_posting.get("id", "") or "").strip()
+    already_saved = saved or (job_id and job_id in _saved_job_ids())
+    badges = _build_job_search_badges(job_posting, saved=already_saved)
+    meta_line = _build_job_result_meta_line(job_posting, saved=already_saved)
 
     st.markdown(
         """
@@ -777,18 +879,19 @@ def _render_job_search_result_card(job_posting, index, saved=False):
         ">
             <div style="font-size:1rem; font-weight:800; color:#e7eefc; margin-bottom:0.2rem;">{title}</div>
             <div style="font-size:0.92rem; color:#93c5fd; font-weight:700; margin-bottom:0.35rem;">{company}</div>
-            <div style="font-size:0.78rem; color:#94a3b8; margin-bottom:0.55rem;">Source: {source}</div>
+            <div style="font-size:0.78rem; color:#94a3b8; margin-bottom:0.55rem;">{meta_line}</div>
             <div style="font-size:0.85rem; color:#e2e8f0; line-height:1.55;">{summary}</div>
         </div>
         """.format(
             title=escape(title),
             company=escape(company),
-            source=escape(source),
+            meta_line=escape(meta_line),
             summary=escape(summary or "No summary available."),
         ),
         unsafe_allow_html=True,
     )
     _render_badge_row(badges)
+    _render_job_preview_panel(job_posting, index)
     action_spec = [1.0, 1.0, 1.0] if is_authenticated() else [1.0, 1.0]
     actions = st.columns(action_spec)
     with actions[0]:
@@ -800,9 +903,9 @@ def _render_job_search_result_card(job_posting, index, saved=False):
             st.link_button("Open Posting", job_url, use_container_width=True)
     if is_authenticated():
         with actions[2]:
-            label = "Remove Saved" if saved else "Save Job"
+            label = "Remove Saved" if saved else ("Saved" if already_saved else "Save Job")
             key = f"job_search_save_{'saved_' if saved else ''}{index}"
-            if st.button(label, key=key):
+            if st.button(label, key=key, disabled=(already_saved and not saved)):
                 try:
                     if saved:
                         _remove_saved_job(job_posting)
@@ -854,6 +957,7 @@ def render_job_search_page():
         "Job Search",
         "Search broad technical roles across configured boards, or paste a supported job URL to load it directly.",
     )
+    saved_jobs = _load_saved_jobs() if is_authenticated() else []
     left_col, right_col = st.columns([1.2, 1.0])
     with left_col:
         backend_enabled = job_search_backend_enabled()
@@ -992,7 +1096,7 @@ def render_job_search_page():
             st.info("No current jobs matched this search. Try a broader query or location.")
     with right_col:
         _render_job_search_context_panel(job_search_backend_enabled())
-        _render_saved_jobs_panel()
+        _render_saved_jobs_panel(saved_jobs=saved_jobs)
 def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
     st.markdown("---")
     render_section_head(
