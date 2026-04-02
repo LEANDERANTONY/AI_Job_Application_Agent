@@ -22,10 +22,12 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest==8.3.5",
+    "pytest-timeout==2.3.1",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+timeout = 30
 
 [tool.uv]
 package = false
