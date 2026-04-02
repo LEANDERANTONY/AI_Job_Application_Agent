@@ -122,6 +122,9 @@ SUPABASE_USAGE_EVENTS_TABLE = os.getenv(
 SUPABASE_SAVED_WORKSPACES_TABLE = os.getenv(
     "SUPABASE_SAVED_WORKSPACES_TABLE", "saved_workspaces"
 ).strip()
+SUPABASE_SAVED_JOBS_TABLE = os.getenv(
+    "SUPABASE_SAVED_JOBS_TABLE", "saved_jobs"
+).strip()
 ENABLE_JOB_SEARCH_BACKEND = _load_bool_env("ENABLE_JOB_SEARCH_BACKEND", False)
 JOB_BACKEND_BASE_URL = os.getenv("JOB_BACKEND_BASE_URL", "http://localhost:8000").strip()
 GREENHOUSE_BOARD_TOKENS = tuple(

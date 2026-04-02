@@ -44,6 +44,9 @@ IMPORTED_JOB_POSTING = "imported_job_posting"
 IMPORTED_JOB_SUMMARY_SIGNATURE = "imported_job_summary_signature"
 IMPORTED_JOB_SUMMARY_VIEW = "imported_job_summary_view"
 JOB_SEARCH_RESULTS = "job_search_results"
+SAVED_JOBS = "saved_jobs"
+SAVED_JOBS_USER_ID = "saved_jobs_user_id"
+SAVED_JOBS_NOTICE = "saved_jobs_notice"
 
 
 def get_state(key, default=None):
@@ -145,6 +148,9 @@ def clear_authenticated_session():
     pop_state(DAILY_QUOTA_STATUS, None)
     pop_state(DAILY_QUOTA_STATUS_REFRESHED_AT, None)
     pop_state(WORKSPACE_RESTORE_NOTICE, None)
+    pop_state(SAVED_JOBS, None)
+    pop_state(SAVED_JOBS_USER_ID, None)
+    pop_state(SAVED_JOBS_NOTICE, None)
     return pop_state(AUTH_USER, None)
 
 
@@ -265,6 +271,36 @@ def set_job_search_results(results):
     if results is None:
         return pop_state(JOB_SEARCH_RESULTS, None)
     return set_state(JOB_SEARCH_RESULTS, results)
+
+
+def get_saved_jobs():
+    return get_state(SAVED_JOBS)
+
+
+def set_saved_jobs(saved_jobs):
+    if saved_jobs is None:
+        return pop_state(SAVED_JOBS, None)
+    return set_state(SAVED_JOBS, saved_jobs)
+
+
+def get_saved_jobs_user_id():
+    return get_state(SAVED_JOBS_USER_ID)
+
+
+def set_saved_jobs_user_id(user_id):
+    if user_id is None:
+        return pop_state(SAVED_JOBS_USER_ID, None)
+    return set_state(SAVED_JOBS_USER_ID, user_id)
+
+
+def get_saved_jobs_notice():
+    return get_state(SAVED_JOBS_NOTICE)
+
+
+def set_saved_jobs_notice(notice):
+    if notice is None:
+        return pop_state(SAVED_JOBS_NOTICE, None)
+    return set_state(SAVED_JOBS_NOTICE, notice)
 
 
 def store_resume_intake(resume_document, candidate_profile_resume):

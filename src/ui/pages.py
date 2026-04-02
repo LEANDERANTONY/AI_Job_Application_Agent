@@ -10,7 +10,9 @@ from src.config import (
 from src.errors import BackendIntegrationError, InputValidationError
 from src.job_backend_client import resolve_job_url as resolve_job_url_via_backend
 from src.job_backend_client import search_jobs as search_jobs_via_backend
+from src.saved_jobs_store import SavedJobsStore
 from src.schemas import AgentWorkflowResult, CandidateProfile, FitAnalysis, TailoredResumeDraft
+from src.ui.auth import get_auth_service
 from src.ui.components import render_metric_card, render_page_divider, render_section_head
 from src.ui.page_artifacts import (
     render_cover_letter_artifact as _render_cover_letter_artifact,
@@ -18,11 +20,16 @@ from src.ui.page_artifacts import (
     render_tailored_resume_artifact as _render_tailored_resume_artifact,
 )
 from src.ui.state import (
+    get_app_user_record,
+    get_auth_tokens,
     get_imported_job_posting,
     get_imported_job_summary_signature,
     get_imported_job_summary_view,
     get_job_search_import_notice,
     get_job_search_results,
+    get_saved_jobs,
+    get_saved_jobs_notice,
+    get_saved_jobs_user_id,
     is_authenticated,
     request_menu_navigation,
     set_imported_job_posting,
@@ -31,6 +38,9 @@ from src.ui.state import (
     set_job_search_import_notice,
     set_job_search_results,
     set_openai_session_usage,
+    set_saved_jobs,
+    set_saved_jobs_notice,
+    set_saved_jobs_user_id,
 )
 from src.ui.workflow import (
     build_ai_session_view_model,
@@ -599,7 +609,155 @@ def _render_profile_snapshot(candidate_profile: CandidateProfile):
         _render_list("Source Signals", candidate_profile.source_signals, "No source signals available yet.")
 
 
-def _render_job_search_result_card(job_posting, index):
+def _get_saved_jobs_store():
+    return SavedJobsStore(get_auth_service())
+
+
+def _load_saved_jobs(force=False):
+    auth_user = get_app_user_record()
+    access_token, refresh_token = get_auth_tokens()
+    if auth_user is None or not access_token or not refresh_token:
+        set_saved_jobs(None)
+        set_saved_jobs_user_id(None)
+        return []
+
+    cached_user_id = get_saved_jobs_user_id()
+    cached_jobs = get_saved_jobs()
+    if not force and cached_user_id == auth_user.id and cached_jobs is not None:
+        return list(cached_jobs)
+
+    store = _get_saved_jobs_store()
+    try:
+        jobs = store.list_jobs(access_token, refresh_token, auth_user.id)
+    except Exception as exc:
+        set_saved_jobs_notice(
+            {
+                "level": "warning",
+                "message": getattr(exc, "user_message", "Saved jobs are unavailable right now."),
+            }
+        )
+        set_saved_jobs([])
+        set_saved_jobs_user_id(auth_user.id)
+        return []
+
+    jobs_payload = [_saved_job_record_to_posting(record) for record in jobs]
+    set_saved_jobs(jobs_payload)
+    set_saved_jobs_user_id(auth_user.id)
+    return jobs_payload
+
+
+def _saved_job_record_to_posting(record):
+    if isinstance(record, dict):
+        payload = record
+    else:
+        payload = record.__dict__
+    return {
+        "id": str(payload.get("job_id", payload.get("id", "")) or ""),
+        "source": str(payload.get("source", "") or ""),
+        "title": str(payload.get("title", "") or ""),
+        "company": str(payload.get("company", "") or ""),
+        "location": str(payload.get("location", "") or ""),
+        "employment_type": str(payload.get("employment_type", "") or ""),
+        "url": str(payload.get("url", "") or ""),
+        "summary": str(payload.get("summary", "") or ""),
+        "description_text": str(payload.get("description_text", "") or ""),
+        "posted_at": str(payload.get("posted_at", "") or ""),
+        "scraped_at": str(payload.get("scraped_at", "") or ""),
+        "metadata": payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+    }
+
+
+def _persist_saved_job(job_posting):
+    auth_user = get_app_user_record()
+    access_token, refresh_token = get_auth_tokens()
+    if auth_user is None or not access_token or not refresh_token:
+        raise InputValidationError("Sign in with Google before saving jobs to your shortlist.")
+    store = _get_saved_jobs_store()
+    saved_job = store.save_job(
+        access_token,
+        refresh_token,
+        {
+            "user_id": auth_user.id,
+            "job_id": str(job_posting.get("id", "") or ""),
+            **job_posting,
+        },
+    )
+    jobs = list(get_saved_jobs() or [])
+    normalized = _saved_job_record_to_posting(saved_job)
+    jobs = [job for job in jobs if str(job.get("id", "") or "") != normalized["id"]]
+    jobs.insert(0, normalized)
+    set_saved_jobs(jobs)
+    set_saved_jobs_user_id(auth_user.id)
+    set_saved_jobs_notice(
+        {
+            "level": "success",
+            "message": "Saved {title} to your shortlist.".format(title=normalized.get("title", "job")),
+        }
+    )
+
+
+def _remove_saved_job(job_posting):
+    auth_user = get_app_user_record()
+    access_token, refresh_token = get_auth_tokens()
+    if auth_user is None or not access_token or not refresh_token:
+        raise InputValidationError("Sign in with Google before editing your shortlist.")
+    job_id = str(job_posting.get("id", "") or "")
+    if not job_id:
+        raise InputValidationError("This job is missing a stable id and cannot be removed safely.")
+    store = _get_saved_jobs_store()
+    store.delete_job(access_token, refresh_token, auth_user.id, job_id)
+    jobs = [job for job in list(get_saved_jobs() or []) if str(job.get("id", "") or "") != job_id]
+    set_saved_jobs(jobs)
+    set_saved_jobs_user_id(auth_user.id)
+    set_saved_jobs_notice(
+        {
+            "level": "success",
+            "message": "Removed {title} from your shortlist.".format(
+                title=job_posting.get("title", "job")
+            ),
+        }
+    )
+
+
+def _render_saved_jobs_panel():
+    render_section_head(
+        "Saved Jobs",
+        "Return to shortlisted roles, re-open the posting, or load one back into the JD workflow.",
+    )
+    if not is_authenticated():
+        st.info("Sign in with Google to keep a shortlist of jobs you want to revisit later.")
+        return
+
+    notice = get_saved_jobs_notice()
+    if notice:
+        level = notice.get("level", "info")
+        message = notice.get("message", "")
+        if message:
+            if level == "success":
+                st.success(message)
+            elif level == "warning":
+                st.warning(message)
+            else:
+                st.info(message)
+        set_saved_jobs_notice(None)
+
+    saved_jobs = _load_saved_jobs()
+    if not saved_jobs:
+        st.caption("No saved jobs yet. Save roles from search results to build your shortlist.")
+        return
+
+    render_metric_card(
+        "Saved Jobs",
+        str(len(saved_jobs)),
+        "Your current Supabase-backed shortlist for later review.",
+        dense=True,
+        slim=True,
+    )
+    for index, job_posting in enumerate(saved_jobs):
+        _render_job_search_result_card(job_posting, index, saved=True)
+
+
+def _render_job_search_result_card(job_posting, index, saved=False):
     company = str(job_posting.get("company", "") or "Unknown")
     title = str(job_posting.get("title", "") or "Unknown role")
     source = str(job_posting.get("source", "") or "backend").title()
@@ -631,14 +789,40 @@ def _render_job_search_result_card(job_posting, index):
         unsafe_allow_html=True,
     )
     _render_badge_row(badges)
-    actions = st.columns([1.0, 1.0])
+    action_spec = [1.0, 1.0, 1.0] if is_authenticated() else [1.0, 1.0]
+    actions = st.columns(action_spec)
     with actions[0]:
-        if st.button("Use This Job", key=f"job_search_load_{index}"):
+        if st.button("Use This Job", key=f"job_search_load_{'saved_' if saved else ''}{index}"):
             _load_job_posting_into_jd_flow(job_posting)
     with actions[1]:
         job_url = str(job_posting.get("url", "") or "").strip()
         if job_url:
             st.link_button("Open Posting", job_url, use_container_width=True)
+    if is_authenticated():
+        with actions[2]:
+            label = "Remove Saved" if saved else "Save Job"
+            key = f"job_search_save_{'saved_' if saved else ''}{index}"
+            if st.button(label, key=key):
+                try:
+                    if saved:
+                        _remove_saved_job(job_posting)
+                    else:
+                        _persist_saved_job(job_posting)
+                except (InputValidationError, BackendIntegrationError) as error:
+                    set_saved_jobs_notice(
+                        {
+                            "level": "warning",
+                            "message": str(error),
+                        }
+                    )
+                except Exception as error:
+                    set_saved_jobs_notice(
+                        {
+                            "level": "warning",
+                            "message": getattr(error, "user_message", "Saved jobs are unavailable right now."),
+                        }
+                    )
+                st.rerun()
 
 
 def render_resume_page():
@@ -808,6 +992,7 @@ def render_job_search_page():
             st.info("No current jobs matched this search. Try a broader query or location.")
     with right_col:
         _render_job_search_context_panel(job_search_backend_enabled())
+        _render_saved_jobs_panel()
 def _render_agent_workflow_result(agent_result: AgentWorkflowResult):
     st.markdown("---")
     render_section_head(

@@ -362,3 +362,22 @@ class SavedWorkspaceRecord:
     tailored_resume_payload_json: str = ""
     expires_at: str = ""
     updated_at: str = ""
+
+
+@dataclass
+class SavedJobRecord:
+    user_id: str
+    job_id: str
+    source: str = ""
+    title: str = ""
+    company: str = ""
+    location: str = ""
+    employment_type: str = ""
+    url: str = ""
+    summary: str = ""
+    description_text: str = ""
+    posted_at: str = ""
+    scraped_at: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    saved_at: str = ""
+    updated_at: str = ""

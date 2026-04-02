@@ -333,6 +333,111 @@ def test_render_job_search_page_can_clear_results(monkeypatch):
     assert captured["reruns"] == 1
 
 
+def test_render_job_search_page_shows_saved_jobs_panel(monkeypatch):
+    captured = {"saved_cards": []}
+
+    class FakeColumn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_st = SimpleNamespace()
+    fake_st.columns = lambda spec: [FakeColumn() for _ in range(spec if isinstance(spec, int) else len(spec))]
+    fake_st.checkbox = lambda *args, **kwargs: False
+    fake_st.selectbox = lambda *args, **kwargs: None
+    fake_st.text_input = lambda *args, **kwargs: ""
+    fake_st.button = lambda *args, **kwargs: False
+    fake_st.info = lambda *args, **kwargs: None
+    fake_st.markdown = lambda *args, **kwargs: None
+    fake_st.success = lambda *args, **kwargs: None
+    fake_st.warning = lambda *args, **kwargs: None
+    fake_st.link_button = lambda *args, **kwargs: None
+    fake_st.caption = lambda *args, **kwargs: None
+    fake_st.expander = lambda *args, **kwargs: FakeColumn()
+    fake_st.rerun = lambda: None
+
+    monkeypatch.setattr(pages, "st", fake_st)
+    monkeypatch.setattr(pages, "render_page_divider", lambda: None)
+    monkeypatch.setattr(pages, "render_section_head", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pages, "render_metric_card", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pages, "job_search_backend_enabled", lambda: True)
+    monkeypatch.setattr(pages, "get_job_search_import_notice", lambda: None)
+    monkeypatch.setattr(pages, "get_job_search_results", lambda: None)
+    monkeypatch.setattr(pages, "is_authenticated", lambda: True)
+    monkeypatch.setattr(pages, "get_saved_jobs_notice", lambda: None)
+    monkeypatch.setattr(
+        pages,
+        "_load_saved_jobs",
+        lambda force=False: [
+            {
+                "id": "greenhouse:narvar:1",
+                "title": "Sr. AI Engineer",
+                "company": "Narvar",
+                "source": "greenhouse",
+                "summary": "AI engineer role.",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        pages,
+        "_render_job_search_result_card",
+        lambda job_posting, index, saved=False: captured["saved_cards"].append(
+            (job_posting["title"], index, saved)
+        ),
+    )
+
+    pages.render_job_search_page()
+
+    assert captured["saved_cards"] == [("Sr. AI Engineer", 0, True)]
+
+
+def test_render_job_search_result_card_saves_job(monkeypatch):
+    captured = {"persisted": None, "reruns": 0}
+
+    class StopRender(Exception):
+        pass
+
+    class FakeColumn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_st = SimpleNamespace()
+    fake_st.markdown = lambda *args, **kwargs: None
+    fake_st.columns = lambda spec: [FakeColumn() for _ in range(spec if isinstance(spec, int) else len(spec))]
+    fake_st.button = lambda label, **kwargs: label == "Save Job"
+    fake_st.link_button = lambda *args, **kwargs: None
+    fake_st.rerun = lambda: (_ for _ in ()).throw(StopRender())
+
+    monkeypatch.setattr(pages, "st", fake_st)
+    monkeypatch.setattr(pages, "_render_badge_row", lambda badges: None)
+    monkeypatch.setattr(pages, "is_authenticated", lambda: True)
+    monkeypatch.setattr(pages, "_load_job_posting_into_jd_flow", lambda job_posting: None)
+    monkeypatch.setattr(pages, "_persist_saved_job", lambda job_posting: captured.update({"persisted": job_posting["id"]}))
+    monkeypatch.setattr(pages, "set_saved_jobs_notice", lambda notice: None)
+
+    try:
+        pages._render_job_search_result_card(
+            {
+                "id": "greenhouse:narvar:1",
+                "title": "Sr. AI Engineer",
+                "company": "Narvar",
+                "source": "greenhouse",
+                "summary": "AI engineer role.",
+            },
+            0,
+        )
+    except StopRender:
+        captured["reruns"] += 1
+
+    assert captured["persisted"] == "greenhouse:narvar:1"
+    assert captured["reruns"] == 1
+
+
 def test_render_job_description_page_shows_imported_job_review(monkeypatch):
     captured = {"metrics": [], "lists": [], "expanders": []}
 
