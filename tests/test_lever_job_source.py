@@ -68,6 +68,40 @@ def test_lever_adapter_returns_normalized_results():
     assert fake_session.calls[0]["params"] == {"mode": "json", "limit": 100}
 
 
+def test_lever_adapter_matches_bangalore_query_to_bengaluru_location():
+    fake_session = _FakeSession(
+        [
+            {
+                "id": "abc-123",
+                "text": "Senior Backend Engineer",
+                "categories": {
+                    "commitment": "Employee: Full Time",
+                    "location": "Bengaluru, India",
+                    "team": "Engineering",
+                    "allLocations": ["Bengaluru, India"],
+                },
+                "descriptionPlain": "Build backend systems with Python and APIs.",
+                "descriptionBodyPlain": "Build backend systems with Python and APIs.",
+                "additionalPlain": "",
+                "hostedUrl": "https://jobs.lever.co/example/abc-123",
+                "applyUrl": "https://jobs.lever.co/example/abc-123/apply",
+                "salaryRange": {},
+                "workplaceType": "hybrid",
+                "createdAt": 1774015783631,
+                "lists": [],
+            }
+        ]
+    )
+    adapter = LeverJobSourceAdapter(site_names=["example"], http_session=fake_session)
+
+    response = adapter.search(
+        JobSearchQuery(query="backend engineer", location="Bangalore", page_size=10)
+    )
+
+    assert response.status == "ok"
+    assert len(response.results) == 1
+
+
 def test_lever_adapter_reports_not_configured_without_site_names():
     adapter = LeverJobSourceAdapter(site_names=[])
 

@@ -145,9 +145,25 @@ alter table public.saved_workspaces add column if not exists cover_letter_payloa
 alter table public.saved_workspaces add column if not exists tailored_resume_payload_json text not null default '';
 alter table public.saved_workspaces add column if not exists expires_at timestamptz not null default timezone('utc', now()) + interval '1 day';
 alter table public.saved_workspaces add column if not exists updated_at timestamptz not null default timezone('utc', now());
+alter table public.saved_jobs add column if not exists source text not null default '';
+alter table public.saved_jobs add column if not exists title text not null default '';
+alter table public.saved_jobs add column if not exists company text not null default '';
+alter table public.saved_jobs add column if not exists location text not null default '';
+alter table public.saved_jobs add column if not exists employment_type text not null default '';
+alter table public.saved_jobs add column if not exists url text not null default '';
+alter table public.saved_jobs add column if not exists summary text not null default '';
+alter table public.saved_jobs add column if not exists description_text text not null default '';
+alter table public.saved_jobs add column if not exists posted_at text not null default '';
+alter table public.saved_jobs add column if not exists scraped_at text not null default '';
+alter table public.saved_jobs add column if not exists metadata jsonb not null default '{}'::jsonb;
+alter table public.saved_jobs add column if not exists saved_at timestamptz not null default timezone('utc', now());
+alter table public.saved_jobs add column if not exists updated_at timestamptz not null default timezone('utc', now());
 
 create index if not exists saved_workspaces_expires_at_idx
 on public.saved_workspaces (expires_at);
+
+create index if not exists saved_jobs_user_id_saved_at_idx
+on public.saved_jobs (user_id, saved_at desc);
 
 alter table public.saved_workspaces enable row level security;
 alter table public.saved_jobs enable row level security;

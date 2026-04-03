@@ -4,6 +4,22 @@ from src.job_sources.registry import build_default_job_sources
 from src.schemas import JobResolutionResult, JobSearchQuery, JobSearchResult
 
 
+def _dedupe_key(posting) -> str:
+    normalized_url = str(getattr(posting, "url", "") or "").strip().lower()
+    if normalized_url:
+        return f"url:{normalized_url}"
+
+    source = str(getattr(posting, "source", "") or "").strip().lower()
+    posting_id = str(getattr(posting, "id", "") or "").strip().lower()
+    if source and posting_id:
+        return f"id:{source}:{posting_id}"
+
+    title = str(getattr(posting, "title", "") or "").strip().lower()
+    company = str(getattr(posting, "company", "") or "").strip().lower()
+    location = str(getattr(posting, "location", "") or "").strip().lower()
+    return f"title:{title}|company:{company}|location:{location}"
+
+
 def _parse_posted_at(value: str):
     raw_value = str(value or "").strip()
     if not raw_value:
@@ -57,7 +73,15 @@ class JobSearchService:
             source_status.update(response.source_details)
             results.extend(response.results)
         results.sort(key=lambda posting: _posted_timestamp(getattr(posting, "posted_at", "")), reverse=True)
-        results = results[: normalized_query.page_size]
+        deduped_results = []
+        seen_keys = set()
+        for posting in results:
+            key = _dedupe_key(posting)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped_results.append(posting)
+        results = deduped_results[: normalized_query.page_size]
         return JobSearchResult(
             query=normalized_query,
             results=results,

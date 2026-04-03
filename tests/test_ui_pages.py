@@ -393,6 +393,59 @@ def test_render_job_search_page_shows_saved_jobs_panel(monkeypatch):
     assert captured["saved_cards"] == [("Sr. AI Engineer", 0, True)]
 
 
+def test_render_saved_jobs_panel_sorts_newest_saved_first(monkeypatch):
+    captured = {"saved_cards": [], "captions": []}
+
+    class FakeColumn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    fake_st = SimpleNamespace()
+    fake_st.columns = lambda spec: [FakeColumn() for _ in range(spec if isinstance(spec, int) else len(spec))]
+    fake_st.caption = lambda message, *args, **kwargs: captured["captions"].append(message)
+    fake_st.info = lambda *args, **kwargs: None
+    fake_st.success = lambda *args, **kwargs: None
+    fake_st.warning = lambda *args, **kwargs: None
+
+    monkeypatch.setattr(pages, "st", fake_st)
+    monkeypatch.setattr(pages, "render_section_head", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pages, "render_metric_card", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pages, "is_authenticated", lambda: True)
+    monkeypatch.setattr(pages, "get_saved_jobs_notice", lambda: None)
+    monkeypatch.setattr(pages, "set_saved_jobs_notice", lambda notice: None)
+    monkeypatch.setattr(
+        pages,
+        "_render_job_search_result_card",
+        lambda job_posting, index, saved=False: captured["saved_cards"].append(
+            (job_posting["title"], index, saved)
+        ),
+    )
+
+    pages._render_saved_jobs_panel(
+        saved_jobs=[
+            {
+                "id": "job-older",
+                "title": "Older Saved Job",
+                "saved_at": "2026-04-01T10:00:00+00:00",
+            },
+            {
+                "id": "job-newer",
+                "title": "Newer Saved Job",
+                "saved_at": "2026-04-03T10:00:00+00:00",
+            },
+        ]
+    )
+
+    assert captured["saved_cards"] == [
+        ("Newer Saved Job", 0, True),
+        ("Older Saved Job", 1, True),
+    ]
+    assert any("most recently saved roles appear first" in message for message in captured["captions"])
+
+
 def test_render_job_search_result_card_saves_job(monkeypatch):
     captured = {"persisted": None, "reruns": 0}
 

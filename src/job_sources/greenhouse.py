@@ -7,7 +7,12 @@ import requests
 
 from src.config import GREENHOUSE_BOARD_TOKENS
 from src.job_sources.base import JobSourceAdapter
-from src.job_sources.matching import detect_role_families, extract_query_terms, title_matches_role_families
+from src.job_sources.matching import (
+    detect_role_families,
+    extract_query_terms,
+    location_matches_text,
+    title_matches_role_families,
+)
 from src.schemas import JobPosting, JobResolutionResult, JobSearchQuery, JobSourceSearchResponse
 
 
@@ -179,9 +184,9 @@ def _matches_location(job_posting: JobPosting, normalized_location: str, locatio
             job_posting.description_text,
         ]
     ).lower()
-    if normalized_location and normalized_location in haystack:
+    if location_matches_text(haystack, normalized_location):
         return True
-    if location_terms and all(term in haystack for term in location_terms):
+    if location_terms and location_matches_text(haystack, " ".join(location_terms)):
         return True
     return not normalized_location
 

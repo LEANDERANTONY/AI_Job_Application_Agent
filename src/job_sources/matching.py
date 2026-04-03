@@ -2,6 +2,20 @@ import re
 
 
 _QUERY_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_LOCATION_TOKEN_ALIASES = {
+    "bangalore": {"bangaluru", "bengaluru"},
+    "bangaluru": {"bangalore", "bengaluru"},
+    "bengaluru": {"bangalore", "bangaluru"},
+    "mumbai": {"bombay"},
+    "bombay": {"mumbai"},
+    "delhi": {"new delhi"},
+    "nyc": {"new york", "new york city"},
+    "sf": {"san francisco", "bay area"},
+    "wfh": {"remote", "work from home"},
+    "remote": {"wfh", "work from home", "distributed"},
+    "hybrid": {"flexible hybrid"},
+    "onsite": {"on site", "on-site", "in office", "office based", "office-based"},
+}
 
 _ROLE_FAMILY_ALIASES = {
     "backend": {"backend", "back-end", "back end", "api", "platform", "distributed"},
@@ -60,3 +74,23 @@ def title_matches_role_families(title_text: str, families: set[str]) -> bool:
         if any(alias in normalized_title for alias in aliases):
             return True
     return False
+
+
+def location_matches_text(haystack_text: str, location_query: str) -> bool:
+    normalized_query = str(location_query or "").strip().lower()
+    if not normalized_query:
+        return True
+
+    haystack = str(haystack_text or "").strip().lower()
+    if normalized_query in haystack:
+        return True
+
+    query_terms = extract_query_terms(normalized_query)
+    if not query_terms:
+        return True
+
+    for term in query_terms:
+        aliases = {term, *(_LOCATION_TOKEN_ALIASES.get(term, set()))}
+        if not any(alias in haystack for alias in aliases):
+            return False
+    return True

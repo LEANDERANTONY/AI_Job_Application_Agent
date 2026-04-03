@@ -75,6 +75,40 @@ def test_greenhouse_adapter_returns_normalized_results():
     assert fake_session.calls[0]["params"] == {"content": "true"}
 
 
+def test_greenhouse_adapter_matches_bangalore_query_to_bengaluru_location():
+    fake_session = _FakeSession(
+        {
+            "jobs": [
+                {
+                    "id": 123,
+                    "internal_job_id": 456,
+                    "title": "Backend Engineer",
+                    "updated_at": "2026-03-19T09:00:00Z",
+                    "requisition_id": "REQ-1",
+                    "location": {"name": "Bengaluru, India"},
+                    "absolute_url": "https://boards.greenhouse.io/example/jobs/123",
+                    "language": "en",
+                    "metadata": {"company_name": "Example AI"},
+                    "content": "<p>Build APIs and backend services.</p>",
+                    "departments": [{"name": "Engineering"}],
+                    "offices": [{"name": "Bengaluru"}],
+                }
+            ]
+        }
+    )
+    adapter = GreenhouseJobSourceAdapter(
+        board_tokens=["example"],
+        http_session=fake_session,
+    )
+
+    response = adapter.search(
+        JobSearchQuery(query="backend engineer", location="Bangalore", page_size=10)
+    )
+
+    assert response.status == "ok"
+    assert len(response.results) == 1
+
+
 def test_greenhouse_adapter_reports_not_configured_without_board_tokens():
     adapter = GreenhouseJobSourceAdapter(board_tokens=[])
 

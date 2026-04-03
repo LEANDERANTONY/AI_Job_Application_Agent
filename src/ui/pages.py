@@ -151,6 +151,15 @@ def _format_saved_label(saved_at):
     return "Saved {date}".format(date=normalized[:10])
 
 
+def _saved_jobs_sort_key(job_posting):
+    saved_at = str(job_posting.get("saved_at", "") or "").strip()
+    return (
+        saved_at,
+        str(job_posting.get("posted_at", "") or "").strip(),
+        str(job_posting.get("title", "") or "").strip().lower(),
+    )
+
+
 def _saved_job_ids(saved_jobs=None):
     items = list(saved_jobs) if saved_jobs is not None else list(get_saved_jobs() or [])
     return {
@@ -740,6 +749,7 @@ def _load_saved_jobs(force=False):
         return []
 
     jobs_payload = [_saved_job_record_to_posting(record) for record in jobs]
+    jobs_payload.sort(key=_saved_jobs_sort_key, reverse=True)
     set_saved_jobs(jobs_payload)
     set_saved_jobs_user_id(auth_user.id)
     return jobs_payload
@@ -842,17 +852,35 @@ def _render_saved_jobs_panel(saved_jobs=None):
         set_saved_jobs_notice(None)
 
     saved_jobs = list(saved_jobs) if saved_jobs is not None else _load_saved_jobs()
+    saved_jobs.sort(key=_saved_jobs_sort_key, reverse=True)
     if not saved_jobs:
         st.caption("No saved jobs yet. Save roles from search results to build your shortlist.")
         return
 
-    render_metric_card(
-        "Saved Jobs",
-        str(len(saved_jobs)),
-        "Your current Supabase-backed shortlist for later review.",
-        dense=True,
-        slim=True,
-    )
+    latest_saved_at = ""
+    for job_posting in saved_jobs:
+        saved_at = str(job_posting.get("saved_at", "") or "").strip()
+        if saved_at:
+            latest_saved_at = max(latest_saved_at, saved_at)
+
+    shortlist_cols = st.columns(2)
+    with shortlist_cols[0]:
+        render_metric_card(
+            "Saved Jobs",
+            str(len(saved_jobs)),
+            "Your current account-backed shortlist for later review.",
+            dense=True,
+            slim=True,
+        )
+    with shortlist_cols[1]:
+        render_metric_card(
+            "Latest Save",
+            _format_saved_label(latest_saved_at),
+            "Most recent shortlist update for this signed-in account.",
+            dense=True,
+            slim=True,
+        )
+    st.caption("Saved jobs stay separate from the current workspace, and the most recently saved roles appear first.")
     for index, job_posting in enumerate(saved_jobs):
         _render_job_search_result_card(job_posting, index, saved=True)
 
@@ -895,7 +923,8 @@ def _render_job_search_result_card(job_posting, index, saved=False):
     action_spec = [1.0, 1.0, 1.0] if is_authenticated() else [1.0, 1.0]
     actions = st.columns(action_spec)
     with actions[0]:
-        if st.button("Use This Job", key=f"job_search_load_{'saved_' if saved else ''}{index}"):
+        primary_label = "Load Saved Job" if saved else "Use This Job"
+        if st.button(primary_label, key=f"job_search_load_{'saved_' if saved else ''}{index}"):
             _load_job_posting_into_jd_flow(job_posting)
     with actions[1]:
         job_url = str(job_posting.get("url", "") or "").strip()
@@ -903,7 +932,7 @@ def _render_job_search_result_card(job_posting, index, saved=False):
             st.link_button("Open Posting", job_url, use_container_width=True)
     if is_authenticated():
         with actions[2]:
-            label = "Remove Saved" if saved else ("Saved" if already_saved else "Save Job")
+            label = "Remove" if saved else ("Saved" if already_saved else "Save Job")
             key = f"job_search_save_{'saved_' if saved else ''}{index}"
             if st.button(label, key=key, disabled=(already_saved and not saved)):
                 try:

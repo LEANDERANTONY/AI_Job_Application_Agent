@@ -118,3 +118,67 @@ def test_job_search_service_sorts_results_recent_first_across_sources():
     result = service.search(JobSearchQuery(query="engineer", page_size=10))
 
     assert [posting.title for posting in result.results] == ["Newer Role", "Older Role"]
+
+
+def test_job_search_service_dedupes_same_url_across_sources():
+    class FakeSource(JobSourceAdapter):
+        def __init__(self, source_name, posting):
+            self.source_name = source_name
+            self._posting = posting
+
+        def can_resolve_url(self, url: str) -> bool:
+            return False
+
+        def search(self, query):
+            from src.schemas import JobPosting, JobSourceSearchResponse
+
+            return JobSourceSearchResponse(
+                source=self.source_name,
+                status="ok",
+                results=[
+                    JobPosting(
+                        id=f"{self.source_name}:1",
+                        source=self.source_name,
+                        title=self._posting["title"],
+                        company=self._posting["company"],
+                        location=self._posting["location"],
+                        url=self._posting["url"],
+                        posted_at=self._posting["posted_at"],
+                    )
+                ],
+                source_details={self.source_name: "matched"},
+            )
+
+        def resolve_url(self, url: str):
+            raise AssertionError("resolve should not run")
+
+    shared_url = "https://example.com/jobs/shared-role"
+    service = JobSearchService(
+        sources=[
+            FakeSource(
+                "greenhouse",
+                {
+                    "title": "Backend Engineer",
+                    "company": "Example",
+                    "location": "Remote",
+                    "url": shared_url,
+                    "posted_at": "2026-03-18T09:00:00+00:00",
+                },
+            ),
+            FakeSource(
+                "lever",
+                {
+                    "title": "Backend Engineer",
+                    "company": "Example",
+                    "location": "Remote",
+                    "url": shared_url,
+                    "posted_at": "2026-03-20T09:00:00+00:00",
+                },
+            ),
+        ]
+    )
+
+    result = service.search(JobSearchQuery(query="backend engineer", page_size=10))
+
+    assert len(result.results) == 1
+    assert result.results[0].source == "lever"
