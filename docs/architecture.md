@@ -16,7 +16,7 @@ The app helps a candidate:
 - export those artifacts as Markdown or PDF
 - reload the latest saved workspace snapshot back into `Manual JD Input`
 
-The current codebase is a Streamlit-first product shell around backend-ready parsing, service, orchestration, auth, and persistence layers.
+The current codebase is a Streamlit-first product shell around parsing, service, orchestration, auth, and persistence layers, with a separate FastAPI job-search backend now scaffolded on the active feature branch.
 
 ## High-Level Flow
 
@@ -51,6 +51,17 @@ Owns the Streamlit shell:
 - session-state orchestration
 
 `src/ui/workflow.py` is the main boundary between Streamlit state and the transport-agnostic services, builders, stores, and orchestrator.
+
+### `backend/`
+
+Owns the FastAPI job backend:
+
+- `backend/app.py` bootstraps the API
+- `backend/routers/health.py` exposes deployment smoke signals
+- `backend/routers/jobs.py` exposes search and direct job-resolution endpoints
+- `backend/services/job_search_service.py` aggregates provider responses, sorts recent-first, and dedupes overlapping postings
+
+This backend is designed to run as a separate Render service from the Streamlit app.
 
 ### `src/parsers/`
 
@@ -249,9 +260,15 @@ Near-term targets:
 - tighter UX around reload, quotas, and artifact review
 - continued saved-workspace payload compatibility safety
 
+Near-term deployment targets:
+
+- validate the two-service Render path in `render.yaml`
+- verify private-network backend discovery from Streamlit to FastAPI
+- keep Supabase-backed workspace and shortlist persistence aligned with the hosted rollout
+
 Later extraction targets:
 
-- FastAPI boundary for orchestration, auth-owned persistence, and export jobs
-- Docker as the standard service runtime
-- background execution for long-running workflow jobs
-- keeping Streamlit as a client during the transition
+- broaden the FastAPI boundary beyond job search when orchestration and export control need it
+- keep Docker as the standard service runtime
+- add background execution for long-running workflow jobs
+- keep Streamlit as a client during the transition

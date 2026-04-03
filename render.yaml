@@ -11,6 +11,13 @@ services:
         value: "1"
       - key: STREAMLIT_SERVER_HEADLESS
         value: "true"
+      - key: ENABLE_JOB_SEARCH_BACKEND
+        value: "true"
+      - key: JOB_BACKEND_HOSTPORT
+        fromService:
+          name: ai-job-application-agent-backend
+          type: web
+          property: hostport
       - key: AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW
         value: "true"
       - key: AUTH_DEFAULT_PLAN_TIER
@@ -25,3 +32,21 @@ services:
         value: usage_events
       - key: SUPABASE_SAVED_WORKSPACES_TABLE
         value: saved_workspaces
+      - key: SUPABASE_SAVED_JOBS_TABLE
+        value: saved_jobs
+
+  - type: web
+    name: ai-job-application-agent-backend
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/health
+    dockerfilePath: ./Dockerfile
+    dockerCommand: uv run uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-10000}
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: GREENHOUSE_BOARD_TOKENS
+        value: narvar,gleanwork,wayve,datadog,moloco,figma,qualtrics,thumbtack,placerlabs,zscaler,coinbase,typeface
+      - key: LEVER_SITE_NAMES
+        value: dnb,plaid,mistral

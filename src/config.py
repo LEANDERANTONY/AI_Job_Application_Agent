@@ -85,6 +85,22 @@ def _load_bool_env(name: str, default: bool = False):
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def resolve_job_backend_base_url(
+    explicit_base_url: str = "",
+    hostport: str = "",
+    default_base_url: str = "http://localhost:8000",
+):
+    normalized_base_url = str(explicit_base_url or "").strip().rstrip("/")
+    if normalized_base_url:
+        return normalized_base_url
+
+    normalized_hostport = str(hostport or "").strip()
+    if normalized_hostport:
+        return f"http://{normalized_hostport}"
+
+    return default_base_url
+
+
 OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
     "profile": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PROFILE", 1800),
     "job": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_JOB", 1800),
@@ -126,7 +142,11 @@ SUPABASE_SAVED_JOBS_TABLE = os.getenv(
     "SUPABASE_SAVED_JOBS_TABLE", "saved_jobs"
 ).strip()
 ENABLE_JOB_SEARCH_BACKEND = _load_bool_env("ENABLE_JOB_SEARCH_BACKEND", False)
-JOB_BACKEND_BASE_URL = os.getenv("JOB_BACKEND_BASE_URL", "http://localhost:8000").strip()
+JOB_BACKEND_HOSTPORT = os.getenv("JOB_BACKEND_HOSTPORT", "").strip()
+JOB_BACKEND_BASE_URL = resolve_job_backend_base_url(
+    os.getenv("JOB_BACKEND_BASE_URL", ""),
+    JOB_BACKEND_HOSTPORT,
+)
 GREENHOUSE_BOARD_TOKENS = tuple(
     token.strip()
     for token in os.getenv("GREENHOUSE_BOARD_TOKENS", "").split(",")

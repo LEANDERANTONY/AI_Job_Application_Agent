@@ -40,6 +40,7 @@ Status:
 - improve deployment and runtime observability
 - keep auth, quota refresh, and export paths stable under hosted conditions
 - add more smoke-test discipline around the hosted workflow
+- finish and validate the two-service Render rollout for Streamlit + FastAPI on the feature branch
 
 Status:
 
@@ -47,7 +48,7 @@ Status:
 
 ## Later: Extract A Real Backend
 
-The next major architecture step is a backend extraction when the product needs more than a single Streamlit session model can comfortably support.
+The repo now includes a real FastAPI job backend on the feature branch. The next major architecture step is to finish deploying and validating that boundary, then continue any broader extraction only when the product needs more than the current split can comfortably support.
 
 Targets:
 

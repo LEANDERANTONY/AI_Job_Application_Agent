@@ -14,6 +14,9 @@ def test_backend_health_endpoint_reports_service_status():
     payload = response.json()
     assert payload["status"] == "ok"
     assert "Backend" in payload["service"]
+    assert "providers" in payload
+    assert "greenhouse" in payload["providers"]
+    assert "lever" in payload["providers"]
 
 
 def test_job_search_endpoint_returns_placeholder_backend_response():

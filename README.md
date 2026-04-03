@@ -76,3 +76,53 @@ Live app: [ai-job-application-agent.onrender.com](https://ai-job-application-age
 - FastAPI job-search backend for provider-owned search and job resolution
 - WeasyPrint-first PDF generation with fallback handling in code
 - `uv` for environment and dependency management
+
+## Deployment Shape
+
+- Streamlit web app for the main product shell
+- FastAPI web service for job search and direct job resolution
+- Supabase for auth, persisted quota state, saved workspace snapshots, and saved-job shortlist storage
+- Render Blueprint in [render.yaml](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/render.yaml) for the two-service deployment path on the feature branch
+
+## Local Smoke Test
+
+Run the backend first:
+
+```powershell
+uv run uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+Then start the Streamlit app in a second terminal:
+
+```powershell
+uv run streamlit run app.py
+```
+
+Recommended local env values for the branch:
+
+```env
+ENABLE_JOB_SEARCH_BACKEND=true
+JOB_BACKEND_BASE_URL=http://127.0.0.1:8000
+GREENHOUSE_BOARD_TOKENS=narvar,gleanwork,wayve,datadog,moloco,figma,qualtrics,thumbtack,placerlabs,zscaler,coinbase,typeface
+LEVER_SITE_NAMES=dnb,plaid,mistral
+```
+
+Minimum checks:
+
+1. Open `http://127.0.0.1:8000/api/health` and confirm provider counts are present.
+2. Search for a broad technical query such as `software engineer` in the app.
+3. Preview a result, import it into the JD flow, and confirm the review panel renders.
+4. Save a job to the shortlist and confirm it appears in `Saved Jobs`.
+5. Reload a saved workspace and confirm imported job context still returns.
+
+## Hosted Rollout Validation
+
+When the branch is ready for a real hosted test:
+
+1. Deploy the two-service Render Blueprint from [render.yaml](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/render.yaml).
+2. Keep `ENABLE_JOB_SEARCH_BACKEND=true` only on the branch deployment, not on the current production app.
+3. Confirm the backend health endpoint returns:
+   - `status: ok`
+   - provider readiness under `providers.greenhouse` and `providers.lever`
+4. Verify the Streamlit service receives `JOB_BACKEND_HOSTPORT` from the backend service over Render private networking.
+5. Test `search -> preview -> import -> shortlist -> reload workspace` end to end before any merge to `main`.
