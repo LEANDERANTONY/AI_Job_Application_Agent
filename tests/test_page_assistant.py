@@ -96,22 +96,41 @@ def test_submit_assistant_question_appends_turn_and_updates_usage(monkeypatch):
     captured = {}
     fake_response = SimpleNamespace(answer="Use Upload Resume first.", sources=["Upload Resume"], suggested_follow_ups=[])
     fake_session = SimpleNamespace(
-        openai_service=SimpleNamespace(get_usage_snapshot=lambda: {"request_count": 1})
+        openai_service=SimpleNamespace(
+            get_usage_snapshot=lambda: {
+                "request_count": 1,
+                "last_response_metadata": {"response_id": "resp_123"},
+            }
+        )
     )
 
     class FakeAssistantService:
         def __init__(self, openai_service=None):
             captured["openai_service"] = openai_service
 
-        def answer(self, question, current_page, workflow_view_model=None, report=None, artifact=None, history=None, app_context=None):
+        @staticmethod
+        def build_session_context(**kwargs):
+            return {"current_page": kwargs["current_page"]}
+
+        @staticmethod
+        def build_session_signature(session_context):
+            return "sig_submit"
+
+        def answer(self, question, current_page, workflow_view_model=None, report=None, artifact=None, history=None, app_context=None, previous_response_id=None):
             captured["question"] = question
             captured["current_page"] = current_page
             captured["history"] = history
             captured["app_context"] = app_context
+            captured["previous_response_id"] = previous_response_id
             return fake_response
 
     monkeypatch.setattr(page_assistant, "is_authenticated", lambda: True)
     monkeypatch.setattr(page_assistant, "_resolve_assistant_ai_session", lambda workflow_view_model=None: fake_session)
+    monkeypatch.setattr(page_assistant, "get_assistant_session_signature", lambda: None)
+    monkeypatch.setattr(page_assistant, "set_assistant_session_signature", lambda signature: captured.update({"signature": signature}))
+    monkeypatch.setattr(page_assistant, "get_assistant_session_response_id", lambda: None)
+    monkeypatch.setattr(page_assistant, "set_assistant_session_response_id", lambda response_id: captured.update({"response_id": response_id}))
+    monkeypatch.setattr(page_assistant, "clear_assistant_session_memory", lambda: captured.update({"cleared_session": True}))
     monkeypatch.setattr(page_assistant, "AssistantService", FakeAssistantService)
     monkeypatch.setattr(page_assistant, "append_assistant_turn", lambda mode, turn: captured.update({"mode": mode, "turn": turn}))
     monkeypatch.setattr(page_assistant, "set_openai_session_usage", lambda usage: captured.update({"usage": usage}))
@@ -127,4 +146,61 @@ def test_submit_assistant_question_appends_turn_and_updates_usage(monkeypatch):
     assert captured["turn"].question == "How do I start?"
     assert captured["mode"] == "assistant"
     assert captured["turn"].response.answer == "Use Upload Resume first."
-    assert captured["usage"] == {"request_count": 1}
+    assert captured["usage"]["request_count"] == 1
+    assert captured["response_id"] == "resp_123"
+    assert captured["previous_response_id"] is None
+
+
+def test_ensure_assistant_session_ready_seeds_response_id(monkeypatch):
+    captured = {"reruns": 0}
+    fake_openai_service = SimpleNamespace(
+        is_available=lambda: True,
+        get_usage_snapshot=lambda: {
+            "request_count": 1,
+            "last_response_metadata": {"response_id": "resp_seed_1"},
+        },
+    )
+    fake_session = SimpleNamespace(openai_service=fake_openai_service)
+
+    class FakeAssistantService:
+        def __init__(self, openai_service=None):
+            captured["openai_service"] = openai_service
+
+        @staticmethod
+        def build_session_context(**kwargs):
+            return {"current_page": kwargs["current_page"], "product_context": {"is_authenticated": True}}
+
+        @staticmethod
+        def build_session_signature(session_context):
+            return "sig_1"
+
+        def prepare_session(self, **kwargs):
+            captured["prepared"] = kwargs["current_page"]
+            return "resp_seed_1"
+
+    class FakeSpinner:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(page_assistant, "_resolve_assistant_ai_session", lambda workflow_view_model=None: fake_session)
+    monkeypatch.setattr(page_assistant, "_build_product_help_context", lambda **kwargs: {"is_authenticated": True})
+    monkeypatch.setattr(page_assistant, "AssistantService", FakeAssistantService)
+    monkeypatch.setattr(page_assistant, "get_assistant_session_signature", lambda: None)
+    monkeypatch.setattr(page_assistant, "get_assistant_session_response_id", lambda: None)
+    monkeypatch.setattr(page_assistant, "set_assistant_session_signature", lambda value: captured.update({"signature": value}))
+    monkeypatch.setattr(page_assistant, "set_assistant_session_response_id", lambda value: captured.update({"response_id": value}))
+    monkeypatch.setattr(page_assistant, "set_openai_session_usage", lambda usage: captured.update({"usage": usage}))
+    monkeypatch.setattr(page_assistant, "clear_assistant_session_memory", lambda: None)
+    monkeypatch.setattr(page_assistant, "_rerun_assistant_panel", lambda compact=False: captured.update({"reruns": captured["reruns"] + 1}))
+    monkeypatch.setattr(page_assistant.st, "spinner", lambda *args, **kwargs: FakeSpinner())
+
+    page_assistant._ensure_assistant_session_ready(current_page="Job Search")
+
+    assert captured["prepared"] == "Job Search"
+    assert captured["signature"] == "sig_1"
+    assert captured["response_id"] == "resp_seed_1"
+    assert captured["usage"]["request_count"] == 1
+    assert captured["reruns"] == 1

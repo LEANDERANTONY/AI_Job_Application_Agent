@@ -440,6 +440,38 @@ def build_assistant_prompt(
     }
 
 
+def build_assistant_followup_prompt(
+    question: str,
+    *,
+    assistant_scope: str = "assistant",
+    state_updates: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    contract = {
+        "answer": "short, direct grounded answer to the user's latest question",
+        "sources": "array of 1-4 relevant pages, artifacts, or workflow signals used for the answer",
+        "suggested_follow_ups": "array of 0-3 useful next questions",
+    }
+    user_sections = [
+        _json_block("User Question", {"question": question}),
+    ]
+    if state_updates:
+        user_sections.append(_json_block("State Updates", state_updates))
+    return {
+        "system": (
+            "You are continuing an in-app assistant conversation for an AI job application app. "
+            "Use the existing conversation state as the primary memory for this session. "
+            "Use any provided state updates to refresh your understanding of the current page, product state, or application package. "
+            "Keep answers grounded, concise, and directly useful. "
+            "If the question is about the current application package, stay tied to the current fit, tailored resume, cover letter, and report context already established in the session. "
+            "If the question is product-help oriented, explain only features and behavior that match the current product. "
+            "Current assistant scope: {scope}. ".format(scope=assistant_scope)
+            + _build_contract(contract)
+        ),
+        "user": "\n\n".join(user_sections),
+        "expected_keys": list(contract.keys()),
+    }
+
+
 def build_product_help_assistant_prompt(
     app_context: Dict[str, Any],
     question: str,

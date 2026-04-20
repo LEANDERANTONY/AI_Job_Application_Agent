@@ -7,12 +7,17 @@ from src.schemas import AssistantTurn
 from src.ui.components import render_section_head
 from src.ui.state import (
     append_assistant_turn,
+    clear_assistant_session_memory,
     clear_assistant_history,
     get_assistant_history,
     get_pending_assistant_question,
+    get_assistant_session_response_id,
+    get_assistant_session_signature,
     is_authenticated,
     is_assistant_responding,
     set_assistant_responding,
+    set_assistant_session_response_id,
+    set_assistant_session_signature,
     set_clear_assistant_input,
     set_openai_session_usage,
     set_pending_assistant_question,
@@ -115,6 +120,22 @@ def _submit_assistant_question(
     ai_session = _resolve_assistant_ai_session(workflow_view_model)
     openai_service = ai_session.openai_service if ai_session else None
     assistant = AssistantService(openai_service=openai_service)
+    current_session_context = AssistantService.build_session_context(
+        current_page=current_page,
+        workflow_view_model=workflow_view_model,
+        report=report,
+        artifact=artifact,
+        app_context=_build_product_help_context(
+            workflow_view_model=workflow_view_model,
+            artifact=artifact,
+            report=report,
+            ai_session=ai_session,
+        ),
+    )
+    current_session_signature = AssistantService.build_session_signature(current_session_context)
+    if get_assistant_session_signature() != current_session_signature:
+        clear_assistant_session_memory()
+        set_assistant_session_signature(current_session_signature)
     response = assistant.answer(
         normalized_question,
         current_page=current_page,
@@ -130,9 +151,17 @@ def _submit_assistant_question(
             report=report,
             ai_session=ai_session,
         ),
+        previous_response_id=get_assistant_session_response_id(),
     )
     if ai_session and ai_session.openai_service:
         set_openai_session_usage(ai_session.openai_service.get_usage_snapshot())
+        response_id = (
+            ai_session.openai_service.get_usage_snapshot()
+            .get("last_response_metadata", {})
+            .get("response_id")
+        )
+        if response_id:
+            set_assistant_session_response_id(response_id)
     append_assistant_turn(
         "assistant",
         AssistantTurn(mode="assistant", question=normalized_question, response=response),
@@ -189,6 +218,59 @@ def _rerun_assistant_panel(*, compact=False):
     st.rerun()
 
 
+def _ensure_assistant_session_ready(
+    *,
+    current_page,
+    workflow_view_model=None,
+    artifact=None,
+    report=None,
+    compact=False,
+):
+    ai_session = _resolve_assistant_ai_session(workflow_view_model)
+    openai_service = ai_session.openai_service if ai_session else None
+    if openai_service is None or not openai_service.is_available():
+        return
+
+    base_context = _build_product_help_context(
+        workflow_view_model=workflow_view_model,
+        artifact=artifact,
+        report=report,
+        ai_session=ai_session,
+    )
+    session_context = AssistantService.build_session_context(
+        current_page=current_page,
+        workflow_view_model=workflow_view_model,
+        report=report,
+        artifact=artifact,
+        app_context=base_context,
+    )
+    session_signature = AssistantService.build_session_signature(session_context)
+    existing_signature = get_assistant_session_signature()
+    existing_response_id = get_assistant_session_response_id()
+
+    if existing_signature != session_signature:
+        clear_assistant_session_memory()
+        set_assistant_session_signature(session_signature)
+        existing_response_id = None
+
+    if existing_response_id:
+        return
+
+    assistant = AssistantService(openai_service=openai_service)
+    with st.spinner("Preparing assistant context..."):
+        response_id = assistant.prepare_session(
+            current_page=current_page,
+            workflow_view_model=workflow_view_model,
+            report=report,
+            artifact=artifact,
+            app_context=base_context,
+        )
+    if response_id:
+        set_assistant_session_response_id(response_id)
+        set_openai_session_usage(openai_service.get_usage_snapshot())
+        _rerun_assistant_panel(compact=compact)
+
+
 def _render_assistant_panel_contents(
     current_page,
     workflow_view_model=None,
@@ -209,6 +291,14 @@ def _render_assistant_panel_contents(
     if not is_authenticated():
         st.info("This feature can only be used after logging in.")
         return
+
+    _ensure_assistant_session_ready(
+        current_page=current_page,
+        workflow_view_model=workflow_view_model,
+        artifact=artifact,
+        report=report,
+        compact=compact,
+    )
 
     page_slug = current_page.lower().replace(" ", "_")
     question_key = _assistant_question_key(page_slug)
@@ -269,6 +359,7 @@ def _render_assistant_panel_contents(
 
     if clear_clicked:
         clear_assistant_history("assistant")
+        clear_assistant_session_memory()
         set_pending_assistant_question(None)
         set_assistant_responding(False)
         set_clear_assistant_input(True)

@@ -16,6 +16,7 @@ Current product baseline:
 - tailored resume generation
 - cover letter generation
 - application strategy report
+- one in-app assistant chat with lighter internal routing and session-scoped conversation reuse on the feature branch
 - latest saved-workspace reload
 - Render-hosted Docker deployment
 
@@ -27,6 +28,7 @@ Highest-priority remaining product work:
 - keep exported outputs visually strong and operationally reliable
 - improve artifact naming, copy, and review UX where the product still feels internal or MVP-like
 - continue refining grounded assistant behavior around the active outputs
+- validate that the assistant prewarm and session-memory path actually reduces perceived chat latency in hosted usage
 
 Status:
 
@@ -41,6 +43,7 @@ Status:
 - keep auth, quota refresh, and export paths stable under hosted conditions
 - add more smoke-test discipline around the hosted workflow
 - finish and validate the two-service Render rollout for Streamlit + FastAPI on the feature branch
+- verify assistant session reuse behaves well across reruns, page changes, and meaningful workflow-context resets
 
 Status:
 

@@ -478,3 +478,20 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Added a `Saved Jobs` panel on the Job Search page so shortlisted roles can be revisited and loaded back into the JD workflow later.
 - Added deterministic in-card job preview rendering so users can inspect skills, compensation, location, and structured summary before import.
 - Polished result-card clarity around remote/location signals and saved-state visibility.
+
+## Day 35: Assistant Session Memory And Latency Reduction
+
+- Kept one visible in-app assistant chat while splitting the internal task routing between:
+  - lighter product-help questions
+  - stronger grounded application-QA questions
+- Reduced assistant prompt weight by replacing oversized workflow payloads with a compact package-context summary for application questions.
+- Added short-lived assistant session memory on top of the OpenAI Responses API:
+  - prewarm assistant context when the panel opens
+  - store the latest `response_id`
+  - reuse that conversation state for follow-up questions during the same session
+- Added assistant session signatures so the app clears stale assistant memory automatically when the relevant workflow context changes.
+- Kept the behavior defensive:
+  - single chat UX remains unchanged
+  - deterministic fallback still works when assisted execution is unavailable
+  - clearing chat also clears the short-lived assistant session memory
+- Verified the assistant pass with focused assistant-service and assistant-panel tests.

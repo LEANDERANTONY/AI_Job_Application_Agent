@@ -29,9 +29,10 @@ The current codebase is a Streamlit-first product shell around parsing, service,
 7. The supervised workflow can be triggered explicitly from the JD page.
 8. The orchestrator runs `fit`, `tailoring`, `strategy`, `review`, `resume_generation`, and `cover_letter` through the routed OpenAI service when available, with deterministic fallback where supported.
 9. Builders assemble the current workflow state into a tailored resume artifact, cover letter artifact, and application strategy report.
-10. Export helpers produce Markdown and PDF bytes for the current session.
-11. For authenticated users, usage events, the latest saved workspace snapshot, and saved-job shortlist records are persisted in Supabase Postgres when the relevant tables are provisioned.
-12. The sidebar `Reload Workspace` action restores that latest saved snapshot back into `Manual JD Input`.
+10. The assistant panel prewarms a short-lived chat session, keeps a compact current-session context, and reuses the latest OpenAI response id for faster follow-up questions.
+11. Export helpers produce Markdown and PDF bytes for the current session.
+12. For authenticated users, usage events, the latest saved workspace snapshot, and saved-job shortlist records are persisted in Supabase Postgres when the relevant tables are provisioned.
+13. The sidebar `Reload Workspace` action restores that latest saved snapshot back into `Manual JD Input`.
 
 ## Main Modules
 
@@ -115,11 +116,24 @@ Responsibilities include:
 
 - task-aware model routing
 - Responses API calls
+- optional `previous_response_id` reuse for short-lived assistant conversation continuity
 - GPT-5 reasoning-effort routing
 - usage accounting for current runtime metadata
 - optional persisted usage-event callbacks
 - optional daily-quota preflight checks
 - incomplete-response retry handling
+
+### `src/assistant_service.py`
+
+Owns the single in-app assistant behavior.
+
+Responsibilities include:
+
+- internal routing between lighter product-help questions and stronger application-QA questions
+- compact workflow-context assembly for grounded package questions
+- assistant session-context construction and hashing
+- follow-up state-update assembly for lighter subsequent turns
+- deterministic fallback behavior when assisted execution is unavailable
 
 ### Builders and Exporters
 
@@ -194,6 +208,7 @@ Current-session state includes:
 - `agent_workflow_result`
 - cached export bytes and signatures
 - unified assistant conversation history
+- assistant session response id and session signature for short-lived chat reuse
 - authenticated session tokens and synced app-user snapshot
 
 Persistent authenticated state includes:
@@ -222,6 +237,14 @@ Each `saved_jobs` row stores one shortlisted posting per user and normalized job
 - saved and updated timestamps
 
 That split is deliberate. Current work stays fast inside Streamlit reruns, while quotas and the latest reloadable snapshot live in Supabase.
+
+Assistant chat state is intentionally session-scoped rather than persisted. The app keeps:
+
+- one visible chat surface
+- compact current product/workflow context in `st.session_state`
+- a short-lived OpenAI conversation chain keyed by the latest `response_id`
+
+When the assistant panel opens, the app prewarms that session context once. Follow-up turns can then send smaller state updates instead of replaying the full context every time. If the relevant workflow context changes materially, the stored assistant session signature no longer matches and the chat memory is reset before the next question.
 
 ## Testing Model
 
@@ -259,6 +282,7 @@ Near-term targets:
 - deployment hardening for the hosted Render environment
 - tighter UX around reload, quotas, and artifact review
 - continued saved-workspace payload compatibility safety
+- validate assistant latency improvements from compact context and session-scoped chat reuse under hosted conditions
 
 Near-term deployment targets:
 

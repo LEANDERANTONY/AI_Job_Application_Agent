@@ -160,6 +160,7 @@ class OpenAIService:
         model=None,
         metadata=None,
         allow_output_budget_retry=True,
+        previous_response_id=None,
     ):
         if not self.is_available():
             raise AgentExecutionError(
@@ -206,6 +207,8 @@ class OpenAIService:
             "metadata": request_metadata or None,
             "text": {"format": {"type": "json_object"}},
         }
+        if previous_response_id:
+            request_payload["previous_response_id"] = previous_response_id
         if self._supports_reasoning_effort(resolved_model) and reasoning_effort:
             request_payload["reasoning"] = {"effort": reasoning_effort}
 

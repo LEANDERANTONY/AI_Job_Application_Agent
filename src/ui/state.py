@@ -28,6 +28,8 @@ ASSISTANT_CHAT_HISTORY = "assistant_chat_history"
 ASSISTANT_PENDING_QUESTION = "assistant_pending_question"
 ASSISTANT_IS_RESPONDING = "assistant_is_responding"
 ASSISTANT_CLEAR_INPUT = "assistant_clear_input"
+ASSISTANT_SESSION_RESPONSE_ID = "assistant_session_response_id"
+ASSISTANT_SESSION_SIGNATURE = "assistant_session_signature"
 OPENAI_SESSION_USAGE = "openai_session_usage"
 AUTH_ACCESS_TOKEN = "auth_access_token"
 AUTH_REFRESH_TOKEN = "auth_refresh_token"
@@ -151,6 +153,8 @@ def clear_authenticated_session():
     pop_state(SAVED_JOBS, None)
     pop_state(SAVED_JOBS_USER_ID, None)
     pop_state(SAVED_JOBS_NOTICE, None)
+    pop_state(ASSISTANT_SESSION_RESPONSE_ID, None)
+    pop_state(ASSISTANT_SESSION_SIGNATURE, None)
     return pop_state(AUTH_USER, None)
 
 
@@ -480,3 +484,28 @@ def set_clear_assistant_input(should_clear):
     if not should_clear:
         return pop_state(ASSISTANT_CLEAR_INPUT, None)
     return set_state(ASSISTANT_CLEAR_INPUT, True)
+
+
+def get_assistant_session_response_id():
+    return get_state(ASSISTANT_SESSION_RESPONSE_ID)
+
+
+def set_assistant_session_response_id(response_id):
+    if response_id is None:
+        return pop_state(ASSISTANT_SESSION_RESPONSE_ID, None)
+    return set_state(ASSISTANT_SESSION_RESPONSE_ID, response_id)
+
+
+def get_assistant_session_signature():
+    return get_state(ASSISTANT_SESSION_SIGNATURE)
+
+
+def set_assistant_session_signature(signature):
+    if signature is None:
+        return pop_state(ASSISTANT_SESSION_SIGNATURE, None)
+    return set_state(ASSISTANT_SESSION_SIGNATURE, signature)
+
+
+def clear_assistant_session_memory():
+    pop_state(ASSISTANT_SESSION_RESPONSE_ID, None)
+    return pop_state(ASSISTANT_SESSION_SIGNATURE, None)

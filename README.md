@@ -20,6 +20,8 @@ Live app: [ai-job-application-agent.onrender.com](https://ai-job-application-age
   - tailored resume
   - cover letter
   - application strategy report
+- Keeps one in-app assistant chat while routing lighter product questions and grounded application questions through different internal task profiles
+- Prewarms assistant session context on panel open and reuses short-lived OpenAI conversation state during the current session for lower chat latency
 - Uses Google sign-in via Supabase for AI features, saved workspace reload, and persisted daily quota tracking
 - Keeps one latest saved workspace per signed-in user and restores it through the sidebar `Reload Workspace` action
 
@@ -31,7 +33,7 @@ Live app: [ai-job-application-agent.onrender.com](https://ai-job-application-age
 4. Review the JD summary, requirements, and imported job details
 5. Run the agentic analysis
 6. Review the tailored resume, cover letter, and application strategy
-7. Ask the assistant grounded questions about the app or current outputs
+7. Ask the assistant grounded questions about the app or current outputs through one chat that keeps short-lived session context during that visit
 8. Download Markdown or PDF artifacts
 
 ## UI Preview
@@ -74,6 +76,7 @@ Live app: [ai-job-application-agent.onrender.com](https://ai-job-application-age
 - OpenAI Responses API for assisted generation
 - Supabase for Google auth, persisted usage, saved workspace storage, and saved-job shortlist persistence
 - FastAPI job-search backend for provider-owned search and job resolution
+- Short-lived assistant conversation reuse through OpenAI Responses API conversation state plus Streamlit session context
 - WeasyPrint-first PDF generation with fallback handling in code
 - `uv` for environment and dependency management
 
@@ -114,6 +117,7 @@ Minimum checks:
 3. Preview a result, import it into the JD flow, and confirm the review panel renders.
 4. Save a job to the shortlist and confirm it appears in `Saved Jobs`.
 5. Reload a saved workspace and confirm imported job context still returns.
+6. Open the assistant panel, wait for `Preparing assistant context...` to finish once, then ask a product question followed by a current-package question and confirm both work from the same chat.
 
 ## Hosted Rollout Validation
 
@@ -126,3 +130,7 @@ When the branch is ready for a real hosted test:
    - provider readiness under `providers.greenhouse` and `providers.lever`
 4. Verify the Streamlit service receives `JOB_BACKEND_HOSTPORT` from the backend service over Render private networking.
 5. Test `search -> preview -> import -> shortlist -> reload workspace` end to end before any merge to `main`.
+6. Test the assistant panel after sign-in:
+   - first open should prewarm session context once
+   - follow-up questions should reuse the same chat session
+   - changing workflow context substantially should still keep answers grounded and reset stale assistant session memory when needed

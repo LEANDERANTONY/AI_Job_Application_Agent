@@ -238,9 +238,155 @@ def test_assistant_uses_fast_fail_request_shape():
 
     assert response.answer == "Use Upload Resume first."
     assert len(openai_service.calls) == 1
-    assert openai_service.calls[0]["task_name"] == "assistant"
+    assert openai_service.calls[0]["task_name"] == "assistant_product_help"
     assert openai_service.calls[0]["temperature"] is None
     assert openai_service.calls[0]["allow_output_budget_retry"] is False
+
+
+def test_assistant_routes_application_questions_to_application_qa_task():
+    class FakeOpenAIService:
+        def __init__(self):
+            self.calls = []
+
+        @staticmethod
+        def is_available():
+            return True
+
+        def run_json_prompt(self, *args, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "answer": "Your biggest gaps are AWS and communication examples.",
+                "sources": ["Readiness Snapshot"],
+                "suggested_follow_ups": [],
+            }
+
+    openai_service = FakeOpenAIService()
+    service = AssistantService(openai_service=openai_service)
+    view_model = _build_view_model()
+
+    response = service.answer(
+        "What are my biggest gaps for this role?",
+        current_page="Manual JD Input",
+        workflow_view_model=view_model,
+        artifact=SimpleNamespace(highlighted_skills=["Python"], validation_notes=[]),
+        report=SimpleNamespace(summary="Application strategy summary"),
+    )
+
+    assert response.answer
+    assert len(openai_service.calls) == 1
+    assert openai_service.calls[0]["task_name"] == "assistant_application_qa"
+    assert openai_service.calls[0]["previous_response_id"] is None
+
+
+def test_assistant_uses_previous_response_id_for_followups():
+    class FakeOpenAIService:
+        def __init__(self):
+            self.calls = []
+
+        @staticmethod
+        def is_available():
+            return True
+
+        def run_json_prompt(self, *args, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "answer": "Use Job Search to find and shortlist roles.",
+                "sources": ["Job Search"],
+                "suggested_follow_ups": [],
+            }
+
+    openai_service = FakeOpenAIService()
+    service = AssistantService(openai_service=openai_service)
+
+    response = service.answer(
+        "How do I use job search here?",
+        current_page="Job Search",
+        app_context={"is_authenticated": True},
+        previous_response_id="resp_123",
+    )
+
+    assert response.answer
+    assert len(openai_service.calls) == 1
+    assert openai_service.calls[0]["task_name"] == "assistant_product_help"
+    assert openai_service.calls[0]["previous_response_id"] == "resp_123"
+
+
+def test_prepare_session_returns_last_response_id_from_openai_usage_snapshot():
+    class FakeOpenAIService:
+        def __init__(self):
+            self.calls = []
+
+        @staticmethod
+        def is_available():
+            return True
+
+        def run_json_prompt(self, *args, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "answer": "Ready.",
+                "sources": [],
+                "suggested_follow_ups": [],
+            }
+
+        def get_usage_snapshot(self):
+            return {
+                "last_response_metadata": {
+                    "response_id": "resp_seed_456",
+                }
+            }
+
+    service = AssistantService(openai_service=FakeOpenAIService())
+
+    response_id = service.prepare_session(
+        current_page="Upload Resume",
+        app_context={"is_authenticated": True},
+    )
+
+    assert response_id == "resp_seed_456"
+
+
+def test_application_qa_context_is_compact():
+    view_model = _build_view_model()
+    report = SimpleNamespace(summary="Application report summary")
+    artifact = SimpleNamespace(
+        summary="Tailored resume summary",
+        validation_notes=["Check AWS claim wording"],
+        highlighted_skills=["Python", "SQL"],
+    )
+    review = SimpleNamespace(
+        approved=True,
+        revision_requests=["Tighten one bullet"],
+        grounding_issues=["Avoid unsupported scale claim"],
+    )
+    view_model.agent_result = SimpleNamespace(
+        review=review,
+        cover_letter=SimpleNamespace(
+            opening_paragraph="Opening paragraph.",
+            body_paragraphs=["Body paragraph one.", "Body paragraph two."],
+            closing_paragraph="Closing paragraph.",
+        ),
+    )
+
+    context = AssistantService._build_application_qa_context(
+        view_model,
+        report=report,
+        artifact=artifact,
+    )
+
+    assert set(context.keys()) == {
+        "job",
+        "candidate",
+        "fit",
+        "tailored_resume",
+        "report_summary",
+        "cover_letter_summary",
+        "review",
+    }
+    assert context["job"]["title"] == "Machine Learning Engineer"
+    assert context["candidate"]["skills"]
+    assert context["fit"]["overall_score"] is not None
+    assert context["tailored_resume"]["highlighted_skills"] == ["Python", "SQL"]
+    assert context["review"]["approved"] is True
 
 
 def test_build_response_raises_on_blank_answer_payload():
@@ -272,9 +418,9 @@ def test_build_application_qa_context_includes_review_and_skill_signals():
         artifact=artifact,
     )
 
-    assert context["current_highlighted_skills"] == ["Python", "Communication"]
-    assert context["review_approved"] is True
-    assert context["review_revision_requests"] == ["Tighten bullet wording"]
+    assert context["tailored_resume"]["highlighted_skills"] == ["Python", "Communication"]
+    assert context["review"]["approved"] is True
+    assert context["review"]["revision_requests"] == ["Tighten bullet wording"]
 
 
 def test_retrieve_product_knowledge_matches_export_questions():

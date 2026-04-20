@@ -1,11 +1,15 @@
 from dataclasses import asdict, is_dataclass
+import hashlib
+import json
 import logging
+import re
 
 from src.errors import AgentExecutionError
 from src.logging_utils import get_logger, log_event
 from src.product_knowledge import retrieve_product_knowledge
 from src.prompts import (
     build_assistant_prompt,
+    build_assistant_followup_prompt,
     build_application_qa_assistant_prompt,
     build_product_help_assistant_prompt,
 )
@@ -14,6 +18,29 @@ from src.schemas import AssistantResponse
 
 
 LOGGER = get_logger(__name__)
+_APPLICATION_QA_HINTS = {
+    "resume",
+    "cover letter",
+    "report",
+    "application package",
+    "fit",
+    "gap",
+    "gaps",
+    "strength",
+    "strengths",
+    "rewrite",
+    "bullet",
+    "tailored",
+    "submit",
+    "grounded",
+    "safe",
+    "position",
+    "positioning",
+    "skill",
+    "skills",
+    "experience",
+    "match",
+}
 
 
 class AssistantService:
@@ -31,7 +58,15 @@ class AssistantService:
         history=None,
         app_context=None,
         assistant_scope="assistant",
+        previous_response_id=None,
     ):
+        resolved_scope = self._resolve_assistant_scope(
+            question,
+            assistant_scope=assistant_scope,
+            workflow_view_model=workflow_view_model,
+            artifact=artifact,
+            report=report,
+        )
         product_context = {
             **(app_context or {}),
             "knowledge_hits": (app_context or {}).get(
@@ -39,38 +74,76 @@ class AssistantService:
                 retrieve_product_knowledge(question, current_page=current_page),
             ),
         }
-        workflow_context = self._build_workflow_context(
-            workflow_view_model,
-            report=report,
-            artifact=artifact,
+        workflow_context = (
+            self._build_application_qa_context(
+                workflow_view_model,
+                report=report,
+                artifact=artifact,
+            )
+            if resolved_scope == "application_qa"
+            else None
         )
         assistant_context = {
-            "assistant_scope": assistant_scope,
+            "assistant_scope": resolved_scope,
             "current_page": current_page,
             "product_context": product_context,
             "workflow_context": workflow_context,
         }
         if self._openai_service and self._openai_service.is_available():
             try:
-                prompt = build_assistant_prompt(
-                    assistant_context,
-                    question,
-                    history=history,
-                )
+                prompt_builder = build_assistant_prompt
+                task_name = "assistant"
+                max_sources = 4
+                if resolved_scope == "product_help":
+                    prompt_builder = build_product_help_assistant_prompt
+                    task_name = "assistant_product_help"
+                    max_sources = 3
+                elif resolved_scope == "application_qa":
+                    prompt_builder = build_application_qa_assistant_prompt
+                    task_name = "assistant_application_qa"
+                if previous_response_id:
+                    prompt = build_assistant_followup_prompt(
+                        question,
+                        assistant_scope=resolved_scope,
+                        state_updates=self._build_followup_state_updates(
+                            current_page=current_page,
+                            product_context=product_context,
+                            workflow_context=workflow_context,
+                        ),
+                    )
+                elif resolved_scope == "product_help":
+                    prompt = prompt_builder(
+                        product_context,
+                        question,
+                        history=self._compact_history(history),
+                    )
+                elif resolved_scope == "application_qa":
+                    prompt = prompt_builder(
+                        workflow_context or {},
+                        question,
+                        history=self._compact_history(history),
+                    )
+                else:
+                    prompt = prompt_builder(
+                        assistant_context,
+                        question,
+                        history=self._compact_history(history),
+                    )
                 payload = self._openai_service.run_json_prompt(
                     prompt["system"],
                     prompt["user"],
                     expected_keys=prompt["expected_keys"],
                     temperature=None,
                     max_completion_tokens=get_openai_max_completion_tokens_for_task(
-                        "assistant"
+                        task_name
                     ),
-                    task_name="assistant",
+                    task_name=task_name,
                     allow_output_budget_retry=False,
+                    previous_response_id=previous_response_id,
                 )
-                return self._build_response(payload, max_sources=4)
+                return self._build_response(payload, max_sources=max_sources)
             except AgentExecutionError as exc:
-                self._log_assistant_fallback("assistant", exc)
+                self._log_assistant_fallback(resolved_scope, exc)
         return self._fallback_unified(
             question,
             current_page=current_page,
@@ -100,6 +173,75 @@ class AssistantService:
             assistant_scope="application_qa",
         )
 
+    def prepare_session(
+        self,
+        *,
+        current_page,
+        workflow_view_model=None,
+        report=None,
+        artifact=None,
+        app_context=None,
+    ):
+        if not self._openai_service or not self._openai_service.is_available():
+            return None
+
+        assistant_context = self.build_session_context(
+            current_page=current_page,
+            workflow_view_model=workflow_view_model,
+            report=report,
+            artifact=artifact,
+            app_context=app_context,
+        )
+        prompt = build_assistant_prompt(
+            assistant_context,
+            "Prepare for upcoming user questions in this session. Confirm briefly that the current app context is loaded.",
+            history=None,
+        )
+        self._openai_service.run_json_prompt(
+            prompt["system"],
+            prompt["user"],
+            expected_keys=prompt["expected_keys"],
+            temperature=None,
+            max_completion_tokens=get_openai_max_completion_tokens_for_task(
+                "assistant_product_help"
+            ),
+            task_name="assistant_product_help",
+            allow_output_budget_retry=False,
+        )
+        snapshot = self._openai_service.get_usage_snapshot()
+        return snapshot.get("last_response_metadata", {}).get("response_id")
+
+    @classmethod
+    def build_session_context(
+        cls,
+        *,
+        current_page,
+        workflow_view_model=None,
+        report=None,
+        artifact=None,
+        app_context=None,
+    ):
+        product_context = dict(app_context or {})
+        product_context.pop("knowledge_hits", None)
+        workflow_context = None
+        if workflow_view_model and getattr(workflow_view_model, "job_description", None):
+            workflow_context = cls._build_application_qa_context(
+                workflow_view_model,
+                report=report,
+                artifact=artifact,
+            )
+        return {
+            "assistant_scope": "assistant",
+            "current_page": current_page,
+            "product_context": product_context,
+            "workflow_context": workflow_context,
+        }
+
+    @staticmethod
+    def build_session_signature(session_context):
+        normalized = json.dumps(session_context or {}, sort_keys=True, default=str)
+        return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+
     @staticmethod
     def _build_workflow_context(workflow_view_model, report=None, artifact=None):
         fit_analysis = getattr(workflow_view_model, "fit_analysis", None) if workflow_view_model else None
@@ -126,11 +268,108 @@ class AssistantService:
 
     @staticmethod
     def _build_application_qa_context(workflow_view_model, report=None, artifact=None):
-        return AssistantService._build_workflow_context(
-            workflow_view_model,
-            report=report,
-            artifact=artifact,
-        )
+        fit_analysis = getattr(workflow_view_model, "fit_analysis", None) if workflow_view_model else None
+        agent_result = getattr(workflow_view_model, "agent_result", None) if workflow_view_model else None
+        review = getattr(agent_result, "review", None) if agent_result else None
+        cover_letter = getattr(agent_result, "cover_letter", None) if agent_result else None
+        job_description = getattr(workflow_view_model, "job_description", None) if workflow_view_model else None
+        candidate_profile = getattr(workflow_view_model, "candidate_profile", None) if workflow_view_model else None
+        tailored_draft = getattr(workflow_view_model, "tailored_draft", None) if workflow_view_model else None
+        return {
+            "job": {
+                "title": getattr(job_description, "title", ""),
+                "location": getattr(job_description, "location", ""),
+                "hard_skills": list(getattr(getattr(job_description, "requirements", None), "hard_skills", [])[:8]),
+                "soft_skills": list(getattr(getattr(job_description, "requirements", None), "soft_skills", [])[:6]),
+                "experience_requirement": getattr(
+                    getattr(job_description, "requirements", None),
+                    "experience_requirement",
+                    None,
+                ),
+            },
+            "candidate": {
+                "name": getattr(candidate_profile, "full_name", ""),
+                "location": getattr(candidate_profile, "location", ""),
+                "skills": list(getattr(candidate_profile, "skills", [])[:10]),
+                "current_role": AssistantService._build_current_role_summary(candidate_profile),
+            },
+            "fit": {
+                "overall_score": getattr(fit_analysis, "overall_score", None),
+                "readiness_label": getattr(fit_analysis, "readiness_label", ""),
+                "matched_hard_skills": list(getattr(fit_analysis, "matched_hard_skills", [])[:6]) if fit_analysis else [],
+                "missing_hard_skills": list(getattr(fit_analysis, "missing_hard_skills", [])[:6]) if fit_analysis else [],
+                "strengths": list(getattr(fit_analysis, "strengths", [])[:4]) if fit_analysis else [],
+                "gaps": list(getattr(fit_analysis, "gaps", [])[:4]) if fit_analysis else [],
+            },
+            "tailored_resume": {
+                "summary": getattr(artifact, "summary", None),
+                "highlighted_skills": list(
+                    getattr(artifact, "highlighted_skills", [])[:6]
+                ) if artifact else list(getattr(tailored_draft, "highlighted_skills", [])[:6]) if tailored_draft else [],
+                "validation_notes": list(getattr(artifact, "validation_notes", [])[:4]) if artifact else [],
+            },
+            "report_summary": getattr(report, "summary", None),
+            "cover_letter_summary": AssistantService._build_cover_letter_summary(cover_letter),
+            "review": {
+                "approved": bool(getattr(review, "approved", False)) if review else False,
+                "revision_requests": list(getattr(review, "revision_requests", [])[:4]) if review else [],
+                "grounding_issues": list(getattr(review, "grounding_issues", [])[:4]) if review else [],
+            },
+        }
+
+    @staticmethod
+    def _build_current_role_summary(candidate_profile):
+        experience = list(getattr(candidate_profile, "experience", []) or [])
+        if not experience:
+            return ""
+        latest = experience[0]
+        title = str(getattr(latest, "title", "") or "").strip()
+        organization = str(getattr(latest, "organization", "") or "").strip()
+        if title and organization:
+            return f"{title} at {organization}"
+        return title or organization
+
+    @staticmethod
+    def _compact_history(history):
+        compacted = []
+        for turn in list(history or [])[-3:]:
+            question = str(getattr(turn, "question", "") or "").strip()
+            answer = str(getattr(getattr(turn, "response", None), "answer", "") or "").strip()
+            if not question and not answer:
+                continue
+            compacted.append(
+                {
+                    "question": question[:240],
+                    "answer": answer[:320],
+                }
+            )
+        return compacted
+
+    @staticmethod
+    def _resolve_assistant_scope(
+        question,
+        *,
+        assistant_scope="assistant",
+        workflow_view_model=None,
+        artifact=None,
+        report=None,
+    ):
+        normalized_scope = str(assistant_scope or "assistant").strip().lower()
+        if normalized_scope in {"product_help", "application_qa"}:
+            return normalized_scope
+        normalized_question = str(question or "").strip().lower()
+        if not normalized_question:
+            return "product_help"
+        if not (workflow_view_model and getattr(workflow_view_model, "job_description", None)):
+            return "product_help"
+        if artifact is None and report is None and getattr(workflow_view_model, "fit_analysis", None) is None:
+            return "product_help"
+        if any(hint in normalized_question for hint in _APPLICATION_QA_HINTS):
+            return "application_qa"
+        tokenized = set(re.findall(r"[a-z0-9_]+", normalized_question))
+        if tokenized & {token for hint in _APPLICATION_QA_HINTS for token in re.findall(r"[a-z0-9_]+", hint)}:
+            return "application_qa"
+        return "product_help"
 
     @staticmethod
     def _build_cover_letter_summary(cover_letter):
@@ -145,6 +384,17 @@ class AssistantService:
         if not paragraphs:
             return None
         return " ".join(paragraphs[:2])
+
+    @staticmethod
+    def _build_followup_state_updates(*, current_page, product_context, workflow_context):
+        updates = {
+            "current_page": current_page,
+            "knowledge_hits": list((product_context or {}).get("knowledge_hits", [])[:2]),
+        }
+        if workflow_context:
+            updates["fit"] = (workflow_context.get("fit") or {})
+            updates["review"] = (workflow_context.get("review") or {})
+        return updates
 
     @staticmethod
     def _to_context_payload(value):
