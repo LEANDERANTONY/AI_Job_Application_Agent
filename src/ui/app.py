@@ -134,7 +134,6 @@ def _initialize_auth():
                     "Stored auth session could not be restored.",
                     error=error.user_message,
                 )
-
     return auth_service
 
 

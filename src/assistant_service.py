@@ -2,45 +2,18 @@ from dataclasses import asdict, is_dataclass
 import hashlib
 import json
 import logging
-import re
 
 from src.errors import AgentExecutionError
 from src.logging_utils import get_logger, log_event
 from src.product_knowledge import retrieve_product_knowledge
 from src.prompts import (
     build_assistant_prompt,
-    build_assistant_followup_prompt,
-    build_application_qa_assistant_prompt,
-    build_product_help_assistant_prompt,
 )
 from src.config import get_openai_max_completion_tokens_for_task
 from src.schemas import AssistantResponse
 
 
 LOGGER = get_logger(__name__)
-_APPLICATION_QA_HINTS = {
-    "resume",
-    "cover letter",
-    "report",
-    "application package",
-    "fit",
-    "gap",
-    "gaps",
-    "strength",
-    "strengths",
-    "rewrite",
-    "bullet",
-    "tailored",
-    "submit",
-    "grounded",
-    "safe",
-    "position",
-    "positioning",
-    "skill",
-    "skills",
-    "experience",
-    "match",
-}
 
 
 class AssistantService:
@@ -58,15 +31,7 @@ class AssistantService:
         history=None,
         app_context=None,
         assistant_scope="assistant",
-        previous_response_id=None,
     ):
-        resolved_scope = self._resolve_assistant_scope(
-            question,
-            assistant_scope=assistant_scope,
-            workflow_view_model=workflow_view_model,
-            artifact=artifact,
-            report=report,
-        )
         product_context = {
             **(app_context or {}),
             "knowledge_hits": (app_context or {}).get(
@@ -74,61 +39,25 @@ class AssistantService:
                 retrieve_product_knowledge(question, current_page=current_page),
             ),
         }
-        workflow_context = (
-            self._build_application_qa_context(
-                workflow_view_model,
-                report=report,
-                artifact=artifact,
-            )
-            if resolved_scope == "application_qa"
-            else None
+        workflow_context = self._build_application_qa_context(
+            workflow_view_model,
+            report=report,
+            artifact=artifact,
         )
         assistant_context = {
-            "assistant_scope": resolved_scope,
+            "assistant_scope": "assistant",
             "current_page": current_page,
             "product_context": product_context,
             "workflow_context": workflow_context,
         }
         if self._openai_service and self._openai_service.is_available():
             try:
-                prompt_builder = build_assistant_prompt
                 task_name = "assistant"
-                max_sources = 4
-                if resolved_scope == "product_help":
-                    prompt_builder = build_product_help_assistant_prompt
-                    task_name = "assistant_product_help"
-                    max_sources = 3
-                elif resolved_scope == "application_qa":
-                    prompt_builder = build_application_qa_assistant_prompt
-                    task_name = "assistant_application_qa"
-                if previous_response_id:
-                    prompt = build_assistant_followup_prompt(
-                        question,
-                        assistant_scope=resolved_scope,
-                        state_updates=self._build_followup_state_updates(
-                            current_page=current_page,
-                            product_context=product_context,
-                            workflow_context=workflow_context,
-                        ),
-                    )
-                elif resolved_scope == "product_help":
-                    prompt = prompt_builder(
-                        product_context,
-                        question,
-                        history=self._compact_history(history),
-                    )
-                elif resolved_scope == "application_qa":
-                    prompt = prompt_builder(
-                        workflow_context or {},
-                        question,
-                        history=self._compact_history(history),
-                    )
-                else:
-                    prompt = prompt_builder(
-                        assistant_context,
-                        question,
-                        history=self._compact_history(history),
-                    )
+                prompt = build_assistant_prompt(
+                    assistant_context,
+                    question,
+                    history=self._compact_history(history),
+                )
                 payload = self._openai_service.run_json_prompt(
                     prompt["system"],
                     prompt["user"],
@@ -139,11 +68,10 @@ class AssistantService:
                     ),
                     task_name=task_name,
                     allow_output_budget_retry=False,
-                    previous_response_id=previous_response_id,
                 )
-                return self._build_response(payload, max_sources=max_sources)
+                return self._build_response(payload, max_sources=4)
             except AgentExecutionError as exc:
-                self._log_assistant_fallback(resolved_scope, exc)
+                self._log_assistant_fallback(task_name, exc)
         return self._fallback_unified(
             question,
             current_page=current_page,
@@ -203,9 +131,9 @@ class AssistantService:
             expected_keys=prompt["expected_keys"],
             temperature=None,
             max_completion_tokens=get_openai_max_completion_tokens_for_task(
-                "assistant_product_help"
+                "assistant"
             ),
-            task_name="assistant_product_help",
+            task_name="assistant",
             allow_output_budget_retry=False,
         )
         snapshot = self._openai_service.get_usage_snapshot()
@@ -346,32 +274,6 @@ class AssistantService:
         return compacted
 
     @staticmethod
-    def _resolve_assistant_scope(
-        question,
-        *,
-        assistant_scope="assistant",
-        workflow_view_model=None,
-        artifact=None,
-        report=None,
-    ):
-        normalized_scope = str(assistant_scope or "assistant").strip().lower()
-        if normalized_scope in {"product_help", "application_qa"}:
-            return normalized_scope
-        normalized_question = str(question or "").strip().lower()
-        if not normalized_question:
-            return "product_help"
-        if not (workflow_view_model and getattr(workflow_view_model, "job_description", None)):
-            return "product_help"
-        if artifact is None and report is None and getattr(workflow_view_model, "fit_analysis", None) is None:
-            return "product_help"
-        if any(hint in normalized_question for hint in _APPLICATION_QA_HINTS):
-            return "application_qa"
-        tokenized = set(re.findall(r"[a-z0-9_]+", normalized_question))
-        if tokenized & {token for hint in _APPLICATION_QA_HINTS for token in re.findall(r"[a-z0-9_]+", hint)}:
-            return "application_qa"
-        return "product_help"
-
-    @staticmethod
     def _build_cover_letter_summary(cover_letter):
         if cover_letter is None:
             return None
@@ -384,17 +286,6 @@ class AssistantService:
         if not paragraphs:
             return None
         return " ".join(paragraphs[:2])
-
-    @staticmethod
-    def _build_followup_state_updates(*, current_page, product_context, workflow_context):
-        updates = {
-            "current_page": current_page,
-            "knowledge_hits": list((product_context or {}).get("knowledge_hits", [])[:2]),
-        }
-        if workflow_context:
-            updates["fit"] = (workflow_context.get("fit") or {})
-            updates["review"] = (workflow_context.get("review") or {})
-        return updates
 
     @staticmethod
     def _to_context_payload(value):
@@ -452,6 +343,23 @@ class AssistantService:
                 answer="I am the in-app assistant for Application Copilot. I can explain how the product works and answer grounded questions about your current fit analysis, tailored resume, cover letter, and application package.",
                 sources=[current_page, "Upload Resume", "Manual JD Input"],
                 suggested_follow_ups=["How does the navigation work?", "What does Reload Workspace do?"],
+            )
+        if (
+            "how does the app work" in normalized
+            or "how the app works" in normalized
+            or "full flow" in normalized
+            or "overall flow" in normalized
+            or "whole flow" in normalized
+        ):
+            return AssistantResponse(
+                answer=(
+                    "The main flow is: sign in, upload your resume on Upload Resume, then either search/import a role from Job Search or paste/upload a JD in Manual JD Input. "
+                    "Once the job description is loaded, the app builds a fit snapshot, tailored resume draft, cover letter, and application package report. "
+                    "You review those outputs in the same JD flow, download the artifacts you want, and if you are signed in the latest workspace can be reloaded for 24 hours. "
+                    "Job Search is just one entry path into that larger workflow."
+                ),
+                sources=["Upload Resume", "Job Search", "Manual JD Input", "Readiness Snapshot", "Application Package"],
+                suggested_follow_ups=["What exactly happens after I upload my resume?", "What is the difference between Job Search and Manual JD Input?"],
             )
         if "navigation" in normalized or "nav" in normalized or "tab" in normalized or "sidebar" in normalized:
             return AssistantResponse(

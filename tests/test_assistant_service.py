@@ -81,6 +81,20 @@ def test_assistant_fallback_explains_navigation():
     assert "reload workspace" in response.answer.lower()
 
 
+def test_assistant_fallback_explains_full_app_flow():
+    service = AssistantService()
+
+    response = service.answer(
+        "How does the app work in general? Can you explain the full flow?",
+        current_page="Manual JD Input",
+        app_context={},
+    )
+
+    assert "upload your resume" in response.answer.lower()
+    assert "job search" in response.answer.lower()
+    assert "manual jd input" in response.answer.lower()
+
+
 def test_assistant_fallback_answers_identity_question():
     service = AssistantService()
 
@@ -238,12 +252,12 @@ def test_assistant_uses_fast_fail_request_shape():
 
     assert response.answer == "Use Upload Resume first."
     assert len(openai_service.calls) == 1
-    assert openai_service.calls[0]["task_name"] == "assistant_product_help"
+    assert openai_service.calls[0]["task_name"] == "assistant"
     assert openai_service.calls[0]["temperature"] is None
     assert openai_service.calls[0]["allow_output_budget_retry"] is False
 
 
-def test_assistant_routes_application_questions_to_application_qa_task():
+def test_assistant_uses_single_assistant_task_for_package_questions():
     class FakeOpenAIService:
         def __init__(self):
             self.calls = []
@@ -274,11 +288,11 @@ def test_assistant_routes_application_questions_to_application_qa_task():
 
     assert response.answer
     assert len(openai_service.calls) == 1
-    assert openai_service.calls[0]["task_name"] == "assistant_application_qa"
-    assert openai_service.calls[0]["previous_response_id"] is None
+    assert openai_service.calls[0]["task_name"] == "assistant"
+    assert "previous_response_id" not in openai_service.calls[0]
 
 
-def test_assistant_uses_previous_response_id_for_followups():
+def test_assistant_does_not_send_previous_response_id_for_followups():
     class FakeOpenAIService:
         def __init__(self):
             self.calls = []
@@ -302,13 +316,12 @@ def test_assistant_uses_previous_response_id_for_followups():
         "How do I use job search here?",
         current_page="Job Search",
         app_context={"is_authenticated": True},
-        previous_response_id="resp_123",
     )
 
     assert response.answer
     assert len(openai_service.calls) == 1
-    assert openai_service.calls[0]["task_name"] == "assistant_product_help"
-    assert openai_service.calls[0]["previous_response_id"] == "resp_123"
+    assert openai_service.calls[0]["task_name"] == "assistant"
+    assert "previous_response_id" not in openai_service.calls[0]
 
 
 def test_prepare_session_returns_last_response_id_from_openai_usage_snapshot():
@@ -343,6 +356,7 @@ def test_prepare_session_returns_last_response_id_from_openai_usage_snapshot():
     )
 
     assert response_id == "resp_seed_456"
+    assert service._openai_service.calls[0]["task_name"] == "assistant"
 
 
 def test_application_qa_context_is_compact():

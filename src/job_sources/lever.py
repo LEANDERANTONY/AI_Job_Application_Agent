@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import html
 import re
 from datetime import datetime, timezone
@@ -266,44 +267,45 @@ class LeverJobSourceAdapter(JobSourceAdapter):
         postings: list[JobPosting] = []
         site_statuses: dict[str, str] = {}
 
-        for site_name in self._site_names:
-            try:
-                response = self._http_session.get(
-                    self._list_url(site_name),
-                    params={"mode": "json", "limit": 100},
-                    timeout=self._timeout_seconds,
-                )
-                response.raise_for_status()
-            except requests.RequestException:
-                site_statuses[site_name] = "error"
-                continue
+        max_workers = min(8, len(self._site_names)) or 1
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_site = {
+                executor.submit(self._fetch_site_payload, site_name): site_name
+                for site_name in self._site_names
+            }
+            for future in as_completed(future_to_site):
+                site_name = future_to_site[future]
+                try:
+                    payload = future.result()
+                except requests.RequestException:
+                    site_statuses[site_name] = "error"
+                    continue
 
-            payload = response.json()
-            matched_results: list[JobPosting] = []
-            for job_payload in payload or []:
-                job_posting = self._to_job_posting(site_name, job_payload)
-                if not _has_technical_title_signal(job_posting):
-                    continue
-                if not title_matches_role_families(job_posting.title, role_families):
-                    continue
-                if not _matches_query(job_posting, normalized_query, query_terms):
-                    continue
-                if not _matches_location(job_posting, normalized_location, location_terms):
-                    continue
-                if query.remote_only and "remote" not in " ".join(
-                    [job_posting.location, str(job_posting.metadata.get("workplace_type", ""))]
-                ).lower():
-                    continue
-                if not _matches_posted_window(job_posting, query.posted_within_days):
-                    continue
-                matched_results.append(job_posting)
-            if matched_results:
-                postings.extend(matched_results)
-                site_statuses[site_name] = "matched"
-            elif payload:
-                site_statuses[site_name] = "no_match"
-            else:
-                site_statuses[site_name] = "empty"
+                matched_results: list[JobPosting] = []
+                for job_payload in payload or []:
+                    job_posting = self._to_job_posting(site_name, job_payload)
+                    if not _has_technical_title_signal(job_posting):
+                        continue
+                    if not title_matches_role_families(job_posting.title, role_families):
+                        continue
+                    if not _matches_query(job_posting, normalized_query, query_terms):
+                        continue
+                    if not _matches_location(job_posting, normalized_location, location_terms):
+                        continue
+                    if query.remote_only and "remote" not in " ".join(
+                        [job_posting.location, str(job_posting.metadata.get("workplace_type", ""))]
+                    ).lower():
+                        continue
+                    if not _matches_posted_window(job_posting, query.posted_within_days):
+                        continue
+                    matched_results.append(job_posting)
+                if matched_results:
+                    postings.extend(matched_results)
+                    site_statuses[site_name] = "matched"
+                elif payload:
+                    site_statuses[site_name] = "no_match"
+                else:
+                    site_statuses[site_name] = "empty"
 
         postings.sort(
             key=lambda posting: _job_sort_key(posting, normalized_query, query_terms),
@@ -319,6 +321,15 @@ class LeverJobSourceAdapter(JobSourceAdapter):
             status=overall_status,
             source_details=site_statuses,
         )
+
+    def _fetch_site_payload(self, site_name: str) -> list[dict]:
+        response = self._http_session.get(
+            self._list_url(site_name),
+            params={"mode": "json", "limit": 100},
+            timeout=self._timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()
 
     def resolve_url(self, url: str) -> JobResolutionResult:
         parsed = urlparse(str(url or "").strip())

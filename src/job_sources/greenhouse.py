@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import html
 import re
 from datetime import datetime, timezone
@@ -247,44 +248,45 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
         postings: list[JobPosting] = []
         board_statuses: dict[str, str] = {}
 
-        for board_token in self._board_tokens:
-            try:
-                response = self._http_session.get(
-                    self._API_BASE_URL.format(token=board_token),
-                    params={"content": "true"},
-                    timeout=self._timeout_seconds,
-                )
-                response.raise_for_status()
-            except requests.RequestException as exc:
-                board_statuses[board_token] = "error"
-                continue
+        max_workers = min(8, len(self._board_tokens)) or 1
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_board = {
+                executor.submit(self._fetch_board_payload, board_token): board_token
+                for board_token in self._board_tokens
+            }
+            for future in as_completed(future_to_board):
+                board_token = future_to_board[future]
+                try:
+                    payload = future.result()
+                except requests.RequestException:
+                    board_statuses[board_token] = "error"
+                    continue
 
-            payload = response.json()
-            matched_any = False
-            matched_results: list[JobPosting] = []
-            for job_payload in payload.get("jobs", []) or []:
-                job_posting = self._to_job_posting(board_token, job_payload)
-                if not _has_technical_title_signal(job_posting):
-                    continue
-                if not title_matches_role_families(job_posting.title, role_families):
-                    continue
-                if not _matches_query(job_posting, normalized_query, query_terms):
-                    continue
-                if not _matches_location(job_posting, normalized_location, location_terms):
-                    continue
-                if query.remote_only and not _is_remote_job(job_posting):
-                    continue
-                if not _matches_posted_window(job_posting, query.posted_within_days):
-                    continue
-                matched_any = True
-                matched_results.append(job_posting)
-            if matched_any:
-                postings.extend(matched_results)
-                board_statuses[board_token] = "matched"
-            elif payload.get("jobs"):
-                board_statuses[board_token] = "no_match"
-            else:
-                board_statuses[board_token] = "empty"
+                matched_any = False
+                matched_results: list[JobPosting] = []
+                for job_payload in payload.get("jobs", []) or []:
+                    job_posting = self._to_job_posting(board_token, job_payload)
+                    if not _has_technical_title_signal(job_posting):
+                        continue
+                    if not title_matches_role_families(job_posting.title, role_families):
+                        continue
+                    if not _matches_query(job_posting, normalized_query, query_terms):
+                        continue
+                    if not _matches_location(job_posting, normalized_location, location_terms):
+                        continue
+                    if query.remote_only and not _is_remote_job(job_posting):
+                        continue
+                    if not _matches_posted_window(job_posting, query.posted_within_days):
+                        continue
+                    matched_any = True
+                    matched_results.append(job_posting)
+                if matched_any:
+                    postings.extend(matched_results)
+                    board_statuses[board_token] = "matched"
+                elif payload.get("jobs"):
+                    board_statuses[board_token] = "no_match"
+                else:
+                    board_statuses[board_token] = "empty"
         postings.sort(
             key=lambda posting: _job_sort_key(posting, normalized_query, query_terms),
             reverse=True,
@@ -300,6 +302,15 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
             status=overall_status,
             source_details=board_statuses,
         )
+
+    def _fetch_board_payload(self, board_token: str) -> dict:
+        response = self._http_session.get(
+            self._API_BASE_URL.format(token=board_token),
+            params={"content": "true"},
+            timeout=self._timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()
 
     def can_resolve_url(self, url: str) -> bool:
         parsed = urlparse(str(url or "").strip())
