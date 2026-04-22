@@ -697,6 +697,11 @@ export function JobApplicationWorkspace() {
     return `${ASSISTANT_HISTORY_STORAGE_KEY}:${userScope}:${assistantWorkspaceSignature}`;
   }, [assistantWorkspaceSignature, authSession?.app_user.id]);
   const latestAssistantTurn = assistantTurns[assistantTurns.length - 1] ?? null;
+  const assistantRequiresWorkspaceRun = !analysisState;
+  const assistantCanSubmit =
+    !assistantRequiresWorkspaceRun &&
+    !assistantSending &&
+    Boolean(assistantQuestion.trim());
   const assistantStatusLabel = analysisState
     ? assistantTurns.length
       ? "Memory active"
@@ -1613,17 +1618,31 @@ export function JobApplicationWorkspace() {
                 <form className="workspace-assistant-form" onSubmit={handleAssistantSubmit}>
                   <textarea
                     className="workspace-assistant-textarea"
+                    disabled={assistantRequiresWorkspaceRun || assistantSending}
                     onChange={(event) => setAssistantQuestion(event.target.value)}
-                    placeholder="Ask about your fit, package, gaps, or the current outputs..."
+                    placeholder={
+                      assistantRequiresWorkspaceRun
+                        ? "Run Preview or AI Analysis first to unlock grounded assistant answers."
+                        : "Ask about your fit, package, gaps, or the current outputs..."
+                    }
                     value={assistantQuestion}
                   />
+                  {assistantRequiresWorkspaceRun ? (
+                    <div className="notice-panel notice-info">
+                      Run the workspace Preview or AI Analysis first. The assistant only answers once it has a live workspace snapshot to ground itself to.
+                    </div>
+                  ) : null}
                   <div className="workspace-sidebar-actions">
                     <button
                       className="primary-button workspace-button workspace-button-full"
-                      disabled={assistantSending}
+                      disabled={!assistantCanSubmit}
                       type="submit"
                     >
-                      {assistantSending ? "Sending..." : "Send to assistant"}
+                      {assistantSending
+                        ? "Sending..."
+                        : assistantRequiresWorkspaceRun
+                          ? "Run preview first"
+                          : "Send to assistant"}
                     </button>
                     <button
                       className="secondary-button workspace-button workspace-button-full"
