@@ -499,9 +499,27 @@ function getInitialSidebarCollapsed() {
   return false;
 }
 
+function getInitialMainTab(): WorkspaceMainTab {
+  if (typeof window === "undefined") {
+    return "resume";
+  }
+
+  const tabParam = new URLSearchParams(window.location.search).get("tab");
+  if (tabParam === "resume" || tabParam === "jobs" || tabParam === "jd" || tabParam === "analysis") {
+    return tabParam;
+  }
+
+  const hashTab = window.location.hash.replace(/^#/, "");
+  if (hashTab === "resume" || hashTab === "jobs" || hashTab === "jd" || hashTab === "analysis") {
+    return hashTab;
+  }
+
+  return "resume";
+}
+
 export function JobApplicationWorkspace() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialSidebarCollapsed);
-  const [mainTab, setMainTab] = useState<WorkspaceMainTab>("resume");
+  const [mainTab, setMainTab] = useState<WorkspaceMainTab>(getInitialMainTab);
   const [health, setHealth] = useState<HealthState>({
     status: "loading",
     payload: null,
@@ -1869,7 +1887,7 @@ export function JobApplicationWorkspace() {
             <div>
               <p className="eyebrow">Workspace</p>
               <h1 className="workspace-hero-title">
-                Job Application Agent workspace
+                Job Application Copilot
               </h1>
               <p className="workspace-hero-copy">
                 Upload your resume, review job descriptions, run tailored
@@ -2116,7 +2134,7 @@ export function JobApplicationWorkspace() {
                         </label>
                       </div>
                       <button
-                        className="primary-button workspace-button"
+                        className="primary-button workspace-button workspace-action-button"
                         disabled={searching}
                         type="submit"
                       >
@@ -2137,7 +2155,7 @@ export function JobApplicationWorkspace() {
                     />
                   </label>
                   <button
-                    className="secondary-button workspace-button"
+                    className="primary-button workspace-button workspace-action-button"
                     disabled={importing}
                     type="submit"
                   >
