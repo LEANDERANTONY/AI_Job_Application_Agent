@@ -1086,6 +1086,152 @@ code {
   color: #e5efff;
 }
 
+.workspace-progress-card {
+  margin-top: 1rem;
+  border: 1px solid rgba(166, 179, 229, 0.16);
+  border-radius: 1.35rem;
+  padding: 1rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+    rgba(10, 11, 17, 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 44px rgba(0, 0, 0, 0.18);
+}
+
+.workspace-progress-tone-crew {
+  border-color: rgba(72, 110, 232, 0.24);
+  background:
+    radial-gradient(circle at top left, rgba(64, 116, 255, 0.12), transparent 32%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+    rgba(10, 11, 17, 0.88);
+}
+
+.workspace-progress-tone-backup {
+  border-color: rgba(151, 162, 184, 0.22);
+}
+
+.workspace-progress-tone-matchmaker {
+  border-color: rgba(71, 127, 255, 0.24);
+}
+
+.workspace-progress-tone-forge {
+  border-color: rgba(249, 115, 22, 0.24);
+}
+
+.workspace-progress-tone-navigator {
+  border-color: rgba(14, 165, 233, 0.24);
+}
+
+.workspace-progress-tone-gatekeeper {
+  border-color: rgba(245, 158, 11, 0.22);
+}
+
+.workspace-progress-tone-builder {
+  border-color: rgba(59, 130, 246, 0.24);
+}
+
+.workspace-progress-tone-coverletter {
+  border-color: rgba(139, 92, 246, 0.24);
+}
+
+.workspace-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.workspace-progress-tag,
+.workspace-progress-percent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #eef4ff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0.38rem 0.72rem;
+  text-transform: uppercase;
+}
+
+.workspace-progress-percent {
+  color: #cddcff;
+}
+
+.workspace-progress-detail {
+  margin: 0.85rem 0 0;
+  color: #eef4ff;
+  font-family: var(--font-space-grotesk), sans-serif;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.workspace-progress-bar {
+  margin-top: 0.95rem;
+  width: 100%;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.workspace-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(93, 134, 255, 0.95), rgba(129, 185, 255, 0.95));
+  transition: width 280ms ease;
+}
+
+.workspace-progress-stage-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.workspace-progress-stage {
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 0.8rem 0.9rem;
+}
+
+.workspace-progress-stage-live {
+  border-color: rgba(143, 225, 179, 0.28);
+  background:
+    linear-gradient(135deg, rgba(94, 234, 212, 0.07), rgba(255, 255, 255, 0.015)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.workspace-progress-stage-ready {
+  border-color: rgba(255, 201, 141, 0.22);
+}
+
+.workspace-progress-stage-title {
+  display: block;
+  color: #f3f7ff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-progress-stage small {
+  display: block;
+  margin-top: 0.45rem;
+  color: #aebbd8;
+  font-size: 0.87rem;
+  line-height: 1.55;
+}
+
+.workspace-progress-note {
+  margin-top: 0.9rem;
+}
+
 .workspace-role-panel {
   display: grid;
   gap: 1rem;

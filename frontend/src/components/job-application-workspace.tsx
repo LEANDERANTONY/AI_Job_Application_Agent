@@ -65,6 +65,12 @@ type AssistantTurn = {
 type AuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
 
 type ResumeTheme = "classic_ats" | "modern_professional";
+type WorkflowRunMode = "preview" | "agentic";
+type WorkflowStage = {
+  title: string;
+  detail: string;
+  value: number;
+};
 
 const AUTH_SESSION_STORAGE_KEY = "workspace-auth-session-v1";
 const ASSISTANT_HISTORY_STORAGE_KEY = "workspace-assistant-history-v1";
@@ -82,6 +88,67 @@ const RESUME_THEME_OPTIONS: Record<
     tagline: "Cleaner hierarchy with a slightly more polished visual rhythm.",
   },
 };
+
+const PREVIEW_WORKFLOW_STAGES: WorkflowStage[] = [
+  {
+    title: "Workflow crew",
+    detail: "Opening your application brief and lining up the deterministic workspace checks.",
+    value: 8,
+  },
+  {
+    title: "Matchmaker agent",
+    detail: "Comparing the resume and JD to score overlap, strengths, and the biggest missing signals.",
+    value: 38,
+  },
+  {
+    title: "Forge agent",
+    detail: "Drafting the recruiter-facing resume guidance and assembling the first artifact set.",
+    value: 72,
+  },
+  {
+    title: "Builder agent",
+    detail: "Packaging the preview outputs so the workspace can render the report, resume, and cover letter.",
+    value: 96,
+  },
+];
+
+const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
+  {
+    title: "Workflow crew",
+    detail: "Opening your application brief and assigning the first agent.",
+    value: 3,
+  },
+  {
+    title: "Matchmaker agent",
+    detail: "Comparing both sides, scoring overlap, and flagging the real gaps.",
+    value: 23,
+  },
+  {
+    title: "Forge agent",
+    detail: "Rewriting the draft so it speaks directly to this role.",
+    value: 41,
+  },
+  {
+    title: "Navigator agent",
+    detail: "Shaping the recruiter story so the pitch lands cleanly.",
+    value: 59,
+  },
+  {
+    title: "Gatekeeper agent",
+    detail: "Reviewing the drafted outputs and applying grounded corrections.",
+    value: 77,
+  },
+  {
+    title: "Builder agent",
+    detail: "Packaging the final tailored resume and lining up the finish.",
+    value: 90,
+  },
+  {
+    title: "Cover letter agent",
+    detail: "Turning the approved story into a role-specific cover letter that is ready to send.",
+    value: 97,
+  },
+];
 
 function noticeClassName(level: NonNullable<Notice>["level"]) {
   if (level === "success") {
@@ -112,6 +179,34 @@ function toneForStage(active: boolean, ready = false) {
     return "ready";
   }
   return "next";
+}
+
+function workflowProgressTone(title: string) {
+  if (title === "Workflow crew") {
+    return "crew";
+  }
+  if (title === "Backup workflow") {
+    return "backup";
+  }
+  if (title === "Matchmaker agent") {
+    return "matchmaker";
+  }
+  if (title === "Forge agent") {
+    return "forge";
+  }
+  if (title === "Navigator agent") {
+    return "navigator";
+  }
+  if (title === "Gatekeeper agent") {
+    return "gatekeeper";
+  }
+  if (title === "Builder agent") {
+    return "builder";
+  }
+  if (title === "Cover letter agent") {
+    return "coverletter";
+  }
+  return "crew";
 }
 
 function buildAssistantHistoryPayload(turns: AssistantTurn[]) {
@@ -436,6 +531,8 @@ export function JobApplicationWorkspace() {
 
   const [manualJobText, setManualJobText] = useState("");
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisRunMode, setAnalysisRunMode] = useState<WorkflowRunMode | null>(null);
+  const [analysisProgressIndex, setAnalysisProgressIndex] = useState(0);
   const [analysisState, setAnalysisState] =
     useState<WorkspaceAnalysisResponse | null>(null);
   const [artifactTab, setArtifactTab] = useState<ArtifactTab>("resume");
@@ -634,6 +731,7 @@ export function JobApplicationWorkspace() {
       cancelled = true;
     };
   }, [authSession?.features.saved_jobs_enabled, authStatus, authTokens]);
+
   const savedJobIds = useMemo(
     () =>
       new Set(
@@ -685,6 +783,38 @@ export function JobApplicationWorkspace() {
     return analysisState.artifacts.report;
   }, [analysisState, artifactTab, resumeTheme]);
   const currentArtifactKind = artifactKindFromTab(artifactTab);
+  const workflowStages = useMemo(() => {
+    if (analysisRunMode === "agentic") {
+      return AGENTIC_WORKFLOW_STAGES;
+    }
+    if (analysisRunMode === "preview") {
+      return PREVIEW_WORKFLOW_STAGES;
+    }
+    return [] as WorkflowStage[];
+  }, [analysisRunMode]);
+  const currentWorkflowStage =
+    workflowStages[Math.min(analysisProgressIndex, Math.max(workflowStages.length - 1, 0))] ??
+    null;
+
+  useEffect(() => {
+    if (!analysisLoading || !analysisRunMode || !workflowStages.length) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setAnalysisProgressIndex((currentIndex) => {
+        if (currentIndex >= workflowStages.length - 1) {
+          return currentIndex;
+        }
+        return currentIndex + 1;
+      });
+    }, analysisRunMode === "agentic" ? 3200 : 2200);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [analysisLoading, analysisRunMode, workflowStages]);
+
   const assistantWorkspaceSignature = useMemo(
     () => buildAssistantWorkspaceSignature(analysisState),
     [analysisState],
@@ -1170,11 +1300,13 @@ export function JobApplicationWorkspace() {
       return;
     }
 
+    setAnalysisRunMode(runAssisted ? "agentic" : "preview");
+    setAnalysisProgressIndex(0);
     setAnalysisLoading(true);
     setWorkspaceNotice({
       level: "info",
       message: runAssisted
-        ? "Running the agentic workflow through the backend. This may take a moment."
+        ? "Running the agentic workflow through the backend. The workspace crew will keep you posted as each stage moves."
         : "Building the deterministic workspace preview through the backend.",
     });
 
@@ -1196,28 +1328,36 @@ export function JobApplicationWorkspace() {
       setArtifactPreviewHtml(null);
       setArtifactPreviewTitle(null);
       const savedWorkspace = await persistLatestWorkspace(response);
-      setWorkspaceNotice({
-        level: "success",
-        message: runAssisted
+        setWorkspaceNotice({
+          level: "success",
+          message: runAssisted
           ? savedWorkspace
             ? `Workflow finished in ${response.workflow.mode} mode and saved workspace refreshes until ${formatUtcTimestamp(savedWorkspace.expires_at)} UTC.`
             : `Workflow finished in ${response.workflow.mode} mode.`
           : savedWorkspace
             ? `Deterministic workspace preview is ready and saved workspace refreshes until ${formatUtcTimestamp(savedWorkspace.expires_at)} UTC.`
-            : "Deterministic workspace preview is ready.",
-      });
-    } catch (error) {
-      setWorkspaceNotice({
-        level: "warning",
-        message:
+              : "Deterministic workspace preview is ready.",
+        });
+      } catch (error) {
+        const errorMessage =
           error instanceof Error
             ? error.message
-            : "Workspace analysis failed unexpectedly.",
-      });
-    } finally {
-      setAnalysisLoading(false);
+            : "Workspace analysis failed unexpectedly.";
+        const looksLikeGatewayFailure =
+          runAssisted &&
+          /(502|bad gateway|gateway|proxy)/i.test(errorMessage);
+        setWorkspaceNotice({
+          level: "warning",
+          message: looksLikeGatewayFailure
+            ? "The agentic run was interrupted by the gateway before the backend finished responding. The new run panel shows stage progress, but we still need to move the assisted workflow to a background job to make proxied runs fully reliable."
+            : errorMessage,
+        });
+      } finally {
+        setAnalysisLoading(false);
+        setAnalysisRunMode(null);
+        setAnalysisProgressIndex(0);
+      }
     }
-  }
 
   async function submitAssistantQuestion(questionText: string) {
     const normalizedQuestion = questionText.trim();
@@ -2407,6 +2547,56 @@ export function JobApplicationWorkspace() {
           {workspaceNotice ? (
             <div className={noticeClassName(workspaceNotice.level)}>
               {workspaceNotice.message}
+            </div>
+          ) : null}
+
+          {analysisLoading && currentWorkflowStage ? (
+            <div
+              className={`workspace-progress-card workspace-progress-tone-${workflowProgressTone(
+                currentWorkflowStage.title,
+              )}`}
+            >
+              <div className="workspace-progress-head">
+                <span className="workspace-progress-tag">
+                  {currentWorkflowStage.title}
+                </span>
+                <span className="workspace-progress-percent">
+                  {currentWorkflowStage.value}%
+                </span>
+              </div>
+              <p className="workspace-progress-detail">
+                {currentWorkflowStage.detail}
+              </p>
+              <div
+                aria-hidden="true"
+                className="workspace-progress-bar"
+              >
+                <span
+                  style={{ width: `${currentWorkflowStage.value}%` }}
+                />
+              </div>
+              <div className="workspace-progress-stage-list">
+                {workflowStages.map((stage, index) => {
+                  const state = toneForStage(
+                    index === analysisProgressIndex,
+                    index < analysisProgressIndex,
+                  );
+                  return (
+                    <div
+                      className={`workspace-progress-stage workspace-progress-stage-${state}`}
+                      key={`${stage.title}-${stage.value}`}
+                    >
+                      <span className="workspace-progress-stage-title">
+                        {stage.title}
+                      </span>
+                      <small>{stage.detail}</small>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="workspace-muted-copy workspace-progress-note">
+                This mirrors the old workspace crew panel from Streamlit. The stage feed is client-side guidance for the in-flight run while the backend finishes the request.
+              </p>
             </div>
           ) : null}
 
