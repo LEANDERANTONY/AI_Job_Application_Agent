@@ -266,6 +266,10 @@ def build_saved_workflow_snapshot_from_payload(raw_payload: str):
     if not inspection["supported"]:
         return None
     payload = inspection["data"] or {}
+    return build_saved_workflow_snapshot_from_data(payload)
+
+
+def build_saved_workflow_snapshot_from_data(payload: dict):
     candidate_profile = payload.get("candidate_profile") or {}
     job_description = payload.get("job_description") or {}
     fit_analysis = payload.get("fit_analysis") or {}

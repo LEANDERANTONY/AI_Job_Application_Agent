@@ -7,6 +7,16 @@ from backend.routers.jobs import get_job_search_service
 client = TestClient(app)
 
 
+def test_backend_root_endpoint_reports_frontend_and_health_urls():
+    response = client.get("/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["frontend_url"]
+    assert payload["health_url"] == "/api/health"
+
+
 def test_backend_health_endpoint_reports_service_status():
     response = client.get("/api/health")
 

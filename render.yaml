@@ -5,7 +5,7 @@ services:
     plan: free
     autoDeploy: true
     healthCheckPath: /
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile.streamlit
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
@@ -42,7 +42,6 @@ services:
     autoDeploy: true
     healthCheckPath: /api/health
     dockerfilePath: ./Dockerfile
-    dockerCommand: uv run uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-10000}
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
@@ -50,3 +49,7 @@ services:
         value: narvar,gleanwork,wayve,datadog,moloco,figma,qualtrics,thumbtack,placerlabs,zscaler,coinbase,typeface
       - key: LEVER_SITE_NAMES
         value: dnb,plaid,mistral
+      - key: FRONTEND_APP_URL
+        value: https://ai-job-application-agent.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://ai-job-application-agent.onrender.com

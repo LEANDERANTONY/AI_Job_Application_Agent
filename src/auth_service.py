@@ -190,10 +190,12 @@ class AuthService:
         supabase_url: str = SUPABASE_URL,
         supabase_anon_key: str = SUPABASE_ANON_KEY,
         redirect_url: str = SUPABASE_AUTH_REDIRECT_URL,
+        storage: Any | None = None,
     ):
         self.supabase_url = (supabase_url or "").strip()
         self.supabase_anon_key = (supabase_anon_key or "").strip()
         self.redirect_url = (redirect_url or "").strip()
+        self.storage = storage
 
     def is_configured(self):
         return bool(self.supabase_url and self.supabase_anon_key)
@@ -207,7 +209,7 @@ class AuthService:
                 "options": {"redirect_to": _with_query_params(self.redirect_url, auth_flow=flow_id)},
             }
         )
-        code_verifier = get_auth_pkce_code_verifier()
+        code_verifier = self._get_pkce_code_verifier()
         if not code_verifier:
             raise AppError("Unable to start Google sign-in right now.")
         _PKCE_CODE_VERIFIER_CACHE[flow_id] = code_verifier
@@ -237,7 +239,7 @@ class AuthService:
             if not code_verifier:
                 code_verifier = _consume_pkce_flow(auth_flow)
         if not code_verifier:
-            code_verifier = get_auth_pkce_code_verifier()
+            code_verifier = self._get_pkce_code_verifier()
         if not code_verifier and cookie_payload:
             code_verifier = cookie_payload.get("code_verifier")
             if not auth_flow:
@@ -265,7 +267,7 @@ class AuthService:
         except TypeError:
             response = client.auth.exchange_code_for_session(auth_code)
         finally:
-            set_auth_pkce_code_verifier(None)
+            self._clear_pkce_code_verifier()
         return self._build_auth_session(response)
 
     def restore_session(self, access_token: str, refresh_token: str):
@@ -303,9 +305,26 @@ class AuthService:
                 flow_type="pkce",
                 auto_refresh_token=False,
                 persist_session=False,
-                storage=StreamlitSessionStorage(),
+                storage=self.storage if self.storage is not None else StreamlitSessionStorage(),
             ),
         )
+
+    def _get_pkce_code_verifier(self):
+        if self.storage is not None:
+            try:
+                return self.storage.get_item("auth-code-verifier")
+            except Exception:
+                return None
+        return get_auth_pkce_code_verifier()
+
+    def _clear_pkce_code_verifier(self):
+        if self.storage is not None:
+            try:
+                self.storage.remove_item("auth-code-verifier")
+            except Exception:
+                return None
+            return None
+        return set_auth_pkce_code_verifier(None)
 
     @staticmethod
     def _get_pkce_cookie_payload(auth_flow: Optional[str] = None):

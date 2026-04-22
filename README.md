@@ -73,6 +73,7 @@ Live app: [ai-job-application-agent.onrender.com](https://ai-job-application-age
 ## Stack
 
 - Streamlit UI
+- Next.js frontend skeleton in `frontend/`
 - OpenAI Responses API for assisted generation
 - Supabase for Google auth, persisted usage, saved workspace storage, and saved-job shortlist persistence
 - FastAPI job-search backend for provider-owned search and job resolution
@@ -83,9 +84,12 @@ Live app: [ai-job-application-agent.onrender.com](https://ai-job-application-age
 ## Deployment Shape
 
 - Streamlit web app for the main product shell
+- Next.js frontend for the Vercel migration path
 - FastAPI web service for job search and direct job resolution
+- VPS deployment bundle in `deploy/vps/` for Docker Compose + Caddy
 - Supabase for auth, persisted quota state, saved workspace snapshots, and saved-job shortlist storage
 - Render Blueprint in [render.yaml](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/render.yaml) for the two-service deployment path on the feature branch
+- Root [Dockerfile](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/Dockerfile) now builds the FastAPI backend image, while [Dockerfile.streamlit](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/Dockerfile.streamlit) keeps the legacy Streamlit shell deployable during the transition
 
 ## Local Smoke Test
 
@@ -101,6 +105,14 @@ Then start the Streamlit app in a second terminal:
 uv run streamlit run app.py
 ```
 
+If you want to exercise the new frontend skeleton as well, start it from `frontend/` in a third terminal:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
 Recommended local env values for the branch:
 
 ```env
@@ -113,11 +125,14 @@ LEVER_SITE_NAMES=dnb,plaid,mistral
 Minimum checks:
 
 1. Open `http://127.0.0.1:8000/api/health` and confirm provider counts are present.
-2. Search for a broad technical query such as `software engineer` in the app.
-3. Preview a result, import it into the JD flow, and confirm the review panel renders.
-4. Save a job to the shortlist and confirm it appears in `Saved Jobs`.
-5. Reload a saved workspace and confirm imported job context still returns.
-6. Open the assistant panel, wait for `Preparing assistant context...` to finish once, then ask a product question followed by a current-package question and confirm both work from the same chat.
+2. Open `http://localhost:3000` and confirm the Next.js shell loads and its backend health card can reach the API.
+3. Search for a broad technical query such as `software engineer` in the Streamlit app.
+4. Preview a result, import it into the JD flow, and confirm the review panel renders.
+5. Save a job to the shortlist and confirm it appears in `Saved Jobs`.
+6. Reload a saved workspace and confirm imported job context still returns.
+7. Open the assistant panel, wait for `Preparing assistant context...` to finish once, then ask a product question followed by a current-package question and confirm both work from the same chat.
+
+Transition notes live in [docs/next-fastapi-transition.md](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/docs/next-fastapi-transition.md).
 
 ## Hosted Rollout Validation
 

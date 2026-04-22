@@ -1,0 +1,5 @@
+{$AI_JOB_APPLICATION_API_DOMAIN} {
+    encode gzip zstd
+
+    reverse_proxy api:8000
+}
