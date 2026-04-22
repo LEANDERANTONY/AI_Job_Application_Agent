@@ -35,13 +35,13 @@ npm run dev
 Copy `frontend/.env.example` into a local `.env.local` and set:
 
 - `NEXT_PUBLIC_API_BASE_URL=/api`
-- `API_REWRITE_TARGET=http://127.0.0.1:8000/api` for local backend development
+- `API_REWRITE_TARGET=http://127.0.0.1:8000` for local backend development
 - `NEXT_PUBLIC_SITE_URL=http://localhost:3000`
 
 For Vercel production:
 
 - keep `NEXT_PUBLIC_API_BASE_URL=/api`
-- point `API_REWRITE_TARGET` at the VPS FastAPI origin, for example `https://api.example.com/api`
+- point `API_REWRITE_TARGET` at the VPS FastAPI origin, for example `https://api.example.com`
 - set `NEXT_PUBLIC_SITE_URL` to the Vercel workspace URL
 - this mirrors the HelpMate setup, where the frontend stays same-origin on Vercel and the actual backend host is hidden behind the rewrite target
 

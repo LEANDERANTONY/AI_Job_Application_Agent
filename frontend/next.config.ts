@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const apiRewriteTarget =
-  process.env.API_REWRITE_TARGET ?? "http://127.0.0.1:8000/api";
+  process.env.API_REWRITE_TARGET ?? "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["localhost", "127.0.0.1"],
@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: `${apiRewriteTarget}/:path*`,
+        destination: `${apiRewriteTarget}/api/:path*`,
       },
     ];
   },

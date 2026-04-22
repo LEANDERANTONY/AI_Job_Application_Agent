@@ -244,6 +244,7 @@ frontend/.env.local
 frontend/.next/
 frontend/node_modules/
 deploy/vps/.env
+.vercel/
 
 # Local databases and caches
 *.sqlite
