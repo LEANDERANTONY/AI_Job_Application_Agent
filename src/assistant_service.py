@@ -477,10 +477,19 @@ class AssistantService:
 
         fit_analysis = workflow_view_model.fit_analysis
         agent_result = workflow_view_model.agent_result
+        fit_summary_text = fit_analysis if isinstance(fit_analysis, str) else ""
+        fit_skills = getattr(fit_analysis, "matched_hard_skills", None)
+        fit_missing_skills = getattr(fit_analysis, "missing_hard_skills", None)
+        fit_gap_labels = getattr(fit_analysis, "gaps", None)
+        fit_score = getattr(fit_analysis, "overall_score", None)
+        readiness_label = getattr(fit_analysis, "readiness_label", None)
+
         highlighted_skills = list(
-            (getattr(artifact, "highlighted_skills", None) or fit_analysis.matched_hard_skills)[:4]
+            (getattr(artifact, "highlighted_skills", None) or fit_skills or [])[:4]
         )
-        fit_gaps = list((fit_analysis.missing_hard_skills or fit_analysis.gaps)[:4])
+        fit_gaps = list((fit_missing_skills or fit_gap_labels or [])[:4])
+        fit_score_text = str(fit_score) if fit_score is not None else "an unavailable"
+        readiness_label_text = readiness_label or "not yet classified"
 
         if (
             "cross-functional" in normalized
@@ -511,7 +520,11 @@ class AssistantService:
             return AssistantResponse(
                 answer=(
                     "The main gaps right now are: {gaps}. These come from the fit analysis against the JD, so they are the highest-friction areas to strengthen with real evidence."
-                ).format(gaps=", ".join(fit_gaps) or "no major gaps surfaced"),
+                ).format(
+                    gaps=", ".join(fit_gaps)
+                    or fit_summary_text
+                    or "no major gaps surfaced"
+                ),
                 sources=["Deterministic Fit Analysis", "Readiness Snapshot"],
                 suggested_follow_ups=["How should I address these gaps honestly?", "Which of these gaps matter most?"],
             )
@@ -542,8 +555,8 @@ class AssistantService:
             answer=(
                 "Right now your package centers on a fit score of {score}/100 with readiness marked as {label}. The tailored resume emphasizes {skills}, the cover letter follows the approved workflow outputs when available, and the report captures the broader strategy and review context."
             ).format(
-                score=fit_analysis.overall_score,
-                label=fit_analysis.readiness_label,
+                score=fit_score_text,
+                label=readiness_label_text,
                 skills=", ".join(highlighted_skills) or "the strongest matched skills",
             ),
             sources=["Readiness Snapshot", "Tailored Resume Draft", "Cover Letter", "Application Package"],

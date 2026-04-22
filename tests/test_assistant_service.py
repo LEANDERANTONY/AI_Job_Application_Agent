@@ -198,6 +198,23 @@ def test_assistant_fallback_supports_broader_resume_coaching():
     assert response.sources
 
 
+def test_assistant_fallback_handles_string_fit_analysis():
+    service = AssistantService()
+    view_model = _build_view_model()
+    view_model.fit_analysis = "Strong backend fit with some AWS gaps."
+
+    response = service.answer(
+        "What are my biggest gaps?",
+        current_page="Workspace",
+        workflow_view_model=view_model,
+        report=None,
+        artifact=SimpleNamespace(highlighted_skills=["Python", "FastAPI"], validation_notes=[]),
+    )
+
+    assert "aws gaps" in response.answer.lower() or "strong backend fit" in response.answer.lower()
+    assert response.sources
+
+
 def test_assistant_falls_back_when_model_returns_blank_answer():
     class FakeOpenAIService:
         @staticmethod
