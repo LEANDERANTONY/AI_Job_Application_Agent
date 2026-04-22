@@ -1991,7 +1991,7 @@ export function JobApplicationWorkspace() {
               </p>
 
               <div className="workspace-uploader">
-                <label className="secondary-button workspace-button" htmlFor="resume-upload">
+                <label className="primary-button workspace-button" htmlFor="resume-upload">
                   Choose resume file
                 </label>
                 <input
@@ -2489,7 +2489,7 @@ export function JobApplicationWorkspace() {
               </p>
 
               <div className="workspace-uploader">
-                <label className="secondary-button workspace-button" htmlFor="job-description-upload">
+                <label className="primary-button workspace-button" htmlFor="job-description-upload">
                   Choose JD file
                 </label>
                 <input
@@ -2646,7 +2646,7 @@ export function JobApplicationWorkspace() {
 
               <div className="workspace-run-actions">
                 <button
-                  className="secondary-button workspace-button"
+                  className="primary-button workspace-button"
                   disabled={analysisLoading}
                   onClick={() => void handleRunAnalysis(false)}
                   type="button"
@@ -2662,7 +2662,7 @@ export function JobApplicationWorkspace() {
                   {analysisLoading ? "Running..." : "Run agentic analysis"}
                 </button>
                 <button
-                  className="secondary-button workspace-button"
+                  className="primary-button workspace-button"
                   onClick={clearWorkspaceRole}
                   type="button"
                 >

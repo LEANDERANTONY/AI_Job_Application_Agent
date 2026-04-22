@@ -206,7 +206,7 @@ code {
 .workspace-label,
 .soft-panel-label {
   margin: 0;
-  color: #9dc8ff;
+  color: #98dde1;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.26em;
@@ -481,7 +481,7 @@ code {
 .metric-tile span,
 .workspace-sidebar-stat span {
   display: block;
-  color: #90a7d3;
+  color: #94d7dc;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.22em;
@@ -516,7 +516,7 @@ code {
 }
 
 .workspace-shell-inner {
-  width: min(70vw, 1720px);
+  width: min(80vw, 1720px);
   margin: 0 auto;
   padding: 1.25rem 0 3rem;
 }
@@ -952,12 +952,12 @@ code {
   max-width: 18ch;
   font-size: clamp(2.5rem, 4.35vw, 4.55rem);
   line-height: 0.92;
-  background: linear-gradient(180deg, #f4f8ff 0%, #dce7fb 52%, #cadbfd 100%);
+  background: linear-gradient(180deg, #4a5255 0%, #3c4347 52%, #32383c 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   letter-spacing: -0.058em;
-  text-shadow: 0 8px 18px rgba(4, 7, 18, 0.06);
+  text-shadow: 0 8px 18px rgba(4, 7, 18, 0.04);
 }
 
 .workspace-hero-copy {
@@ -991,7 +991,7 @@ code {
 }
 
 .workspace-hero-metric-tile span {
-  color: #9cb7e9;
+  color: #96dde2;
   font-size: 0.68rem;
   letter-spacing: 0.2em;
 }
