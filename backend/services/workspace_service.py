@@ -71,6 +71,22 @@ def _build_resume_document(*, resume_text: str, resume_filetype: str, resume_sou
     )
 
 
+def _enrich_job_description_from_imported_posting(job_description, imported_job_posting: dict[str, Any] | None):
+    if not imported_job_posting:
+        return job_description
+
+    imported_title = str(imported_job_posting.get("title", "") or "").strip()
+    imported_location = str(imported_job_posting.get("location", "") or "").strip()
+
+    if imported_title:
+        job_description.title = imported_title
+
+    if imported_location:
+        job_description.location = imported_location
+
+    return job_description
+
+
 def parse_resume_upload(*, filename: str, mime_type: str, content_base64: str):
     uploaded_file = _InMemoryUploadedFile(
         file_bytes=_decode_base64_content(content_base64),
@@ -122,7 +138,10 @@ def run_workspace_analysis(
         resume_source=resume_source,
     )
     candidate_profile = build_candidate_profile_from_resume(resume_document)
-    job_description = build_job_description_from_text(job_description_text)
+    job_description = _enrich_job_description_from_imported_posting(
+        build_job_description_from_text(job_description_text),
+        imported_job_posting,
+    )
     fit_analysis = build_fit_analysis(candidate_profile, job_description)
     tailored_draft = build_tailored_resume_draft(
         candidate_profile,

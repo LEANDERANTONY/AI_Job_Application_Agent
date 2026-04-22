@@ -97,6 +97,52 @@ def test_workspace_analyze_returns_fit_and_artifacts_without_assisted_run():
     assert payload["artifacts"]["report"]["markdown"]
 
 
+def test_workspace_analyze_prefers_imported_job_title_when_parser_cannot_extract_it():
+    response = client.post(
+        "/api/workspace/analyze",
+        json={
+            "resume_text": (
+                "Leander Antony\n"
+                "Chennai, India\n"
+                "Python SQL Docker Communication AWS\n"
+                "Experience\n"
+                "AI Engineer, Example Labs\n"
+                "Jan 2023 - Jan 2025\n"
+                "Built production ML APIs and evaluation workflows.\n"
+            ),
+            "resume_filetype": "TXT",
+            "resume_source": "workspace",
+            "job_description_text": (
+                "We are hiring a senior engineer to build data products and machine learning systems.\n"
+                "Required: Python, SQL, Docker, AWS, communication.\n"
+                "Need 5+ years of experience.\n"
+            ),
+            "imported_job_posting": {
+                "id": "greenhouse:narvar:6930410",
+                "source": "greenhouse",
+                "title": "Staff Software Engineer, Machine Learning",
+                "company": "Narvar",
+                "location": "Bengaluru, Karnataka, India",
+                "employment_type": "",
+                "url": "https://job-boards.greenhouse.io/narvar/jobs/6930410",
+                "summary": "Machine learning platform role.",
+                "description_text": "Imported posting description",
+                "posted_at": "",
+                "scraped_at": "",
+                "metadata": {},
+            },
+            "run_assisted": False,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["job_description"]["title"] == "Staff Software Engineer, Machine Learning"
+    assert payload["job_description"]["location"] == "Bengaluru, Karnataka, India"
+    assert "Staff Software Engineer, Machine Learning" in payload["artifacts"]["report"]["title"]
+    assert "Staff Software Engineer, Machine Learning" in payload["artifacts"]["tailored_resume"]["title"]
+
+
 def test_workspace_assistant_answer_uses_workspace_snapshot_context():
     analysis_response = client.post(
         "/api/workspace/analyze",
