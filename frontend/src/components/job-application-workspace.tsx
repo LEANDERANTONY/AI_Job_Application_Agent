@@ -2278,7 +2278,7 @@ export function JobApplicationWorkspace() {
                                 Open posting
                               </a>
                             ) : null}
-                            {authStatus === "signed_in" && savedJobsEnabled ? (
+                            {authStatus === "signed_in" ? (
                               <button
                                 className="primary-button workspace-button workspace-button-small"
                                 disabled={isSaving || isSaved}
