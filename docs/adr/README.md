@@ -2,7 +2,7 @@
 
 This directory tracks the architectural decisions that shape the AI Job Application Agent.
 
-The ADRs are historical records. Some superseded ADRs still describe earlier product stages, but the accepted set below reflects the current architecture direction.
+These ADRs are historical records. Several earlier entries describe the old Streamlit-first product phase. The accepted set below reflects the current direction of the shipped Next.js + FastAPI workspace.
 
 ## Accepted
 
@@ -14,9 +14,12 @@ The ADRs are historical records. Some superseded ADRs still describe earlier pro
 - [ADR-009: Google sign-in via Supabase for persistent identity](ADR-009-google-sign-in-via-supabase-for-persistent-identity.md)
 - [ADR-010: Single-pass review corrections and task-tuned model budgets](ADR-010-single-pass-review-corrections-and-task-tuned-model-budgets.md)
 - [ADR-011: Unified grounded assistant surface](ADR-011-unified-grounded-assistant-surface.md)
+- [ADR-012: Next.js workspace and FastAPI runtime baseline](ADR-012-nextjs-workspace-and-fastapi-runtime-baseline.md)
 
 ## Superseded
 
+- [ADR-003: Streamlit session state for navigation and persistence](ADR-003-streamlit-session-state-for-navigation-and-persistence.md)
+- [ADR-005: Streamlit-first, backend-ready delivery strategy](ADR-005-streamlit-first-backend-ready-delivery.md)
 - [ADR-004: LinkedIn data export ingestion instead of direct API access](ADR-004-linkedin-data-export-ingestion-instead-of-direct-api-access.md)
 - [ADR-006: Playwright-first PDF export with ReportLab fallback](ADR-006-playwright-first-pdf-export.md)
 - [ADR-008: Two-mode grounded assistant panel](ADR-008-two-mode-grounded-assistant-panel.md)

@@ -14,8 +14,8 @@ from src.exporters import (
     export_zip_bundle_bytes,
 )
 from src.report_builder import build_application_report
-from src.resume_builder import RESUME_THEMES, build_tailored_resume_artifact
-from src.ui.workflow_payloads import build_saved_workflow_snapshot_from_data
+from src.resume_builder import build_tailored_resume_artifact
+from src.workflow_payloads import build_saved_workflow_snapshot_from_data
 
 
 ArtifactKind = Literal["tailored_resume", "cover_letter", "report", "bundle"]
@@ -27,10 +27,7 @@ def _encode_bytes(payload: bytes):
 
 
 def _resolve_resume_theme(theme_name: str):
-    normalized = str(theme_name or "").strip() or "classic_ats"
-    if normalized not in RESUME_THEMES:
-        raise InputValidationError("Choose a supported resume theme before exporting.")
-    return normalized
+    return "classic_ats"
 
 
 def _hydrate_snapshot(workspace_snapshot: dict):
@@ -74,9 +71,8 @@ def _build_artifact_set(workspace_snapshot: dict, resume_theme: str):
 
 
 def _resume_export_file_name(filename_stem: str, resume_theme: str, extension: str):
-    return "{stem}-{theme}.{extension}".format(
+    return "{stem}.{extension}".format(
         stem=filename_stem or "tailored-resume",
-        theme=resume_theme,
         extension=extension,
     )
 

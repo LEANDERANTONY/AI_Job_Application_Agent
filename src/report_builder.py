@@ -14,7 +14,7 @@ from src.utils import markdown_to_text, render_markdown_list, safe_join_strings,
 def _review_status_label(review) -> str:
     if not review:
         return "Unknown"
-    if review.approved and (getattr(review, "corrected_tailoring", None) or getattr(review, "corrected_strategy", None)):
+    if review.approved and getattr(review, "corrected_tailoring", None):
         return "Approved After Corrections"
     if review.approved:
         return "Approved"
@@ -39,12 +39,12 @@ def _build_summary(
     role = job_description.title or "the target role"
     if agent_result:
         return (
-            "Application strategy for {role}, summarizing grounded findings, positioning guidance, and evidence-backed priorities for this role.".format(
+            "Application report for {role}, summarizing grounded findings, review notes, and the rationale behind the final resume and cover letter package.".format(
                 role=role,
             )
         )
     return (
-        "Application strategy for {role}, organizing the current resume and job signals into a focused findings and positioning brief.".format(
+        "Application report for {role}, organizing the current resume and job signals into a focused findings brief for the final package.".format(
             role=role,
         )
     )
@@ -150,40 +150,6 @@ def _build_findings_section(
         ]
     )
 
-
-def _build_strategy_section(agent_result: Optional[AgentWorkflowResult]) -> str:
-    if not agent_result:
-        return "\n".join(
-            [
-                "## Application Strategy",
-                "",
-                "Current positioning guidance is based on the available resume and role evidence.",
-            ]
-        )
-
-    return "\n".join(
-        [
-            "## Application Strategy",
-            "",
-            agent_result.strategy.recruiter_positioning
-            if agent_result.strategy
-            else "No recruiter positioning produced.",
-            "",
-            "### Cover Letter Talking Points",
-            render_markdown_list(
-                agent_result.strategy.cover_letter_talking_points if agent_result.strategy else [],
-                "No cover letter talking points produced.",
-            ),
-            "",
-            "### Portfolio / Project Emphasis",
-            render_markdown_list(
-                agent_result.strategy.portfolio_project_emphasis if agent_result.strategy else [],
-                "No portfolio or project emphasis produced.",
-            ),
-        ]
-    )
-
-
 def build_application_report(
     candidate_profile: CandidateProfile,
     job_description: JobDescription,
@@ -208,7 +174,6 @@ def build_application_report(
             _build_candidate_section(candidate_profile),
             _build_job_section(job_description),
             _build_findings_section(tailored_draft, agent_result),
-            _build_strategy_section(agent_result),
         ]
     ).strip()
 

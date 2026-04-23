@@ -63,7 +63,7 @@ PRODUCT_KNOWLEDGE_DOCUMENTS = [
         "source": "Manual JD Input",
         "keywords": ["workflow", "supervised", "agent", "review", "fit", "tailoring"],
         "content": (
-            "The supervised workflow runs specialist agents for fit, tailoring, strategy, review, resume generation, and cover letter generation. The cover letter is generated after review-approved outputs exist. If AI-assisted execution fails mid-run, the UI shows that the workflow downgraded to deterministic fallback and why."
+        "The supervised workflow runs specialist agents for fit, tailoring, review, resume generation, and cover letter generation. The cover letter is generated after review-approved outputs exist. If AI-assisted execution fails mid-run, the UI shows that the workflow downgraded to deterministic fallback and why."
         ),
     },
 ]

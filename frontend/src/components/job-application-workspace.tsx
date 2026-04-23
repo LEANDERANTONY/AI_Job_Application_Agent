@@ -6,7 +6,6 @@ import {
   askWorkspaceAssistant,
   exchangeGoogleCode,
   exportWorkspaceArtifact,
-  getBackendHealth,
   loadSavedJobs,
   loadSavedWorkspace,
   previewWorkspaceArtifact,
@@ -25,7 +24,6 @@ import {
 import type {
   AuthSessionResponse,
   AuthTokens,
-  BackendHealth,
   CandidateProfile,
   DailyQuotaStatus,
   JobPosting,
@@ -42,7 +40,6 @@ import type {
 import {
   buildJobResultBadges,
   buildJobReview,
-  buildSourceCoverage,
 } from "@/lib/job-workspace";
 
 type Notice = {
@@ -50,13 +47,8 @@ type Notice = {
   message: string;
 } | null;
 
-type ArtifactTab = "resume" | "cover-letter" | "report";
+type ArtifactTab = "resume" | "cover-letter";
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
-
-type HealthState =
-  | { status: "loading"; payload: null; error: null }
-  | { status: "ready"; payload: BackendHealth; error: null }
-  | { status: "error"; payload: null; error: string };
 
 type AssistantTurn = {
   question: string;
@@ -65,7 +57,6 @@ type AssistantTurn = {
 
 type AuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
 
-type ResumeTheme = "classic_ats" | "modern_professional";
 type WorkflowRunMode = "preview" | "agentic";
 type WorkflowStage = {
   title: string;
@@ -76,20 +67,6 @@ type WorkflowStage = {
 const AUTH_SESSION_STORAGE_KEY = "workspace-auth-session-v1";
 const ASSISTANT_HISTORY_STORAGE_KEY = "workspace-assistant-history-v1";
 const MAX_PERSISTED_ASSISTANT_TURNS = 8;
-const RESUME_THEME_OPTIONS: Record<
-  ResumeTheme,
-  { label: string; tagline: string }
-> = {
-  classic_ats: {
-    label: "Classic ATS",
-    tagline: "Single-column, ATS-safe, recruiter-readable structure.",
-  },
-  modern_professional: {
-    label: "Modern Professional",
-    tagline: "Cleaner hierarchy with a slightly more polished visual rhythm.",
-  },
-};
-
 const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
   {
     title: "Workflow crew",
@@ -107,19 +84,14 @@ const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
     value: 41,
   },
   {
-    title: "Navigator agent",
-    detail: "Shaping the recruiter story so the pitch lands cleanly.",
-    value: 59,
-  },
-  {
     title: "Gatekeeper agent",
     detail: "Reviewing the drafted outputs and applying grounded corrections.",
-    value: 77,
+    value: 63,
   },
   {
     title: "Builder agent",
     detail: "Packaging the final tailored resume and lining up the finish.",
-    value: 90,
+    value: 84,
   },
   {
     title: "Cover letter agent",
@@ -149,6 +121,54 @@ function resultPreview(job: JobPosting) {
   return "Open the role in the workspace to inspect the normalized JD review.";
 }
 
+function normalizeSectionSentence(value: string) {
+  const cleaned = value.replace(/\s+/g, " ").replace(/^[\-\u2022•\s]+/, "").trim();
+  if (!cleaned) {
+    return "";
+  }
+  if (/^(key|listed above\.?)$/i.test(cleaned)) {
+    return "";
+  }
+  if (!/[.!?]$/.test(cleaned) && cleaned.length > 18) {
+    return `${cleaned}.`;
+  }
+  return cleaned;
+}
+
+function buildSectionParagraphs(items: string[]) {
+  const sentences = items
+    .flatMap((item) =>
+      item
+        .split(/(?<=[.!?])\s+/)
+        .map(normalizeSectionSentence)
+        .filter(Boolean),
+    )
+    .filter((sentence, index, all) => all.indexOf(sentence) === index);
+
+  if (!sentences.length) {
+    return [];
+  }
+
+  const paragraphs: string[] = [];
+  let current = "";
+
+  for (const sentence of sentences) {
+    const next = current ? `${current} ${sentence}` : sentence;
+    if (next.length > 420 && current) {
+      paragraphs.push(current);
+      current = sentence;
+      continue;
+    }
+    current = next;
+  }
+
+  if (current) {
+    paragraphs.push(current);
+  }
+
+  return paragraphs.slice(0, 4);
+}
+
 function toneForStage(active: boolean, ready = false) {
   if (active) {
     return "live";
@@ -171,9 +191,6 @@ function workflowProgressTone(title: string) {
   }
   if (title === "Forge agent") {
     return "forge";
-  }
-  if (title === "Navigator agent") {
-    return "navigator";
   }
   if (title === "Gatekeeper agent") {
     return "gatekeeper";
@@ -217,9 +234,8 @@ function buildAssistantWorkspaceSignature(
     readiness_label: workspaceSnapshot.fit_analysis.readiness_label,
     resume_summary: workspaceSnapshot.artifacts.tailored_resume.summary,
     cover_letter_summary: workspaceSnapshot.artifacts.cover_letter.summary,
-    report_summary: workspaceSnapshot.artifacts.report.summary,
-    imported_job_id: workspaceSnapshot.imported_job_posting?.id ?? "",
-  };
+      imported_job_id: workspaceSnapshot.imported_job_posting?.id ?? "",
+    };
 
   return hashString(JSON.stringify(signaturePayload));
 }
@@ -335,20 +351,14 @@ function renderArtifactTitle(tab: ArtifactTab) {
   if (tab === "resume") {
     return "Tailored Resume";
   }
-  if (tab === "cover-letter") {
-    return "Cover Letter";
-  }
-  return "Application Report";
+  return "Cover Letter";
 }
 
-function artifactKindFromTab(tab: ArtifactTab): Exclude<WorkspaceArtifactKind, "bundle"> {
+function artifactKindFromTab(tab: ArtifactTab): Exclude<WorkspaceArtifactKind, "bundle" | "report"> {
   if (tab === "resume") {
     return "tailored_resume";
   }
-  if (tab === "cover-letter") {
-    return "cover_letter";
-  }
-  return "report";
+  return "cover_letter";
 }
 
 function readStoredAuthTokens(): AuthTokens | null {
@@ -557,11 +567,6 @@ function ArtifactMetricIcon() {
 export function JobApplicationWorkspace() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialSidebarCollapsed);
   const [mainTab, setMainTab] = useState<WorkspaceMainTab>(getInitialMainTab);
-  const [health, setHealth] = useState<HealthState>({
-    status: "loading",
-    payload: null,
-    error: null,
-  });
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
   const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -579,6 +584,7 @@ export function JobApplicationWorkspace() {
   const [searchResults, setSearchResults] = useState<JobSearchResponse | null>(
     null,
   );
+  const [searchResultsCollapsed, setSearchResultsCollapsed] = useState(false);
   const [searchNotice, setSearchNotice] = useState<Notice>(null);
   const [savedJobs, setSavedJobs] = useState<JobPosting[]>([]);
   const [savedJobsLoading, setSavedJobsLoading] = useState(false);
@@ -601,6 +607,7 @@ export function JobApplicationWorkspace() {
   const [jobFileNotice, setJobFileNotice] = useState<Notice>(null);
   const [jobFileState, setJobFileState] =
     useState<WorkspaceJobDescriptionUploadResponse | null>(null);
+  const [jobInputCollapsed, setJobInputCollapsed] = useState(false);
 
   const [manualJobText, setManualJobText] = useState("");
   const [analysisLoading, setAnalysisLoading] = useState(false);
@@ -609,7 +616,6 @@ export function JobApplicationWorkspace() {
   const [analysisState, setAnalysisState] =
     useState<WorkspaceAnalysisResponse | null>(null);
   const [artifactTab, setArtifactTab] = useState<ArtifactTab>("resume");
-  const [resumeTheme, setResumeTheme] = useState<ResumeTheme>("classic_ats");
   const [artifactExporting, setArtifactExporting] = useState<string | null>(null);
   const [artifactPreviewHtml, setArtifactPreviewHtml] = useState<string | null>(null);
   const [artifactPreviewTitle, setArtifactPreviewTitle] = useState<string | null>(null);
@@ -618,36 +624,6 @@ export function JobApplicationWorkspace() {
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantSending, setAssistantSending] = useState(false);
   const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadHealth() {
-      try {
-        const payload = await getBackendHealth();
-        if (!cancelled) {
-          setHealth({ status: "ready", payload, error: null });
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setHealth({
-            status: "error",
-            payload: null,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Backend health check failed.",
-          });
-        }
-      }
-    }
-
-    void loadHealth();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -754,6 +730,12 @@ export function JobApplicationWorkspace() {
     }
   }, [activeJob]);
 
+  useEffect(() => {
+    if (activeJob || jobFileState) {
+      setJobInputCollapsed(true);
+    }
+  }, [activeJob, jobFileState]);
+
   const authTokens = authSession?.session ?? null;
   const dailyQuota = authSession?.daily_quota ?? null;
   const savedJobsEnabled = Boolean(authSession?.features.saved_jobs_enabled);
@@ -828,7 +810,6 @@ export function JobApplicationWorkspace() {
   const review = manualJobText.trim()
     ? buildJobReview(manualJobText, activeJob)
     : null;
-  const sourceCoverage = buildSourceCoverage(searchResults?.source_status ?? {});
 
   const analysisIsStale = Boolean(
     analysisState &&
@@ -841,20 +822,16 @@ export function JobApplicationWorkspace() {
       return null;
     }
     if (artifactTab === "resume") {
-      const themeMeta = RESUME_THEME_OPTIONS[resumeTheme];
       return {
         ...analysisState.artifacts.tailored_resume,
-        theme: resumeTheme,
+        theme: "classic_ats",
         summary: `Tailored resume draft for ${
           analysisState.job_description.title || "the target role"
-        } using the ${themeMeta.label} template.`,
+        }, ready to review and export.`,
       };
     }
-    if (artifactTab === "cover-letter") {
-      return analysisState.artifacts.cover_letter;
-    }
-    return analysisState.artifacts.report;
-  }, [analysisState, artifactTab, resumeTheme]);
+    return analysisState.artifacts.cover_letter;
+  }, [analysisState, artifactTab]);
   const currentArtifactKind = artifactKindFromTab(artifactTab);
   const workflowStages = useMemo(() => {
     if (analysisRunMode === "agentic") {
@@ -870,18 +847,18 @@ export function JobApplicationWorkspace() {
       {
         id: "resume" as const,
         label: "Resume",
-        title: "Load your candidate profile",
+        title: "Upload profile",
         copy:
-          "Upload and parse your resume so the rest of the workspace can reuse the candidate snapshot.",
+          "Upload your resume so the app can understand your background and use it throughout the workflow.",
         status: currentProfile ? "Ready" : "Start here",
         tone: currentProfile ? "live" : "ready",
       },
       {
         id: "jobs" as const,
         label: "Job Search",
-        title: "Search boards or import a role",
+        title: "Search job",
         copy:
-          "Search the live boards, import a direct URL, or pull from your saved shortlist.",
+          "Find a job from the live listings, paste a job link, or open one from your saved jobs.",
         status: activeJob
           ? "Role loaded"
           : searchResults?.results.length
@@ -896,18 +873,18 @@ export function JobApplicationWorkspace() {
       {
         id: "jd" as const,
         label: "Job Details",
-        title: "Review the JD in one place",
+        title: "Review the job description",
         copy:
-          "Combine JD upload, pasted text, and the parsed review panel into one focused lane.",
+          "Add the job description and review the key skills, requirements, and summary.",
         status: review ? "JD ready" : manualJobText.trim() ? "Drafting" : "Add a JD",
         tone: review ? "live" : manualJobText.trim() ? "ready" : "idle",
       },
       {
         id: "analysis" as const,
         label: "Analysis & Outputs",
-        title: "Run the workflow and inspect artifacts",
+        title: "Run the workflow",
         copy:
-          "Trigger the preview or agentic workflow, then review the outputs and export the package.",
+          "Trigger the agentic workflow, then review your tailored documents and export them.",
         status: analysisState
           ? "Outputs ready"
           : resumeText.trim() && manualJobText.trim()
@@ -1015,6 +992,7 @@ export function JobApplicationWorkspace() {
         page_size: 12,
       });
       setSearchResults(response);
+      setSearchResultsCollapsed(false);
       setSearchNotice({
         level: response.results.length ? "success" : "info",
         message: response.results.length
@@ -1249,10 +1227,6 @@ export function JobApplicationWorkspace() {
     setSelectedResumeFile(null);
     setSelectedJobFile(null);
     setArtifactTab("resume");
-    setResumeTheme(
-      (snapshot.artifacts.tailored_resume.theme as ResumeTheme | undefined) ??
-        "classic_ats",
-    );
     setArtifactPreviewHtml(null);
     setArtifactPreviewTitle(null);
     setAssistantTurns([]);
@@ -1402,11 +1376,11 @@ export function JobApplicationWorkspace() {
     setAnalysisRunMode("agentic");
     setAnalysisProgressIndex(0);
     setAnalysisLoading(true);
-    setWorkspaceNotice({
-      level: "info",
-      message:
-        "Running the agentic workflow through the backend. The workspace crew will keep you posted as each stage moves.",
-    });
+      setWorkspaceNotice({
+        level: "info",
+        message:
+        "Running the agentic workflow now. The workspace crew will keep you posted as each stage moves.",
+      });
 
     try {
       const response = await runWorkspaceAnalysis({
@@ -1419,10 +1393,6 @@ export function JobApplicationWorkspace() {
       }, authTokens);
       setAnalysisState(response);
       setArtifactTab("resume");
-      setResumeTheme(
-        (response.artifacts.tailored_resume.theme as ResumeTheme | undefined) ??
-          "classic_ats",
-      );
       setMainTab("analysis");
       setArtifactPreviewHtml(null);
       setArtifactPreviewTitle(null);
@@ -1539,7 +1509,7 @@ export function JobApplicationWorkspace() {
         workspace_snapshot: analysisState,
         artifact_kind: artifactKind,
         export_format: exportFormat,
-        resume_theme: resumeTheme,
+        resume_theme: "classic_ats",
       });
       downloadBase64File(
         response.file_name,
@@ -1584,7 +1554,7 @@ export function JobApplicationWorkspace() {
         const response = await previewWorkspaceArtifact({
           workspace_snapshot: resolvedWorkspaceSnapshot,
           artifact_kind: currentArtifactKind,
-          resume_theme: resumeTheme,
+          resume_theme: "classic_ats",
         });
         if (!cancelled) {
           setArtifactPreviewHtml(response.html);
@@ -1614,14 +1584,13 @@ export function JobApplicationWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [analysisState, currentArtifactKind, resumeTheme]);
+  }, [analysisState, currentArtifactKind]);
 
   function clearWorkspaceRole() {
     setActiveJob(null);
     setJobFileState(null);
     setManualJobText("");
     setAnalysisState(null);
-    setResumeTheme("classic_ats");
     setArtifactExporting(null);
     setArtifactPreviewHtml(null);
     setArtifactPreviewTitle(null);
@@ -1846,11 +1815,11 @@ export function JobApplicationWorkspace() {
                     ))}
                   </div>
                 ) : !assistantRequiresWorkspaceRun ? (
-                  <div className="workspace-empty-state workspace-empty-state-compact">
-                    Ask about your fit, tailored resume, cover letter, report,
-                    or the current package.
-                  </div>
-                ) : null}
+                    <div className="workspace-empty-state workspace-empty-state-compact">
+                    Ask about your tailored resume, cover letter, or
+                      the current package.
+                    </div>
+                  ) : null}
 
                 <form className="workspace-assistant-form" onSubmit={handleAssistantSubmit}>
                   <textarea
@@ -1860,7 +1829,7 @@ export function JobApplicationWorkspace() {
                     placeholder={
                       assistantRequiresWorkspaceRun
                         ? "Assistant unlocks after your first workspace run."
-                        : "Ask about your fit, package, gaps, or the current outputs..."
+                        : "Ask about your package, resume, cover letter, or the current outputs..."
                     }
                     value={assistantQuestion}
                   />
@@ -1919,11 +1888,11 @@ export function JobApplicationWorkspace() {
               </h1>
               <p className="workspace-hero-copy">
                 Upload your resume, review job descriptions, run tailored
-                application analysis, and generate ready-to-use resume, cover
-                letter, and report outputs from one place.
-              </p>
+                  application analysis, and generate ready-to-use resume, cover
+                letter outputs from one place.
+                </p>
+              </div>
             </div>
-          </div>
         </section>
 
         <div className="workspace-hero-metrics workspace-hero-metrics-outside">
@@ -1960,10 +1929,10 @@ export function JobApplicationWorkspace() {
                 </span>
                 <span>Artifacts</span>
               </div>
-              <strong>{analysisState ? "Resume, cover letter, report" : "Pending"}</strong>
-              <small>
-                {analysisState
-                  ? "Outputs are ready to review and export."
+                <strong>{analysisState ? "Resume and cover letter" : "Pending"}</strong>
+                <small>
+                  {analysisState
+                    ? "Outputs are ready to review and export."
                   : "Artifacts appear after the workspace run finishes."}
               </small>
             </div>
@@ -2025,16 +1994,15 @@ export function JobApplicationWorkspace() {
                   <h2 className="section-title">Resume intake</h2>
                 </div>
                 <span className="status-chip">
-                  {resumeState ? "Parsed" : "Waiting for upload"}
+                  {resumeState ? "Ready" : "Waiting for upload"}
                 </span>
               </div>
-              <p className="section-copy">
-                Upload your resume and let the backend parse it into a candidate
-                snapshot that the rest of the workspace can reuse.
-              </p>
+                <p className="section-copy">
+                  Upload your resume so the workspace can use your background throughout the workflow.
+                </p>
 
               <div className="workspace-uploader">
-                <label className="primary-button workspace-button" htmlFor="resume-upload">
+                <label className="primary-button workspace-button workspace-upload-trigger" htmlFor="resume-upload">
                   Choose resume file
                 </label>
                 <input
@@ -2217,22 +2185,44 @@ export function JobApplicationWorkspace() {
                     <p className="workspace-label">Matching roles</p>
                   </div>
                   {searchResults ? (
-                    <span className="status-chip">
-                      {searchResults.total_results} result
-                      {searchResults.total_results === 1 ? "" : "s"}
-                    </span>
+                    <div className="workspace-results-head-actions">
+                      <span className="status-chip">
+                        {searchResults.total_results} result
+                        {searchResults.total_results === 1 ? "" : "s"}
+                      </span>
+                      {searchResults.results.length ? (
+                        <button
+                          className="secondary-button workspace-button workspace-button-small"
+                          onClick={() =>
+                            setSearchResultsCollapsed((current) => !current)
+                          }
+                          type="button"
+                        >
+                          {searchResultsCollapsed ? "Show results" : "Hide results"}
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
 
                 {searchResults?.results.length ? (
-                  <div className="workspace-results-list">
+                  searchResultsCollapsed ? (
+                    <div className="workspace-empty-state workspace-empty-state-compact">
+                      Search results are collapsed. Expand them again whenever you want to review roles from this search.
+                    </div>
+                  ) : (
+                  <div className="workspace-results-list workspace-saved-jobs-list">
                     {searchResults.results.map((job) => {
                       const isActive = activeJob?.id === job.id;
                       const isSaved = savedJobIds.has(job.id);
                       const isSaving = savedJobActionId === job.id;
                       return (
                         <article
-                          className={isActive ? "job-result-card job-result-card-active" : "job-result-card"}
+                          className={
+                            isActive
+                              ? "job-result-card workspace-saved-job-card workspace-result-tile job-result-card-active"
+                              : "job-result-card workspace-saved-job-card workspace-result-tile"
+                          }
                           key={job.id}
                         >
                           <div className="job-result-head">
@@ -2293,6 +2283,7 @@ export function JobApplicationWorkspace() {
                       );
                     })}
                   </div>
+                  )
                 ) : (
                   <div className="workspace-empty-state">
                     Search for roles to load one into your workspace.
@@ -2332,17 +2323,17 @@ export function JobApplicationWorkspace() {
                   ) : savedJobs.length ? (
                     <>
                       <div className="workspace-summary-grid workspace-summary-grid-tight">
-                        <div className="metric-tile">
+                        <div className="metric-tile workspace-status-tile">
                           <span>Saved Jobs</span>
                           <strong>{savedJobs.length}</strong>
                           <small>Your current account-backed shortlist.</small>
                         </div>
-                        <div className="metric-tile">
+                        <div className="metric-tile workspace-status-tile">
                           <span>Latest Save</span>
                           <strong>{formatSavedLabel(latestSavedJobAt)}</strong>
                           <small>Most recent shortlist update for this signed-in account.</small>
                         </div>
-                        <div className="metric-tile">
+                        <div className="metric-tile workspace-status-tile">
                           <span>Workspace Role</span>
                           <strong>{activeJob?.title || "No shortlisted role loaded"}</strong>
                           <small>
@@ -2351,13 +2342,17 @@ export function JobApplicationWorkspace() {
                         </div>
                       </div>
 
-                      <div className="workspace-results-list">
+                      <div className="workspace-results-list workspace-saved-jobs-list">
                         {savedJobs.map((job) => {
                           const isActive = activeJob?.id === job.id;
                           const isRemoving = savedJobActionId === job.id;
                           return (
                             <article
-                              className={isActive ? "job-result-card job-result-card-active" : "job-result-card"}
+                              className={
+                                isActive
+                                  ? "job-result-card workspace-saved-job-card workspace-result-tile job-result-card-active"
+                                  : "job-result-card workspace-saved-job-card workspace-result-tile"
+                              }
                               key={`saved-${job.id}`}
                             >
                               <div className="job-result-head">
@@ -2423,251 +2418,179 @@ export function JobApplicationWorkspace() {
               </article>
             </section>
 
-            <section className="workspace-section-stack">
-              <article className="surface-card surface-card-neutral">
-                <div className="section-head">
-                  <div>
-                    <p className="eyebrow">Search Status</p>
-                    <h2 className="section-title">Search and workspace status</h2>
-                  </div>
-                  <span
-                    className={
-                      health.status === "ready"
-                        ? "status-chip status-chip-live"
-                        : health.status === "error"
-                          ? "status-chip status-chip-warning"
-                          : "status-chip"
-                    }
-                  >
-                    {health.status === "ready"
-                      ? "Ready"
-                      : health.status === "error"
-                        ? "Needs attention"
-                        : "Checking"}
-                  </span>
-                </div>
-
-                <div className="workspace-summary-grid">
-                  <div className="metric-tile workspace-status-tile">
-                    <span>Search access</span>
-                    <strong>
-                      {health.status === "ready"
-                        ? "Connected"
-                        : health.status === "error"
-                          ? "Unavailable"
-                          : "Checking"}
-                    </strong>
-                    <small>
-                      {health.status === "ready"
-                        ? "Live job search is available right now."
-                        : health.status === "error"
-                          ? health.error
-                          : "Checking your search connection now."}
-                    </small>
-                  </div>
-                  <div className="metric-tile workspace-status-tile">
-                    <span>Available sources</span>
-                    <strong>
-                      {health.status === "ready"
-                        ? `${health.payload.providers.greenhouse.board_count + health.payload.providers.lever.site_count} sources ready`
-                        : "Waiting for source counts"}
-                    </strong>
-                    <small>
-                      {health.status === "ready"
-                        ? `${health.payload.providers.greenhouse.board_count} board feeds and ${health.payload.providers.lever.site_count} company feeds are ready for search.`
-                        : "Source counts will appear once the connection is ready."}
-                    </small>
-                  </div>
-                  <div className="metric-tile workspace-status-tile">
-                    <span>Current role</span>
-                    <strong>{activeJob?.title || jobFileState?.job_description.title || "No role loaded"}</strong>
-                    <small>
-                      {activeJob
-                        ? `${activeJob.company} - ${activeJob.location || "Location not specified"}`
-                        : jobFileState
-                          ? "Loaded from a parsed JD file."
-                          : "Paste a JD or import a role to continue."}
-                    </small>
-                  </div>
-                </div>
-
-                {sourceCoverage ? (
-                  <div className="workspace-summary-grid workspace-summary-grid-tight">
-                    <div className="metric-tile workspace-status-tile">
-                      <span>Sources checked</span>
-                      <strong>{sourceCoverage.searched}</strong>
-                      <small>Sources checked for your current search.</small>
-                    </div>
-                    <div className="metric-tile workspace-status-tile">
-                      <span>Sources with matches</span>
-                      <strong>{sourceCoverage.matched}</strong>
-                      <small>Sources that returned at least one matching role.</small>
-                    </div>
-                    <div className="metric-tile workspace-status-tile">
-                      <span>Unavailable</span>
-                      <strong>{sourceCoverage.unavailable}</strong>
-                      <small>Sources that did not respond during this search.</small>
-                    </div>
-                  </div>
-                ) : null}
-              </article>
-            </section>
           </>
         ) : null}
 
         {mainTab === "jd" ? (
-          <section className="workspace-section-grid">
-            <article className="surface-card surface-card-neutral">
+          <section className="surface-card surface-card-neutral">
               <div className="section-head">
                 <div>
-                  <p className="eyebrow">Steps 3 and 4</p>
+                  <p className="eyebrow">Step 3</p>
                   <h2 className="section-title">JD upload, manual input, and review</h2>
                 </div>
-                <span className="status-chip">
-                  {review ? "Ready" : "Waiting for JD text"}
-                </span>
+                <div className="section-head-actions">
+                  <span className="status-chip">
+                    {review ? "Ready" : "Waiting for JD text"}
+                  </span>
+                  {review ? (
+                    <button
+                      className="secondary-button workspace-button workspace-button-small"
+                      onClick={() => setJobInputCollapsed((current) => !current)}
+                      type="button"
+                    >
+                      {jobInputCollapsed ? "Show JD input" : "Hide JD input"}
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <p className="section-copy">
                 Paste a JD directly, load one from search, or upload a JD file. All three paths meet here.
               </p>
 
-              <div className="workspace-uploader">
-                <label className="primary-button workspace-button" htmlFor="job-description-upload">
-                  Choose JD file
-                </label>
-                <input
-                  accept=".pdf,.docx,.txt"
-                  className="workspace-hidden-input"
-                  id="job-description-upload"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    setSelectedJobFile(file);
-                    void handleJobDescriptionUpload(file);
-                    event.target.value = "";
-                  }}
-                  type="file"
-                />
-                <span className="workspace-file-name">
-                  {selectedJobFile?.name || jobFileState?.job_description.title || "No JD file selected"}
-                </span>
-                {jobFileUploading ? (
-                  <span className="workspace-file-status">Parsing JD...</span>
-                ) : null}
-              </div>
+              {!jobInputCollapsed ? (
+                <div className="workspace-jd-stack">
+                  <div className="workspace-jd-load-panel">
+                    <div className="workspace-uploader">
+                      <label className="primary-button workspace-button" htmlFor="job-description-upload">
+                        Choose JD file
+                      </label>
+                      <input
+                        accept=".pdf,.docx,.txt"
+                        className="workspace-hidden-input"
+                        id="job-description-upload"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          setSelectedJobFile(file);
+                          void handleJobDescriptionUpload(file);
+                          event.target.value = "";
+                        }}
+                        type="file"
+                      />
+                      <span className="workspace-file-name">
+                        {selectedJobFile?.name || jobFileState?.job_description.title || "No JD file selected"}
+                      </span>
+                      {jobFileUploading ? (
+                        <span className="workspace-file-status">Parsing JD...</span>
+                      ) : null}
+                    </div>
 
-              {jobFileNotice ? (
-                <div className={noticeClassName(jobFileNotice.level)}>
-                  {jobFileNotice.message}
+                    {jobFileNotice ? (
+                      <div className={noticeClassName(jobFileNotice.level)}>
+                        {jobFileNotice.message}
+                      </div>
+                    ) : null}
+
+                    <textarea
+                      className="workspace-textarea"
+                      onChange={(event) => setManualJobText(event.target.value)}
+                      placeholder="Paste a job description here, or load one from job search."
+                      value={manualJobText}
+                    />
+                  </div>
                 </div>
               ) : null}
 
-              <textarea
-                className="workspace-textarea"
-                onChange={(event) => setManualJobText(event.target.value)}
-                placeholder="Paste a job description here, or load one from the backend search/import lane."
-                value={manualJobText}
-              />
-            </article>
-
-            <article className="surface-card surface-card-neutral">
-              <div className="section-head">
+              <div className="workspace-jd-stack">
+                <div className="workspace-section-card">
+                  <div className="section-head">
                 <div>
                   <p className="eyebrow">Review lane</p>
-                  <h2 className="section-title">Parsed JD summary</h2>
+                  <h2 className="section-title">JD summary</h2>
                 </div>
-                <span className="status-chip">
-                  {activeJob
-                    ? `Imported from ${activeJob.source}`
-                    : jobFileState
-                      ? "Uploaded file"
-                      : review
-                        ? "Manual JD"
-                        : "Waiting"}
-                </span>
-              </div>
-
-              {review ? (
-                <>
-                  <div className="workspace-summary-grid">
-                    {review.summaryCards.map((card) => (
-                      <div className="metric-tile" key={card.label}>
-                        <span>{card.label}</span>
-                        <strong>{card.value}</strong>
-                        <small>{card.note}</small>
-                      </div>
-                    ))}
+                    <span className="status-chip">
+                      {activeJob
+                        ? `Imported from ${activeJob.source}`
+                        : jobFileState
+                          ? "Ready"
+                          : review
+                            ? "Ready"
+                            : "Waiting"}
+                    </span>
                   </div>
 
-                  <div className="workspace-review-columns">
-                    <div className="soft-panel">
-                      <span className="soft-panel-label">Hard skills</span>
-                      <div className="workspace-chip-grid">
-                        {review.hardSkills.length ? (
-                          review.hardSkills.map((skill) => (
-                            <span className="workspace-meta-chip" key={skill}>
-                              {skill}
-                            </span>
-                          ))
-                        ) : (
-                          <p className="workspace-muted-copy">
-                            No explicit hard skills detected yet in the current text.
-                          </p>
-                        )}
+                  {review ? (
+                    <>
+                      <div className="workspace-summary-grid">
+                        {review.summaryCards.map((card) => (
+                          <div className="metric-tile" key={card.label}>
+                            <span>{card.label}</span>
+                            <strong>{card.value}</strong>
+                            <small>{card.note}</small>
+                          </div>
+                        ))}
                       </div>
-                    </div>
 
-                    <div className="soft-panel">
-                      <span className="soft-panel-label">Soft skills</span>
-                      <div className="workspace-chip-grid">
-                        {review.softSkills.length ? (
-                          review.softSkills.map((skill) => (
-                            <span className="workspace-meta-chip" key={skill}>
-                              {skill}
-                            </span>
-                          ))
-                        ) : (
-                          <p className="workspace-muted-copy">
-                            No explicit soft-skill signals detected yet in the current text.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {analysisState && !analysisIsStale ? (
-                    <div className="workspace-section-stack">
-                      {analysisState.jd_summary_view.sections.map((section) => (
-                        <div className="workspace-section-card" key={section.title}>
-                          <h3>{section.title}</h3>
-                          <ul>
-                            {section.items.map((item) => (
-                              <li key={item}>{item}</li>
-                            ))}
-                          </ul>
+                      <div className="workspace-review-columns">
+                        <div className="soft-panel">
+                          <span className="soft-panel-label">Hard skills</span>
+                          <div className="workspace-chip-grid">
+                            {review.hardSkills.length ? (
+                              review.hardSkills.map((skill) => (
+                                <span className="workspace-meta-chip" key={skill}>
+                                  {skill}
+                                </span>
+                              ))
+                            ) : (
+                              <p className="workspace-muted-copy">
+                                No explicit hard skills detected yet in the current text.
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      ))}
-                    </div>
+
+                        <div className="soft-panel">
+                          <span className="soft-panel-label">Soft skills</span>
+                          <div className="workspace-chip-grid">
+                            {review.softSkills.length ? (
+                              review.softSkills.map((skill) => (
+                                <span className="workspace-meta-chip" key={skill}>
+                                  {skill}
+                                </span>
+                              ))
+                            ) : (
+                              <p className="workspace-muted-copy">
+                                No explicit soft-skill signals detected yet in the current text.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {analysisState && !analysisIsStale ? (
+                        <div className="workspace-section-stack workspace-jd-sections">
+                          {analysisState.jd_summary_view.sections.map((section) => (
+                            <div className="workspace-section-card workspace-jd-section-card" key={section.title}>
+                              <h3>{section.title}</h3>
+                              <div className="workspace-jd-paragraphs">
+                                {buildSectionParagraphs(section.items).map((paragraph) => (
+                                  <p key={paragraph}>{paragraph}</p>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="workspace-section-stack workspace-jd-sections">
+                          {review.summarySections.map((section) => (
+                            <div className="workspace-section-card workspace-jd-section-card" key={section.title}>
+                              <h3>{section.title}</h3>
+                              <div className="workspace-jd-paragraphs">
+                                {buildSectionParagraphs(section.items).map((paragraph) => (
+                                  <p key={paragraph}>{paragraph}</p>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   ) : (
-                    <div className="workspace-section-stack">
-                      {review.summarySections.map((section) => (
-                        <div className="workspace-section-card" key={section.title}>
-                          <h3>{section.title}</h3>
-                          <ul>
-                            {section.items.map((item) => (
-                              <li key={item}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
+                    <div className="workspace-empty-state">
+                      Once a job description is present, this panel mirrors the review lane with summary cards, skills, and structured sections.
                     </div>
                   )}
-                </>
-              ) : (
-                <div className="workspace-empty-state">
-                  Once a job description is present, this panel mirrors the review lane with summary cards, skills, and structured sections.
                 </div>
-              )}
-            </article>
+              </div>
           </section>
         ) : null}
 
@@ -2684,7 +2607,7 @@ export function JobApplicationWorkspace() {
                 </span>
                 </div>
                 <p className="section-copy">
-                  Run the agentic workflow through the backend once your resume and JD are loaded.
+                  Run the agentic workflow once your resume and job description are ready.
                 </p>
 
                 <div className="workspace-run-actions">
@@ -2697,7 +2620,7 @@ export function JobApplicationWorkspace() {
                     {analysisLoading ? "Running..." : "Run agentic analysis"}
                 </button>
                 <button
-                  className="secondary-button workspace-button"
+                  className="danger-button workspace-button"
                   onClick={clearWorkspaceRole}
                   type="button"
                 >
@@ -2731,112 +2654,30 @@ export function JobApplicationWorkspace() {
                     />
                   </div>
                   <div className="workspace-progress-stage-list">
-                    {workflowStages.map((stage, index) => {
-                      const state = toneForStage(
-                        index === analysisProgressIndex,
-                        index < analysisProgressIndex,
-                      );
-                      return (
-                        <div
-                          className={`workspace-progress-stage workspace-progress-stage-${state}`}
-                          key={`${stage.title}-${stage.value}`}
-                        >
-                          <span className="workspace-progress-stage-title">
-                            {stage.title}
-                          </span>
-                          <small>{stage.detail}</small>
-                        </div>
-                      );
-                    })}
+                    <div className="workspace-progress-stage workspace-progress-stage-live">
+                      <span className="workspace-progress-stage-title">
+                        {currentWorkflowStage.title}
+                      </span>
+                      <small>{currentWorkflowStage.detail}</small>
+                    </div>
                   </div>
                   <p className="workspace-muted-copy workspace-progress-note">
-                    This mirrors the old workspace crew panel from Streamlit. The stage feed is client-side guidance for the in-flight run while the backend finishes the request.
+                    The workspace now shows only the current agent in flight and advances this card as each stage completes.
                   </p>
                 </div>
               ) : null}
 
               {analysisIsStale ? (
                 <div className="notice-panel notice-warning">
-                  The inputs changed after the last run. Re-run the preview or agentic analysis to refresh the workspace outputs.
+                  The inputs changed after the last run. Re-run the workflow to refresh your documents.
                 </div>
               ) : null}
 
               {analysisState ? (
-                <>
-                  <div className="workspace-summary-grid">
-                    <div className="metric-tile">
-                      <span>Fit score</span>
-                      <strong>{analysisState.fit_analysis.overall_score}/100</strong>
-                      <small>{analysisState.fit_analysis.readiness_label}</small>
-                    </div>
-                    <div className="metric-tile">
-                      <span>Matched hard skills</span>
-                      <strong>{analysisState.fit_analysis.matched_hard_skills.length}</strong>
-                      <small>
-                        {analysisState.fit_analysis.matched_hard_skills.slice(0, 4).join(", ") || "No strong hard-skill overlap yet"}
-                      </small>
-                    </div>
-                    <div className="metric-tile">
-                      <span>Review</span>
-                        <strong>
-                          {analysisState.workflow.review_approved
-                            ? "Approved"
-                            : analysisState.workflow.assisted_requested
-                              ? "Needs review"
-                              : "Legacy draft"}
-                        </strong>
-                      <small>
-                        {analysisState.workflow.fallback_reason || "Artifacts below reflect the latest workspace run."}
-                      </small>
-                    </div>
-                  </div>
-
-                  <div className="workspace-review-columns">
-                    <div className="soft-panel">
-                      <span className="soft-panel-label">Strengths</span>
-                      <ul className="workspace-feature-list workspace-feature-list-compact">
-                        {analysisState.fit_analysis.strengths.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="soft-panel">
-                      <span className="soft-panel-label">Gaps</span>
-                      <ul className="workspace-feature-list workspace-feature-list-compact">
-                        {analysisState.fit_analysis.gaps.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-
-                  {analysisState.agent_result ? (
-                    <div className="workspace-section-card">
-                      <h3>Agentic strategy highlights</h3>
-                      <p className="workspace-muted-copy">
-                        {analysisState.agent_result.fit.fit_summary ||
-                          analysisState.artifacts.report.summary}
-                      </p>
-                      {analysisState.agent_result.strategy?.recruiter_positioning ? (
-                        <p className="workspace-muted-copy">
-                          {analysisState.agent_result.strategy.recruiter_positioning}
-                        </p>
-                      ) : null}
-                    </div>
-                    ) : (
-                      <div className="workspace-section-card">
-                        <h3>Draft guidance</h3>
-                        <ul>
-                          {analysisState.tailored_draft.gap_mitigation_steps.map((item) => (
-                            <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
+                <></>
               ) : (
                 <div className="workspace-empty-state">
-                  The fit snapshot, draft guidance, and artifacts appear here after the first run.
+                  Run the workflow once to unlock your tailored documents.
                 </div>
               )}
             </section>
@@ -2845,23 +2686,23 @@ export function JobApplicationWorkspace() {
               <div className="section-head">
                 <div>
                   <p className="eyebrow">Outputs</p>
-                  <h2 className="section-title">Artifacts and exports</h2>
+                  <h2 className="section-title">Documents</h2>
                 </div>
                 <span className="status-chip">
                   {analysisState ? "Ready to review" : "Waiting for run"}
                 </span>
               </div>
               <p className="section-copy">
-                Review the current artifact, switch the resume export theme, and download markdown, PDF, or the full package bundle from the backend.
+                Review and download your documents.
               </p>
 
               {analysisState ? (
-                <>
-                  <div className="workspace-tab-row">
-                    {(["resume", "cover-letter", "report"] as ArtifactTab[]).map((tab) => (
-                      <button
-                        className={artifactTab === tab ? "inspector-tab inspector-tab-active" : "inspector-tab"}
-                        key={tab}
+                  <>
+                    <div className="workspace-tab-row">
+                    {(["resume", "cover-letter"] as ArtifactTab[]).map((tab) => (
+                        <button
+                          className={artifactTab === tab ? "inspector-tab inspector-tab-active" : "inspector-tab"}
+                          key={tab}
                         onClick={() => setArtifactTab(tab)}
                         type="button"
                       >
@@ -2874,7 +2715,7 @@ export function JobApplicationWorkspace() {
                     <div className="workspace-artifact-panel">
                       <div className="workspace-artifact-head">
                         <div>
-                          <p className="workspace-label">Current artifact</p>
+                          <p className="workspace-label">Current document</p>
                           <h3 className="workspace-role-title">{currentArtifact.title}</h3>
                           <p className="workspace-role-copy">{currentArtifact.summary}</p>
                         </div>
@@ -2903,87 +2744,15 @@ export function JobApplicationWorkspace() {
                               ? "Preparing..."
                               : "Download PDF"}
                           </button>
-                          <button
-                            className="primary-button workspace-button workspace-button-small"
-                            disabled={artifactExporting !== null}
-                            onClick={() => void handleArtifactExport("bundle", "zip")}
-                            type="button"
-                          >
-                            {artifactExporting === "bundle:zip"
-                              ? "Preparing..."
-                              : "Download Package (.zip)"}
-                          </button>
                         </div>
                       </div>
 
-                      {artifactTab === "resume" ? (
-                        <>
-                          <div className="workspace-section-card">
-                            <h3>Resume theme</h3>
-                            <p className="workspace-muted-copy">
-                              Choose which export style you want the backend to package for the tailored resume.
-                            </p>
-                            <div className="workspace-tab-row">
-                              {(Object.entries(RESUME_THEME_OPTIONS) as Array<
-                                [ResumeTheme, { label: string; tagline: string }]
-                              >).map(([themeKey, themeMeta]) => (
-                                <button
-                                  className={
-                                    resumeTheme === themeKey
-                                      ? "inspector-tab inspector-tab-active"
-                                      : "inspector-tab"
-                                  }
-                                  key={themeKey}
-                                  onClick={() => setResumeTheme(themeKey)}
-                                  type="button"
-                                >
-                                  {themeMeta.label}
-                                </button>
-                              ))}
-                            </div>
-                            <p className="workspace-muted-copy">
-                              {RESUME_THEME_OPTIONS[resumeTheme].tagline}
-                            </p>
-                          </div>
-
-                          <div className="workspace-review-columns">
-                            <div className="soft-panel">
-                              <span className="soft-panel-label">Highlighted skills</span>
-                              <div className="workspace-chip-grid">
-                                {analysisState.artifacts.tailored_resume.highlighted_skills.map((skill) => (
-                                  <span className="workspace-meta-chip" key={skill}>
-                                    {skill}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="soft-panel">
-                              <span className="soft-panel-label">Validation notes</span>
-                              <ul className="workspace-feature-list workspace-feature-list-compact">
-                                {analysisState.artifacts.tailored_resume.validation_notes.map((note) => (
-                                  <li key={note}>{note}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-
-                          <div className="soft-panel">
-                            <span className="soft-panel-label">Change summary</span>
-                            <ul className="workspace-feature-list workspace-feature-list-compact">
-                              {analysisState.artifacts.tailored_resume.change_log.map((note) => (
-                                <li key={note}>{note}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        </>
-                      ) : null}
-
                       <div className="workspace-section-card">
-                        <h3>Artifact preview</h3>
+                        <h3>Preview</h3>
                         <p className="workspace-muted-copy">
                           {artifactPreviewTitle
-                            ? `Backend-rendered preview for ${artifactPreviewTitle}.`
-                            : "The backend HTML preview will appear here once it is ready."}
+                            ? `Preview of ${artifactPreviewTitle}.`
+                            : "A preview of the current document will appear here once it is ready."}
                         </p>
                         {artifactPreviewLoading ? (
                           <div className="workspace-empty-state">
@@ -2995,23 +2764,21 @@ export function JobApplicationWorkspace() {
                             srcDoc={artifactPreviewHtml}
                             title={`${renderArtifactTitle(artifactTab)} preview`}
                           />
-                        ) : (
+                      ) : (
                           <div className="workspace-empty-state">
                             The artifact preview is temporarily unavailable, but the download actions still work.
                           </div>
                         )}
                       </div>
-
-                      <pre className="workspace-artifact-copy">{currentArtifact.plain_text}</pre>
                     </div>
                   ) : null}
                 </>
-              ) : (
-                <div className="workspace-empty-state">
-                  The tailored resume, cover letter, and application report will appear here after the workspace run.
-                </div>
-              )}
-            </section>
+                ) : (
+                  <div className="workspace-empty-state">
+                  The tailored resume and cover letter will appear here after the workflow runs.
+                  </div>
+                )}
+              </section>
           </>
         ) : null}
       </div>

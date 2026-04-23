@@ -19,7 +19,6 @@ from .fit_agent import FitAgent
 from .cover_letter_agent import CoverLetterAgent
 from .resume_generation_agent import ResumeGenerationAgent
 from .review_agent import ReviewAgent
-from .strategy_agent import StrategyAgent
 from .tailoring_agent import TailoringAgent
 
 
@@ -144,15 +143,13 @@ class ApplicationOrchestrator:
     ):
         tailoring_agent = TailoringAgent(openai_service)
         review_agent = ReviewAgent(openai_service)
-        strategy_agent = StrategyAgent(openai_service)
         cover_letter_agent = CoverLetterAgent(openai_service)
 
         final_tailoring_output = None
-        final_strategy_output = None
         review_output = None
         resume_generation_output = None
         cover_letter_output = None
-        total_stage_count = 6
+        total_stage_count = 5
         stage_index = 0
 
         def stage_progress(current_stage_index):
@@ -229,20 +226,6 @@ class ApplicationOrchestrator:
             ),
         )
         begin_stage(
-            "Navigator agent",
-            "Shaping the recruiter story so the pitch lands cleanly.",
-        )
-        strategy_output = run_agent_step(
-            "strategy",
-            lambda: strategy_agent.run(
-                candidate_profile,
-                job_description,
-                fit_analysis,
-                fit_output,
-                tailoring_output,
-            ),
-        )
-        begin_stage(
             "Gatekeeper agent",
             "Reviewing the drafted outputs and applying grounded corrections.",
         )
@@ -254,11 +237,9 @@ class ApplicationOrchestrator:
                 fit_analysis,
                 tailored_draft,
                 tailoring_output,
-                strategy_output,
             ),
         )
         final_tailoring_output = review_output.corrected_tailoring or tailoring_output
-        final_strategy_output = review_output.corrected_strategy or strategy_output
 
         begin_stage(
             "Builder agent",
@@ -272,7 +253,6 @@ class ApplicationOrchestrator:
                 fit_analysis,
                 tailored_draft,
                 final_tailoring_output,
-                final_strategy_output,
                 review_output,
             ),
             review_approved=review_output.approved if review_output else False,
@@ -291,7 +271,6 @@ class ApplicationOrchestrator:
                     fit_analysis,
                     tailored_draft,
                     final_tailoring_output,
-                    final_strategy_output,
                     review_output,
                     resume_generation_output,
                 ),
@@ -324,7 +303,7 @@ class ApplicationOrchestrator:
             review=review_output,
             profile=ProfileAgentOutput(),
             job=JobAgentOutput(),
-            strategy=final_strategy_output,
+            strategy=None,
             resume_generation=resume_generation_output,
             cover_letter=cover_letter_output,
             review_history=[],

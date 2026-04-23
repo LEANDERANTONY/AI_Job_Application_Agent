@@ -301,14 +301,14 @@ export const stagedLanes: WorkspaceLane[] = [
     bullets: [
       "Scout, signal, matchmaker, and review progress",
       "Quota-aware run trigger",
-      "Grounded fit and strategy payloads",
+      "Grounded fit and report-ready payloads",
     ],
   },
   {
     title: "Artifacts",
     status: "Retrieval endpoint next",
     body:
-      "Tailored resume, cover letter, and strategy outputs need fetchable resources instead of Streamlit-rendered panels.",
+      "Tailored resume, cover letter, and report outputs need fetchable resources instead of Streamlit-rendered panels.",
     bullets: [
       "Artifact tabs and export actions",
       "Theme-aware resume rendering",

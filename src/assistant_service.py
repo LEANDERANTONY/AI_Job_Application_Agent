@@ -395,21 +395,21 @@ class AssistantService:
             )
         if "report" in normalized or "application package" in normalized:
             return AssistantResponse(
-                answer="Use the application package report to review the fit summary, strategy guidance, review notes, and rationale behind the tailored resume and cover letter wording. It is the explanation layer, while the tailored resume and cover letter are the direct-use artifacts.",
+                answer="Use the application package report to review the fit summary, review notes, and rationale behind the tailored resume and cover letter wording. It is the explanation layer, while the tailored resume and cover letter are the direct-use artifacts.",
                 sources=["Application Package", "Readiness Snapshot", "Tailored Resume Draft", "Cover Letter"],
                 suggested_follow_ups=["What is the difference between the report and the resume?", "Can I download the report as PDF?"],
             )
         if "difference" in normalized or ("report" in normalized and "resume" in normalized):
             return AssistantResponse(
-                answer="The tailored resume and cover letter are the direct-use artifacts, while the report explains the fit, strategy, review notes, and why those outputs were shaped that way. You can preview all of them in the page before downloading.",
+                answer="The tailored resume and cover letter are the direct-use artifacts, while the report explains the fit, review notes, and why those outputs were shaped that way. You can preview all of them in the page before downloading.",
                 sources=["Tailored Resume Draft", "Cover Letter", "Application Package"],
                 suggested_follow_ups=["Which one should I submit?", "Can I download the report as PDF?"],
             )
         if "template" in normalized or "theme" in normalized:
             return AssistantResponse(
-                answer="The resume template changes the deterministic layout style of the tailored resume. Classic ATS is the safer parsing-first option, while Modern Professional adds a cleaner visual hierarchy.",
+                answer="The tailored resume uses one standard ATS-friendly layout so the exported document stays clean, readable, and ready to submit.",
                 sources=["Tailored Resume Draft"],
-                suggested_follow_ups=["Which template is safer for ATS?", "Can I preview before downloading?"],
+                suggested_follow_ups=["Can I preview before downloading?", "Can I export the resume as PDF?"],
             )
         if (
             "budget" in normalized
@@ -425,7 +425,7 @@ class AssistantService:
             )
         if "job search" in normalized:
             return AssistantResponse(
-                answer="Use Job Search to search configured technical-role sources, paste a supported job URL, or shortlist interesting roles for later. Once you choose a role, load it into the JD flow and continue through the same analysis, resume, cover letter, and application-strategy path.",
+                answer="Use Job Search to search configured technical-role sources, paste a supported job URL, or shortlist interesting roles for later. Once you choose a role, load it into the JD flow and continue through the same analysis, resume, cover letter, and report path.",
                 sources=["Job Search", "Upload Resume", "Manual JD Input"],
                 suggested_follow_ups=["Can I save jobs for later?", "What happens after I load a role into the JD flow?"],
             )
@@ -553,7 +553,7 @@ class AssistantService:
             )
         return AssistantResponse(
             answer=(
-                "Right now your package centers on a fit score of {score}/100 with readiness marked as {label}. The tailored resume emphasizes {skills}, the cover letter follows the approved workflow outputs when available, and the report captures the broader strategy and review context."
+                "Right now your package centers on a fit score of {score}/100 with readiness marked as {label}. The tailored resume emphasizes {skills}, the cover letter follows the approved workflow outputs when available, and the report captures the broader fit and review context."
             ).format(
                 score=fit_score_text,
                 label=readiness_label_text,

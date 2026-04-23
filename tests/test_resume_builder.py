@@ -6,7 +6,6 @@ from src.schemas import (
     ResumeGenerationAgentOutput,
     ResumeDocument,
     ReviewAgentOutput,
-    StrategyAgentOutput,
     TailoringAgentOutput,
     WorkExperience,
 )
@@ -105,11 +104,6 @@ def test_build_tailored_resume_artifact_prefers_agent_output_when_available():
             highlighted_skills=["Python", "SQL", "Docker"],
             cover_letter_themes=["Hands-on delivery fit."],
         ),
-        strategy=StrategyAgentOutput(
-            recruiter_positioning="Position the candidate as an implementation-first ML engineer.",
-            cover_letter_talking_points=["Lead with production API delivery evidence."],
-            portfolio_project_emphasis=["Highlight shipped ML API work."],
-        ),
         review=ReviewAgentOutput(
             approved=True,
             grounding_issues=[],
@@ -125,10 +119,10 @@ def test_build_tailored_resume_artifact_prefers_agent_output_when_available():
         fit_analysis,
         tailored_draft,
         agent_result=agent_result,
-        theme="modern_professional",
+        theme="classic_ats",
     )
 
-    assert artifact.theme == "modern_professional"
+    assert artifact.theme == "classic_ats"
     assert artifact.professional_summary == "Agent-enhanced tailored summary."
     assert "Built production ML APIs using Python and Docker." in artifact.markdown
     assert any("review pass" in entry.lower() or "agent" in entry.lower() for entry in artifact.change_log)
@@ -137,7 +131,7 @@ def test_build_tailored_resume_artifact_prefers_agent_output_when_available():
     assert "https://github.com/leander-antony" in artifact.header.contact_lines
 
 
-def test_build_tailored_resume_artifact_keeps_user_selected_theme_when_agent_hint_differs():
+def test_build_tailored_resume_artifact_always_uses_classic_theme():
     candidate_profile = _build_profile()
     job_description = _build_job()
     fit_analysis = build_fit_analysis(candidate_profile, job_description)
@@ -159,11 +153,6 @@ def test_build_tailored_resume_artifact_keeps_user_selected_theme_when_agent_hin
             rewritten_bullets=["Built production ML APIs using Python and Docker."],
             highlighted_skills=["Python", "SQL", "Docker"],
             cover_letter_themes=["Hands-on delivery fit."],
-        ),
-        strategy=StrategyAgentOutput(
-            recruiter_positioning="Position the candidate as an implementation-first ML engineer.",
-            cover_letter_talking_points=["Lead with production API delivery evidence."],
-            portfolio_project_emphasis=["Highlight shipped ML API work."],
         ),
         review=ReviewAgentOutput(
             approved=True,
@@ -187,8 +176,8 @@ def test_build_tailored_resume_artifact_keeps_user_selected_theme_when_agent_hin
         fit_analysis,
         tailored_draft,
         agent_result=agent_result,
-        theme="modern_professional",
+        theme="custom_resume_theme",
     )
 
-    assert artifact.theme == "modern_professional"
-    assert "Modern Professional" in artifact.summary
+    assert artifact.theme == "classic_ats"
+    assert artifact.summary == "Tailored resume draft for Machine Learning Engineer, ready to review and export."

@@ -56,8 +56,6 @@ def _cover_letter_points(
     agent_result: Optional[AgentWorkflowResult],
 ) -> list[str]:
     agent_points = []
-    if agent_result and agent_result.strategy:
-        agent_points.extend(agent_result.strategy.cover_letter_talking_points)
     if agent_result:
         agent_points.extend(agent_result.tailoring.cover_letter_themes)
 

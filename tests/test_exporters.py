@@ -95,16 +95,6 @@ def test_build_cover_letter_preview_html_contains_structure():
     assert "font-size: 11.4pt;" in html_output
 
 
-def test_build_resume_html_uses_beige_template_for_modern_professional():
-    html_output = _build_resume_html("# Candidate\n\n## Experience", theme="modern_professional")
-
-    assert "resume-shell--modern" in html_output
-    assert "@page { size: A4; margin: 0; }" in html_output
-    assert "resume-modern-body" in html_output or "resume-shell--modern" in html_output
-    assert "#a06b44" in html_output
-    assert "#f6efe8" in html_output
-
-
 def test_build_resume_html_uses_classic_template_with_warm_neutral_palette():
     html_output = _build_resume_html("# Candidate\n\n## Experience", theme="classic_ats")
 
@@ -121,65 +111,6 @@ def test_build_resume_html_uses_classic_template_with_warm_neutral_palette():
     assert "border-bottom: 2px solid #d4beab;" in html_output
     assert ".resume-experience-card + .resume-experience-card::before" in html_output
     assert ".resume-classic-section--plain-head h2 { border-bottom: 0; padding-bottom: 0; }" in html_output
-
-
-def test_build_resume_html_renders_structured_modern_resume_sections():
-    artifact = TailoredResumeArtifact(
-        title="Tailored Resume",
-        filename_stem="tailored-resume",
-        summary="Structured resume",
-        markdown="# Fallback markdown should not drive this layout",
-        plain_text="Structured resume",
-        theme="modern_professional",
-        header=ResumeHeader(
-            full_name="Leander Antony",
-            location="Chennai, India",
-            contact_lines=["leander@example.com", "+91 99999 99999", "linkedin.com/in/leander"],
-        ),
-        target_role="AI Engineer",
-        professional_summary="Builds grounded AI workflow products with reliable delivery and measurable impact.",
-        highlighted_skills=["Python", "LLM orchestration", "Streamlit", "SQL"],
-        experience_entries=[
-            ResumeExperienceEntry(
-                title="AI Engineer",
-                organization="Example Labs",
-                location="Remote",
-                start="2023",
-                end="Present",
-                bullets=[
-                    "Built multi-agent job application workflows with human review loops.",
-                    "Shipped PDF export improvements that removed browser runtime dependencies.",
-                ],
-            )
-        ],
-        education_entries=[
-            EducationEntry(
-                institution="Example University",
-                degree="B.Tech",
-                field_of_study="Computer Science",
-                start="2018",
-                end="2022",
-            )
-        ],
-        certifications=["Azure AI Fundamentals"],
-        validation_notes=["All achievements trace back to resume evidence."],
-    )
-
-    html_output = _build_resume_html(artifact.markdown, theme="modern_professional", artifact=artifact)
-
-    assert "Leander Antony" in html_output
-    assert "Experience" in html_output
-    assert "Professional Experience" not in html_output
-    assert "Core Skills" in html_output
-    assert "Contact" in html_output
-    assert "resume-modern-contact" in html_output
-    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in html_output
-    assert '<p class="resume-modern-role">' not in html_output
-    assert "Chennai, India" in html_output
-    assert "Azure AI Fundamentals" in html_output
-    assert "Validation Notes" not in html_output
-    assert "All achievements trace back to resume evidence." not in html_output
-    assert "Fallback markdown should not drive this layout" not in html_output
 
 
 def test_build_resume_html_omits_empty_contact_card():

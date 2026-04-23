@@ -8,7 +8,6 @@ from src.schemas import (
     JobDescription,
     ResumeGenerationAgentOutput,
     ReviewAgentOutput,
-    StrategyAgentOutput,
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
@@ -33,7 +32,6 @@ class ResumeGenerationAgent:
         fit_analysis: FitAnalysis,
         tailored_draft: TailoredResumeDraft,
         tailoring_output: TailoringAgentOutput,
-        strategy_output: StrategyAgentOutput = None,
         review_output: ReviewAgentOutput = None,
     ) -> ResumeGenerationAgentOutput:
         if self._openai_service and self._openai_service.is_available():
@@ -43,7 +41,6 @@ class ResumeGenerationAgent:
                 fit_analysis,
                 tailored_draft,
                 tailoring_output,
-                strategy_output,
                 review_output,
             )
             payload = self._openai_service.run_json_prompt(
@@ -61,7 +58,7 @@ class ResumeGenerationAgent:
                 highlighted_skills=coerce_string_list(payload.get("highlighted_skills"), limit=8),
                 experience_bullets=coerce_string_list(payload.get("experience_bullets"), limit=6),
                 section_order=coerce_string_list(payload.get("section_order"), limit=6),
-                template_hint=coerce_string(payload.get("template_hint"), default="classic_ats"),
+                template_hint="classic_ats",
             )
             if self._contains_self_reference(candidate_profile, output):
                 return self._fallback(fit_analysis, tailored_draft, tailoring_output)

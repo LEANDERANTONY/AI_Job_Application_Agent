@@ -9,7 +9,6 @@ from src.schemas import (
     JobDescription,
     ResumeGenerationAgentOutput,
     ReviewAgentOutput,
-    StrategyAgentOutput,
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
@@ -32,7 +31,6 @@ class CoverLetterAgent:
         fit_analysis: FitAnalysis,
         tailored_draft: TailoredResumeDraft,
         tailoring_output: TailoringAgentOutput,
-        strategy_output: StrategyAgentOutput = None,
         review_output: ReviewAgentOutput = None,
         resume_generation_output: ResumeGenerationAgentOutput = None,
     ) -> CoverLetterAgentOutput:
@@ -43,7 +41,6 @@ class CoverLetterAgent:
                 fit_analysis,
                 tailored_draft,
                 tailoring_output,
-                strategy_output,
                 review_output,
                 resume_generation_output,
             )
@@ -70,7 +67,6 @@ class CoverLetterAgent:
                     fit_analysis,
                     tailored_draft,
                     tailoring_output,
-                    strategy_output,
                     resume_generation_output,
                 )
             return output
@@ -80,7 +76,6 @@ class CoverLetterAgent:
             fit_analysis,
             tailored_draft,
             tailoring_output,
-            strategy_output,
             resume_generation_output,
         )
 
@@ -111,7 +106,6 @@ class CoverLetterAgent:
         fit_analysis: FitAnalysis,
         tailored_draft: TailoredResumeDraft,
         tailoring_output: TailoringAgentOutput,
-        strategy_output: StrategyAgentOutput = None,
         resume_generation_output: ResumeGenerationAgentOutput = None,
     ) -> CoverLetterAgentOutput:
         role = job_description.title or tailored_draft.target_role or "the role"
@@ -128,8 +122,7 @@ class CoverLetterAgent:
             limit=4,
         )
         talking_points = unique_strings(
-            (strategy_output.cover_letter_talking_points if strategy_output else [])
-            + tailoring_output.cover_letter_themes,
+            tailoring_output.cover_letter_themes,
             limit=3,
         )
         opening = (

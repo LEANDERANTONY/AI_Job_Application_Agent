@@ -15,11 +15,6 @@ from src.config import (
     SUPABASE_URL,
 )
 from src.errors import AppError
-from src.ui.state import (
-    get_auth_pkce_code_verifier,
-    get_request_cookie,
-    set_auth_pkce_code_verifier,
-)
 
 try:
     from supabase import create_client
@@ -73,6 +68,18 @@ _PKCE_COOKIE_NAME = "auth_pkce_flow"
 _PKCE_COOKIE_MAX_AGE_SECONDS = 600
 _PKCE_FLOW_STORE_PATH = Path(tempfile.gettempdir()) / "ai_job_application_agent_auth.sqlite3"
 _PKCE_FLOW_TTL_SECONDS = 900
+
+
+def get_auth_pkce_code_verifier():
+    return None
+
+
+def set_auth_pkce_code_verifier(code_verifier):
+    return None
+
+
+def get_request_cookie(key, default=None):
+    return default
 
 
 def _open_pkce_flow_store():

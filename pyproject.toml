@@ -1,11 +1,10 @@
 [project]
 name = "ai-job-application-agent"
 version = "0.1.0"
-description = "Streamlit-first AI job application workflow with deterministic analysis and supervised agent orchestration."
+description = "Next.js and FastAPI job application copilot for grounded resume and cover letter generation."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
-    "streamlit==1.40.1",
     "fastapi==0.115.12",
     "uvicorn==0.34.0",
     "openai==1.98.0",

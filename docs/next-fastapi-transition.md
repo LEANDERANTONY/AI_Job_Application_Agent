@@ -1,58 +1,52 @@
 # Next.js + FastAPI Transition
 
-`feature/jd-summary` now carries the architecture transition work for migrating the `main` product from a Streamlit-first shell to a `Next.js + FastAPI` split deployment:
+This document records the completed architecture move from the old Streamlit shell to the current `Next.js + FastAPI` product.
 
-- `frontend/` is the new Vercel-facing shell
-- `backend/` is the Dockerized FastAPI boundary for the VPS
+## Final Shape
+
+- `frontend/` is the Vercel-hosted Next.js workspace
+- `backend/` is the Dockerized FastAPI service running on the VPS
 - `src/` remains the reusable Python workflow core
-- `deploy/vps/` mirrors the HelpMate deployment pattern with Docker Compose plus Caddy
+- `deploy/vps/` contains the Docker Compose + Caddy deployment bundle
 
-## Branch Basis
+## What Changed
 
-This skeleton was first prototyped in a separate transition branch, then folded into `feature/jd-summary` so the team can keep one active integration branch instead of juggling three long-lived branches.
+The migration replaced the old Streamlit runtime with:
 
-That means this branch now combines:
+- a dedicated Next.js workspace UI
+- FastAPI endpoints for auth, workspace actions, job search, assistant answers, exports, and persistence
+- separate frontend and backend hosting targets
+- Supabase-backed auth and saved-state flows routed through the API boundary
 
-- the existing JD-summary and job-application expansion work
-- the current FastAPI backend improvements already living here
-- the new `frontend/` and `deploy/vps/` scaffolding needed for the Next.js + VPS rollout
+## Current Product Flow
 
-## Current Surface Mapping
+1. Sign in with Google
+2. Upload a resume
+3. Search jobs, import a posting, or paste a JD
+4. Review the JD summary
+5. Run the agentic workflow
+6. Review the tailored resume and cover letter
+7. Ask grounded questions in the workspace assistant
+8. Export Markdown or PDF documents
 
-- Resume intake: `src/ui/pages.py`, `src/ui/workflow.py`
-- Manual JD intake and agentic analysis: `src/ui/pages.py`, `src/ui/workflow.py`
-- Assistant panel: `src/ui/page_assistant.py`, `src/assistant_service.py`
-- Artifact rendering: `src/ui/page_artifacts.py`, `src/report_builder.py`, `src/resume_builder.py`, `src/cover_letter_builder.py`
-- Job search foundation: `backend/`, `src/services/job_service.py`, `src/job_sources/`
+## Notes On Scope Changes
 
-## What This Branch Adds
+The migration was also used to simplify the product:
 
-- A standalone `frontend/` Next.js app-router workspace with:
-  - a Vercel-ready rewrite-based API client
-  - a collapsible sidebar with account state and assistant chat
-  - resume upload, JD upload/editing, job search/import, workflow runs, shortlist persistence, saved workspace reload, artifact previews, and exports
-- VPS deployment assets in `deploy/vps/`
-- Backend CORS settings for a separate frontend origin
-- A backend-first Docker image at the repo root
-- `Dockerfile.streamlit` so the legacy Render path remains available while parity work continues
+- the old visible Streamlit report-first surface is gone
+- the visible workspace now centers on resume and cover letter
+- the strategy stage is no longer part of the active agentic workflow
+- the old multi-theme resume export path was removed in favor of one ATS-friendly resume format
 
-## Current Migration Status
+## Deployment Shape
 
-The main product lanes are now wired in the Next.js workspace:
+- `app.job-application-copilot.xyz` -> Vercel frontend
+- `api.job-application-copilot.xyz` -> VPS FastAPI backend
 
-1. Auth and session restore
-2. Resume intake
-3. Job search and import
-4. Manual JD intake
-5. Deterministic preview and agentic workflow execution
-6. Saved workspace reload and shortlist persistence
-7. Assistant chat grounded to the current workspace
-8. Artifact preview plus Markdown, PDF, and ZIP exports
+## Remaining Follow-Up
 
-## Remaining Work
+The main remaining architecture improvement is operational rather than structural:
 
-The remaining work is now mostly product polish and hosted validation:
+- background execution for long-running workflow jobs
 
-1. Extend saved-workspace history beyond the latest snapshot if we want multi-entry restore.
-2. Add richer in-app artifact interaction and polish beyond the current HTML preview and exports.
-3. Run hosted QA across the real Vercel and VPS environments, including Supabase redirect URLs, CORS, and end-to-end auth checks.
+The frontend/backend split itself is now the baseline, not a future transition target.

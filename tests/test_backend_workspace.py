@@ -477,7 +477,7 @@ def test_workspace_artifact_export_endpoint_forwards_snapshot(monkeypatch):
             "status": "ready",
             "artifact_kind": artifact_kind,
             "export_format": export_format,
-            "file_name": "leander-antony-machine-learning-engineer-tailored-resume-modern_professional.pdf",
+            "file_name": "leander-antony-machine-learning-engineer-tailored-resume.pdf",
             "mime_type": "application/pdf",
             "content_base64": "cGRm",
             "resume_theme": resume_theme,
@@ -500,7 +500,7 @@ def test_workspace_artifact_export_endpoint_forwards_snapshot(monkeypatch):
             },
             "artifact_kind": "tailored_resume",
             "export_format": "pdf",
-            "resume_theme": "modern_professional",
+            "resume_theme": "classic_ats",
         },
     )
 
@@ -509,7 +509,7 @@ def test_workspace_artifact_export_endpoint_forwards_snapshot(monkeypatch):
     assert payload["status"] == "ready"
     assert captured["artifact_kind"] == "tailored_resume"
     assert captured["export_format"] == "pdf"
-    assert captured["resume_theme"] == "modern_professional"
+    assert captured["resume_theme"] == "classic_ats"
 
 
 def test_workspace_artifact_preview_endpoint_forwards_snapshot(monkeypatch):
@@ -542,7 +542,7 @@ def test_workspace_artifact_preview_endpoint_forwards_snapshot(monkeypatch):
                 "tailored_draft": {"target_role": "Machine Learning Engineer"},
             },
             "artifact_kind": "tailored_resume",
-            "resume_theme": "modern_professional",
+            "resume_theme": "classic_ats",
         },
     )
 
@@ -550,4 +550,4 @@ def test_workspace_artifact_preview_endpoint_forwards_snapshot(monkeypatch):
     payload = response.json()
     assert payload["status"] == "ready"
     assert payload["artifact_kind"] == "tailored_resume"
-    assert captured["resume_theme"] == "modern_professional"
+    assert captured["resume_theme"] == "classic_ats"

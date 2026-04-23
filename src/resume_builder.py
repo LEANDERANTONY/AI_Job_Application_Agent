@@ -23,24 +23,11 @@ from src.utils import (
 
 RESUME_THEMES = {
     "classic_ats": {
-        "label": "Classic ATS",
+        "label": "Standard Resume",
         "tagline": "Single-column, ATS-safe, recruiter-readable structure.",
-    },
-    "modern_professional": {
-        "label": "Modern Professional",
-        "tagline": "Cleaner hierarchy with a slightly more polished visual rhythm.",
     },
 }
 def _resolve_resume_theme(theme: str, agent_result: Optional[AgentWorkflowResult]) -> str:
-    normalized_theme = str(theme or "").strip()
-    if normalized_theme in RESUME_THEMES:
-        return normalized_theme
-
-    hinted_theme = ""
-    if agent_result and agent_result.resume_generation:
-        hinted_theme = str(agent_result.resume_generation.template_hint or "").strip()
-    if hinted_theme in RESUME_THEMES:
-        return hinted_theme
     return "classic_ats"
 def _normalize_date_token(token) -> str:
     if isinstance(token, dict):
@@ -115,12 +102,11 @@ def _build_change_log(
     agent_result: Optional[AgentWorkflowResult],
     theme: str,
 ) -> list[str]:
-    theme_label = RESUME_THEMES.get(theme, RESUME_THEMES["classic_ats"])["label"]
     items = [
         "Tailored the resume toward {role}.".format(
             role=job_description.title or tailored_draft.target_role or "the target role"
         ),
-        "Applied the {theme} template for a consistent export layout.".format(theme=theme_label),
+        "Used the standard ATS-friendly layout for export.",
     ]
     if tailored_draft.highlighted_skills:
         items.append(
@@ -271,9 +257,8 @@ def build_tailored_resume_artifact(
         validation_notes,
         theme,
     )
-    summary = "Tailored resume draft for {role} using the {theme} template.".format(
+    summary = "Tailored resume draft for {role}, ready to review and export.".format(
         role=job_description.title or "the target role",
-        theme=RESUME_THEMES.get(theme, RESUME_THEMES["classic_ats"])["label"],
     )
     return TailoredResumeArtifact(
         title=title,

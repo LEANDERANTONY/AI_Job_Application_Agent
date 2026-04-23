@@ -53,11 +53,6 @@ class FakeOpenAIService:
                 "cover_letter_themes": ["Strong implementation fit."],
             },
             {
-                "recruiter_positioning": "Position the candidate as a grounded implementation-focused ML engineer.",
-                "cover_letter_talking_points": ["Lead with production application delivery evidence."],
-                "portfolio_project_emphasis": ["Highlight productized ML work using Python and Docker."],
-            },
-            {
                 "approved": True,
                 "grounding_issues": [],
                 "unresolved_issues": [],
@@ -68,11 +63,6 @@ class FakeOpenAIService:
                     "rewritten_bullets": ["Built production applications using Python and Docker."],
                     "highlighted_skills": ["Python", "SQL", "Docker"],
                     "cover_letter_themes": ["Strong implementation fit."],
-                },
-                "corrected_strategy": {
-                    "recruiter_positioning": "Position the candidate as a grounded implementation-focused ML engineer.",
-                    "cover_letter_talking_points": ["Lead with production application delivery evidence."],
-                    "portfolio_project_emphasis": ["Highlight productized ML work using Python and Docker."],
                 },
             },
             {
@@ -86,8 +76,8 @@ class FakeOpenAIService:
                 "greeting": "Dear Hiring Team",
                 "opening_paragraph": "I am excited to apply for the Machine Learning Engineer role and bring grounded implementation experience.",
                 "body_paragraphs": [
-                    "Lead with production application delivery evidence.",
-                    "Highlight productized ML work using Python and Docker.",
+                    "Strong implementation fit.",
+                    "Built production applications using Python and Docker.",
                 ],
                 "closing_paragraph": "I would welcome the opportunity to discuss how my experience can support your team.",
                 "signoff": "Sincerely",
@@ -131,11 +121,6 @@ class FakeCorrectionOpenAIService(FakeOpenAIService):
                 "cover_letter_themes": ["Strong cloud fit."],
             },
             {
-                "recruiter_positioning": "Initial recruiter positioning with unsupported AWS depth.",
-                "cover_letter_talking_points": ["Emphasize AWS-native production ownership."],
-                "portfolio_project_emphasis": ["Feature AWS-heavy production work."],
-            },
-            {
                 "approved": False,
                 "grounding_issues": ["AWS claim is stronger than the source profile supports."],
                 "unresolved_issues": [],
@@ -145,12 +130,7 @@ class FakeCorrectionOpenAIService(FakeOpenAIService):
                     "professional_summary": "Revised grounded summary for the role.",
                     "rewritten_bullets": ["Built production applications using Python and Docker."],
                     "highlighted_skills": ["Python", "SQL", "Docker"],
-                    "cover_letter_themes": ["Strong implementation fit."],
-                },
-                "corrected_strategy": {
-                    "recruiter_positioning": "Revised grounded implementation-focused positioning.",
-                    "cover_letter_talking_points": ["Lead with delivery evidence in Python and Docker."],
-                    "portfolio_project_emphasis": ["Highlight production applications that show end-to-end delivery."],
+                    "cover_letter_themes": ["Lead with delivery evidence in Python and Docker."],
                 },
             },
             {
@@ -200,9 +180,7 @@ def test_orchestrator_uses_openai_service_when_available():
     assert result.tailoring.rewritten_bullets == [
         "Built production applications using Python and Docker."
     ]
-    assert result.strategy.recruiter_positioning == (
-        "Position the candidate as a grounded implementation-focused ML engineer."
-    )
+    assert result.strategy is None
     assert result.resume_generation.professional_summary == "Final tailored summary for the generated resume."
     assert result.cover_letter.opening_paragraph == "I am excited to apply for the Machine Learning Engineer role and bring grounded implementation experience."
     assert result.review_history == []
@@ -230,9 +208,9 @@ def test_orchestrator_applies_review_corrections_without_second_pass():
     assert result.review.grounding_issues == ["AWS claim is stronger than the source profile supports."]
     assert result.review.unresolved_issues == []
     assert result.tailoring.professional_summary == "Revised grounded summary for the role."
-    assert result.strategy.recruiter_positioning == "Revised grounded implementation-focused positioning."
+    assert result.strategy is None
     assert result.review.corrected_tailoring is not None
-    assert result.review.corrected_strategy is not None
+    assert result.review.corrected_strategy is None
     assert result.resume_generation.professional_summary == "Resume-ready grounded summary for the role."
     assert result.cover_letter is not None
     assert result.cover_letter.body_paragraphs[0] == "Lead with delivery evidence in Python and Docker."
@@ -270,6 +248,7 @@ def test_orchestrator_reports_progress_updates_for_single_pass_flow():
         and detail == "Turning the approved story into a role-specific cover letter that is ready to send."
         for title, detail, _ in updates
     )
+    assert not any(title == "Navigator agent" for title, _, _ in updates)
     assert not any("Sent it back" in detail for _, detail, _ in updates)
     assert updates[-1] == (
         "Workflow crew",

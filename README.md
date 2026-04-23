@@ -2,110 +2,39 @@
 
 [![CI](https://github.com/LEANDERANTONY/AI_Job_Application_Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/LEANDERANTONY/AI_Job_Application_Agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Live App](https://img.shields.io/badge/Live%20App-Render-2563eb?logo=render&logoColor=white)](https://ai-job-application-agent.onrender.com/)
 
-AI Job Application Agent is a Streamlit app that turns a resume and target role into a grounded job-application workflow: fit analysis, tailored resume, cover letter, application strategy report, and in-app assistant support.
-
-Live app: [ai-job-application-agent.onrender.com](https://ai-job-application-agent.onrender.com/)
-
-## What It Does
-
-- Parses resumes from PDF, DOCX, or TXT and builds a normalized candidate profile
-- Structures job descriptions into title, requirements, skills, and experience signals
-- Searches technical roles across configured Greenhouse boards and Lever sites
-- Imports supported job postings directly from job links into the JD workflow
-- Lets signed-in users keep a shortlist of saved jobs for later review
-- Runs a supervised agentic workflow for fit, tailoring, strategy, review, resume generation, and cover letter generation
-- Produces three exportable artifacts:
-  - tailored resume
-  - cover letter
-  - application strategy report
-- Keeps one in-app assistant chat while routing lighter product questions and grounded application questions through different internal task profiles
-- Prewarms assistant session context on panel open and reuses short-lived OpenAI conversation state during the current session for lower chat latency
-- Uses Google sign-in via Supabase for AI features, saved workspace reload, and persisted daily quota tracking
-- Keeps one latest saved workspace per signed-in user and restores it through the sidebar `Reload Workspace` action
+AI Job Application Agent is a Vercel-hosted Next.js workspace with a FastAPI backend for resume parsing, JD review, grounded agentic tailoring, and exportable job application documents.
 
 ## Product Flow
 
 1. Sign in with Google
-2. Upload your resume
-3. Search jobs, paste a supported job link, or paste/upload a job description manually
-4. Review the JD summary, requirements, and imported job details
+2. Upload a resume
+3. Search jobs, import a supported posting, or paste a JD manually
+4. Review the JD summary
 5. Run the agentic analysis
-6. Review the tailored resume, cover letter, and application strategy
-7. Ask the assistant grounded questions about the app or current outputs through one chat that keeps short-lived session context during that visit
-8. Download Markdown or PDF artifacts
-
-## UI Preview
-
-### 1. Sign In And Load Inputs
-
-![Sidebar navigation](docs/screenshots/sidebar_navigation.jpg)
-
-![Resume parser view](docs/screenshots/resume_parser_view.jpg)
-
-![JD parser view](docs/screenshots/jd_parser_view.jpg)
-
-### 2. Search Or Import A Job
-
-![Job search](docs/screenshots/job_search_page.jpg)
-
-### 3. Run The Agentic Workflow
-
-![Agentic workflow](docs/screenshots/agentic_workflow.jpg)
-
-### 4. Ask Grounded Follow-Up Questions
-
-![Smart assistant](docs/screenshots/smart_assistant.jpg)
-
-### 5. Review The Generated Outputs
-
-![Classic resume render](docs/screenshots/classic_resume_render.jpg)
-
-![Cover letter render](docs/screenshots/cover_letter_render.jpg)
-
-## Sample Exports
-
-- Application strategy PDF: [docs/pdf_rendered/application_strategy_render.pdf](docs/pdf_rendered/application_strategy_render.pdf)
-- Tailored resume PDF: [docs/pdf_rendered/classic_resume_render.pdf](docs/pdf_rendered/classic_resume_render.pdf)
-- Cover letter PDF: [docs/pdf_rendered/cover_letter_render.pdf](docs/pdf_rendered/cover_letter_render.pdf)
+6. Review the tailored resume and cover letter
+7. Ask grounded follow-up questions in the workspace assistant
+8. Export Markdown or PDF documents
 
 ## Stack
 
-- Streamlit UI
-- Next.js frontend skeleton in `frontend/`
+- Next.js frontend in `frontend/`
+- FastAPI backend in `backend/`
+- Shared Python workflow and builders in `src/`
+- Supabase for Google auth, quota tracking, saved workspaces, and saved jobs
 - OpenAI Responses API for assisted generation
-- Supabase for Google auth, persisted usage, saved workspace storage, and saved-job shortlist persistence
-- FastAPI job-search backend for provider-owned search and job resolution
-- Short-lived assistant conversation reuse through OpenAI Responses API conversation state plus Streamlit session context
-- WeasyPrint-first PDF generation with fallback handling in code
-- `uv` for environment and dependency management
+- WeasyPrint-backed PDF export pipeline
+- Docker Compose + Caddy deployment bundle in `deploy/vps/`
 
-## Deployment Shape
+## Local Development
 
-- Streamlit web app for the main product shell
-- Next.js frontend for the Vercel migration path
-- FastAPI web service for job search and direct job resolution
-- VPS deployment bundle in `deploy/vps/` for Docker Compose + Caddy
-- Supabase for auth, persisted quota state, saved workspace snapshots, and saved-job shortlist storage
-- Render Blueprint in [render.yaml](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/render.yaml) for the two-service deployment path on the feature branch
-- Root [Dockerfile](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/Dockerfile) now builds the FastAPI backend image, while [Dockerfile.streamlit](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/Dockerfile.streamlit) keeps the legacy Streamlit shell deployable during the transition
-
-## Local Smoke Test
-
-Run the backend first:
+Run the backend:
 
 ```powershell
 uv run uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Then start the Streamlit app in a second terminal:
-
-```powershell
-uv run streamlit run app.py
-```
-
-If you want to exercise the new frontend skeleton as well, start it from `frontend/` in a third terminal:
+Run the frontend:
 
 ```powershell
 cd frontend
@@ -113,7 +42,14 @@ npm install
 npm run dev
 ```
 
-Recommended local env values for the branch:
+Recommended local frontend env:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+Recommended backend env:
 
 ```env
 ENABLE_JOB_SEARCH_BACKEND=true
@@ -122,30 +58,20 @@ GREENHOUSE_BOARD_TOKENS=narvar,gleanwork,wayve,datadog,moloco,figma,qualtrics,th
 LEVER_SITE_NAMES=dnb,plaid,mistral
 ```
 
-Minimum checks:
+## Core Checks
 
-1. Open `http://127.0.0.1:8000/api/health` and confirm provider counts are present.
-2. Open `http://localhost:3000` and confirm the Next.js shell loads and its backend health card can reach the API.
-3. Search for a broad technical query such as `software engineer` in the Streamlit app.
-4. Preview a result, import it into the JD flow, and confirm the review panel renders.
-5. Save a job to the shortlist and confirm it appears in `Saved Jobs`.
-6. Reload a saved workspace and confirm imported job context still returns.
-7. Open the assistant panel, wait for `Preparing assistant context...` to finish once, then ask a product question followed by a current-package question and confirm both work from the same chat.
+1. Open `http://127.0.0.1:8000/api/health`
+2. Open `http://localhost:3000/workspace`
+3. Upload a resume
+4. Search or import a job
+5. Load or paste a JD
+6. Run the agentic analysis
+7. Verify resume, cover letter, assistant, and exports
 
-Transition notes live in [docs/next-fastapi-transition.md](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/docs/next-fastapi-transition.md).
+## Deployment Shape
 
-## Hosted Rollout Validation
+- `app.job-application-copilot.xyz` -> Vercel frontend
+- `api.job-application-copilot.xyz` -> VPS FastAPI backend
+- `deploy/vps/` -> Docker Compose + Caddy bundle for the backend stack
 
-When the branch is ready for a real hosted test:
-
-1. Deploy the two-service Render Blueprint from [render.yaml](C:/Users/Leander%20Antony%20A/Documents/Projects/AI_Job_Application_Agent/render.yaml).
-2. Keep `ENABLE_JOB_SEARCH_BACKEND=true` only on the branch deployment, not on the current production app.
-3. Confirm the backend health endpoint returns:
-   - `status: ok`
-   - provider readiness under `providers.greenhouse` and `providers.lever`
-4. Verify the Streamlit service receives `JOB_BACKEND_HOSTPORT` from the backend service over Render private networking.
-5. Test `search -> preview -> import -> shortlist -> reload workspace` end to end before any merge to `main`.
-6. Test the assistant panel after sign-in:
-   - first open should prewarm session context once
-   - follow-up questions should reuse the same chat session
-   - changing workflow context substantially should still keep answers grounded and reset stale assistant session memory when needed
+Transition notes and deployment details live in [docs/next-fastapi-transition.md](docs/next-fastapi-transition.md).

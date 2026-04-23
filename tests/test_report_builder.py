@@ -1,11 +1,5 @@
 from src.report_builder import build_application_report
-from src.schemas import (
-    AgentWorkflowResult,
-    FitAgentOutput,
-    ReviewAgentOutput,
-    StrategyAgentOutput,
-    TailoringAgentOutput,
-)
+from src.schemas import AgentWorkflowResult, FitAgentOutput, ReviewAgentOutput, TailoringAgentOutput
 from src.services.fit_service import build_fit_analysis
 from src.services.job_service import build_job_description_from_text
 from src.services.profile_service import build_candidate_profile_from_resume
@@ -73,9 +67,8 @@ def test_build_application_report_includes_core_sections():
     assert "## Deterministic Fit Analysis" not in report.markdown
     assert "## Findings" in report.markdown
     assert "### How To Address Gaps" in report.markdown
-    assert "## Application Strategy" in report.markdown
     assert "Status: Drafted from the current resume and role inputs" in report.markdown
-    assert "Application strategy for Machine Learning Engineer" in report.plain_text
+    assert "Application report for Machine Learning Engineer" in report.plain_text
     assert "Run the AI-assisted workflow" not in report.plain_text
     assert "## Next Actions" not in report.markdown
 
@@ -103,11 +96,6 @@ def test_build_application_report_includes_agent_sections_when_available():
             highlighted_skills=["Python", "SQL", "Docker"],
             cover_letter_themes=["Hands-on delivery fit."],
         ),
-        strategy=StrategyAgentOutput(
-            recruiter_positioning="Position the candidate as an implementation-first ML engineer.",
-            cover_letter_talking_points=["Lead with production API delivery evidence."],
-            portfolio_project_emphasis=["Highlight shipped ML API work."],
-        ),
         review=ReviewAgentOutput(
             approved=True,
             grounding_issues=[],
@@ -127,7 +115,6 @@ def test_build_application_report_includes_agent_sections_when_available():
 
     assert "Review Status: Approved" not in report.markdown
     assert "Built production ML APIs using Python and Docker." not in report.markdown
-    assert "Position the candidate as an implementation-first ML engineer." in report.markdown
     assert "What To Emphasize" in report.markdown
     assert "Top Matches" in report.markdown
     assert "Key Gaps" in report.markdown
@@ -138,7 +125,7 @@ def test_build_application_report_includes_agent_sections_when_available():
     assert "Review Notes" not in report.markdown
     assert "Next Actions" not in report.markdown
     assert "Grounded output." not in report.plain_text
-    assert "Application strategy for Machine Learning Engineer" in report.plain_text
+    assert "Application report for Machine Learning Engineer" in report.plain_text
 
 
 def test_build_application_report_marks_approved_after_corrections():
@@ -155,7 +142,6 @@ def test_build_application_report_marks_approved_after_corrections():
         model="gpt-test",
         fit=FitAgentOutput(fit_summary="Fit summary."),
         tailoring=TailoringAgentOutput(professional_summary="Corrected summary."),
-        strategy=StrategyAgentOutput(recruiter_positioning="Corrected positioning."),
         review=ReviewAgentOutput(
             approved=True,
             grounding_issues=["Original draft overstated regression experience."],

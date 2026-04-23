@@ -89,12 +89,10 @@ def test_review_prompt_allows_null_corrections_when_no_rewrite_is_needed():
         fit_analysis={"strengths": ["Python"]},
         tailored_draft={"professional_summary": "Grounded draft."},
         tailoring_output={"professional_summary": "Grounded summary."},
-        strategy_output={"recruiter_positioning": "Grounded positioning."},
     )
 
-    assert "Return null for corrected_tailoring and corrected_strategy" in prompt["system"]
+    assert "Return null for corrected_tailoring" in prompt["system"]
     assert "null when no tailoring changes are needed" in prompt["system"]
-    assert "null when no strategy changes are needed" in prompt["system"]
     assert "unresolved_issues" in prompt["system"]
     assert "Approve when the final corrected wording stays grounded" in prompt["system"]
 

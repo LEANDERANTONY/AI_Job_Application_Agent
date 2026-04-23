@@ -10,84 +10,72 @@ The app helps a candidate:
 - upload and parse a resume
 - search technical jobs or import a supported job link
 - upload or paste a job description
-- generate deterministic fit and tailoring state from those inputs
-- run a supervised assisted workflow on demand
-- review the tailored resume, cover letter, and application strategy
-- export those artifacts as Markdown or PDF
-- reload the latest saved workspace snapshot back into `Manual JD Input`
+- review a structured JD summary
+- run a grounded agentic workflow
+- review a tailored resume and cover letter
+- ask grounded follow-up questions in the workspace assistant
+- export Markdown or PDF versions of the generated documents
 
-The current codebase is a Streamlit-first product shell around parsing, service, orchestration, auth, and persistence layers, with a separate FastAPI job-search backend now scaffolded on the active feature branch.
+## Runtime Shape
+
+The product now runs as a split web application:
+
+- `frontend/` is the Next.js workspace deployed on Vercel
+- `backend/` is the FastAPI API deployed on the VPS
+- `src/` contains the shared Python workflow, builders, orchestration, auth helpers, and persistence logic
+- `deploy/vps/` contains the Docker Compose + Caddy deployment bundle for the backend stack
+
+This is no longer a Streamlit runtime. The old Streamlit shell and related deployment files were removed from the active codebase.
 
 ## High-Level Flow
 
-1. The user opens the Streamlit app.
-2. The user signs in from the sidebar account panel.
-3. The user uploads a resume on `Upload Resume`.
-4. The app parses the resume and builds a normalized candidate profile.
-5. The user can search configured Greenhouse/Lever sources from `Job Search`, paste a supported job URL, or continue manually in `Manual JD Input`.
-6. Deterministic services build the job model, fit analysis, and first tailoring draft.
-7. The supervised workflow can be triggered explicitly from the JD page.
-8. The orchestrator runs `fit`, `tailoring`, `strategy`, `review`, `resume_generation`, and `cover_letter` through the routed OpenAI service when available, with deterministic fallback where supported.
-9. Builders assemble the current workflow state into a tailored resume artifact, cover letter artifact, and application strategy report.
-10. The assistant panel prewarms a short-lived chat session, keeps a compact current-session context, and reuses the latest OpenAI response id for faster follow-up questions.
-11. Export helpers produce Markdown and PDF bytes for the current session.
-12. For authenticated users, usage events, the latest saved workspace snapshot, and saved-job shortlist records are persisted in Supabase Postgres when the relevant tables are provisioned.
-13. The sidebar `Reload Workspace` action restores that latest saved snapshot back into `Manual JD Input`.
+1. The user opens the Next.js workspace.
+2. The user signs in with Google through Supabase-backed auth endpoints.
+3. The user uploads a resume.
+4. The backend parses the resume and builds a normalized candidate profile.
+5. The user can search configured Greenhouse and Lever sources, paste a supported job URL, or continue manually with JD text.
+6. The app builds a structured JD summary for review.
+7. The user explicitly triggers the agentic workflow.
+8. The orchestrator runs `fit`, `tailoring`, `review`, `resume_generation`, and `cover_letter`.
+9. Builders assemble the tailored resume and cover letter.
+10. The workspace assistant answers grounded questions from the current workspace state.
+11. Export helpers produce Markdown and PDF files for the current document.
+12. For authenticated users, the latest workspace snapshot and saved jobs are persisted in Supabase.
 
 ## Main Modules
 
-### `app.py`
+### `frontend/`
 
-Thin entrypoint that imports and starts the Streamlit UI app.
+Owns the user-facing workspace:
 
-### `src/ui/`
-
-Owns the Streamlit shell:
-
-- page setup
-- navigation
-- theme and visual components
-- page-level rendering
-- sidebar account actions
-- session-state orchestration
-
-`src/ui/workflow.py` is the main boundary between Streamlit state and the transport-agnostic services, builders, stores, and orchestrator.
+- account state and sign-in flow
+- resume intake
+- job search and saved jobs
+- JD review
+- workflow progress UI
+- document preview and export actions
+- assistant chat
 
 ### `backend/`
 
-Owns the FastAPI job backend:
+Owns the FastAPI API surface:
 
 - `backend/app.py` bootstraps the API
 - `backend/routers/health.py` exposes deployment smoke signals
 - `backend/routers/jobs.py` exposes search and direct job-resolution endpoints
-- `backend/services/job_search_service.py` aggregates provider responses, sorts recent-first, and dedupes overlapping postings
-
-This backend is designed to run as a separate Render service from the Streamlit app.
-
-### `src/parsers/`
-
-Owns low-level file ingestion and extraction:
-
-- resume parsing
-- JD parsing
-- defensive file validation
-
-Compatibility wrappers remain at:
-
-- `src/resume_parser.py`
-- `src/jd_parser.py`
+- `backend/routers/auth.py` owns auth/session endpoints
+- `backend/routers/workspace.py` owns resume, JD, workflow, assistant, persistence, preview, and export endpoints
 
 ### `src/services/`
 
 Owns deterministic business logic:
 
 - candidate-profile construction from resume input
-- candidate-context assembly
 - JD normalization
 - fit scoring
 - first-pass tailoring guidance
 
-These services are transport-agnostic and do not depend on Streamlit.
+These services are transport-agnostic and do not depend on Next.js or FastAPI.
 
 ### `src/agents/`
 
@@ -97,12 +85,11 @@ The active orchestrator path runs:
 
 - fit
 - tailoring
-- strategy
 - review
 - resume generation
 - cover letter
 
-The repo still contains `ProfileAgent` and `JobAgent`, but they are not part of the current live orchestrator path.
+The earlier strategy stage is no longer part of the live workflow.
 
 ### `src/prompts.py`
 
@@ -116,11 +103,10 @@ Responsibilities include:
 
 - task-aware model routing
 - Responses API calls
-- optional `previous_response_id` reuse for short-lived assistant conversation continuity
 - GPT-5 reasoning-effort routing
-- usage accounting for current runtime metadata
+- usage accounting metadata
 - optional persisted usage-event callbacks
-- optional daily-quota preflight checks
+- daily-quota preflight checks
 - incomplete-response retry handling
 
 ### `src/assistant_service.py`
@@ -129,20 +115,23 @@ Owns the single in-app assistant behavior.
 
 Responsibilities include:
 
-- internal routing between lighter product-help questions and stronger application-QA questions
-- compact workflow-context assembly for grounded package questions
-- assistant session-context construction and hashing
-- follow-up state-update assembly for lighter subsequent turns
+- routing between product-help questions and grounded package questions
+- compact workspace-context assembly
 - deterministic fallback behavior when assisted execution is unavailable
 
 ### Builders and Exporters
 
-- `src/report_builder.py`: deterministic application-strategy report assembly
 - `src/resume_builder.py`: deterministic tailored-resume assembly
 - `src/cover_letter_builder.py`: deterministic grounded cover-letter assembly
+- `src/report_builder.py`: internal report assembly still available for backend use and diagnostics
 - `src/exporters.py`: Markdown/PDF export helpers and HTML preview generation
 
-The exporter is WeasyPrint-first with ReportLab fallback.
+The user-facing workspace is now centered on two visible outputs:
+
+- tailored resume
+- cover letter
+
+The resume export path has been simplified to one standard ATS-friendly format.
 
 ### Auth and Persistence Modules
 
@@ -151,7 +140,7 @@ The exporter is WeasyPrint-first with ReportLab fallback.
 - `src/usage_store.py`: persists authenticated assisted usage events
 - `src/quota_service.py`: computes daily quota state from persisted usage
 - `src/saved_workspace_store.py`: persists and loads the latest reloadable workspace snapshot
-- `src/saved_jobs_store.py`: persists and loads shortlisted jobs separately from the workspace snapshot
+- `src/saved_jobs_store.py`: persists and loads shortlisted jobs
 
 ### `src/config.py`
 
@@ -162,7 +151,7 @@ Owns environment-backed configuration for:
 - quota defaults
 - auth and Supabase settings
 - saved-workspace retention settings
-- local static paths
+- frontend/backend integration settings
 
 ### `src/schemas.py`
 
@@ -177,74 +166,35 @@ Owns shared typed models for:
 - tailoring drafts
 - tailored resume artifacts
 - cover letter artifacts
-- application reports
+- internal reports
 - agent outputs
 - orchestrated workflow results
 - auth and persistence records
 
-### `src/errors.py`
-
-Owns shared typed application errors used across parsing, services, UI, auth, and orchestration.
-
-## State Model
+## Persistence Model
 
 The runtime uses a split state model:
 
-- `st.session_state` for current-session UI and workflow state
-- Supabase Postgres for authenticated cross-session persistence
-
-Current-session state includes:
-
-- `current_menu`
-- `resume_document`
-- `candidate_profile_resume`
-- `candidate_profile`
-- `job_description_raw`
-- `job_description_source`
-- `job_description`
-- `fit_analysis`
-- `tailored_resume_draft`
-- `agent_workflow_signature`
-- `agent_workflow_result`
-- cached export bytes and signatures
-- unified assistant conversation history
-- assistant session response id and session signature for short-lived chat reuse
-- authenticated session tokens and synced app-user snapshot
+- browser state for the current workspace session
+- Supabase Postgres for authenticated persistence
 
 Persistent authenticated state includes:
 
 - `app_users`
 - `usage_events`
 - `saved_workspaces`
-- `saved_jobs` when the shortlist table is provisioned
+- `saved_jobs`
 
-Each `saved_workspaces` row stores one latest snapshot per user, including:
-
-- `workflow_signature`
-- `workflow_snapshot_json`
-- `report_payload_json`
-- `cover_letter_payload_json`
-- `tailored_resume_payload_json`
-- `expires_at`
+Each `saved_workspaces` row stores one latest snapshot per user, including enough data to restore the current resume/JD/workflow state.
 
 Each `saved_jobs` row stores one shortlisted posting per user and normalized job id, including:
 
 - source/provider identity
-- job title, company, location, and employment type
+- title, company, location, and employment type
 - source URL
-- normalized summary and full description text
+- normalized summary and description text
 - provider metadata
 - saved and updated timestamps
-
-That split is deliberate. Current work stays fast inside Streamlit reruns, while quotas and the latest reloadable snapshot live in Supabase.
-
-Assistant chat state is intentionally session-scoped rather than persisted. The app keeps:
-
-- one visible chat surface
-- compact current product/workflow context in `st.session_state`
-- a short-lived OpenAI conversation chain keyed by the latest `response_id`
-
-When the assistant panel opens, the app prewarms that session context once. Follow-up turns can then send smaller state updates instead of replaying the full context every time. If the relevant workflow context changes materially, the stored assistant session signature no longer matches and the chat memory is reset before the next question.
 
 ## Testing Model
 
@@ -257,42 +207,25 @@ The repo includes focused tests for:
 - fit scoring
 - tailoring guidance
 - orchestrator behavior
-- report and cover-letter building
+- resume and cover-letter building
 - export formatting
 - auth and quota behavior
-- saved-workspace persistence and reload behavior
-- UI workflow state behavior
-
-These tests are intentionally fast and fixture-light so they can run locally and in CI.
+- saved-workspace persistence
+- saved-job persistence
+- backend workspace routes
 
 ## Current Constraints
 
-- Resume intake is currently login-first in the active UI.
-- The product stores only one latest saved workspace snapshot per user; it does not expose a separate history browser.
-- Large binary artifacts are not stored in object storage; PDFs are regenerated on demand.
-- Streamlit remains the only runtime client even though the service boundaries are backend-ready.
-- Saved-job persistence requires a dedicated Supabase table before the shortlist feature can be fully used in a hosted environment.
+- Long AI-assisted runs still execute as one request/response cycle today; they are not yet background jobs.
+- The product stores one latest saved workspace snapshot per user; it does not expose a multi-entry history browser.
+- Large binary artifacts are regenerated on demand instead of being stored in object storage.
+- The internal report builder still exists in Python, but the visible workspace now centers on resume and cover letter only.
 
 ## Next Architecture Step
 
-The next meaningful expansion is still product hardening on the current stack, followed by backend extraction when concurrency and product-control needs justify it.
+The next meaningful expansion is product hardening on the current stack:
 
-Near-term targets:
-
-- deployment hardening for the hosted Render environment
-- tighter UX around reload, quotas, and artifact review
-- continued saved-workspace payload compatibility safety
-- validate assistant latency improvements from compact context and session-scoped chat reuse under hosted conditions
-
-Near-term deployment targets:
-
-- validate the two-service Render path in `render.yaml`
-- verify private-network backend discovery from Streamlit to FastAPI
-- keep Supabase-backed workspace and shortlist persistence aligned with the hosted rollout
-
-Later extraction targets:
-
-- broaden the FastAPI boundary beyond job search when orchestration and export control need it
-- keep Docker as the standard service runtime
-- add background execution for long-running workflow jobs
-- keep Streamlit as a client during the transition
+- background execution for long-running workflow jobs
+- tighter hosted reliability around retries and timeouts
+- continued UI simplification around review and export
+- broader hosted QA across Vercel, VPS, Supabase, and Cloudflare

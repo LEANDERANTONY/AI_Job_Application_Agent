@@ -5,7 +5,6 @@ from src.schemas import (
     FitAnalysis,
     JobDescription,
     ReviewAgentOutput,
-    StrategyAgentOutput,
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
@@ -25,7 +24,6 @@ class ReviewAgent:
         fit_analysis: FitAnalysis,
         tailored_draft: TailoredResumeDraft,
         tailoring_output: TailoringAgentOutput,
-        strategy_output: StrategyAgentOutput = None,
     ) -> ReviewAgentOutput:
         if self._openai_service and self._openai_service.is_available():
             prompt = build_review_agent_prompt(
@@ -34,7 +32,6 @@ class ReviewAgent:
                 fit_analysis,
                 tailored_draft,
                 tailoring_output,
-                strategy_output,
             )
             payload = self._openai_service.run_json_prompt(
                 prompt["system"],
@@ -57,17 +54,14 @@ class ReviewAgent:
                 ),
                 final_notes=coerce_string_list(payload.get("final_notes"), limit=3),
                 corrected_tailoring=self._coerce_tailoring_output(payload.get("corrected_tailoring")),
-                corrected_strategy=self._coerce_strategy_output(payload.get("corrected_strategy")),
             )
             return self._normalize_review_output(review_output)
-        return self._fallback(candidate_profile, fit_analysis, tailoring_output, strategy_output)
+        return self._fallback(candidate_profile, fit_analysis, tailoring_output)
 
     @staticmethod
     def _normalize_review_output(review_output: ReviewAgentOutput) -> ReviewAgentOutput:
         unresolved = unique_strings(review_output.unresolved_issues, limit=4)
-        corrected_anything = bool(
-            review_output.corrected_tailoring or review_output.corrected_strategy
-        )
+        corrected_anything = bool(review_output.corrected_tailoring)
         approved = review_output.approved
         if unresolved:
             approved = False
@@ -80,7 +74,6 @@ class ReviewAgent:
             revision_requests=unique_strings(review_output.revision_requests, limit=4),
             final_notes=unique_strings(review_output.final_notes, limit=3),
             corrected_tailoring=review_output.corrected_tailoring,
-            corrected_strategy=review_output.corrected_strategy,
         )
 
     @staticmethod
@@ -95,21 +88,10 @@ class ReviewAgent:
         )
 
     @staticmethod
-    def _coerce_strategy_output(payload):
-        if not isinstance(payload, dict):
-            return None
-        return StrategyAgentOutput(
-            recruiter_positioning=coerce_string(payload.get("recruiter_positioning")),
-            cover_letter_talking_points=coerce_string_list(payload.get("cover_letter_talking_points"), limit=4),
-            portfolio_project_emphasis=coerce_string_list(payload.get("portfolio_project_emphasis"), limit=4),
-        )
-
-    @staticmethod
     def _fallback(
         candidate_profile: CandidateProfile,
         fit_analysis: FitAnalysis,
         tailoring_output: TailoringAgentOutput,
-        strategy_output: StrategyAgentOutput = None,
     ) -> ReviewAgentOutput:
         candidate_text = build_candidate_context_text(candidate_profile).lower()
         output_text = " ".join(
@@ -117,9 +99,6 @@ class ReviewAgent:
                 tailoring_output.professional_summary,
                 " ".join(tailoring_output.rewritten_bullets),
                 " ".join(tailoring_output.cover_letter_themes),
-                strategy_output.recruiter_positioning if strategy_output else "",
-                " ".join(strategy_output.cover_letter_talking_points) if strategy_output else "",
-                " ".join(strategy_output.portfolio_project_emphasis) if strategy_output else "",
             ]
         ).lower()
         grounding_issues = []
@@ -155,5 +134,4 @@ class ReviewAgent:
             revision_requests=unique_strings(revision_requests, limit=4),
             final_notes=unique_strings(final_notes, limit=3),
             corrected_tailoring=tailoring_output,
-            corrected_strategy=strategy_output,
         )

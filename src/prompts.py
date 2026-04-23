@@ -249,16 +249,14 @@ def build_review_agent_prompt(
     fit_analysis: FitAnalysis,
     tailored_draft: TailoredResumeDraft,
     tailoring_output: TailoringAgentOutput,
-    strategy_output: StrategyAgentOutput = None,
 ) -> Dict[str, Any]:
     contract = {
         "approved": "boolean flag that must be true when the final outputs are safe to use after applying any review corrections; false only when unresolved issues still remain after review",
-        "grounding_issues": "array of 0-4 unsupported or weakly supported claims found in the incoming tailoring or strategy draft before review corrections",
+        "grounding_issues": "array of 0-4 unsupported or weakly supported claims found in the incoming tailoring draft before review corrections",
         "unresolved_issues": "array of 0-4 issues that still remain after review corrections are applied; return an empty array when the corrected outputs are safe to use",
         "revision_requests": "array of 0-4 concise correction notes or fixes that were needed",
         "final_notes": "array of 1-3 final quality notes",
         "corrected_tailoring": "null when no tailoring changes are needed; otherwise an object matching the Tailoring Agent contract after review corrections are applied",
-        "corrected_strategy": "null when no strategy changes are needed; otherwise an object matching the Strategy Agent contract after review corrections are applied",
     }
     sections = [
         ("Candidate Profile", candidate_profile, 2000),
@@ -267,16 +265,13 @@ def build_review_agent_prompt(
         ("Deterministic Tailored Draft", tailored_draft, 1800),
         ("Tailoring Agent Output", tailoring_output, 1400),
     ]
-    if strategy_output:
-        sections.append(("Strategy Agent Output", strategy_output, 1200))
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (
-            "You are the Review Agent. Your job is to reject embellishment and unsupported claims, then directly repair the tailoring and strategy outputs when fixes are straightforward. "
+            "You are the Review Agent. Your job is to reject embellishment and unsupported claims, then directly repair the tailoring output when fixes are straightforward. "
             "Approve when the final corrected wording stays grounded in the source profile and deterministic analysis, even if the incoming draft had issues that you fixed. "
             "Set approved to false only when unresolved issues remain after your corrections. "
-            "Return null for corrected_tailoring and corrected_strategy when the current outputs are already acceptable or when no change is needed for that section. "
-            "Only return a corrected object for the specific section that actually needs a grounded rewrite. "
+            "Return null for corrected_tailoring when the current output is already acceptable or when no change is needed. "
             + _build_contract(contract)
         ),
         "user": user_prompt,
@@ -323,7 +318,6 @@ def build_resume_generation_agent_prompt(
     fit_analysis: FitAnalysis,
     tailored_draft: TailoredResumeDraft,
     tailoring_output: TailoringAgentOutput,
-    strategy_output: StrategyAgentOutput = None,
     review_output: ReviewAgentOutput = None,
 ) -> Dict[str, Any]:
     contract = {
@@ -331,7 +325,7 @@ def build_resume_generation_agent_prompt(
         "highlighted_skills": "array of 4-8 skills to surface in the tailored resume",
         "experience_bullets": "array of 3-6 grounded experience bullets for the tailored resume",
         "section_order": "array describing preferred section order for the resume",
-        "template_hint": "preferred template hint such as classic_ats or modern_professional",
+        "template_hint": "set this to classic_ats",
     }
     sections = [
         ("Candidate Profile", candidate_profile, 1800),
@@ -340,8 +334,6 @@ def build_resume_generation_agent_prompt(
         ("Deterministic Tailored Draft", tailored_draft, 1800),
         ("Tailoring Agent Output", tailoring_output, 1400),
     ]
-    if strategy_output:
-        sections.append(("Strategy Agent Output", strategy_output, 1100))
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
         "system": (
@@ -363,7 +355,6 @@ def build_cover_letter_agent_prompt(
     fit_analysis: FitAnalysis,
     tailored_draft: TailoredResumeDraft,
     tailoring_output: TailoringAgentOutput,
-    strategy_output: StrategyAgentOutput = None,
     review_output: ReviewAgentOutput = None,
     resume_generation_output=None,
 ) -> Dict[str, Any]:
@@ -382,8 +373,6 @@ def build_cover_letter_agent_prompt(
         ("Deterministic Tailored Draft", tailored_draft, 1600),
         ("Approved Tailoring Output", tailoring_output, 1400),
     ]
-    if strategy_output:
-        sections.append(("Approved Strategy Output", strategy_output, 1200))
     if review_output:
         sections.append(("Review Output", review_output, 1200))
     if resume_generation_output:
@@ -394,7 +383,7 @@ def build_cover_letter_agent_prompt(
             "You are the Cover Letter Agent. Write a recruiter-facing cover letter only after the review stage has approved or corrected the upstream outputs. "
             "Write entirely in first person from the candidate's perspective. "
             "Do not describe the candidate as he, she, him, his, her, or by full name anywhere in the letter body; reserve the candidate name for the signature line only. "
-            "Use the approved tailoring, strategy, review, and resume-generation context as the source of truth. "
+            "Use the approved tailoring, review, and resume-generation context as the source of truth. "
             "Do not invent employers, metrics, projects, technologies, or direct experience that are not supported by the provided inputs. "
             "Keep the result specific to the role, grounded, and ready for packaging into the final artifact. "
             + _build_contract(contract)

@@ -10,7 +10,7 @@ from src.report_builder import build_application_report
 from src.resume_builder import build_tailored_resume_artifact
 from src.saved_workspace_store import SavedWorkspaceStore
 from src.services.jd_summary_service import generate_job_summary_view
-from src.ui.workflow_payloads import (
+from src.workflow_payloads import (
     WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER,
     WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT,
     WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT,

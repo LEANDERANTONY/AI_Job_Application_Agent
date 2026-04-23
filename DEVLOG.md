@@ -495,3 +495,21 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
   - deterministic fallback still works when assisted execution is unavailable
   - clearing chat also clears the short-lived assistant session memory
 - Verified the assistant pass with focused assistant-service and assistant-panel tests.
+
+## Day 36: Next.js + FastAPI Re-Baseline
+
+- Completed the architecture migration from the old Streamlit runtime to the live Next.js + FastAPI split stack.
+- Removed the retired Streamlit shell, deployment files, and Streamlit-only tests from the active repo.
+- Moved the product onto the Vercel frontend plus VPS backend deployment shape.
+- Reworked the workspace UI around the real product flow:
+  - upload profile
+  - search job
+  - review job description
+  - run the workflow
+- Simplified the visible outputs so the workspace now centers on:
+  - tailored resume
+  - cover letter
+- Removed the visible application report from the workspace.
+- Removed the strategy stage from the active agentic workflow.
+- Simplified resume export to one standard ATS-friendly format and removed the old modern resume theme path from the active backend and frontend.
+- Re-baselined the README and architecture docs so they reflect the shipped Vercel + FastAPI product rather than the earlier Streamlit stages.
