@@ -126,7 +126,7 @@ code {
 .page-frame {
   position: relative;
   z-index: 1;
-  width: min(1120px, calc(100% - 2rem));
+  width: min(80vw, 1720px);
   margin: 0 auto;
 }
 
@@ -197,7 +197,7 @@ code {
 }
 
 .hero {
-  max-width: 56rem;
+  max-width: 76rem;
   padding: 1rem 0 2.2rem;
 }
 
@@ -898,7 +898,11 @@ code {
 .job-hero-panel {
   position: relative;
   overflow: hidden;
-  padding: 1.65rem 1.65rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 1.9rem 1.65rem 1.45rem;
+  min-height: 27rem;
   border-color: rgba(100, 126, 194, 0.09);
   background:
     linear-gradient(180deg, rgba(34, 50, 108, 0.22) 0%, rgba(18, 28, 60, 0.08) 12%, rgba(0, 0, 0, 0) 28%),
@@ -947,22 +951,42 @@ code {
   gap: 1rem;
 }
 
+.job-hero-grid {
+  align-content: center;
+  min-height: 100%;
+}
+
+.job-hero-grid > div {
+  padding-top: 1.15rem;
+}
+
+.job-hero-grid .eyebrow {
+  margin-top: -0.55rem;
+  margin-bottom: 0;
+}
+
 .workspace-hero-title {
-  margin-top: 1rem;
-  max-width: 18ch;
-  font-size: clamp(2.5rem, 4.35vw, 4.55rem);
-  line-height: 0.92;
-  background: linear-gradient(180deg, #4a5255 0%, #3c4347 52%, #32383c 100%);
+  margin-top: 1.2rem;
+  max-width: none;
+  font-size: clamp(3.7rem, 5.15vw, 5.95rem);
+  line-height: 0.94;
+  background:
+    linear-gradient(180deg, rgba(232, 243, 255, 0.16), rgba(232, 243, 255, 0) 38%),
+    linear-gradient(180deg, #96a2aa 0%, #707a80 48%, #525a5f 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   letter-spacing: -0.058em;
-  text-shadow: 0 8px 18px rgba(4, 7, 18, 0.04);
+  filter:
+    drop-shadow(0 0 1px rgba(232, 243, 255, 0.2))
+    drop-shadow(0 0 18px rgba(154, 196, 255, 0.16))
+    drop-shadow(0 18px 34px rgba(0, 0, 0, 0.38));
+  white-space: nowrap;
 }
 
 .workspace-hero-copy {
   max-width: 62rem;
-  margin: 1.05rem 0 0;
+  margin: 1.45rem 0 0;
   color: #b4c6e3;
   font-size: 1.06rem;
   line-height: 1.9;
@@ -988,6 +1012,30 @@ code {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.01),
     0 14px 30px rgba(3, 5, 12, 0.16);
+}
+
+.workspace-hero-metric-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.workspace-hero-metric-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.35rem;
+  block-size: 1.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 210, 223, 0.18);
+  background:
+    linear-gradient(180deg, rgba(91, 154, 223, 0.16), rgba(47, 79, 141, 0.08)),
+    rgba(10, 15, 27, 0.94);
+  color: #d7fbff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  flex: 0 0 auto;
 }
 
 .workspace-hero-metric-tile span {
@@ -1375,6 +1423,24 @@ code {
   border-radius: 1.25rem;
   background: rgba(10, 13, 20, 0.82);
   padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.workspace-empty-state::before {
+  content: "+";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: 999px;
+  border: 1px dashed rgba(151, 221, 226, 0.28);
+  color: #9ce1e5;
+  font-size: 0.95rem;
+  font-weight: 700;
+  flex: 0 0 auto;
 }
 
 .workspace-meta-chip {
@@ -1825,8 +1891,8 @@ code {
 
 @media (min-width: 980px) {
   .job-hero-grid {
-    grid-template-columns: minmax(0, 1.18fr) minmax(18rem, 0.82fr);
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: center;
   }
 
   .workspace-sidebar {
@@ -1913,6 +1979,11 @@ code {
 }
 
 @media (max-width: 979px) {
+  .topbar,
+  .page-frame {
+    width: min(100%, calc(100% - 1.25rem));
+  }
+
   .workspace-shell-inner {
     width: min(100%, calc(100% - 1.25rem));
     padding: 1rem 0 2.5rem;

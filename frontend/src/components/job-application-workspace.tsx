@@ -90,29 +90,6 @@ const RESUME_THEME_OPTIONS: Record<
   },
 };
 
-const PREVIEW_WORKFLOW_STAGES: WorkflowStage[] = [
-  {
-    title: "Workflow crew",
-    detail: "Opening your application brief and lining up the deterministic workspace checks.",
-    value: 8,
-  },
-  {
-    title: "Matchmaker agent",
-    detail: "Comparing the resume and JD to score overlap, strengths, and the biggest missing signals.",
-    value: 38,
-  },
-  {
-    title: "Forge agent",
-    detail: "Drafting the recruiter-facing resume guidance and assembling the first artifact set.",
-    value: 72,
-  },
-  {
-    title: "Builder agent",
-    detail: "Packaging the preview outputs so the workspace can render the report, resume, and cover letter.",
-    value: 96,
-  },
-];
-
 const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
   {
     title: "Workflow crew",
@@ -517,6 +494,66 @@ function getInitialMainTab(): WorkspaceMainTab {
   return "resume";
 }
 
+function ResumeMetricIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 20 20">
+      <path
+        d="M6.25 2.75h4.4l3.1 3.1v11.4H6.25V2.75Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M10.65 2.75v3.1h3.1M8 10h4M8 13h4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function WorkflowMetricIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 20 20">
+      <path
+        d="M10 3.5v2.1M10 14.4v2.1M5.6 5.6l1.5 1.5M12.9 12.9l1.5 1.5M3.5 10h2.1M14.4 10h2.1M5.6 14.4l1.5-1.5M12.9 7.1l1.5-1.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.5"
+      />
+      <circle
+        cx="10"
+        cy="10"
+        r="3.1"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function ArtifactMetricIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 20 20">
+      <path
+        d="M10 3.2l1.35 3.2 3.45 1.35-3.45 1.35L10 12.4 8.65 9.1 5.2 7.75 8.65 6.4 10 3.2Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M14.65 12.7l.7 1.65 1.65.7-1.65.7-.7 1.65-.7-1.65-1.65-.7 1.65-.7.7-1.65ZM5.35 11.8l.5 1.15 1.15.5-1.15.5-.5 1.15-.5-1.15-1.15-.5 1.15-.5.5-1.15Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+    </svg>
+  );
+}
+
 export function JobApplicationWorkspace() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialSidebarCollapsed);
   const [mainTab, setMainTab] = useState<WorkspaceMainTab>(getInitialMainTab);
@@ -823,9 +860,6 @@ export function JobApplicationWorkspace() {
     if (analysisRunMode === "agentic") {
       return AGENTIC_WORKFLOW_STAGES;
     }
-    if (analysisRunMode === "preview") {
-      return PREVIEW_WORKFLOW_STAGES;
-    }
     return [] as WorkflowStage[];
   }, [analysisRunMode]);
   const currentWorkflowStage =
@@ -934,9 +968,9 @@ export function JobApplicationWorkspace() {
     : "Waiting for run";
   const assistantStatusCopy = analysisState
     ? assistantTurns.length
-      ? `This chat is scoped to ${analysisState.job_description.title || "the current workspace"} and restores on reload.`
-      : `Start a fresh grounded thread for ${analysisState.job_description.title || "the current workspace"}.`
-    : "Unlocks after your first workspace preview or AI analysis run.";
+        ? `This chat is scoped to ${analysisState.job_description.title || "the current workspace"} and restores on reload.`
+        : `Start a fresh grounded thread for ${analysisState.job_description.title || "the current workspace"}.`
+    : "Unlocks after your first AI analysis run.";
 
   useEffect(() => {
     if (!assistantStorageKey) {
@@ -1340,7 +1374,7 @@ export function JobApplicationWorkspace() {
     }
   }
 
-  async function handleRunAnalysis(runAssisted: boolean) {
+  async function handleRunAnalysis() {
     if (!resumeText.trim()) {
       setWorkspaceNotice({
         level: "warning",
@@ -1357,7 +1391,7 @@ export function JobApplicationWorkspace() {
       return;
     }
 
-    if (runAssisted && !authTokens) {
+    if (!authTokens) {
       setWorkspaceNotice({
         level: "warning",
         message: "Sign in with Google before running the AI-assisted workflow.",
@@ -1365,14 +1399,13 @@ export function JobApplicationWorkspace() {
       return;
     }
 
-    setAnalysisRunMode(runAssisted ? "agentic" : "preview");
+    setAnalysisRunMode("agentic");
     setAnalysisProgressIndex(0);
     setAnalysisLoading(true);
     setWorkspaceNotice({
       level: "info",
-      message: runAssisted
-        ? "Running the agentic workflow through the backend. The workspace crew will keep you posted as each stage moves."
-        : "Building the deterministic workspace preview through the backend.",
+      message:
+        "Running the agentic workflow through the backend. The workspace crew will keep you posted as each stage moves.",
     });
 
     try {
@@ -1382,7 +1415,7 @@ export function JobApplicationWorkspace() {
         resume_source: activeResumeState?.resume_document.source ?? "workspace",
         job_description_text: manualJobText.trim(),
         imported_job_posting: activeJob,
-        run_assisted: runAssisted,
+        run_assisted: true,
       }, authTokens);
       setAnalysisState(response);
       setArtifactTab("resume");
@@ -1396,13 +1429,9 @@ export function JobApplicationWorkspace() {
       const savedWorkspace = await persistLatestWorkspace(response);
         setWorkspaceNotice({
           level: "success",
-          message: runAssisted
-          ? savedWorkspace
+          message: savedWorkspace
             ? `Workflow finished in ${response.workflow.mode} mode and saved workspace refreshes until ${formatUtcTimestamp(savedWorkspace.expires_at)} UTC.`
             : `Workflow finished in ${response.workflow.mode} mode.`
-          : savedWorkspace
-            ? `Deterministic workspace preview is ready and saved workspace refreshes until ${formatUtcTimestamp(savedWorkspace.expires_at)} UTC.`
-              : "Deterministic workspace preview is ready.",
         });
       } catch (error) {
         const errorMessage =
@@ -1410,7 +1439,6 @@ export function JobApplicationWorkspace() {
             ? error.message
             : "Workspace analysis failed unexpectedly.";
         const looksLikeGatewayFailure =
-          runAssisted &&
           /(502|bad gateway|gateway|proxy)/i.test(errorMessage);
         setWorkspaceNotice({
           level: "warning",
@@ -1439,7 +1467,7 @@ export function JobApplicationWorkspace() {
     if (!analysisState) {
       setWorkspaceNotice({
         level: "warning",
-        message: "Run the workspace preview first so the assistant has grounded context to use.",
+        message: "Run the AI analysis first so the assistant has grounded context to use.",
       });
       return;
     }
@@ -1896,26 +1924,42 @@ export function JobApplicationWorkspace() {
               </p>
             </div>
           </div>
+        </section>
 
-          <div className="workspace-hero-metrics workspace-hero-metrics-below">
+        <div className="workspace-hero-metrics workspace-hero-metrics-outside">
             <div className="metric-tile workspace-hero-metric-tile">
-              <span>Resume State</span>
+              <div className="workspace-hero-metric-head">
+                <span className="workspace-hero-metric-icon" aria-hidden="true">
+                  <ResumeMetricIcon />
+                </span>
+                <span>Resume State</span>
+              </div>
               <strong>{currentProfile?.full_name || "Waiting for upload"}</strong>
               <small>{latestRole(currentProfile)}</small>
             </div>
             <div className="metric-tile workspace-hero-metric-tile">
-              <span>Workflow Mode</span>
+              <div className="workspace-hero-metric-head">
+                <span className="workspace-hero-metric-icon" aria-hidden="true">
+                  <WorkflowMetricIcon />
+                </span>
+                <span>Workflow Mode</span>
+              </div>
               <strong>{analysisState?.workflow.mode || "Not run yet"}</strong>
-              <small>
-                {analysisState
-                  ? analysisState.workflow.assisted_requested
-                    ? "AI-assisted analysis is ready to continue."
-                    : "Preview results are ready to review."
-                  : "Run preview or analysis after loading both inputs."}
-              </small>
-            </div>
+                <small>
+                  {analysisState
+                    ? analysisState.workflow.assisted_requested
+                      ? "AI-assisted analysis is ready to continue."
+                      : "Loaded from an older non-assisted run."
+                    : "Run the AI analysis after loading both inputs."}
+                </small>
+              </div>
             <div className="metric-tile workspace-hero-metric-tile">
-              <span>Artifacts</span>
+              <div className="workspace-hero-metric-head">
+                <span className="workspace-hero-metric-icon" aria-hidden="true">
+                  <ArtifactMetricIcon />
+                </span>
+                <span>Artifacts</span>
+              </div>
               <strong>{analysisState ? "Resume, cover letter, report" : "Pending"}</strong>
               <small>
                 {analysisState
@@ -1923,8 +1967,7 @@ export function JobApplicationWorkspace() {
                   : "Artifacts appear after the workspace run finishes."}
               </small>
             </div>
-          </div>
-        </section>
+        </div>
         <section className="surface-card surface-card-neutral workspace-main-nav">
           <div className="workspace-main-nav-head">
             <div>
@@ -2639,30 +2682,22 @@ export function JobApplicationWorkspace() {
                 <span className="status-chip">
                   {analysisState ? analysisState.workflow.mode : "Not run yet"}
                 </span>
-              </div>
-              <p className="section-copy">
-                Build the deterministic preview first or run the agentic workflow through the backend.
-              </p>
+                </div>
+                <p className="section-copy">
+                  Run the agentic workflow through the backend once your resume and JD are loaded.
+                </p>
 
-              <div className="workspace-run-actions">
-                <button
-                  className="primary-button workspace-button"
-                  disabled={analysisLoading}
-                  onClick={() => void handleRunAnalysis(false)}
-                  type="button"
-                >
-                  {analysisLoading ? "Working..." : "Build preview"}
+                <div className="workspace-run-actions">
+                  <button
+                    className="primary-button workspace-button"
+                    disabled={analysisLoading}
+                    onClick={() => void handleRunAnalysis()}
+                    type="button"
+                  >
+                    {analysisLoading ? "Running..." : "Run agentic analysis"}
                 </button>
                 <button
-                  className="primary-button workspace-button"
-                  disabled={analysisLoading}
-                  onClick={() => void handleRunAnalysis(true)}
-                  type="button"
-                >
-                  {analysisLoading ? "Running..." : "Run agentic analysis"}
-                </button>
-                <button
-                  className="primary-button workspace-button"
+                  className="secondary-button workspace-button"
                   onClick={clearWorkspaceRole}
                   type="button"
                 >
@@ -2743,13 +2778,13 @@ export function JobApplicationWorkspace() {
                     </div>
                     <div className="metric-tile">
                       <span>Review</span>
-                      <strong>
-                        {analysisState.workflow.review_approved
-                          ? "Approved"
-                          : analysisState.workflow.assisted_requested
-                            ? "Needs review"
-                            : "Preview only"}
-                      </strong>
+                        <strong>
+                          {analysisState.workflow.review_approved
+                            ? "Approved"
+                            : analysisState.workflow.assisted_requested
+                              ? "Needs review"
+                              : "Legacy draft"}
+                        </strong>
                       <small>
                         {analysisState.workflow.fallback_reason || "Artifacts below reflect the latest workspace run."}
                       </small>
@@ -2788,12 +2823,12 @@ export function JobApplicationWorkspace() {
                         </p>
                       ) : null}
                     </div>
-                  ) : (
-                    <div className="workspace-section-card">
-                      <h3>Deterministic draft guidance</h3>
-                      <ul>
-                        {analysisState.tailored_draft.gap_mitigation_steps.map((item) => (
-                          <li key={item}>{item}</li>
+                    ) : (
+                      <div className="workspace-section-card">
+                        <h3>Draft guidance</h3>
+                        <ul>
+                          {analysisState.tailored_draft.gap_mitigation_steps.map((item) => (
+                            <li key={item}>{item}</li>
                         ))}
                       </ul>
                     </div>
