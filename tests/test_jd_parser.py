@@ -1,7 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 
-from src.jd_parser import clean_text, extract_job_details, parse_jd_file
+from src.parsers.jd import clean_text, extract_job_details, parse_jd_text
 from src.services.job_service import build_job_description_from_text
 
 
@@ -14,7 +14,7 @@ class NamedBytesIO(BytesIO):
 def test_parse_jd_file_reads_text_upload():
     handle = NamedBytesIO(b"ML Engineer\nLocation: Bengaluru", "sample_jd.txt")
 
-    parsed = parse_jd_file(handle)
+    parsed = parse_jd_text(handle)
 
     assert parsed == "ML Engineer\nLocation: Bengaluru"
 
@@ -47,7 +47,7 @@ def test_parse_jd_file_reads_pdf_fixture():
     sample_path = Path(__file__).resolve().parents[1] / "static" / "demo_job_description" / "Sample_Job_Description_MLEngineer.pdf"
 
     with sample_path.open("rb") as handle:
-        parsed = parse_jd_file(handle)
+        parsed = parse_jd_text(handle)
 
     assert "Machine Learning Engineer" in parsed
     assert "Location: Hyderabad, India" in parsed
@@ -58,7 +58,7 @@ def test_parse_jd_file_reads_docx_fixture():
     sample_path = Path(__file__).resolve().parents[1] / "static" / "demo_job_description" / "Sample_Job_Description_DataAnalyst.docx"
 
     with sample_path.open("rb") as handle:
-        parsed = parse_jd_file(handle)
+        parsed = parse_jd_text(handle)
 
     assert "Data Analyst - Business Intelligence" in parsed
     assert "Location: Remote (India preferred)" in parsed
@@ -69,7 +69,7 @@ def test_build_job_description_from_pdf_fixture_extracts_expected_signals():
     sample_path = Path(__file__).resolve().parents[1] / "static" / "demo_job_description" / "Sample_Job_Description_MLEngineer.pdf"
 
     with sample_path.open("rb") as handle:
-        parsed = parse_jd_file(handle)
+        parsed = parse_jd_text(handle)
 
     job_description = build_job_description_from_text(parsed)
 
@@ -84,7 +84,7 @@ def test_build_job_description_from_docx_fixture_extracts_expected_signals():
     sample_path = Path(__file__).resolve().parents[1] / "static" / "demo_job_description" / "Sample_Job_Description_DataAnalyst.docx"
 
     with sample_path.open("rb") as handle:
-        parsed = parse_jd_file(handle)
+        parsed = parse_jd_text(handle)
 
     job_description = build_job_description_from_text(parsed)
 
