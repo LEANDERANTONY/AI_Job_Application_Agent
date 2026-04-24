@@ -63,6 +63,162 @@ def test_workspace_job_description_upload_parses_role_and_summary():
     assert payload["jd_summary_view"]["sections"]
 
 
+def test_resume_builder_session_can_progress_to_review():
+    start_response = client.post("/api/workspace/resume-builder/start")
+
+    assert start_response.status_code == 200
+    session_id = start_response.json()["session_id"]
+
+    message_payloads = [
+        "Leander Antony\nChennai, India\nleander@example.com\n+91 9999999999\nlinkedin.com/in/leander",
+        "Machine Learning Engineer\nAI engineer with product-focused ML experience across APIs, evaluation, and developer tooling.",
+        "AI Engineer at Example Labs\nJan 2023 - Present\nBuilt ML APIs used by production teams.\nImproved evaluation workflows for model quality.",
+        "Anna University | B.E. Computer Science\nAWS Certified Machine Learning Specialty",
+        "Python, FastAPI, Docker, LLMs, SQL",
+    ]
+
+    latest_payload = None
+    for message in message_payloads:
+        response = client.post(
+            "/api/workspace/resume-builder/message",
+            json={
+                "session_id": session_id,
+                "message": message,
+                "input_mode": "text",
+            },
+        )
+        assert response.status_code == 200
+        latest_payload = response.json()
+
+    assert latest_payload is not None
+    assert latest_payload["status"] == "reviewing"
+    assert latest_payload["current_step"] == "review"
+    assert latest_payload["ready_to_generate"] is True
+    assert latest_payload["draft_profile"]["target_role"] == "Machine Learning Engineer"
+    assert "Python" in latest_payload["draft_profile"]["skills"]
+
+
+def test_resume_builder_generate_and_commit_returns_workspace_profile():
+    start_response = client.post("/api/workspace/resume-builder/start")
+
+    assert start_response.status_code == 200
+    session_id = start_response.json()["session_id"]
+
+    for message in [
+        "Leander Antony\nChennai, India\nleander@example.com\n+91 9999999999",
+        "Machine Learning Engineer\nAI engineer with ML platform and applied AI experience.",
+        "AI Engineer at Example Labs\nJan 2023 - Present\nBuilt ML APIs and developer workflows.",
+        "Anna University | B.E. Computer Science",
+        "Python, FastAPI, Docker, SQL",
+    ]:
+        response = client.post(
+            "/api/workspace/resume-builder/message",
+            json={
+                "session_id": session_id,
+                "message": message,
+                "input_mode": "text",
+            },
+        )
+        assert response.status_code == 200
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+
+    assert generate_response.status_code == 200
+    generated_payload = generate_response.json()
+    assert generated_payload["status"] == "ready"
+    assert generated_payload["generated_resume_markdown"]
+    assert generated_payload["candidate_profile"]["full_name"] == "Leander Antony"
+
+    commit_response = client.post(
+        "/api/workspace/resume-builder/commit",
+        json={"session_id": session_id},
+    )
+
+    assert commit_response.status_code == 200
+    commit_payload = commit_response.json()
+    assert commit_payload["resume_document"]["source"] == "assistant_builder"
+    assert commit_payload["candidate_profile"]["source"] == "assistant_builder"
+    assert commit_payload["generated_resume_markdown"]
+
+
+def test_resume_builder_update_route_applies_draft_changes():
+    start_response = client.post("/api/workspace/resume-builder/start")
+
+    assert start_response.status_code == 200
+    session_id = start_response.json()["session_id"]
+
+    update_response = client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Leander Antony",
+                "location": "Chennai, India",
+                "target_role": "Machine Learning Engineer",
+                "professional_summary": "AI engineer with product and platform experience.",
+                "skills": ["Python", "FastAPI", "Docker"],
+                "contact_lines": ["leander@example.com", "+91 9999999999"],
+            },
+        },
+    )
+
+    assert update_response.status_code == 200
+    payload = update_response.json()
+    assert payload["draft_profile"]["full_name"] == "Leander Antony"
+    assert payload["draft_profile"]["target_role"] == "Machine Learning Engineer"
+    assert "Docker" in payload["draft_profile"]["skills"]
+
+
+def test_resume_builder_latest_endpoint_returns_saved_session(monkeypatch):
+    monkeypatch.setattr(
+        "backend.routers.workspace.load_latest_resume_builder_session",
+        lambda access_token, refresh_token: {
+            "status": "available",
+            "session": {
+                "session_id": "builder-123",
+                "status": "collecting",
+                "current_step": "experience",
+                "completed_steps": 2,
+                "total_steps": 5,
+                "progress_percent": 40,
+                "assistant_message": "Tell me about your most relevant experience.",
+                "draft_profile": {
+                    "full_name": "Leander Antony",
+                    "location": "Chennai, India",
+                    "contact_lines": ["leander@example.com"],
+                    "target_role": "Machine Learning Engineer",
+                    "professional_summary": "AI engineer with ML platform experience.",
+                    "experience_notes": "",
+                    "education_notes": "",
+                    "skills": ["Python"],
+                    "certifications": [],
+                },
+                "generated_resume_markdown": "",
+                "generated_resume_plain_text": "",
+                "ready_to_generate": False,
+                "ready_to_commit": False,
+            },
+        },
+    )
+
+    response = client.get(
+        "/api/workspace/resume-builder/latest",
+        headers={
+            "X-Auth-Access-Token": "access-token",
+            "X-Auth-Refresh-Token": "refresh-token",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "available"
+    assert payload["session"]["current_step"] == "experience"
+    assert payload["session"]["draft_profile"]["target_role"] == "Machine Learning Engineer"
+
+
 def test_workspace_analyze_returns_fit_and_artifacts_without_assisted_run():
     response = client.post(
         "/api/workspace/analyze",
@@ -95,6 +251,160 @@ def test_workspace_analyze_returns_fit_and_artifacts_without_assisted_run():
     assert payload["artifacts"]["tailored_resume"]["markdown"]
     assert payload["artifacts"]["cover_letter"]["markdown"]
     assert payload["artifacts"]["report"]["markdown"]
+
+
+def test_workspace_analyze_job_start_returns_job_handle(monkeypatch):
+    monkeypatch.setattr(
+        "backend.routers.workspace.start_workspace_analysis_job",
+        lambda **kwargs: {
+            "job_id": "job-123",
+            "status": "queued",
+            "stage_title": "Workflow crew",
+            "stage_detail": "Preparing the first agent.",
+            "progress_percent": 3,
+        },
+    )
+
+    response = client.post(
+        "/api/workspace/analyze-jobs",
+        json={
+            "resume_text": "Leander Antony\nPython\nExperience\nAI Engineer",
+            "resume_filetype": "TXT",
+            "resume_source": "workspace",
+            "job_description_text": "Machine Learning Engineer\nRequired: Python",
+            "run_assisted": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["job_id"] == "job-123"
+    assert payload["status"] == "queued"
+    assert payload["stage_title"] == "Workflow crew"
+
+
+def test_workspace_analyze_job_status_returns_completed_result(monkeypatch):
+    monkeypatch.setattr(
+        "backend.routers.workspace.get_workspace_analysis_job",
+        lambda job_id: {
+            "job_id": job_id,
+            "status": "completed",
+            "stage_title": "Workflow crew",
+            "stage_detail": "All agents are done.",
+            "progress_percent": 100,
+            "error_message": None,
+            "result": {
+                "resume_document": {"text": "resume", "filetype": "TXT", "source": "workspace"},
+                "candidate_profile": {
+                    "full_name": "Leander Antony",
+                    "location": "Chennai, India",
+                    "contact_lines": [],
+                    "source": "workspace",
+                    "resume_text": "resume",
+                    "skills": [],
+                    "experience": [],
+                    "education": [],
+                    "certifications": [],
+                    "source_signals": [],
+                },
+                "job_description": {
+                    "title": "Machine Learning Engineer",
+                    "raw_text": "jd",
+                    "cleaned_text": "jd",
+                    "location": None,
+                    "salary": None,
+                    "requirements": {
+                        "hard_skills": [],
+                        "soft_skills": [],
+                        "experience_requirement": None,
+                        "must_haves": [],
+                        "nice_to_haves": [],
+                    },
+                },
+                "jd_summary_view": {
+                    "headline": "headline",
+                    "summary": "summary",
+                    "sections": [],
+                    "fit_signals": [],
+                    "interview_focus": [],
+                },
+                "fit_analysis": {
+                    "target_role": "Machine Learning Engineer",
+                    "overall_score": 50,
+                    "readiness_label": "Promising",
+                    "matched_hard_skills": [],
+                    "missing_hard_skills": [],
+                    "matched_soft_skills": [],
+                    "missing_soft_skills": [],
+                    "experience_signal": "",
+                    "strengths": [],
+                    "gaps": [],
+                    "recommendations": [],
+                },
+                "tailored_draft": {
+                    "target_role": "Machine Learning Engineer",
+                    "professional_summary": "",
+                    "highlighted_skills": [],
+                    "priority_bullets": [],
+                    "gap_mitigation_steps": [],
+                },
+                "agent_result": None,
+                "artifacts": {
+                    "tailored_resume": {
+                        "title": "resume",
+                        "filename_stem": "resume",
+                        "summary": "",
+                        "markdown": "",
+                        "plain_text": "",
+                        "theme": "classic_ats",
+                        "header": {
+                            "full_name": "Leander Antony",
+                            "location": "Chennai, India",
+                            "contact_lines": [],
+                        },
+                        "target_role": "Machine Learning Engineer",
+                        "professional_summary": "",
+                        "highlighted_skills": [],
+                        "experience_entries": [],
+                        "education_entries": [],
+                        "certifications": [],
+                        "change_log": [],
+                        "validation_notes": [],
+                    },
+                    "cover_letter": {
+                        "title": "cover",
+                        "filename_stem": "cover",
+                        "summary": "",
+                        "markdown": "",
+                        "plain_text": "",
+                    },
+                    "report": {
+                        "title": "report",
+                        "filename_stem": "report",
+                        "summary": "",
+                        "markdown": "",
+                        "plain_text": "",
+                    },
+                },
+                "workflow": {
+                    "mode": "openai",
+                    "assisted_requested": True,
+                    "assisted_available": True,
+                    "review_approved": True,
+                    "fallback_reason": "",
+                },
+                "imported_job_posting": None,
+            },
+        },
+    )
+
+    response = client.get("/api/workspace/analyze-jobs/job-123")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "completed"
+    assert payload["progress_percent"] == 100
+    assert payload["result"]["job_description"]["title"] == "Machine Learning Engineer"
 
 
 def test_workspace_analyze_prefers_imported_job_title_when_parser_cannot_extract_it():

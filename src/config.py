@@ -141,6 +141,9 @@ SUPABASE_SAVED_WORKSPACES_TABLE = os.getenv(
 SUPABASE_SAVED_JOBS_TABLE = os.getenv(
     "SUPABASE_SAVED_JOBS_TABLE", "saved_jobs"
 ).strip()
+SUPABASE_RESUME_BUILDER_SESSIONS_TABLE = os.getenv(
+    "SUPABASE_RESUME_BUILDER_SESSIONS_TABLE", "resume_builder_sessions"
+).strip()
 ENABLE_JOB_SEARCH_BACKEND = _load_bool_env("ENABLE_JOB_SEARCH_BACKEND", False)
 JOB_BACKEND_HOSTPORT = os.getenv("JOB_BACKEND_HOSTPORT", "").strip()
 JOB_BACKEND_BASE_URL = resolve_job_backend_base_url(

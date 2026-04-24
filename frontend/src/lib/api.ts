@@ -7,13 +7,18 @@ import type {
   JobResolveResponse,
   JobSearchRequest,
   JobSearchResponse,
+  LoadResumeBuilderSessionResponse,
   LoadSavedWorkspaceResponse,
   RemoveSavedJobResponse,
+  ResumeBuilderCommitResponse,
+  ResumeBuilderSessionResponse,
   SavedJobsResponse,
   SaveWorkspaceResponse,
   SaveSavedJobResponse,
   UploadedFilePayload,
   WorkspaceAnalysisRequest,
+  WorkspaceAnalysisJobCreatedResponse,
+  WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
   WorkspaceArtifactExportRequest,
   WorkspaceArtifactExportResponse,
@@ -194,6 +199,93 @@ export async function uploadResumeFile(file: File, authTokens?: AuthTokens | nul
   });
 }
 
+export async function loadLatestResumeBuilderSession(authTokens?: AuthTokens | null) {
+  return request<LoadResumeBuilderSessionResponse>("/workspace/resume-builder/latest", {
+    method: "GET",
+    headers: {
+      ...withAuthHeaders(authTokens),
+    },
+  });
+}
+
+export async function startResumeBuilderSession(authTokens?: AuthTokens | null) {
+  return request<ResumeBuilderSessionResponse>("/workspace/resume-builder/start", {
+    method: "POST",
+    headers: {
+      ...withAuthHeaders(authTokens),
+    },
+  });
+}
+
+export async function sendResumeBuilderMessage(
+  sessionId: string,
+  message: string,
+  authTokens?: AuthTokens | null,
+) {
+  return request<ResumeBuilderSessionResponse>("/workspace/resume-builder/message", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...withAuthHeaders(authTokens),
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      message,
+      input_mode: "text",
+    }),
+  });
+}
+
+export async function generateResumeBuilderResume(
+  sessionId: string,
+  authTokens?: AuthTokens | null,
+) {
+  return request<ResumeBuilderSessionResponse>("/workspace/resume-builder/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...withAuthHeaders(authTokens),
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+    }),
+  });
+}
+
+export async function updateResumeBuilderDraft(
+  sessionId: string,
+  draftProfile: Record<string, unknown>,
+  authTokens?: AuthTokens | null,
+) {
+  return request<ResumeBuilderSessionResponse>("/workspace/resume-builder/update", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...withAuthHeaders(authTokens),
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      draft_profile: draftProfile,
+    }),
+  });
+}
+
+export async function commitResumeBuilderResume(
+  sessionId: string,
+  authTokens?: AuthTokens | null,
+) {
+  return request<ResumeBuilderCommitResponse>("/workspace/resume-builder/commit", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...withAuthHeaders(authTokens),
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+    }),
+  });
+}
+
 export async function uploadJobDescriptionFile(file: File, authTokens?: AuthTokens | null) {
   const payload = await fileToUploadPayload(file);
   return request<WorkspaceJobDescriptionUploadResponse>(
@@ -220,6 +312,32 @@ export async function runWorkspaceAnalysis(
       ...withAuthHeaders(authTokens),
     },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function startWorkspaceAnalysisJob(
+  payload: WorkspaceAnalysisRequest,
+  authTokens?: AuthTokens | null,
+) {
+  return request<WorkspaceAnalysisJobCreatedResponse>("/workspace/analyze-jobs", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...withAuthHeaders(authTokens),
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getWorkspaceAnalysisJob(
+  jobId: string,
+  authTokens?: AuthTokens | null,
+) {
+  return request<WorkspaceAnalysisJobStatusResponse>(`/workspace/analyze-jobs/${jobId}`, {
+    method: "GET",
+    headers: {
+      ...withAuthHeaders(authTokens),
+    },
   });
 }
 

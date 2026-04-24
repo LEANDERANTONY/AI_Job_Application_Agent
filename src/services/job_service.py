@@ -157,6 +157,7 @@ def build_job_description_from_text(raw_text: str) -> JobDescription:
         raw_text=raw_text,
         cleaned_text=cleaned_text,
         location=extracted.get("location"),
+        salary=extracted.get("salary"),
         requirements=JobRequirements(
             hard_skills=dedupe_strings(extracted.get("skills", [])),
             soft_skills=dedupe_strings(extracted.get("soft_skills", [])),

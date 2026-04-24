@@ -1,23 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   askWorkspaceAssistant,
+  commitResumeBuilderResume,
   exchangeGoogleCode,
   exportWorkspaceArtifact,
+  generateResumeBuilderResume,
+  getWorkspaceAnalysisJob,
+  loadLatestResumeBuilderSession,
   loadSavedJobs,
   loadSavedWorkspace,
   previewWorkspaceArtifact,
   removeSavedJob,
   resolveJobUrl,
   restoreAuthSession,
-  runWorkspaceAnalysis,
   saveSavedJob,
   saveWorkspaceSnapshot,
   searchJobs,
+  sendResumeBuilderMessage,
   signOutAuthSession,
+  startWorkspaceAnalysisJob,
+  startResumeBuilderSession,
   startGoogleSignIn,
+  updateResumeBuilderDraft,
   uploadJobDescriptionFile,
   uploadResumeFile,
 } from "@/lib/api";
@@ -30,7 +37,9 @@ import type {
   JobResolveResponse,
   JobSearchResponse,
   LoadSavedWorkspaceResponse,
+  ResumeBuilderSessionResponse,
   SavedWorkspaceMeta,
+  WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
   WorkspaceArtifactKind,
   WorkspaceAssistantResponse,
@@ -41,6 +50,13 @@ import {
   buildJobResultBadges,
   buildJobReview,
 } from "@/lib/job-workspace";
+import {
+  buildAuthRedirectUrl,
+  clearAuthQueryParams,
+  clearStoredAuthTokens,
+  persistAuthTokens,
+  readStoredAuthTokens,
+} from "@/lib/auth-session";
 
 type Notice = {
   level: "info" | "success" | "warning";
@@ -49,6 +65,7 @@ type Notice = {
 
 type ArtifactTab = "resume" | "cover-letter";
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
+type ResumeIntakeMode = "upload" | "assistant";
 
 type AssistantTurn = {
   question: string;
@@ -64,9 +81,16 @@ type WorkflowStage = {
   value: number;
 };
 
-const AUTH_SESSION_STORAGE_KEY = "workspace-auth-session-v1";
 const ASSISTANT_HISTORY_STORAGE_KEY = "workspace-assistant-history-v1";
 const MAX_PERSISTED_ASSISTANT_TURNS = 8;
+const RESUME_BUILDER_STEP_LABELS: Record<string, string> = {
+  basics: "Basics",
+  role: "Target role",
+  experience: "Experience",
+  education: "Education",
+  skills: "Skills",
+  review: "Review",
+};
 const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
   {
     title: "Workflow crew",
@@ -99,6 +123,8 @@ const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
     value: 97,
   },
 ];
+
+type AnalysisJobState = WorkspaceAnalysisJobStatusResponse | null;
 
 function noticeClassName(level: NonNullable<Notice>["level"]) {
   if (level === "success") {
@@ -361,68 +387,6 @@ function artifactKindFromTab(tab: ArtifactTab): Exclude<WorkspaceArtifactKind, "
   return "cover_letter";
 }
 
-function readStoredAuthTokens(): AuthTokens | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const payload = JSON.parse(raw);
-    if (
-      typeof payload?.access_token === "string" &&
-      typeof payload?.refresh_token === "string" &&
-      payload.access_token.trim() &&
-      payload.refresh_token.trim()
-    ) {
-      return {
-        access_token: payload.access_token,
-        refresh_token: payload.refresh_token,
-      };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function persistAuthTokens(tokens: AuthTokens) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(tokens));
-}
-
-function clearStoredAuthTokens() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
-}
-
-function buildWorkspaceRedirectUrl() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return `${window.location.origin}/workspace`;
-}
-
-function clearAuthQueryParams() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const url = new URL(window.location.href);
-  url.searchParams.delete("code");
-  url.searchParams.delete("auth_flow");
-  url.searchParams.delete("error");
-  url.searchParams.delete("error_description");
-  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-}
-
 function formatUtcTimestamp(value: string) {
   if (!value) {
     return "";
@@ -571,6 +535,7 @@ export function JobApplicationWorkspace() {
   const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authActionLoading, setAuthActionLoading] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [workspaceReloading, setWorkspaceReloading] = useState(false);
   const [workspaceSaveMeta, setWorkspaceSaveMeta] =
     useState<SavedWorkspaceMeta | null>(null);
@@ -601,6 +566,29 @@ export function JobApplicationWorkspace() {
   const [resumeNotice, setResumeNotice] = useState<Notice>(null);
   const [resumeState, setResumeState] =
     useState<WorkspaceResumeUploadResponse | null>(null);
+  const [resumeIntakeMode, setResumeIntakeMode] =
+    useState<ResumeIntakeMode>("upload");
+  const [resumeBuilderSession, setResumeBuilderSession] =
+    useState<ResumeBuilderSessionResponse | null>(null);
+  const [resumeBuilderAnswer, setResumeBuilderAnswer] = useState("");
+  const [resumeBuilderLoading, setResumeBuilderLoading] = useState(false);
+  const [resumeBuilderGenerating, setResumeBuilderGenerating] = useState(false);
+  const [resumeBuilderCommitting, setResumeBuilderCommitting] = useState(false);
+  const [resumeBuilderNotice, setResumeBuilderNotice] = useState<Notice>(null);
+  const [resumeBuilderInitialized, setResumeBuilderInitialized] = useState(false);
+  const [resumeBuilderEditing, setResumeBuilderEditing] = useState(false);
+  const [resumeBuilderCollapsed, setResumeBuilderCollapsed] = useState(false);
+  const [resumeBuilderDraftForm, setResumeBuilderDraftForm] = useState({
+    full_name: "",
+    location: "",
+    contact_lines: "",
+    target_role: "",
+    professional_summary: "",
+    experience_notes: "",
+    education_notes: "",
+    skills: "",
+    certifications: "",
+  });
 
   const [selectedJobFile, setSelectedJobFile] = useState<File | null>(null);
   const [jobFileUploading, setJobFileUploading] = useState(false);
@@ -612,7 +600,7 @@ export function JobApplicationWorkspace() {
   const [manualJobText, setManualJobText] = useState("");
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisRunMode, setAnalysisRunMode] = useState<WorkflowRunMode | null>(null);
-  const [analysisProgressIndex, setAnalysisProgressIndex] = useState(0);
+  const [analysisJobState, setAnalysisJobState] = useState<AnalysisJobState>(null);
   const [analysisState, setAnalysisState] =
     useState<WorkspaceAnalysisResponse | null>(null);
   const [artifactTab, setArtifactTab] = useState<ArtifactTab>("resume");
@@ -657,7 +645,7 @@ export function JobApplicationWorkspace() {
           const response = await exchangeGoogleCode(
             authCode,
             authFlow,
-            buildWorkspaceRedirectUrl(),
+            buildAuthRedirectUrl("/workspace"),
           );
           if (!cancelled) {
             persistAuthTokens(response.session);
@@ -807,6 +795,9 @@ export function JobApplicationWorkspace() {
   const activeResumeState = resumeState ?? analysisState;
   const resumeText = activeResumeState?.resume_document.text ?? "";
   const currentProfile = activeResumeState?.candidate_profile ?? null;
+  const resumeBuilderStepLabel = resumeBuilderSession
+    ? RESUME_BUILDER_STEP_LABELS[resumeBuilderSession.current_step] ?? "Resume builder"
+    : "Resume builder";
   const review = manualJobText.trim()
     ? buildJobReview(manualJobText, activeJob)
     : null;
@@ -839,9 +830,23 @@ export function JobApplicationWorkspace() {
     }
     return [] as WorkflowStage[];
   }, [analysisRunMode]);
-  const currentWorkflowStage =
-    workflowStages[Math.min(analysisProgressIndex, Math.max(workflowStages.length - 1, 0))] ??
-    null;
+  const currentWorkflowStage = useMemo(() => {
+    if (!analysisLoading || analysisRunMode !== "agentic") {
+      return null;
+    }
+    if (!analysisJobState?.stage_title) {
+      return workflowStages[0] ?? null;
+    }
+    return (
+      workflowStages.find((stage) => stage.title === analysisJobState.stage_title) ?? {
+        title: analysisJobState.stage_title,
+        detail:
+          analysisJobState.stage_detail ||
+          "The workspace crew is moving through the run.",
+        value: analysisJobState.progress_percent || 3,
+      }
+    );
+  }, [analysisJobState, analysisLoading, analysisRunMode, workflowStages]);
   const workspaceTabs = useMemo(
     () => [
       {
@@ -849,7 +854,7 @@ export function JobApplicationWorkspace() {
         label: "Resume",
         title: "Upload profile",
         copy:
-          "Upload your resume so the app can understand your background and use it throughout the workflow.",
+          "Upload your resume or build one with the assistant so the app can use your background throughout the workflow.",
         status: currentProfile ? "Ready" : "Start here",
         tone: currentProfile ? "live" : "ready",
       },
@@ -901,25 +906,135 @@ export function JobApplicationWorkspace() {
   );
   const activeMainTabMeta =
     workspaceTabs.find((tab) => tab.id === mainTab) ?? workspaceTabs[0];
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const accountDisplayName =
+    authSession?.app_user.display_name || authSession?.app_user.email || "Signed in";
+  const accountInitial = accountDisplayName.slice(0, 1).toUpperCase();
 
   useEffect(() => {
-    if (!analysisLoading || !analysisRunMode || !workflowStages.length) {
+    if (
+      resumeIntakeMode !== "assistant" ||
+      resumeBuilderSession ||
+      resumeBuilderLoading ||
+      resumeBuilderInitialized
+    ) {
       return;
     }
 
-    const interval = window.setInterval(() => {
-      setAnalysisProgressIndex((currentIndex) => {
-        if (currentIndex >= workflowStages.length - 1) {
-          return currentIndex;
+    void handleLoadOrStartResumeBuilder();
+  }, [
+    authStatus,
+    resumeBuilderInitialized,
+    resumeBuilderLoading,
+    resumeBuilderSession,
+    resumeIntakeMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      authStatus === "signed_in" &&
+      resumeIntakeMode === "assistant" &&
+      !resumeBuilderSession
+    ) {
+      setResumeBuilderInitialized(false);
+    }
+  }, [authStatus, resumeBuilderSession, resumeIntakeMode]);
+
+  useEffect(() => {
+    if (!resumeBuilderSession) {
+      return;
+    }
+
+    setResumeBuilderDraftForm({
+      full_name: resumeBuilderSession.draft_profile.full_name || "",
+      location: resumeBuilderSession.draft_profile.location || "",
+      contact_lines: resumeBuilderSession.draft_profile.contact_lines.join("\n"),
+      target_role: resumeBuilderSession.draft_profile.target_role || "",
+      professional_summary:
+        resumeBuilderSession.draft_profile.professional_summary || "",
+      experience_notes: resumeBuilderSession.draft_profile.experience_notes || "",
+      education_notes: resumeBuilderSession.draft_profile.education_notes || "",
+      skills: resumeBuilderSession.draft_profile.skills.join(", "),
+      certifications: resumeBuilderSession.draft_profile.certifications.join(", "),
+    });
+  }, [resumeBuilderSession]);
+
+  useEffect(() => {
+    if (
+      !analysisLoading ||
+      analysisRunMode !== "agentic" ||
+      !analysisJobState?.job_id ||
+      analysisJobState.status === "completed" ||
+      analysisJobState.status === "failed"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const nextJobState = await getWorkspaceAnalysisJob(
+          analysisJobState.job_id,
+          authTokens,
+        );
+        if (cancelled) {
+          return;
         }
-        return currentIndex + 1;
-      });
-    }, analysisRunMode === "agentic" ? 3200 : 2200);
+
+        setAnalysisJobState(nextJobState);
+
+        if (nextJobState.status === "completed" && nextJobState.result) {
+          setAnalysisState(nextJobState.result);
+          setArtifactTab("resume");
+          setMainTab("analysis");
+          setArtifactPreviewHtml(null);
+          setArtifactPreviewTitle(null);
+          const savedWorkspace = await persistLatestWorkspace(nextJobState.result);
+          if (!cancelled) {
+            setWorkspaceNotice({
+              level: "success",
+              message: savedWorkspace
+                ? `Workflow finished in ${nextJobState.result.workflow.mode} mode and saved workspace refreshes until ${formatUtcTimestamp(savedWorkspace.expires_at)} UTC.`
+                : `Workflow finished in ${nextJobState.result.workflow.mode} mode.`,
+            });
+            setAnalysisLoading(false);
+            setAnalysisRunMode(null);
+          }
+          return;
+        }
+
+        if (nextJobState.status === "failed") {
+          setWorkspaceNotice({
+            level: "warning",
+            message:
+              nextJobState.error_message ||
+              "The agentic workflow failed unexpectedly.",
+          });
+          setAnalysisLoading(false);
+          setAnalysisRunMode(null);
+          return;
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setWorkspaceNotice({
+            level: "warning",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Workflow status polling failed unexpectedly.",
+          });
+          setAnalysisLoading(false);
+          setAnalysisRunMode(null);
+        }
+      }
+    }, 1200);
 
     return () => {
-      window.clearInterval(interval);
+      cancelled = true;
+      window.clearTimeout(timeout);
     };
-  }, [analysisLoading, analysisRunMode, workflowStages]);
+  }, [analysisJobState, analysisLoading, analysisRunMode, authTokens]);
 
   const assistantWorkspaceSignature = useMemo(
     () => buildAssistantWorkspaceSignature(analysisState),
@@ -938,16 +1053,6 @@ export function JobApplicationWorkspace() {
     !assistantRequiresWorkspaceRun &&
     !assistantSending &&
     Boolean(assistantQuestion.trim());
-  const assistantStatusLabel = analysisState
-    ? assistantTurns.length
-      ? "Memory active"
-      : "Fresh thread"
-    : "Waiting for run";
-  const assistantStatusCopy = analysisState
-    ? assistantTurns.length
-        ? `This chat is scoped to ${analysisState.job_description.title || "the current workspace"} and restores on reload.`
-        : `Start a fresh grounded thread for ${analysisState.job_description.title || "the current workspace"}.`
-    : "Unlocks after your first AI analysis run.";
 
   useEffect(() => {
     if (!assistantStorageKey) {
@@ -1148,7 +1253,7 @@ export function JobApplicationWorkspace() {
     try {
       const response = await uploadResumeFile(file, authTokens);
       setResumeState(response);
-      setMainTab("jobs");
+      setResumeIntakeMode("upload");
       setResumeNotice({
         level: "success",
         message: `${response.candidate_profile.full_name || response.resume_document.filetype} is ready in the workspace.`,
@@ -1206,6 +1311,29 @@ export function JobApplicationWorkspace() {
     }
   }
 
+  function handleClearUploadedResumeProfile() {
+    setResumeState(null);
+    setSelectedResumeFile(null);
+    setResumeNotice(null);
+    setResumeBuilderNotice({
+      level: "info",
+      message:
+        "Uploaded resume cleared. You can build a fresh base resume with the assistant now.",
+    });
+  }
+
+  function handleClearLoadedJobDescription() {
+    setActiveJob(null);
+    setJobFileState(null);
+    setSelectedJobFile(null);
+    setManualJobText("");
+    setJobFileNotice({
+      level: "info",
+      message: "Job description cleared. You can upload a new file, paste a JD, or load another role.",
+    });
+    setJobInputCollapsed(false);
+  }
+
   function applySavedWorkspaceSnapshot(response: LoadSavedWorkspaceResponse) {
     const snapshot = response.workspace_snapshot;
     if (!snapshot) {
@@ -1230,14 +1358,284 @@ export function JobApplicationWorkspace() {
     setArtifactPreviewHtml(null);
     setArtifactPreviewTitle(null);
     setAssistantTurns([]);
+    setResumeIntakeMode("upload");
+    setResumeBuilderSession(null);
+    setResumeBuilderInitialized(false);
+    setResumeBuilderAnswer("");
+    setResumeBuilderNotice(null);
     setMainTab("analysis");
+  }
+
+  async function handleStartResumeBuilder() {
+    setResumeBuilderLoading(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Starting the guided resume builder...",
+    });
+
+    try {
+      const response = await startResumeBuilderSession(authTokens);
+      setResumeBuilderSession(response);
+      setResumeBuilderInitialized(true);
+      setResumeBuilderNotice({
+        level: "success",
+        message: "The guided resume builder is ready. Answer each prompt and we will build your base resume together.",
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The guided resume builder could not be started.",
+      });
+    } finally {
+      setResumeBuilderLoading(false);
+    }
+  }
+
+  async function handleLoadOrStartResumeBuilder() {
+    setResumeBuilderLoading(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: authTokens
+        ? "Checking for your latest resume-builder draft..."
+        : "Starting the guided resume builder...",
+    });
+
+    try {
+      if (authTokens) {
+        try {
+          const latest = await loadLatestResumeBuilderSession(authTokens);
+          if (latest.session) {
+            setResumeBuilderSession(latest.session);
+            setResumeBuilderNotice({
+              level: "success",
+              message: "Your latest resume-builder draft is ready to continue.",
+            });
+            return;
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message.toLowerCase() : "";
+          if (!message.includes("not found")) {
+            throw error;
+          }
+        }
+      }
+
+      const response = await startResumeBuilderSession(authTokens);
+      setResumeBuilderSession(response);
+      setResumeBuilderNotice({
+        level: "success",
+        message: "The guided resume builder is ready. Answer each prompt and we will build your base resume together.",
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The guided resume builder could not be started.",
+      });
+    } finally {
+      setResumeBuilderInitialized(true);
+      setResumeBuilderLoading(false);
+    }
+  }
+
+  async function handleResumeBuilderAnswer() {
+    if (!resumeBuilderSession) {
+      await handleStartResumeBuilder();
+      return;
+    }
+
+    if (!resumeBuilderAnswer.trim()) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message: "Add an answer before continuing.",
+      });
+      return;
+    }
+
+    setResumeBuilderLoading(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Saving your answer and moving to the next step...",
+    });
+
+    try {
+      const response = await sendResumeBuilderMessage(
+        resumeBuilderSession.session_id,
+        resumeBuilderAnswer.trim(),
+        authTokens,
+      );
+      setResumeBuilderSession(response);
+      setResumeBuilderAnswer("");
+      setResumeBuilderNotice({
+        level: "success",
+        message: response.assistant_message,
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "That answer could not be saved.",
+      });
+    } finally {
+      setResumeBuilderLoading(false);
+    }
+  }
+
+  async function handleResumeBuilderGenerate() {
+    if (!resumeBuilderSession) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message: "Start the guided resume builder before generating a base resume.",
+      });
+      return;
+    }
+
+    setResumeBuilderGenerating(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Generating your baseline resume draft...",
+    });
+
+    try {
+      const response = await generateResumeBuilderResume(
+        resumeBuilderSession.session_id,
+        authTokens,
+      );
+      setResumeBuilderSession(response);
+      setResumeBuilderNotice({
+        level: "success",
+        message: "Your base resume draft is ready. Review it, then use this profile to continue into the workspace.",
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The base resume draft could not be generated.",
+      });
+    } finally {
+      setResumeBuilderGenerating(false);
+    }
+  }
+
+  async function handleResumeBuilderDraftSave() {
+    if (!resumeBuilderSession) {
+      return;
+    }
+
+    setResumeBuilderEditing(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Saving your edits to the draft profile...",
+    });
+
+    try {
+      const response = await updateResumeBuilderDraft(
+        resumeBuilderSession.session_id,
+        {
+          full_name: resumeBuilderDraftForm.full_name,
+          location: resumeBuilderDraftForm.location,
+          contact_lines: resumeBuilderDraftForm.contact_lines
+            .split("\n")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          target_role: resumeBuilderDraftForm.target_role,
+          professional_summary: resumeBuilderDraftForm.professional_summary,
+          experience_notes: resumeBuilderDraftForm.experience_notes,
+          education_notes: resumeBuilderDraftForm.education_notes,
+          skills: resumeBuilderDraftForm.skills
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          certifications: resumeBuilderDraftForm.certifications
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+        },
+        authTokens,
+      );
+      setResumeBuilderSession(response);
+      setResumeBuilderNotice({
+        level: "success",
+        message: "Draft updated. You can keep refining it or generate the base resume.",
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Those draft edits could not be saved.",
+      });
+    } finally {
+      setResumeBuilderEditing(false);
+    }
+  }
+
+  async function handleResumeBuilderCommit() {
+    if (!resumeBuilderSession) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message: "Generate a base resume before using it in the workspace.",
+      });
+      return;
+    }
+
+    setResumeBuilderCommitting(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Moving this base resume into your workspace profile...",
+    });
+
+    try {
+      const response = await commitResumeBuilderResume(
+        resumeBuilderSession.session_id,
+        authTokens,
+      );
+      setResumeState({
+        resume_document: response.resume_document,
+        candidate_profile: response.candidate_profile,
+      });
+      setResumeNotice({
+        level: "success",
+        message: `${response.candidate_profile.full_name || "Your new resume"} is ready in the workspace.`,
+      });
+      setResumeBuilderNotice({
+        level: "success",
+        message: "Your base resume is now the active profile for the rest of the workflow.",
+      });
+      setSelectedResumeFile(null);
+      setResumeBuilderSession(null);
+      setResumeBuilderInitialized(false);
+      setResumeBuilderAnswer("");
+      setMainTab("jobs");
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "This base resume could not be moved into the workspace.",
+      });
+    } finally {
+      setResumeBuilderCommitting(false);
+    }
   }
 
   async function handleGoogleSignIn() {
     setAuthActionLoading(true);
     setAuthError(null);
     try {
-      const response = await startGoogleSignIn(buildWorkspaceRedirectUrl());
+      const response = await startGoogleSignIn(buildAuthRedirectUrl("/workspace"));
       window.location.href = response.url;
     } catch (error) {
       setAuthError(
@@ -1274,6 +1672,10 @@ export function JobApplicationWorkspace() {
       setWorkspaceSaveMeta(null);
       setSavedJobs([]);
       setSavedJobsNotice(null);
+      setResumeBuilderSession(null);
+      setResumeBuilderInitialized(false);
+      setResumeBuilderAnswer("");
+      setResumeBuilderNotice(null);
       setAuthActionLoading(false);
       setWorkspaceNotice({
         level: "info",
@@ -1374,16 +1776,24 @@ export function JobApplicationWorkspace() {
     }
 
     setAnalysisRunMode("agentic");
-    setAnalysisProgressIndex(0);
+    setAnalysisJobState({
+      job_id: "",
+      status: "queued",
+      stage_title: "Workflow crew",
+      stage_detail: "Opening your application brief and preparing the first agent.",
+      progress_percent: 3,
+      result: null,
+      error_message: null,
+    });
     setAnalysisLoading(true);
-      setWorkspaceNotice({
-        level: "info",
-        message:
+    setWorkspaceNotice({
+      level: "info",
+      message:
         "Running the agentic workflow now. The workspace crew will keep you posted as each stage moves.",
-      });
+    });
 
     try {
-      const response = await runWorkspaceAnalysis({
+      const response = await startWorkspaceAnalysisJob({
         resume_text: resumeText,
         resume_filetype: activeResumeState?.resume_document.filetype ?? "TXT",
         resume_source: activeResumeState?.resume_document.source ?? "workspace",
@@ -1391,37 +1801,25 @@ export function JobApplicationWorkspace() {
         imported_job_posting: activeJob,
         run_assisted: true,
       }, authTokens);
-      setAnalysisState(response);
-      setArtifactTab("resume");
-      setMainTab("analysis");
-      setArtifactPreviewHtml(null);
-      setArtifactPreviewTitle(null);
-      const savedWorkspace = await persistLatestWorkspace(response);
-        setWorkspaceNotice({
-          level: "success",
-          message: savedWorkspace
-            ? `Workflow finished in ${response.workflow.mode} mode and saved workspace refreshes until ${formatUtcTimestamp(savedWorkspace.expires_at)} UTC.`
-            : `Workflow finished in ${response.workflow.mode} mode.`
-        });
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error
-            ? error.message
-            : "Workspace analysis failed unexpectedly.";
-        const looksLikeGatewayFailure =
-          /(502|bad gateway|gateway|proxy)/i.test(errorMessage);
-        setWorkspaceNotice({
-          level: "warning",
-          message: looksLikeGatewayFailure
-            ? "The agentic run was interrupted by the gateway before the backend finished responding. The new run panel shows stage progress, but we still need to move the assisted workflow to a background job to make proxied runs fully reliable."
-            : errorMessage,
-        });
-      } finally {
-        setAnalysisLoading(false);
-        setAnalysisRunMode(null);
-        setAnalysisProgressIndex(0);
-      }
+      setAnalysisJobState({
+        ...response,
+        result: null,
+        error_message: null,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Workspace analysis failed unexpectedly.";
+      setWorkspaceNotice({
+        level: "warning",
+        message: errorMessage,
+      });
+      setAnalysisLoading(false);
+      setAnalysisRunMode(null);
+      setAnalysisJobState(null);
     }
+  }
 
   async function submitAssistantQuestion(questionText: string) {
     const normalizedQuestion = questionText.trim();
@@ -1591,6 +1989,7 @@ export function JobApplicationWorkspace() {
     setJobFileState(null);
     setManualJobText("");
     setAnalysisState(null);
+    setAnalysisJobState(null);
     setArtifactExporting(null);
     setArtifactPreviewHtml(null);
     setArtifactPreviewTitle(null);
@@ -1622,6 +2021,31 @@ export function JobApplicationWorkspace() {
     autoSaving,
     workspaceSaveMeta,
   ]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!accountMenuRef.current?.contains(event.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [accountMenuOpen]);
 
   return (
     <div className="workspace-layout">
@@ -1677,105 +2101,10 @@ export function JobApplicationWorkspace() {
           </div>
 
           <div className="workspace-sidebar-card">
-                <h2 className="workspace-sidebar-title">
-                  {authStatus === "signed_in" ? "Signed in to Google" : "Sign in with Google"}
-                </h2>
-                <div className="workspace-auth-panel">
-                  <div className="workspace-auth-avatar">
-                    {(authSession?.app_user.display_name || authSession?.app_user.email || "U")
-                      .slice(0, 1)
-                      .toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="workspace-auth-title">
-                      {authStatus === "signed_in"
-                        ? authSession?.app_user.display_name ||
-                          authSession?.app_user.email ||
-                          "Signed in"
-                        : authStatus === "restoring"
-                          ? "Restoring account session"
-                          : "Signed out"}
-                    </p>
-                    <p className="workspace-auth-copy">
-                      {authStatus === "signed_in"
-                        ? `${authSession?.app_user.email || "Account session live"}${dailyQuota ? ` • ${formatRemainingCalls(dailyQuota)} runs left today` : ""}`
-                        : authStatus === "restoring"
-                          ? "Checking the last saved account session from this browser."
-                          : ""}
-                    </p>
-                  </div>
-                </div>
-                {authError ? (
-                  <div className="notice-panel notice-warning">{authError}</div>
-                ) : null}
-                {authStatus === "signed_in" ? (
-                  <div className="workspace-sidebar-inline-metrics">
-                    <span className="workspace-meta-chip">
-                      Plan: {authSession?.app_user.plan_tier || "free"}
-                    </span>
-                    <span className="workspace-meta-chip">
-                      Runs left: {formatRemainingCalls(dailyQuota)}
-                    </span>
-                    {workspaceSaveMeta ? (
-                      <span className="workspace-meta-chip">
-                        Saved until {formatUtcTimestamp(workspaceSaveMeta.expires_at)} UTC
-                      </span>
-                    ) : autoSaving ? (
-                      <span className="workspace-meta-chip">Saving latest workspace...</span>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="workspace-sidebar-actions">
-                  {authStatus === "signed_in" ? (
-                    <>
-                      <button
-                        className="primary-button workspace-button workspace-button-full"
-                        disabled={
-                          authActionLoading ||
-                          workspaceReloading ||
-                          !authSession?.features.saved_workspace_enabled
-                        }
-                        onClick={() => void handleReloadSavedWorkspace()}
-                        type="button"
-                      >
-                        {workspaceReloading ? "Reloading..." : "Reload saved workspace"}
-                      </button>
-                      <button
-                        className="secondary-button workspace-button workspace-button-full"
-                        disabled={authActionLoading}
-                        onClick={() => void handleSignOut()}
-                        type="button"
-                      >
-                        {authActionLoading ? "Signing out..." : "Sign out"}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      className="primary-button workspace-button workspace-button-full"
-                      disabled={authActionLoading || authStatus === "restoring"}
-                      onClick={() => void handleGoogleSignIn()}
-                      type="button"
-                    >
-                      {authStatus === "restoring"
-                        ? "Restoring session..."
-                        : authActionLoading
-                          ? "Redirecting..."
-                        : "Continue with Google"}
-                    </button>
-                  )}
-                </div>
-          </div>
-
-          <div className="workspace-sidebar-card">
                 <p className="eyebrow">Assistant</p>
                 <h2 className="workspace-sidebar-title">
                   Ask your questions
                 </h2>
-                <div className="workspace-assistant-status">
-                  <span className="workspace-assistant-status-label">Context</span>
-                  <strong>{assistantStatusLabel}</strong>
-                  <small>{assistantStatusCopy}</small>
-                </div>
 
                 {assistantTurns.length ? (
                   <div className="workspace-chat-history">
@@ -1786,30 +2115,6 @@ export function JobApplicationWorkspace() {
                         </div>
                         <div className="workspace-chat-bubble workspace-chat-assistant">
                           {turn.response.answer}
-                          {turn.response.sources.length ? (
-                            <div className="workspace-chat-sources">
-                              {turn.response.sources.map((source) => (
-                                <span className="workspace-meta-chip" key={`${index}-${source}`}>
-                                  {source}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-                          {turn.response.suggested_follow_ups.length ? (
-                            <div className="workspace-chat-followups">
-                              {turn.response.suggested_follow_ups.map((followUp) => (
-                                <button
-                                  className="workspace-chat-followup"
-                                  disabled={assistantSending}
-                                  key={`${index}-${followUp}`}
-                                  onClick={() => void handleAssistantFollowUp(followUp)}
-                                  type="button"
-                                >
-                                  {followUp}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -1879,6 +2184,86 @@ export function JobApplicationWorkspace() {
       </aside>
 
       <div className="workspace-main">
+        <div className="workspace-main-topbar">
+          <div className="workspace-main-topbar-actions">
+            {authStatus === "signed_in" ? (
+              <div className="workspace-account-menu" ref={accountMenuRef}>
+                <button
+                  aria-expanded={accountMenuOpen}
+                  aria-haspopup="menu"
+                  className="workspace-account-trigger"
+                  onClick={() => setAccountMenuOpen((open) => !open)}
+                  type="button"
+                >
+                  <span className="workspace-account-trigger-avatar">{accountInitial}</span>
+                </button>
+                {accountMenuOpen ? (
+                  <div className="workspace-account-popover" role="menu">
+                    <div className="workspace-auth-panel workspace-auth-panel-inline">
+                      <div className="workspace-auth-avatar">{accountInitial}</div>
+                      <div>
+                        <p className="workspace-auth-title">{accountDisplayName}</p>
+                        <p className="workspace-auth-copy">
+                          {authSession?.app_user.email || "Account session live"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="workspace-sidebar-inline-metrics workspace-account-metrics">
+                      <span className="workspace-meta-chip">
+                        Plan: {authSession?.app_user.plan_tier || "free"}
+                      </span>
+                      <span className="workspace-meta-chip">
+                        Runs left: {formatRemainingCalls(dailyQuota)}
+                      </span>
+                      {workspaceSaveMeta ? (
+                        <span className="workspace-meta-chip">
+                          Saved until {formatUtcTimestamp(workspaceSaveMeta.expires_at)} UTC
+                        </span>
+                      ) : autoSaving ? (
+                        <span className="workspace-meta-chip">Saving latest workspace...</span>
+                      ) : null}
+                    </div>
+                    {authError ? <div className="notice-panel notice-warning">{authError}</div> : null}
+                    <div className="workspace-sidebar-actions workspace-account-actions">
+                      {authSession?.features.saved_workspace_enabled ? (
+                        <button
+                          className="primary-button workspace-button workspace-button-full"
+                          disabled={authActionLoading || workspaceReloading}
+                          onClick={() => void handleReloadSavedWorkspace()}
+                          type="button"
+                        >
+                          {workspaceReloading ? "Reloading..." : "Reload saved workspace"}
+                        </button>
+                      ) : null}
+                      <button
+                        className="secondary-button workspace-button workspace-button-full"
+                        disabled={authActionLoading}
+                        onClick={() => void handleSignOut()}
+                        type="button"
+                      >
+                        {authActionLoading ? "Signing out..." : "Sign out"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <button
+                className="secondary-button workspace-button workspace-topbar-button"
+                disabled={authActionLoading || authStatus === "restoring"}
+                onClick={() => void handleGoogleSignIn()}
+                type="button"
+              >
+                {authStatus === "restoring"
+                  ? "Restoring session..."
+                  : authActionLoading
+                    ? "Redirecting..."
+                    : "Sign in with Google"}
+              </button>
+            )}
+          </div>
+        </div>
+
         <section className="surface-card surface-card-neutral job-hero-panel">
           <div className="job-hero-grid">
             <div>
@@ -1994,46 +2379,422 @@ export function JobApplicationWorkspace() {
                   <h2 className="section-title">Resume intake</h2>
                 </div>
                 <span className="status-chip">
-                  {resumeState ? "Ready" : "Waiting for upload"}
+                  {resumeState ? "Ready" : "Start here"}
                 </span>
               </div>
                 <p className="section-copy">
-                  Upload your resume so the workspace can use your background throughout the workflow.
+                  Bring in an existing resume or build a base one with the assistant.
                 </p>
 
-              <div className="workspace-uploader">
-                <label className="primary-button workspace-button workspace-upload-trigger" htmlFor="resume-upload">
-                  Choose resume file
-                </label>
-                <input
-                  accept=".pdf,.docx,.txt"
-                  className="workspace-hidden-input"
-                  id="resume-upload"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    setSelectedResumeFile(file);
-                    void handleResumeUpload(file);
-                    event.target.value = "";
-                  }}
-                  type="file"
-                />
-                <span className="workspace-file-name">
-                  {selectedResumeFile?.name ||
-                    resumeState?.resume_document.filetype ||
-                    "No resume selected"}
-                </span>
-                {resumeUploading ? (
-                  <span className="workspace-file-status">Parsing resume...</span>
-                ) : null}
+              <div className="workspace-tab-row">
+                {(["upload", "assistant"] as ResumeIntakeMode[]).map((mode) => (
+                  <button
+                    className={
+                      resumeIntakeMode === mode
+                        ? "inspector-tab inspector-tab-active"
+                        : "inspector-tab"
+                    }
+                    key={mode}
+                    onClick={() => {
+                      setResumeIntakeMode(mode);
+                      if (mode === "assistant") {
+                        setResumeBuilderInitialized(false);
+                      }
+                    }}
+                    type="button"
+                  >
+                    {mode === "upload" ? "Upload Resume" : "Build With Assistant"}
+                  </button>
+                ))}
               </div>
 
-              {resumeNotice ? (
-                <div className={noticeClassName(resumeNotice.level)}>
-                  {resumeNotice.message}
-                </div>
-              ) : null}
+              {resumeIntakeMode === "upload" ? (
+                <>
+                  <div className="workspace-uploader">
+                    <label className="primary-button workspace-button workspace-upload-trigger" htmlFor="resume-upload">
+                      Upload resume
+                    </label>
+                    <input
+                      accept=".pdf,.docx,.txt"
+                      className="workspace-hidden-input"
+                      id="resume-upload"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        setSelectedResumeFile(file);
+                        void handleResumeUpload(file);
+                        event.target.value = "";
+                      }}
+                      type="file"
+                    />
+                    <span className="workspace-file-name">
+                      {selectedResumeFile?.name ||
+                        resumeState?.resume_document.filetype ||
+                        "No resume selected"}
+                    </span>
+                    {resumeUploading ? (
+                      <span className="workspace-file-status">Parsing resume...</span>
+                    ) : null}
+                    {currentProfile ? (
+                      <button
+                        className="danger-button workspace-button workspace-action-end"
+                        onClick={handleClearUploadedResumeProfile}
+                        type="button"
+                      >
+                        Clear uploaded resume
+                      </button>
+                    ) : null}
+                  </div>
 
-              {currentProfile ? (
+                  {resumeNotice ? (
+                    <div className={noticeClassName(resumeNotice.level)}>
+                      {resumeNotice.message}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="workspace-builder-stack">
+                    <div className="workspace-section-card">
+                      <div className="section-head">
+                        <div>
+                          <span className="workspace-label">Resume builder assistant</span>
+                          <h3>{resumeBuilderStepLabel}</h3>
+                        </div>
+                        <button
+                          className="secondary-button workspace-button workspace-button-small"
+                          onClick={() =>
+                            setResumeBuilderCollapsed((current) => !current)
+                          }
+                          type="button"
+                        >
+                          {resumeBuilderCollapsed ? "Show builder" : "Hide builder"}
+                        </button>
+                      </div>
+
+                      {!resumeBuilderCollapsed ? (
+                        <>
+                          <p className="workspace-role-copy">
+                            {resumeBuilderSession?.assistant_message ||
+                              "The guided assistant will ask a few focused questions and turn your answers into a base resume."}
+                          </p>
+
+                          {authStatus === "signed_in" ? (
+                            <p className="workspace-muted-copy">
+                              Your latest draft will reopen here automatically when available.
+                            </p>
+                          ) : null}
+
+                          {resumeBuilderSession ? (
+                            <div className="workspace-chip-grid">
+                              {Object.entries(RESUME_BUILDER_STEP_LABELS).map(([key, label]) => {
+                                const isActive = resumeBuilderSession.current_step === key;
+                                const isComplete =
+                                  key !== "review" &&
+                                  resumeBuilderSession.completed_steps >
+                                    Object.keys(RESUME_BUILDER_STEP_LABELS).indexOf(key);
+                                return (
+                                  <span
+                                    className={isActive ? "workspace-meta-chip workspace-builder-chip-active" : "workspace-meta-chip"}
+                                    key={key}
+                                  >
+                                    {label}
+                                    {isComplete && !isActive ? " - Done" : ""}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+
+                          {resumeBuilderNotice ? (
+                            <div className={noticeClassName(resumeBuilderNotice.level)}>
+                              {resumeBuilderNotice.message}
+                            </div>
+                          ) : null}
+
+                          {!resumeBuilderSession && resumeBuilderLoading ? (
+                            <div className="workspace-empty-state">
+                              Starting the guided resume builder...
+                            </div>
+                          ) : null}
+
+                          {resumeBuilderSession && !resumeBuilderSession.ready_to_generate ? (
+                            <div className="workspace-form-stack">
+                              <textarea
+                                className="workspace-textarea workspace-builder-answer"
+                                onChange={(event) => setResumeBuilderAnswer(event.target.value)}
+                                placeholder="Type your answer here. Keep it natural - the assistant will structure it for you."
+                                value={resumeBuilderAnswer}
+                              />
+                              <div className="workspace-run-actions">
+                                <button
+                                  className="primary-button workspace-button"
+                                  disabled={resumeBuilderLoading}
+                                  onClick={() => void handleResumeBuilderAnswer()}
+                                  type="button"
+                                >
+                                  {resumeBuilderLoading ? "Saving..." : "Continue"}
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {resumeBuilderSession?.ready_to_generate &&
+                          !resumeBuilderSession.generated_resume_markdown ? (
+                            <div className="workspace-run-actions">
+                              <button
+                                className="primary-button workspace-button"
+                                disabled={resumeBuilderGenerating}
+                                onClick={() => void handleResumeBuilderGenerate()}
+                                type="button"
+                              >
+                                {resumeBuilderGenerating ? "Generating..." : "Generate Base Resume"}
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {resumeBuilderSession?.generated_resume_markdown ? (
+                            <div className="workspace-run-actions">
+                              <button
+                                className="primary-button workspace-button"
+                                disabled={resumeBuilderCommitting}
+                                onClick={() => void handleResumeBuilderCommit()}
+                                type="button"
+                              >
+                                {resumeBuilderCommitting ? "Using profile..." : "Use This Profile"}
+                              </button>
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="workspace-muted-copy workspace-builder-collapsed-copy">
+                          The assistant is hidden for now. You can reopen it anytime to continue answering questions.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="workspace-section-card">
+                      <span className="workspace-label">Draft profile</span>
+                      <h3>
+                        {resumeBuilderSession?.draft_profile.full_name ||
+                          "Your base resume will build here"}
+                      </h3>
+                      <p className="workspace-role-copy">
+                        {resumeBuilderSession?.generated_resume_markdown
+                          ? "Review the generated base resume before moving it into the workspace."
+                          : "As you answer each prompt, the assistant will collect the details needed to create a clean starting resume."}
+                      </p>
+
+                      {resumeBuilderSession ? (
+                        <>
+                          <div className="workspace-summary-grid">
+                            <div className="metric-tile">
+                              <span>Target role</span>
+                              <strong>
+                                {resumeBuilderSession.draft_profile.target_role || "Still collecting"}
+                              </strong>
+                              <small>The role direction you want this base resume to support.</small>
+                            </div>
+                            <div className="metric-tile">
+                              <span>Skills</span>
+                              <strong>{resumeBuilderSession.draft_profile.skills.length}</strong>
+                              <small>Skills or tools confirmed so far.</small>
+                            </div>
+                            <div className="metric-tile">
+                              <span>Progress</span>
+                              <strong>{resumeBuilderSession.progress_percent}%</strong>
+                              <small>{resumeBuilderSession.status === "ready" ? "Base resume generated." : "Guided intake in progress."}</small>
+                            </div>
+                          </div>
+
+                          <div className="workspace-review-columns">
+                            <div className="soft-panel">
+                              <span className="soft-panel-label">Contact</span>
+                              <ul className="workspace-feature-list workspace-feature-list-compact">
+                                {resumeBuilderSession.draft_profile.contact_lines.length ? (
+                                  resumeBuilderSession.draft_profile.contact_lines.map((line) => (
+                                    <li key={line}>{line}</li>
+                                  ))
+                                ) : (
+                                  <li>Add your email, phone, and links in the basics step.</li>
+                                )}
+                              </ul>
+                            </div>
+                            <div className="soft-panel">
+                              <span className="soft-panel-label">Skills</span>
+                              <div className="workspace-chip-grid">
+                                {resumeBuilderSession.draft_profile.skills.length ? (
+                                  resumeBuilderSession.draft_profile.skills.map((skill) => (
+                                    <span className="workspace-meta-chip" key={skill}>
+                                      {skill}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <p className="workspace-muted-copy">
+                                    Skills will appear here once you reach that step.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="workspace-form-stack workspace-builder-edit-grid">
+                            <label className="workspace-field">
+                              <span className="workspace-label">Full name</span>
+                              <input
+                                className="workspace-input"
+                                onChange={(event) =>
+                                  setResumeBuilderDraftForm((current) => ({
+                                    ...current,
+                                    full_name: event.target.value,
+                                  }))
+                                }
+                                value={resumeBuilderDraftForm.full_name}
+                              />
+                            </label>
+                            <label className="workspace-field">
+                              <span className="workspace-label">Location</span>
+                              <input
+                                className="workspace-input"
+                                onChange={(event) =>
+                                  setResumeBuilderDraftForm((current) => ({
+                                    ...current,
+                                    location: event.target.value,
+                                  }))
+                                }
+                                value={resumeBuilderDraftForm.location}
+                              />
+                            </label>
+                            <label className="workspace-field">
+                              <span className="workspace-label">Target role</span>
+                              <input
+                                className="workspace-input"
+                                onChange={(event) =>
+                                  setResumeBuilderDraftForm((current) => ({
+                                    ...current,
+                                    target_role: event.target.value,
+                                  }))
+                                }
+                                value={resumeBuilderDraftForm.target_role}
+                              />
+                            </label>
+                            <label className="workspace-field workspace-builder-field-wide">
+                              <span className="workspace-label">Contact lines</span>
+                              <textarea
+                                className="workspace-textarea workspace-builder-compact-textarea"
+                                onChange={(event) =>
+                                  setResumeBuilderDraftForm((current) => ({
+                                    ...current,
+                                    contact_lines: event.target.value,
+                                  }))
+                                }
+                                placeholder="One line per item: email, phone, LinkedIn, GitHub..."
+                                value={resumeBuilderDraftForm.contact_lines}
+                              />
+                            </label>
+                            <label className="workspace-field workspace-builder-field-wide">
+                              <span className="workspace-label">Summary</span>
+                              <textarea
+                                className="workspace-textarea workspace-builder-compact-textarea"
+                                onChange={(event) =>
+                                  setResumeBuilderDraftForm((current) => ({
+                                    ...current,
+                                    professional_summary: event.target.value,
+                                  }))
+                                }
+                                value={resumeBuilderDraftForm.professional_summary}
+                              />
+                            </label>
+                            <label className="workspace-field workspace-builder-field-wide">
+                              <span className="workspace-label">Experience notes</span>
+                              <textarea
+                                className="workspace-textarea workspace-builder-compact-textarea"
+                                onChange={(event) =>
+                                  setResumeBuilderDraftForm((current) => ({
+                                    ...current,
+                                    experience_notes: event.target.value,
+                                  }))
+                                }
+                                value={resumeBuilderDraftForm.experience_notes}
+                              />
+                            </label>
+                            <label className="workspace-field workspace-builder-field-wide">
+                              <span className="workspace-label">Education</span>
+                              <textarea
+                                className="workspace-textarea workspace-builder-compact-textarea"
+                                onChange={(event) =>
+                                  setResumeBuilderDraftForm((current) => ({
+                                    ...current,
+                                    education_notes: event.target.value,
+                                  }))
+                                }
+                                value={resumeBuilderDraftForm.education_notes}
+                              />
+                            </label>
+                            <label className="workspace-field">
+                              <span className="workspace-label">Skills</span>
+                              <input
+                                className="workspace-input"
+                                onChange={(event) =>
+                                  setResumeBuilderDraftForm((current) => ({
+                                    ...current,
+                                    skills: event.target.value,
+                                  }))
+                                }
+                                placeholder="Python, FastAPI, Docker, SQL"
+                                value={resumeBuilderDraftForm.skills}
+                              />
+                            </label>
+                            <label className="workspace-field">
+                              <span className="workspace-label">Certifications</span>
+                              <input
+                                className="workspace-input"
+                                onChange={(event) =>
+                                  setResumeBuilderDraftForm((current) => ({
+                                    ...current,
+                                    certifications: event.target.value,
+                                  }))
+                                }
+                                placeholder="Optional"
+                                value={resumeBuilderDraftForm.certifications}
+                              />
+                            </label>
+                          </div>
+
+                          <div className="workspace-run-actions">
+                            <button
+                              className="secondary-button workspace-button"
+                              disabled={resumeBuilderEditing}
+                              onClick={() => void handleResumeBuilderDraftSave()}
+                              type="button"
+                            >
+                              {resumeBuilderEditing ? "Saving edits..." : "Save Draft Edits"}
+                            </button>
+                          </div>
+
+                          {resumeBuilderSession.generated_resume_markdown ? (
+                            <div className="workspace-section-card workspace-builder-preview-card">
+                              <span className="workspace-label">Base resume preview</span>
+                              <pre className="workspace-builder-preview">
+                                {resumeBuilderSession.generated_resume_markdown}
+                              </pre>
+                            </div>
+                          ) : (
+                            <div className="workspace-empty-state workspace-empty-state-compact">
+                              Your base resume preview will appear here once the guided intake is complete.
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="workspace-empty-state workspace-empty-state-compact">
+                          Switch to the assistant lane to start building a resume from scratch.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {resumeIntakeMode === "upload" && currentProfile ? (
                 <>
                   <div className="workspace-summary-grid">
                     <div className="metric-tile">
@@ -2073,12 +2834,16 @@ export function JobApplicationWorkspace() {
                       </ul>
                     </div>
                   </div>
+
+                  <div className="workspace-next-step-note">
+                    You can proceed to Job Search if you want help finding roles, or move to the JD section if you already have a job description ready.
+                  </div>
                 </>
-              ) : (
+              ) : resumeIntakeMode === "upload" ? (
                 <div className="workspace-empty-state">
                   Your parsed candidate snapshot will appear here after the upload finishes.
                 </div>
-              )}
+              ) : null}
             </article>
           </section>
         ) : null}
@@ -2098,7 +2863,7 @@ export function JobApplicationWorkspace() {
                 <form className="workspace-form-stack" onSubmit={handleSearch}>
                   <div className="workspace-field-grid workspace-field-grid-search">
                     <label className="workspace-field">
-                      <span className="workspace-label">Search query</span>
+                      <span className="workspace-label">Keywords</span>
                       <input
                         className="workspace-input"
                         onChange={(event) => setSearchQuery(event.target.value)}
@@ -2157,7 +2922,7 @@ export function JobApplicationWorkspace() {
 
                 <form className="workspace-inline-import workspace-inline-import-split" onSubmit={handleResolveJob}>
                   <label className="workspace-field workspace-field-wide">
-                    <span className="workspace-label">Import a job posting link</span>
+                    <span className="workspace-label">Job posting link</span>
                     <input
                       className="workspace-input"
                       onChange={(event) => setJobUrl(event.target.value)}
@@ -2452,7 +3217,7 @@ export function JobApplicationWorkspace() {
                   <div className="workspace-jd-load-panel">
                     <div className="workspace-uploader">
                       <label className="primary-button workspace-button" htmlFor="job-description-upload">
-                        Choose JD file
+                        Upload JD
                       </label>
                       <input
                         accept=".pdf,.docx,.txt"
@@ -2471,6 +3236,15 @@ export function JobApplicationWorkspace() {
                       </span>
                       {jobFileUploading ? (
                         <span className="workspace-file-status">Parsing JD...</span>
+                      ) : null}
+                      {(jobFileState || activeJob || manualJobText.trim()) ? (
+                        <button
+                          className="danger-button workspace-button workspace-action-end"
+                          onClick={handleClearLoadedJobDescription}
+                          type="button"
+                        >
+                          Clear uploaded JD
+                        </button>
                       ) : null}
                     </div>
 
@@ -2617,14 +3391,14 @@ export function JobApplicationWorkspace() {
                     onClick={() => void handleRunAnalysis()}
                     type="button"
                   >
-                    {analysisLoading ? "Running..." : "Run agentic analysis"}
+                    {analysisLoading ? "Running..." : "Run workflow"}
                 </button>
                 <button
-                  className="danger-button workspace-button"
+                  className="danger-button workspace-button workspace-action-end"
                   onClick={clearWorkspaceRole}
                   type="button"
                 >
-                  Clear active role
+                  Clear role
                 </button>
               </div>
 
@@ -2639,18 +3413,18 @@ export function JobApplicationWorkspace() {
                       {currentWorkflowStage.title}
                     </span>
                     <span className="workspace-progress-percent">
-                      {currentWorkflowStage.value}%
+                      {analysisJobState?.progress_percent ?? currentWorkflowStage.value}%
                     </span>
                   </div>
                   <p className="workspace-progress-detail">
-                    {currentWorkflowStage.detail}
+                    {analysisJobState?.stage_detail ?? currentWorkflowStage.detail}
                   </p>
                   <div
                     aria-hidden="true"
                     className="workspace-progress-bar"
                   >
                     <span
-                      style={{ width: `${currentWorkflowStage.value}%` }}
+                      style={{ width: `${analysisJobState?.progress_percent ?? currentWorkflowStage.value}%` }}
                     />
                   </div>
                   <div className="workspace-progress-stage-list">
@@ -2658,11 +3432,11 @@ export function JobApplicationWorkspace() {
                       <span className="workspace-progress-stage-title">
                         {currentWorkflowStage.title}
                       </span>
-                      <small>{currentWorkflowStage.detail}</small>
+                      <small>{analysisJobState?.stage_detail ?? currentWorkflowStage.detail}</small>
                     </div>
                   </div>
                   <p className="workspace-muted-copy workspace-progress-note">
-                    The workspace now shows only the current agent in flight and advances this card as each stage completes.
+                    This card now follows the real backend stage instead of stepping forward on a timer.
                   </p>
                 </div>
               ) : null}

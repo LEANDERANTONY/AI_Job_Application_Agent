@@ -20,7 +20,9 @@ from src.schemas import AssistantResponse, ResumeDocument
 from src.services.fit_service import build_fit_analysis
 from src.services.jd_summary_service import generate_job_summary_view
 from src.services.job_service import build_job_description_from_text
-from src.services.profile_service import build_candidate_profile_from_resume
+from src.services.profile_service import (
+    build_candidate_profile_from_resume_auto,
+)
 from src.services.tailoring_service import build_tailored_resume_draft
 from backend.services.auth_session_service import (
     build_openai_service_for_context,
@@ -94,7 +96,7 @@ def parse_resume_upload(*, filename: str, mime_type: str, content_base64: str):
         mime_type=mime_type,
     )
     resume_document = parse_resume_document(uploaded_file, source=f"workspace:{filename}")
-    candidate_profile = build_candidate_profile_from_resume(resume_document)
+    candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
     return {
         "resume_document": _serialize(resume_document),
         "candidate_profile": _serialize(candidate_profile),
@@ -131,13 +133,14 @@ def run_workspace_analysis(
     run_assisted: bool,
     access_token: str = "",
     refresh_token: str = "",
+    progress_callback=None,
 ):
     resume_document = _build_resume_document(
         resume_text=resume_text,
         resume_filetype=resume_filetype,
         resume_source=resume_source,
     )
-    candidate_profile = build_candidate_profile_from_resume(resume_document)
+    candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
     job_description = _enrich_job_description_from_imported_posting(
         build_job_description_from_text(job_description_text),
         imported_job_posting,
@@ -182,6 +185,7 @@ def run_workspace_analysis(
             job_description,
             fit_analysis=fit_analysis,
             tailored_draft=tailored_draft,
+            progress_callback=progress_callback,
         )
         workflow_mode = agent_result.mode
         fallback_reason = agent_result.fallback_reason

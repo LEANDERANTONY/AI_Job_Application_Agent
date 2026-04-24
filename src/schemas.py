@@ -74,6 +74,7 @@ class JobDescription:
     raw_text: str
     cleaned_text: str
     location: Optional[str] = None
+    salary: Optional[str] = None
     requirements: JobRequirements = field(default_factory=JobRequirements)
 
 
@@ -380,4 +381,14 @@ class SavedJobRecord:
     scraped_at: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     saved_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
+class ResumeBuilderSessionRecord:
+    user_id: str
+    session_id: str
+    status: str = ""
+    current_step: str = ""
+    session_payload_json: str = ""
     updated_at: str = ""

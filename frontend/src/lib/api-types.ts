@@ -129,6 +129,7 @@ export type JobDescription = {
   raw_text: string;
   cleaned_text: string;
   location: string | null;
+  salary: string | null;
   requirements: JobRequirements;
 };
 
@@ -278,6 +279,48 @@ export type WorkspaceResumeUploadResponse = {
   candidate_profile: CandidateProfile;
 };
 
+export type ResumeBuilderDraftProfile = {
+  full_name: string;
+  location: string;
+  contact_lines: string[];
+  target_role: string;
+  professional_summary: string;
+  experience_notes: string;
+  education_notes: string;
+  skills: string[];
+  certifications: string[];
+};
+
+export type ResumeBuilderSessionResponse = {
+  session_id: string;
+  status: string;
+  current_step: string;
+  completed_steps: number;
+  total_steps: number;
+  progress_percent: number;
+  assistant_message: string;
+  draft_profile: ResumeBuilderDraftProfile;
+  generated_resume_markdown: string;
+  generated_resume_plain_text: string;
+  ready_to_generate: boolean;
+  ready_to_commit: boolean;
+  resume_document?: ResumeDocument;
+  candidate_profile?: CandidateProfile;
+};
+
+export type LoadResumeBuilderSessionResponse = {
+  status: string;
+  session: ResumeBuilderSessionResponse | null;
+};
+
+export type ResumeBuilderCommitResponse = {
+  resume_document: ResumeDocument;
+  candidate_profile: CandidateProfile;
+  generated_resume_markdown: string;
+  generated_resume_plain_text: string;
+  builder_session_id: string;
+};
+
 export type WorkspaceJobDescriptionUploadResponse = {
   job_description_text: string;
   job_description: JobDescription;
@@ -309,6 +352,24 @@ export type WorkspaceAnalysisResponse = {
   artifacts: WorkspaceArtifacts;
   workflow: WorkspaceWorkflow;
   imported_job_posting?: JobPosting | null;
+};
+
+export type WorkspaceAnalysisJobCreatedResponse = {
+  job_id: string;
+  status: string;
+  stage_title: string | null;
+  stage_detail: string | null;
+  progress_percent: number;
+};
+
+export type WorkspaceAnalysisJobStatusResponse = {
+  job_id: string;
+  status: string;
+  stage_title: string | null;
+  stage_detail: string | null;
+  progress_percent: number;
+  result: WorkspaceAnalysisResponse | null;
+  error_message: string | null;
 };
 
 export type WorkspaceAssistantResponse = {

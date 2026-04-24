@@ -1,6 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.request_auth import get_optional_auth_tokens
+from backend.services.resume_builder_persistence_service import (
+    clear_resume_builder_session,
+    load_latest_resume_builder_session,
+    persist_resume_builder_session,
+)
 from backend.services.workspace_persistence_service import (
     load_saved_workspace_snapshot,
     save_workspace_snapshot,
@@ -12,13 +17,27 @@ from backend.services.saved_jobs_service import (
 )
 from backend.services.artifact_export_service import export_workspace_artifact
 from backend.services.artifact_export_service import preview_workspace_artifact
+from backend.services.resume_builder_service import (
+    answer_resume_builder_message,
+    commit_resume_builder_session,
+    generate_resume_builder_resume,
+    start_resume_builder_session,
+    update_resume_builder_session,
+)
 from backend.services.workspace_service import (
     answer_workspace_question,
     parse_job_description_upload,
     parse_resume_upload,
     run_workspace_analysis,
 )
+from backend.services.workspace_run_jobs import (
+    get_workspace_analysis_job,
+    start_workspace_analysis_job,
+)
 from backend.workspace_models import (
+    ResumeBuilderMessageRequestModel,
+    ResumeBuilderSessionRequestModel,
+    ResumeBuilderUpdateRequestModel,
     SavedJobRequestModel,
     UploadedFilePayloadModel,
     WorkspaceAnalyzeRequestModel,
@@ -26,6 +45,8 @@ from backend.workspace_models import (
     WorkspaceArtifactExportRequestModel,
     WorkspaceArtifactPreviewRequestModel,
     WorkspaceSaveRequestModel,
+    WorkspaceAnalyzeJobCreatedResponseModel,
+    WorkspaceAnalyzeJobStatusResponseModel,
 )
 from src.errors import AppError
 
@@ -61,6 +82,107 @@ def upload_job_description(payload: UploadedFilePayloadModel):
         _raise_http_error(error)
 
 
+@router.post("/resume-builder/start")
+def start_resume_builder_route(auth_tokens=Depends(get_optional_auth_tokens)):
+    access_token, refresh_token = auth_tokens
+    try:
+        payload = start_resume_builder_session()
+        persist_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload["session_id"],
+        )
+        return payload
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.get("/resume-builder/latest")
+def load_resume_builder_route(auth_tokens=Depends(get_optional_auth_tokens)):
+    access_token, refresh_token = auth_tokens
+    return load_latest_resume_builder_session(
+        access_token=access_token or "",
+        refresh_token=refresh_token or "",
+    )
+
+
+@router.post("/resume-builder/message")
+def answer_resume_builder_route(
+    payload: ResumeBuilderMessageRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    access_token, refresh_token = auth_tokens
+    try:
+        response = answer_resume_builder_message(
+            session_id=payload.session_id,
+            message=payload.message,
+        )
+        persist_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        return response
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.post("/resume-builder/generate")
+def generate_resume_builder_route(
+    payload: ResumeBuilderSessionRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    access_token, refresh_token = auth_tokens
+    try:
+        response = generate_resume_builder_resume(session_id=payload.session_id)
+        persist_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        return response
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.post("/resume-builder/update")
+def update_resume_builder_route(
+    payload: ResumeBuilderUpdateRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    access_token, refresh_token = auth_tokens
+    try:
+        response = update_resume_builder_session(
+            session_id=payload.session_id,
+            draft_updates=payload.draft_profile,
+        )
+        persist_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        return response
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.post("/resume-builder/commit")
+def commit_resume_builder_route(
+    payload: ResumeBuilderSessionRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    access_token, refresh_token = auth_tokens
+    try:
+        response = commit_resume_builder_session(session_id=payload.session_id)
+        clear_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
+        return response
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
 @router.post("/analyze")
 def analyze_workspace(
     payload: WorkspaceAnalyzeRequestModel,
@@ -80,6 +202,37 @@ def analyze_workspace(
         )
     except AppError as error:
         _raise_http_error(error)
+
+
+@router.post(
+    "/analyze-jobs",
+    response_model=WorkspaceAnalyzeJobCreatedResponseModel,
+)
+def start_workspace_analysis_job_route(
+    payload: WorkspaceAnalyzeRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    access_token, refresh_token = auth_tokens
+    return start_workspace_analysis_job(
+        resume_text=payload.resume_text,
+        resume_filetype=payload.resume_filetype,
+        resume_source=payload.resume_source,
+        job_description_text=payload.job_description_text,
+        imported_job_posting=payload.imported_job_posting,
+        access_token=access_token or "",
+        refresh_token=refresh_token or "",
+    )
+
+
+@router.get(
+    "/analyze-jobs/{job_id}",
+    response_model=WorkspaceAnalyzeJobStatusResponseModel,
+)
+def get_workspace_analysis_job_route(job_id: str):
+    payload = get_workspace_analysis_job(job_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Analysis job not found.")
+    return payload
 
 
 @router.post("/assistant/answer")

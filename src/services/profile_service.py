@@ -1,14 +1,20 @@
+import logging
 import re
 from typing import List
 
+from src.openai_service import OpenAIService
 from src.schemas import (
     CandidateProfile,
     EducationEntry,
     ResumeDocument,
     WorkExperience,
 )
+from src.services.resume_llm_parser_service import ResumeLLMParserService
 from src.taxonomy import HARD_SKILL_KEYWORDS, SOFT_SKILL_KEYWORDS
 from src.utils import dedupe_strings, match_keywords
+
+
+logger = logging.getLogger(__name__)
 
 
 SECTION_HEADERS = {
@@ -853,6 +859,175 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
             sections,
             project_entries,
         ),
+    )
+
+
+def _build_experience_entry_from_llm_payload(
+    entry: dict, fallback_organization: str = ""
+) -> WorkExperience | None:
+    title = _normalize_line(entry.get("title"))
+    organization = _normalize_line(entry.get("organization")) or fallback_organization
+    location = _normalize_line(entry.get("location"))
+    description = _normalize_line(entry.get("description"))
+    start = _normalize_line(entry.get("start")) or None
+    end = _normalize_line(entry.get("end")) or None
+    if not (title or organization or description):
+        return None
+    return WorkExperience(
+        title=title or "Relevant Experience",
+        organization=organization,
+        location=location,
+        description=description,
+        start=start,
+        end=end,
+    )
+
+
+def _llm_payload_has_viable_snapshot(
+    payload: dict, resume_text: str, deterministic_profile: CandidateProfile
+) -> bool:
+    combined_experience = list(payload.get("experience") or []) + list(
+        payload.get("projects") or []
+    )
+    has_structured_content = any(
+        [
+            _normalize_line(payload.get("full_name")),
+            list(payload.get("skills") or []),
+            combined_experience,
+            list(payload.get("education") or []),
+            list(payload.get("certifications") or []),
+        ]
+    )
+    if not has_structured_content:
+        return False
+
+    lowered_resume_text = str(resume_text or "").lower()
+    if "projects" in lowered_resume_text and not combined_experience and deterministic_profile.experience:
+        return False
+    return True
+
+
+def _build_candidate_profile_from_llm_payload(
+    *,
+    resume_document: ResumeDocument,
+    deterministic_profile: CandidateProfile,
+    payload: dict,
+) -> CandidateProfile:
+    experience_entries: list[WorkExperience] = []
+    for entry in payload.get("experience") or []:
+        experience = _build_experience_entry_from_llm_payload(entry)
+        if experience:
+            experience_entries.append(experience)
+    for entry in payload.get("projects") or []:
+        project = _build_experience_entry_from_llm_payload(
+            entry,
+            fallback_organization="Project Portfolio",
+        )
+        if project:
+            experience_entries.append(project)
+
+    education_entries = []
+    for item in payload.get("education") or []:
+        if not isinstance(item, dict):
+            continue
+        education_entries.append(
+            EducationEntry(
+                institution=_normalize_line(item.get("institution")),
+                degree=_normalize_line(item.get("degree")),
+                field_of_study=_normalize_line(item.get("field_of_study")),
+                start=_normalize_line(item.get("start")),
+                end=_normalize_line(item.get("end")),
+            )
+        )
+
+    llm_source_signals = dedupe_strings(payload.get("source_signals") or [])
+    project_count = len(payload.get("projects") or [])
+    if project_count:
+        llm_source_signals.append(
+            "Structured {count} project entries with the LLM parser.".format(
+                count=project_count
+            )
+        )
+    llm_source_signals.append("Candidate profile structured with the LLM parser.")
+
+    return CandidateProfile(
+        full_name=_normalize_line(payload.get("full_name")) or deterministic_profile.full_name,
+        location=_normalize_line(payload.get("location")) or deterministic_profile.location,
+        contact_lines=dedupe_strings(
+            payload.get("contact_lines") or deterministic_profile.contact_lines
+        ),
+        source=resume_document.source or "resume_upload",
+        resume_text=resume_document.text,
+        skills=dedupe_strings(payload.get("skills") or deterministic_profile.skills),
+        experience=experience_entries or list(deterministic_profile.experience),
+        education=_prune_education_entries(education_entries)
+        or list(deterministic_profile.education),
+        certifications=dedupe_strings(
+            payload.get("certifications") or deterministic_profile.certifications
+        ),
+        source_signals=dedupe_strings(
+            llm_source_signals + list(deterministic_profile.source_signals)
+        ),
+    )
+
+
+def build_candidate_profile_from_resume_auto(
+    resume_document: ResumeDocument,
+    parser_service: ResumeLLMParserService | None = None,
+) -> CandidateProfile:
+    if not isinstance(resume_document, ResumeDocument):
+        raise TypeError("resume_document must be a ResumeDocument instance.")
+
+    deterministic_profile = build_candidate_profile_from_resume(resume_document)
+    if resume_document.filetype.upper() == "TXT":
+        return deterministic_profile
+
+    llm_parser = parser_service or ResumeLLMParserService(
+        openai_service=OpenAIService()
+    )
+    if not llm_parser.is_available():
+        logger.warning(
+            "Resume auto parser fallback: LLM parser unavailable. filetype=%s source=%s",
+            resume_document.filetype,
+            resume_document.source,
+        )
+        return deterministic_profile
+
+    try:
+        payload = llm_parser.parse(resume_document)
+    except Exception as exc:
+        logger.exception(
+            "Resume auto parser fallback: LLM parsing failed. filetype=%s source=%s error=%s",
+            resume_document.filetype,
+            resume_document.source,
+            exc,
+        )
+        return deterministic_profile
+
+    if not _llm_payload_has_viable_snapshot(
+        payload, resume_document.text, deterministic_profile
+    ):
+        logger.warning(
+            "Resume auto parser fallback: LLM snapshot not viable. filetype=%s source=%s payload_keys=%s",
+            resume_document.filetype,
+            resume_document.source,
+            sorted(list(payload.keys())),
+        )
+        return deterministic_profile
+
+    logger.info(
+        "Resume auto parser accepted LLM snapshot. filetype=%s source=%s experience=%s projects=%s skills=%s",
+        resume_document.filetype,
+        resume_document.source,
+        len(payload.get("experience") or []),
+        len(payload.get("projects") or []),
+        len(payload.get("skills") or []),
+    )
+
+    return _build_candidate_profile_from_llm_payload(
+        resume_document=resume_document,
+        deterministic_profile=deterministic_profile,
+        payload=payload,
     )
 
 

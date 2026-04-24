@@ -38,6 +38,28 @@ class WorkspaceAnalyzeRequestModel(BaseModel):
         return str(value or "").strip()
 
 
+class WorkspaceAnalyzeJobCreatedResponseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    status: str
+    stage_title: str | None = None
+    stage_detail: str | None = None
+    progress_percent: int = 0
+
+
+class WorkspaceAnalyzeJobStatusResponseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    status: str
+    stage_title: str | None = None
+    stage_detail: str | None = None
+    progress_percent: int = 0
+    result: dict[str, Any] | None = None
+    error_message: str | None = None
+
+
 class WorkspaceSaveRequestModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -100,4 +122,40 @@ class WorkspaceAssistantRequestModel(BaseModel):
     @field_validator("question", "current_page", mode="before")
     @classmethod
     def _strip_text(cls, value):
+        return str(value or "").strip()
+
+
+class ResumeBuilderMessageRequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(min_length=1, max_length=120)
+    message: str = Field(min_length=1, max_length=8000)
+    input_mode: Literal["text", "voice"] = "text"
+
+    @field_validator("session_id", "message", mode="before")
+    @classmethod
+    def _strip_builder_text(cls, value):
+        return str(value or "").strip()
+
+
+class ResumeBuilderSessionRequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(min_length=1, max_length=120)
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def _strip_session_id(cls, value):
+        return str(value or "").strip()
+
+
+class ResumeBuilderUpdateRequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(min_length=1, max_length=120)
+    draft_profile: dict[str, Any]
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def _strip_update_session_id(cls, value):
         return str(value or "").strip()

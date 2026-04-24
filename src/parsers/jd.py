@@ -73,6 +73,39 @@ def clean_text(text):
     return "\n".join(normalized_lines)
 
 
+def _extract_salary_text(text: str):
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    label_pattern = re.compile(
+        r"^(?:salary|compensation|salary range|pay range|pay|ctc|stipend|remuneration)\s*[:\-]?\s*(.+)$",
+        re.IGNORECASE,
+    )
+    money_signal_pattern = re.compile(
+        r"(?:₹|\$|£|€|USD|CAD|EUR|GBP|AUD|INR)\s?\d[\d,]*(?:\.\d+)?"
+        r"(?:\s*(?:-|to|–|—)\s*(?:₹|\$|£|€|USD|CAD|EUR|GBP|AUD|INR)?\s?\d[\d,]*(?:\.\d+)?)?"
+        r"(?:\s*(?:per year|per month|per hour|a year|annually|monthly|hourly|LPA|lpa))?",
+        re.IGNORECASE,
+    )
+    keyword_pattern = re.compile(
+        r"\b(?:salary|compensation|salary range|pay range|ctc|stipend|remuneration)\b",
+        re.IGNORECASE,
+    )
+
+    for line in lines:
+        label_match = label_pattern.match(line)
+        if label_match:
+            return label_match.group(1).strip()
+
+    for line in lines:
+        if keyword_pattern.search(line):
+            return line.strip()
+
+    for line in lines:
+        if money_signal_pattern.search(line):
+            return line.strip()
+
+    return None
+
+
 def extract_job_details(text):
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     title = lines[0] if lines else "Unknown Role"
@@ -93,6 +126,7 @@ def extract_job_details(text):
     return {
         "title": title,
         "location": location_match.group(1).strip() if location_match else None,
+        "salary": _extract_salary_text(text),
         "experience_required": re.sub(r"^required experience\s*[:\-]?\s*", "", experience_match.group(1).strip(), flags=re.IGNORECASE)
         if experience_match
         else None,

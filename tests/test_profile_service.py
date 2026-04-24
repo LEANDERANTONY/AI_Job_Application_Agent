@@ -1,6 +1,7 @@
 from src.schemas import ResumeDocument
 from src.services.profile_service import (
     build_candidate_profile_from_resume,
+    build_candidate_profile_from_resume_auto,
     build_candidate_context_text,
 )
 
@@ -106,3 +107,95 @@ def test_build_candidate_profile_from_resume_handles_wrapped_education_specializ
     assert profile.education[0].institution == "IIIT Bangalore"
     assert "specialization in Generative AI" in profile.education[0].degree
     assert profile.education[0].start == "Oct 2023 – Oct 2024"
+
+
+class _FakeLLMParser:
+    def __init__(self, payload=None, available=True, should_raise=False):
+        self._payload = payload or {}
+        self._available = available
+        self._should_raise = should_raise
+
+    def is_available(self):
+        return self._available
+
+    def parse(self, resume_document):
+        if self._should_raise:
+            raise RuntimeError("parse failed")
+        return self._payload
+
+
+def test_build_candidate_profile_from_resume_auto_uses_llm_projects_when_available():
+    document = ResumeDocument(
+        text=(
+            "Leander Antony A\n"
+            "Projects\n"
+            "Grounded RAG Q&A System for Long Documents\n"
+            "AI Job Application Agent\n"
+        ),
+        filetype="DOCX",
+        source="uploaded",
+    )
+
+    profile = build_candidate_profile_from_resume_auto(
+        document,
+        parser_service=_FakeLLMParser(
+            payload={
+                "full_name": "Leander Antony A",
+                "location": "Chennai, India",
+                "contact_lines": ["antony.leander@gmail.com", "github.com/LEANDERANTONY"],
+                "skills": ["Python", "FastAPI"],
+                "experience": [],
+                "projects": [
+                    {
+                        "title": "Grounded RAG Q&A System for Long Documents",
+                        "organization": "",
+                        "start": "",
+                        "end": "",
+                        "description": "Built a grounded long-document QA system.",
+                        "links": ["github.com/example/helpmate"],
+                    },
+                    {
+                        "title": "AI Job Application Agent",
+                        "organization": "",
+                        "start": "",
+                        "end": "",
+                        "description": "Built a workflow for tailored resumes.",
+                        "links": [],
+                    },
+                ],
+                "education": [],
+                "certifications": [],
+                "source_signals": ["Projects extracted from resume text."],
+            }
+        ),
+    )
+
+    assert profile.full_name == "Leander Antony A"
+    assert "Python" in profile.skills
+    assert len(profile.experience) == 2
+    assert profile.experience[0].title == "Grounded RAG Q&A System for Long Documents"
+    assert profile.experience[0].organization == "Project Portfolio"
+    assert any("LLM parser" in signal for signal in profile.source_signals)
+
+
+def test_build_candidate_profile_from_resume_auto_falls_back_when_llm_parser_fails():
+    document = ResumeDocument(
+        text=(
+            "Leander Antony\n"
+            "Chennai, India\n"
+            "Experience\n"
+            "AI Engineer, Example Labs\n"
+            "Jan 2023 - Jan 2025\n"
+            "Built production ML APIs.\n"
+        ),
+        filetype="DOCX",
+        source="uploaded",
+    )
+
+    profile = build_candidate_profile_from_resume_auto(
+        document,
+        parser_service=_FakeLLMParser(should_raise=True),
+    )
+
+    assert profile.full_name == "Leander Antony"
+    assert profile.experience
