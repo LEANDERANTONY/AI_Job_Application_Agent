@@ -33,12 +33,9 @@ OPENAI_REASONING_ASSISTANT = os.getenv(
     "OPENAI_REASONING_ASSISTANT", "low"
 ).strip().lower()
 OPENAI_MODEL_ROUTING = {
-    "profile": os.getenv("OPENAI_MODEL_PROFILE", OPENAI_MODEL_MID_TIER),
-    "job": os.getenv("OPENAI_MODEL_JOB", OPENAI_MODEL_MID_TIER),
     "jd_summary": os.getenv("OPENAI_MODEL_JD_SUMMARY", OPENAI_MODEL_MID_TIER),
     "fit": os.getenv("OPENAI_MODEL_FIT", OPENAI_MODEL_MID_TIER),
     "tailoring": os.getenv("OPENAI_MODEL_TAILORING", OPENAI_MODEL_MID_TIER),
-    "strategy": os.getenv("OPENAI_MODEL_STRATEGY", OPENAI_MODEL_MID_TIER),
     "review": os.getenv("OPENAI_MODEL_REVIEW", OPENAI_MODEL_HIGH_TRUST),
     "cover_letter": os.getenv("OPENAI_MODEL_COVER_LETTER", OPENAI_MODEL_HIGH_TRUST),
     "resume_generation": os.getenv(
@@ -49,12 +46,9 @@ OPENAI_MODEL_ROUTING = {
     "assistant_application_qa": OPENAI_MODEL_APPLICATION_QA,
 }
 OPENAI_REASONING_ROUTING = {
-    "profile": os.getenv("OPENAI_REASONING_PROFILE", OPENAI_REASONING_DEFAULT).strip().lower(),
-    "job": os.getenv("OPENAI_REASONING_JOB", OPENAI_REASONING_DEFAULT).strip().lower(),
     "jd_summary": os.getenv("OPENAI_REASONING_JD_SUMMARY", "low").strip().lower(),
     "fit": os.getenv("OPENAI_REASONING_FIT", "low").strip().lower(),
     "tailoring": os.getenv("OPENAI_REASONING_TAILORING", OPENAI_REASONING_DEFAULT).strip().lower(),
-    "strategy": os.getenv("OPENAI_REASONING_STRATEGY", "low").strip().lower(),
     "review": os.getenv("OPENAI_REASONING_REVIEW", OPENAI_REASONING_DEFAULT).strip().lower(),
     "cover_letter": os.getenv("OPENAI_REASONING_COVER_LETTER", OPENAI_REASONING_DEFAULT).strip().lower(),
     "resume_generation": os.getenv(
@@ -102,12 +96,9 @@ def resolve_job_backend_base_url(
 
 
 OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
-    "profile": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PROFILE", 1800),
-    "job": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_JOB", 1800),
     "jd_summary": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_JD_SUMMARY", 1400),
     "fit": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_FIT", 1600),
     "tailoring": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_TAILORING", 3200),
-    "strategy": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_STRATEGY", 1500),
     "review": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_REVIEW", 4000),
     "cover_letter": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_COVER_LETTER", 2200),
     "resume_generation": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_GENERATION", 3000),
@@ -126,7 +117,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 SUPABASE_AUTH_REDIRECT_URL = os.getenv(
     "SUPABASE_AUTH_REDIRECT_URL",
-    APP_BASE_URL or "http://localhost:8501",
+    APP_BASE_URL or "http://localhost:3000",
 ).strip()
 AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW = _load_bool_env(
     "AUTH_REQUIRED_FOR_ASSISTED_WORKFLOW", True
@@ -264,14 +255,4 @@ def assisted_workflow_requires_login():
 def is_job_search_backend_enabled():
     return ENABLE_JOB_SEARCH_BACKEND
 
-
-def list_demo_files(directory: Path, suffixes):
-    if not directory.exists():
-        return []
-    normalized_suffixes = tuple(s.lower() for s in suffixes)
-    return sorted(
-        file.name
-        for file in directory.iterdir()
-        if file.is_file() and file.suffix.lower() in normalized_suffixes
-    )
 

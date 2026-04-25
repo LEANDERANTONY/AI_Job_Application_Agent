@@ -4,12 +4,10 @@ from typing import Any, Dict, Iterable
 
 from src.schemas import (
     CandidateProfile,
-    CoverLetterAgentOutput,
     FitAnalysis,
     FitAgentOutput,
     JobDescription,
     ReviewAgentOutput,
-    StrategyAgentOutput,
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
@@ -145,42 +143,6 @@ def _build_contract(contract: Dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def build_profile_agent_prompt(candidate_profile: CandidateProfile) -> Dict[str, Any]:
-    contract = {
-        "positioning_headline": "short recruiter-facing headline grounded in the candidate input",
-        "evidence_highlights": "array of 2-4 evidence-backed highlights",
-        "strengths": "array of 2-4 grounded strengths",
-        "cautions": "array of 1-3 caveats or missing-evidence notes",
-    }
-    return {
-        "system": (
-            "You are the Profile Agent for an AI job application workflow. "
-            "Use only the provided candidate data. Do not invent experience, metrics, or technologies. "
-            + _build_contract(contract)
-        ),
-        "user": _json_block("Candidate Profile", candidate_profile),
-        "expected_keys": list(contract.keys()),
-    }
-
-
-def build_job_agent_prompt(job_description: JobDescription) -> Dict[str, Any]:
-    contract = {
-        "requirement_summary": "two to three sentence summary of the job's hiring intent",
-        "priority_skills": "array of 3-6 priority skills from the JD",
-        "must_have_themes": "array of 2-4 must-have themes derived from the JD",
-        "messaging_guidance": "array of 2-4 ways the candidate should mirror the JD language",
-    }
-    return {
-        "system": (
-            "You are the Job Agent. Summarize the job clearly and conservatively. "
-            "Stay grounded in the JD text and requirements only. "
-            + _build_contract(contract)
-        ),
-        "user": _json_block("Job Description", job_description),
-        "expected_keys": list(contract.keys()),
-    }
-
-
 def build_fit_agent_prompt(
     candidate_profile: CandidateProfile,
     job_description: JobDescription,
@@ -272,38 +234,6 @@ def build_review_agent_prompt(
             "Approve when the final corrected wording stays grounded in the source profile and deterministic analysis, even if the incoming draft had issues that you fixed. "
             "Set approved to false only when unresolved issues remain after your corrections. "
             "Return null for corrected_tailoring when the current output is already acceptable or when no change is needed. "
-            + _build_contract(contract)
-        ),
-        "user": user_prompt,
-        "expected_keys": list(contract.keys()),
-        "metadata": metadata,
-    }
-
-
-def build_strategy_agent_prompt(
-    candidate_profile: CandidateProfile,
-    job_description: JobDescription,
-    fit_analysis: FitAnalysis,
-    fit_output: FitAgentOutput,
-    tailoring_output: TailoringAgentOutput,
-) -> Dict[str, Any]:
-    contract = {
-        "recruiter_positioning": "2-3 sentence recruiter-facing positioning guidance grounded in the inputs",
-        "cover_letter_talking_points": "array of 2-4 grounded cover-letter talking points",
-        "portfolio_project_emphasis": "array of 2-4 portfolio or project emphasis suggestions grounded in the candidate profile",
-    }
-    sections = [
-        ("Candidate Profile", candidate_profile, 2000),
-        ("Job Description", job_description, 1600),
-        ("Deterministic Fit Analysis", fit_analysis, 1500),
-        ("Fit Agent Output", fit_output, 1200),
-        ("Tailoring Agent Output", tailoring_output, 1400),
-    ]
-    user_prompt, metadata = _build_budgeted_user_prompt(sections)
-    return {
-        "system": (
-            "You are the Application Strategy Agent. Convert grounded fit and tailoring signals into downstream application guidance. "
-            "Do not invent projects, experience, technologies, or recruiter claims that are not supported by the source profile. "
             + _build_contract(contract)
         ),
         "user": user_prompt,
