@@ -2100,31 +2100,30 @@ export function JobApplicationWorkspace() {
             </button>
           </div>
 
-          <div className="workspace-sidebar-card">
+          <div className="workspace-sidebar-card workspace-assistant-card">
                 <p className="eyebrow">Assistant</p>
-                <h2 className="workspace-sidebar-title">
-                  Ask your questions
-                </h2>
 
-                {assistantTurns.length ? (
-                  <div className="workspace-chat-history">
-                    {assistantTurns.map((turn, index) => (
-                      <div className="workspace-chat-turn" key={`${index}-${turn.question.slice(0, 18)}`}>
-                        <div className="workspace-chat-bubble workspace-chat-user">
-                          {turn.question}
+                <div className="workspace-assistant-thread">
+                  {assistantTurns.length ? (
+                    <div className="workspace-chat-history">
+                      {assistantTurns.map((turn, index) => (
+                        <div className="workspace-chat-turn" key={`${index}-${turn.question.slice(0, 18)}`}>
+                          <div className="workspace-chat-bubble workspace-chat-user">
+                            {turn.question}
+                          </div>
+                          <div className="workspace-chat-bubble workspace-chat-assistant">
+                            {turn.response.answer}
+                          </div>
                         </div>
-                        <div className="workspace-chat-bubble workspace-chat-assistant">
-                          {turn.response.answer}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : !assistantRequiresWorkspaceRun ? (
-                    <div className="workspace-empty-state workspace-empty-state-compact">
-                    Ask about your tailored resume, cover letter, or
-                      the current package.
+                      ))}
                     </div>
-                  ) : null}
+                  ) : !assistantRequiresWorkspaceRun ? (
+                      <div className="workspace-empty-state workspace-empty-state-compact">
+                      Ask about your tailored resume, cover letter, or
+                        the current package.
+                      </div>
+                    ) : null}
+                </div>
 
                 <form className="workspace-assistant-form" onSubmit={handleAssistantSubmit}>
                   <textarea
@@ -2160,24 +2159,6 @@ export function JobApplicationWorkspace() {
                     </button>
                   </div>
                 </form>
-                {latestAssistantTurn?.response.suggested_follow_ups.length ? (
-                  <div className="workspace-assistant-followup-panel">
-                    <p className="workspace-label">Suggested next questions</p>
-                    <div className="workspace-chat-followups">
-                      {latestAssistantTurn.response.suggested_follow_ups.map((followUp) => (
-                        <button
-                          className="workspace-chat-followup"
-                          disabled={assistantSending}
-                          key={`latest-${followUp}`}
-                          onClick={() => void handleAssistantFollowUp(followUp)}
-                          type="button"
-                        >
-                          {followUp}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
           </div>
 
         </div>

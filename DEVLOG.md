@@ -344,7 +344,7 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 ## Day 21: Saved-Run Regeneration and History-State Separation
 
 - Extended `workflow_runs` to persist saved reconstruction payloads:
-  - `workflow_signature`  - `workflow_snapshot_json`
+  - `workflow_signature` - `workflow_snapshot_json`
   - `report_payload_json`
   - `tailored_resume_payload_json`
 - Added historical regeneration helpers so saved reports, tailored resumes, PDFs, and ZIP bundles can be rebuilt from persisted payloads without re-running OpenAI.
