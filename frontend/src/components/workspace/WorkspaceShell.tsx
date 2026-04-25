@@ -78,6 +78,10 @@ import {
 } from "@/components/workspace/ResumeIntake";
 import { Sidebar } from "@/components/workspace/Sidebar";
 import { useArtifactExport } from "@/hooks/useArtifactExport";
+import {
+  buildAssistantHistoryPayload,
+  useAssistantHistory,
+} from "@/hooks/useAssistantHistory";
 
 type Notice = {
   level: "info" | "success" | "warning";
@@ -90,8 +94,6 @@ type AuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
 
 type WorkflowRunMode = "preview" | "agentic";
 
-const ASSISTANT_HISTORY_STORAGE_KEY = "workspace-assistant-history-v1";
-const MAX_PERSISTED_ASSISTANT_TURNS = 8;
 const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
   {
     title: "Workflow crew",
@@ -145,121 +147,6 @@ function toneForStage(active: boolean, ready = false) {
     return "ready";
   }
   return "next";
-}
-
-function buildAssistantHistoryPayload(turns: AssistantTurn[]) {
-  return turns.map((turn) => ({
-    question: turn.question,
-    answer: turn.response.answer,
-  }));
-}
-
-function hashString(value: string) {
-  let hash = 5381;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 33) ^ value.charCodeAt(index);
-  }
-  return (hash >>> 0).toString(36);
-}
-
-function buildAssistantWorkspaceSignature(
-  workspaceSnapshot: WorkspaceAnalysisResponse | null,
-) {
-  if (!workspaceSnapshot) {
-    return null;
-  }
-
-  const signaturePayload = {
-    resume_text: workspaceSnapshot.resume_document.text,
-    job_text: workspaceSnapshot.job_description.raw_text,
-    workflow_mode: workspaceSnapshot.workflow.mode,
-    fit_score: workspaceSnapshot.fit_analysis.overall_score,
-    readiness_label: workspaceSnapshot.fit_analysis.readiness_label,
-    resume_summary: workspaceSnapshot.artifacts.tailored_resume.summary,
-    cover_letter_summary: workspaceSnapshot.artifacts.cover_letter.summary,
-      imported_job_id: workspaceSnapshot.imported_job_posting?.id ?? "",
-    };
-
-  return hashString(JSON.stringify(signaturePayload));
-}
-
-function readStoredAssistantTurns(storageKey: string) {
-  if (typeof window === "undefined") {
-    return [] as AssistantTurn[];
-  }
-
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) {
-      return [] as AssistantTurn[];
-    }
-    const payload = JSON.parse(raw);
-    if (!Array.isArray(payload)) {
-      return [] as AssistantTurn[];
-    }
-    return payload
-      .flatMap((item) => {
-        const question =
-          typeof item?.question === "string" ? item.question.trim() : "";
-        const answer =
-          typeof item?.response?.answer === "string"
-            ? item.response.answer.trim()
-            : "";
-        const sources = Array.isArray(item?.response?.sources)
-          ? item.response.sources
-              .map((source: unknown) =>
-                typeof source === "string" ? source.trim() : "",
-              )
-              .filter(Boolean)
-          : [];
-        const suggestedFollowUps = Array.isArray(
-          item?.response?.suggested_follow_ups,
-        )
-          ? item.response.suggested_follow_ups
-              .map((followUp: unknown) =>
-                typeof followUp === "string" ? followUp.trim() : "",
-              )
-              .filter(Boolean)
-          : [];
-        if (!question || !answer) {
-          return [];
-        }
-        return [
-          {
-            question,
-            response: {
-              answer,
-              sources,
-              suggested_follow_ups: suggestedFollowUps,
-            },
-          } satisfies AssistantTurn,
-        ];
-      })
-      .slice(-MAX_PERSISTED_ASSISTANT_TURNS);
-  } catch {
-    return [] as AssistantTurn[];
-  }
-}
-
-function persistAssistantTurns(storageKey: string, turns: AssistantTurn[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (!turns.length) {
-    window.localStorage.removeItem(storageKey);
-    return;
-  }
-
-  const serializableTurns = turns.slice(-MAX_PERSISTED_ASSISTANT_TURNS).map((turn) => ({
-    question: turn.question,
-    response: {
-      answer: turn.response.answer,
-      sources: turn.response.sources,
-      suggested_follow_ups: turn.response.suggested_follow_ups,
-    },
-  }));
-  window.localStorage.setItem(storageKey, JSON.stringify(serializableTurns));
 }
 
 function latestRole(profile: CandidateProfile | null) {
@@ -442,9 +329,13 @@ export function WorkspaceShell() {
     setNotice: setWorkspaceNotice,
   });
 
+  const { assistantTurns, setAssistantTurns } = useAssistantHistory({
+    analysisState,
+    authSession,
+  });
+
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantSending, setAssistantSending] = useState(false);
-  const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -849,38 +740,11 @@ export function WorkspaceShell() {
     };
   }, [analysisJobState, analysisLoading, analysisRunMode, authTokens]);
 
-  const assistantWorkspaceSignature = useMemo(
-    () => buildAssistantWorkspaceSignature(analysisState),
-    [analysisState],
-  );
-  const assistantStorageKey = useMemo(() => {
-    if (!assistantWorkspaceSignature) {
-      return null;
-    }
-    const userScope = authSession?.app_user.id || "anonymous";
-    return `${ASSISTANT_HISTORY_STORAGE_KEY}:${userScope}:${assistantWorkspaceSignature}`;
-  }, [assistantWorkspaceSignature, authSession?.app_user.id]);
-  const latestAssistantTurn = assistantTurns[assistantTurns.length - 1] ?? null;
   const assistantRequiresWorkspaceRun = !analysisState;
   const assistantCanSubmit =
     !assistantRequiresWorkspaceRun &&
     !assistantSending &&
     Boolean(assistantQuestion.trim());
-
-  useEffect(() => {
-    if (!assistantStorageKey) {
-      setAssistantTurns([]);
-      return;
-    }
-    setAssistantTurns(readStoredAssistantTurns(assistantStorageKey));
-  }, [assistantStorageKey]);
-
-  useEffect(() => {
-    if (!assistantStorageKey) {
-      return;
-    }
-    persistAssistantTurns(assistantStorageKey, assistantTurns);
-  }, [assistantStorageKey, assistantTurns]);
 
   async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
