@@ -274,7 +274,7 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Verified the rollback plus retained parser improvements with:
   - `uv run pytest tests/test_profile_service.py tests/test_job_service.py tests/test_jd_parser.py tests/test_resume_parser.py tests/test_orchestrator.py`
 
-## Day 18: Single-Pass Review-Correction Workflow
+## Day 18 (parallel track): Single-Pass Review-Correction Workflow
 
 - Removed the live `ProfileAgent` and `JobAgent` stages from the supervised workflow because they were mostly restating deterministic inputs without adding enough value for the latency cost.
 - Simplified the active orchestrator path to:
@@ -318,7 +318,7 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Added the `usage_events` SQL schema and RLS policies in `docs/supabase-usage-events.sql`.
 - Kept assisted requests resilient: usage persistence failures are logged but do not break the user-facing AI response.
 
-## Day 18: Daily Quotas From Persisted Usage
+## Day 18 (parallel track 2): Daily Quotas From Persisted Usage
 
 - Added `src/quota_service.py` to compute per-user daily assisted limits from persisted `usage_events`.
 - Extended `src/usage_store.py` with daily usage aggregation for the current UTC day.
@@ -326,7 +326,7 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Updated the JD workflow UI to show daily remaining assisted capacity alongside the existing session-level view.
 - Added plan-tier daily quota configuration through environment variables for free and paid tiers.
 
-## Day 19: Workflow History and Artifact Metadata
+## Day 19 (parallel track 2): Workflow History and Artifact Metadata
 
 - Added `src/history_store.py` to persist authenticated workflow runs and artifact metadata in Supabase Postgres.
 - Wired supervised workflow completion to create `workflow_runs` records.
@@ -334,7 +334,7 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Added recent workflow and artifact history to the sidebar account panel.
 - Added Supabase schema and RLS setup in `docs/supabase-workflow-history.sql`.
 
-## Day 20: History Page and Supabase Bootstrap
+## Day 20 (parallel track 2): History Page and Supabase Bootstrap
 
 - Added a dedicated `History` page in the Streamlit navigation.
 - Centralized authenticated history refresh so sign-in and session restore load the same recent workflow and artifact state.
@@ -344,8 +344,7 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 ## Day 21: Saved-Run Regeneration and History-State Separation
 
 - Extended `workflow_runs` to persist saved reconstruction payloads:
-  - `workflow_signature`
-  - `workflow_snapshot_json`
+  - `workflow_signature`  - `workflow_snapshot_json`
   - `report_payload_json`
   - `tailored_resume_payload_json`
 - Added historical regeneration helpers so saved reports, tailored resumes, PDFs, and ZIP bundles can be rebuilt from persisted payloads without re-running OpenAI.
