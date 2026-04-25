@@ -6,13 +6,11 @@ import {
   askWorkspaceAssistant,
   commitResumeBuilderResume,
   exchangeGoogleCode,
-  exportWorkspaceArtifact,
   generateResumeBuilderResume,
   getWorkspaceAnalysisJob,
   loadLatestResumeBuilderSession,
   loadSavedJobs,
   loadSavedWorkspace,
-  previewWorkspaceArtifact,
   removeSavedJob,
   resolveJobUrl,
   restoreAuthSession,
@@ -41,7 +39,6 @@ import type {
   SavedWorkspaceMeta,
   WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
-  WorkspaceArtifactKind,
   WorkspaceJobDescriptionUploadResponse,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
@@ -80,6 +77,7 @@ import {
   type ResumeIntakeMode,
 } from "@/components/workspace/ResumeIntake";
 import { Sidebar } from "@/components/workspace/Sidebar";
+import { useArtifactExport } from "@/hooks/useArtifactExport";
 
 type Notice = {
   level: "info" | "success" | "warning";
@@ -264,23 +262,6 @@ function persistAssistantTurns(storageKey: string, turns: AssistantTurn[]) {
   window.localStorage.setItem(storageKey, JSON.stringify(serializableTurns));
 }
 
-function downloadBase64File(filename: string, contentBase64: string, mimeType: string) {
-  const binary = atob(contentBase64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  const blob = new Blob([bytes], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
 function latestRole(profile: CandidateProfile | null) {
   const entry = profile?.experience?.[0];
   if (!entry) {
@@ -290,13 +271,6 @@ function latestRole(profile: CandidateProfile | null) {
     return `${entry.title} at ${entry.organization}`;
   }
   return entry.title || entry.organization || "No parsed role yet";
-}
-
-function artifactKindFromTab(tab: ArtifactTab): Exclude<WorkspaceArtifactKind, "bundle" | "report"> {
-  if (tab === "resume") {
-    return "tailored_resume";
-  }
-  return "cover_letter";
 }
 
 function formatUtcTimestamp(value: string) {
@@ -451,11 +425,22 @@ export function WorkspaceShell() {
   const [analysisJobState, setAnalysisJobState] = useState<AnalysisJobState>(null);
   const [analysisState, setAnalysisState] =
     useState<WorkspaceAnalysisResponse | null>(null);
-  const [artifactTab, setArtifactTab] = useState<ArtifactTab>("resume");
-  const [artifactExporting, setArtifactExporting] = useState<string | null>(null);
-  const [artifactPreviewHtml, setArtifactPreviewHtml] = useState<string | null>(null);
-  const [artifactPreviewTitle, setArtifactPreviewTitle] = useState<string | null>(null);
-  const [artifactPreviewLoading, setArtifactPreviewLoading] = useState(false);
+
+  const {
+    artifactTab,
+    setArtifactTab,
+    artifactExporting,
+    artifactPreviewHtml,
+    artifactPreviewTitle,
+    artifactPreviewLoading,
+    currentArtifact,
+    currentArtifactKind,
+    exportArtifact: handleArtifactExport,
+    resetArtifacts,
+  } = useArtifactExport({
+    analysisState,
+    setNotice: setWorkspaceNotice,
+  });
 
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantSending, setAssistantSending] = useState(false);
@@ -653,22 +638,6 @@ export function WorkspaceShell() {
         analysisState.job_description.raw_text !== manualJobText.trim()),
   );
 
-  const currentArtifact = useMemo(() => {
-    if (!analysisState) {
-      return null;
-    }
-    if (artifactTab === "resume") {
-      return {
-        ...analysisState.artifacts.tailored_resume,
-        theme: "classic_ats",
-        summary: `Tailored resume draft for ${
-          analysisState.job_description.title || "the target role"
-        }, ready to review and export.`,
-      };
-    }
-    return analysisState.artifacts.cover_letter;
-  }, [analysisState, artifactTab]);
-  const currentArtifactKind = artifactKindFromTab(artifactTab);
   const workflowStages = useMemo(() => {
     if (analysisRunMode === "agentic") {
       return AGENTIC_WORKFLOW_STAGES;
@@ -833,8 +802,7 @@ export function WorkspaceShell() {
           setAnalysisState(nextJobState.result);
           setArtifactTab("resume");
           setMainTab("analysis");
-          setArtifactPreviewHtml(null);
-          setArtifactPreviewTitle(null);
+          resetArtifacts();
           const savedWorkspace = await persistLatestWorkspace(nextJobState.result);
           if (!cancelled) {
             setWorkspaceNotice({
@@ -1200,8 +1168,7 @@ export function WorkspaceShell() {
     setSelectedResumeFile(null);
     setSelectedJobFile(null);
     setArtifactTab("resume");
-    setArtifactPreviewHtml(null);
-    setArtifactPreviewTitle(null);
+    resetArtifacts();
     setAssistantTurns([]);
     setResumeIntakeMode("upload");
     setResumeBuilderSession(null);
@@ -1733,112 +1700,13 @@ export function WorkspaceShell() {
     });
   }
 
-  async function handleArtifactExport(
-    artifactKind: WorkspaceArtifactKind,
-    exportFormat: "markdown" | "pdf" | "zip",
-  ) {
-    if (!analysisState) {
-      setWorkspaceNotice({
-        level: "warning",
-        message: "Run the workspace flow before exporting artifacts.",
-      });
-      return;
-    }
-
-    const exportKey = `${artifactKind}:${exportFormat}`;
-    setArtifactExporting(exportKey);
-    try {
-      const response = await exportWorkspaceArtifact({
-        workspace_snapshot: analysisState,
-        artifact_kind: artifactKind,
-        export_format: exportFormat,
-        resume_theme: "classic_ats",
-      });
-      downloadBase64File(
-        response.file_name,
-        response.content_base64,
-        response.mime_type,
-      );
-      setWorkspaceNotice({
-        level: "success",
-        message:
-          artifactKind === "bundle"
-            ? `Prepared the full application package as ${response.file_name}.`
-            : `Prepared ${response.artifact_title} as ${response.file_name}.`,
-      });
-    } catch (error) {
-      setWorkspaceNotice({
-        level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Artifact export failed unexpectedly.",
-      });
-    } finally {
-      setArtifactExporting(null);
-    }
-  }
-
-  useEffect(() => {
-    const workspaceSnapshot = analysisState;
-    if (!workspaceSnapshot) {
-      setArtifactPreviewHtml(null);
-      setArtifactPreviewTitle(null);
-      setArtifactPreviewLoading(false);
-      return;
-    }
-    const resolvedWorkspaceSnapshot: WorkspaceAnalysisResponse = workspaceSnapshot;
-
-    let cancelled = false;
-
-    async function loadArtifactPreview() {
-      setArtifactPreviewLoading(true);
-      try {
-        const response = await previewWorkspaceArtifact({
-          workspace_snapshot: resolvedWorkspaceSnapshot,
-          artifact_kind: currentArtifactKind,
-          resume_theme: "classic_ats",
-        });
-        if (!cancelled) {
-          setArtifactPreviewHtml(response.html);
-          setArtifactPreviewTitle(response.artifact_title);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setArtifactPreviewHtml(null);
-          setArtifactPreviewTitle(null);
-          setWorkspaceNotice({
-            level: "warning",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Artifact preview could not be generated.",
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setArtifactPreviewLoading(false);
-        }
-      }
-    }
-
-    void loadArtifactPreview();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [analysisState, currentArtifactKind]);
-
   function clearWorkspaceRole() {
     setActiveJob(null);
     setJobFileState(null);
     setManualJobText("");
     setAnalysisState(null);
     setAnalysisJobState(null);
-    setArtifactExporting(null);
-    setArtifactPreviewHtml(null);
-    setArtifactPreviewTitle(null);
-    setArtifactPreviewLoading(false);
+    resetArtifacts();
     setWorkspaceNotice({
       level: "info",
       message: "Cleared the active role context. Load another role or paste a new JD.",
