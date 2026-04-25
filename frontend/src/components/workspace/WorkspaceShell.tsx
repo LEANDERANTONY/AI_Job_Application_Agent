@@ -1,0 +1,2228 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  askWorkspaceAssistant,
+  commitResumeBuilderResume,
+  exchangeGoogleCode,
+  exportWorkspaceArtifact,
+  generateResumeBuilderResume,
+  getWorkspaceAnalysisJob,
+  loadLatestResumeBuilderSession,
+  loadSavedJobs,
+  loadSavedWorkspace,
+  previewWorkspaceArtifact,
+  removeSavedJob,
+  resolveJobUrl,
+  restoreAuthSession,
+  saveSavedJob,
+  saveWorkspaceSnapshot,
+  searchJobs,
+  sendResumeBuilderMessage,
+  signOutAuthSession,
+  startWorkspaceAnalysisJob,
+  startResumeBuilderSession,
+  startGoogleSignIn,
+  updateResumeBuilderDraft,
+  uploadJobDescriptionFile,
+  uploadResumeFile,
+} from "@/lib/api";
+import type {
+  AuthSessionResponse,
+  AuthTokens,
+  CandidateProfile,
+  DailyQuotaStatus,
+  JobPosting,
+  JobResolveResponse,
+  JobSearchResponse,
+  LoadSavedWorkspaceResponse,
+  ResumeBuilderSessionResponse,
+  SavedWorkspaceMeta,
+  WorkspaceAnalysisJobStatusResponse,
+  WorkspaceAnalysisResponse,
+  WorkspaceArtifactKind,
+  WorkspaceJobDescriptionUploadResponse,
+  WorkspaceResumeUploadResponse,
+} from "@/lib/api-types";
+import {
+  buildJobResultBadges,
+  buildJobReview,
+} from "@/lib/job-workspace";
+import {
+  buildAuthRedirectUrl,
+  clearAuthQueryParams,
+  clearStoredAuthTokens,
+  persistAuthTokens,
+  readStoredAuthTokens,
+} from "@/lib/auth-session";
+import {
+  ArtifactMetricIcon,
+  ResumeMetricIcon,
+  WorkflowMetricIcon,
+} from "@/components/workspace/icons";
+import {
+  AssistantPanel,
+  type AssistantTurn,
+} from "@/components/workspace/AssistantPanel";
+import {
+  ArtifactViewer,
+  type ArtifactTab,
+} from "@/components/workspace/ArtifactViewer";
+import {
+  AnalysisRunner,
+  type WorkflowStage,
+} from "@/components/workspace/AnalysisRunner";
+import { JDReview } from "@/components/workspace/JDReview";
+import { JobSearch } from "@/components/workspace/JobSearch";
+import {
+  ResumeIntake,
+  type ResumeIntakeMode,
+} from "@/components/workspace/ResumeIntake";
+import { Sidebar } from "@/components/workspace/Sidebar";
+
+type Notice = {
+  level: "info" | "success" | "warning";
+  message: string;
+} | null;
+
+type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
+
+type AuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
+
+type WorkflowRunMode = "preview" | "agentic";
+
+const ASSISTANT_HISTORY_STORAGE_KEY = "workspace-assistant-history-v1";
+const MAX_PERSISTED_ASSISTANT_TURNS = 8;
+const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
+  {
+    title: "Workflow crew",
+    detail: "Opening your application brief and assigning the first agent.",
+    value: 3,
+  },
+  {
+    title: "Matchmaker agent",
+    detail: "Comparing both sides, scoring overlap, and flagging the real gaps.",
+    value: 23,
+  },
+  {
+    title: "Forge agent",
+    detail: "Rewriting the draft so it speaks directly to this role.",
+    value: 41,
+  },
+  {
+    title: "Gatekeeper agent",
+    detail: "Reviewing the drafted outputs and applying grounded corrections.",
+    value: 63,
+  },
+  {
+    title: "Builder agent",
+    detail: "Packaging the final tailored resume and lining up the finish.",
+    value: 84,
+  },
+  {
+    title: "Cover letter agent",
+    detail: "Turning the approved story into a role-specific cover letter that is ready to send.",
+    value: 97,
+  },
+];
+
+type AnalysisJobState = WorkspaceAnalysisJobStatusResponse | null;
+
+function noticeClassName(level: NonNullable<Notice>["level"]) {
+  if (level === "success") {
+    return "notice-panel notice-success";
+  }
+  if (level === "warning") {
+    return "notice-panel notice-warning";
+  }
+  return "notice-panel notice-info";
+}
+
+function toneForStage(active: boolean, ready = false) {
+  if (active) {
+    return "live";
+  }
+  if (ready) {
+    return "ready";
+  }
+  return "next";
+}
+
+function buildAssistantHistoryPayload(turns: AssistantTurn[]) {
+  return turns.map((turn) => ({
+    question: turn.question,
+    answer: turn.response.answer,
+  }));
+}
+
+function hashString(value: string) {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 33) ^ value.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function buildAssistantWorkspaceSignature(
+  workspaceSnapshot: WorkspaceAnalysisResponse | null,
+) {
+  if (!workspaceSnapshot) {
+    return null;
+  }
+
+  const signaturePayload = {
+    resume_text: workspaceSnapshot.resume_document.text,
+    job_text: workspaceSnapshot.job_description.raw_text,
+    workflow_mode: workspaceSnapshot.workflow.mode,
+    fit_score: workspaceSnapshot.fit_analysis.overall_score,
+    readiness_label: workspaceSnapshot.fit_analysis.readiness_label,
+    resume_summary: workspaceSnapshot.artifacts.tailored_resume.summary,
+    cover_letter_summary: workspaceSnapshot.artifacts.cover_letter.summary,
+      imported_job_id: workspaceSnapshot.imported_job_posting?.id ?? "",
+    };
+
+  return hashString(JSON.stringify(signaturePayload));
+}
+
+function readStoredAssistantTurns(storageKey: string) {
+  if (typeof window === "undefined") {
+    return [] as AssistantTurn[];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return [] as AssistantTurn[];
+    }
+    const payload = JSON.parse(raw);
+    if (!Array.isArray(payload)) {
+      return [] as AssistantTurn[];
+    }
+    return payload
+      .flatMap((item) => {
+        const question =
+          typeof item?.question === "string" ? item.question.trim() : "";
+        const answer =
+          typeof item?.response?.answer === "string"
+            ? item.response.answer.trim()
+            : "";
+        const sources = Array.isArray(item?.response?.sources)
+          ? item.response.sources
+              .map((source: unknown) =>
+                typeof source === "string" ? source.trim() : "",
+              )
+              .filter(Boolean)
+          : [];
+        const suggestedFollowUps = Array.isArray(
+          item?.response?.suggested_follow_ups,
+        )
+          ? item.response.suggested_follow_ups
+              .map((followUp: unknown) =>
+                typeof followUp === "string" ? followUp.trim() : "",
+              )
+              .filter(Boolean)
+          : [];
+        if (!question || !answer) {
+          return [];
+        }
+        return [
+          {
+            question,
+            response: {
+              answer,
+              sources,
+              suggested_follow_ups: suggestedFollowUps,
+            },
+          } satisfies AssistantTurn,
+        ];
+      })
+      .slice(-MAX_PERSISTED_ASSISTANT_TURNS);
+  } catch {
+    return [] as AssistantTurn[];
+  }
+}
+
+function persistAssistantTurns(storageKey: string, turns: AssistantTurn[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!turns.length) {
+    window.localStorage.removeItem(storageKey);
+    return;
+  }
+
+  const serializableTurns = turns.slice(-MAX_PERSISTED_ASSISTANT_TURNS).map((turn) => ({
+    question: turn.question,
+    response: {
+      answer: turn.response.answer,
+      sources: turn.response.sources,
+      suggested_follow_ups: turn.response.suggested_follow_ups,
+    },
+  }));
+  window.localStorage.setItem(storageKey, JSON.stringify(serializableTurns));
+}
+
+function downloadBase64File(filename: string, contentBase64: string, mimeType: string) {
+  const binary = atob(contentBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  const blob = new Blob([bytes], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function latestRole(profile: CandidateProfile | null) {
+  const entry = profile?.experience?.[0];
+  if (!entry) {
+    return "No parsed role yet";
+  }
+  if (entry.title && entry.organization) {
+    return `${entry.title} at ${entry.organization}`;
+  }
+  return entry.title || entry.organization || "No parsed role yet";
+}
+
+function artifactKindFromTab(tab: ArtifactTab): Exclude<WorkspaceArtifactKind, "bundle" | "report"> {
+  if (tab === "resume") {
+    return "tailored_resume";
+  }
+  return "cover_letter";
+}
+
+function formatUtcTimestamp(value: string) {
+  if (!value) {
+    return "";
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return value;
+  }
+  return timestamp.toLocaleString(undefined, {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatRemainingCalls(dailyQuota: DailyQuotaStatus | null) {
+  if (!dailyQuota) {
+    return "Unavailable";
+  }
+  if (dailyQuota.remaining_calls === null || dailyQuota.max_calls === null) {
+    return "Unlimited";
+  }
+  return `${dailyQuota.remaining_calls}/${dailyQuota.max_calls}`;
+}
+
+function sortSavedJobs(jobs: JobPosting[]) {
+  return [...jobs].sort((left, right) => {
+    const leftSaved = left.saved_at ?? "";
+    const rightSaved = right.saved_at ?? "";
+    if (leftSaved !== rightSaved) {
+      return rightSaved.localeCompare(leftSaved);
+    }
+    const leftPosted = left.posted_at ?? "";
+    const rightPosted = right.posted_at ?? "";
+    if (leftPosted !== rightPosted) {
+      return rightPosted.localeCompare(leftPosted);
+    }
+    return left.title.localeCompare(right.title);
+  });
+}
+
+function getInitialSidebarCollapsed() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const drawerParam = new URLSearchParams(window.location.search).get("drawer");
+  if (drawerParam === "closed") {
+    return true;
+  }
+  if (drawerParam === "open") {
+    return false;
+  }
+
+  return false;
+}
+
+function getInitialMainTab(): WorkspaceMainTab {
+  if (typeof window === "undefined") {
+    return "resume";
+  }
+
+  const tabParam = new URLSearchParams(window.location.search).get("tab");
+  if (tabParam === "resume" || tabParam === "jobs" || tabParam === "jd" || tabParam === "analysis") {
+    return tabParam;
+  }
+
+  const hashTab = window.location.hash.replace(/^#/, "");
+  if (hashTab === "resume" || hashTab === "jobs" || hashTab === "jd" || hashTab === "analysis") {
+    return hashTab;
+  }
+
+  return "resume";
+}
+
+export function WorkspaceShell() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialSidebarCollapsed);
+  const [mainTab, setMainTab] = useState<WorkspaceMainTab>(getInitialMainTab);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
+  const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authActionLoading, setAuthActionLoading] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [workspaceReloading, setWorkspaceReloading] = useState(false);
+  const [workspaceSaveMeta, setWorkspaceSaveMeta] =
+    useState<SavedWorkspaceMeta | null>(null);
+  const [autoSaving, setAutoSaving] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState("machine learning engineer");
+  const [searchLocation, setSearchLocation] = useState("");
+  const [remoteOnly, setRemoteOnly] = useState(false);
+  const [postedWithinDays, setPostedWithinDays] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<JobSearchResponse | null>(
+    null,
+  );
+  const [searchResultsCollapsed, setSearchResultsCollapsed] = useState(false);
+  const [searchNotice, setSearchNotice] = useState<Notice>(null);
+  const [savedJobs, setSavedJobs] = useState<JobPosting[]>([]);
+  const [savedJobsLoading, setSavedJobsLoading] = useState(false);
+  const [savedJobsNotice, setSavedJobsNotice] = useState<Notice>(null);
+  const [savedJobActionId, setSavedJobActionId] = useState<string | null>(null);
+
+  const [jobUrl, setJobUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [workspaceNotice, setWorkspaceNotice] = useState<Notice>(null);
+  const [activeJob, setActiveJob] = useState<JobPosting | null>(null);
+
+  const [selectedResumeFile, setSelectedResumeFile] = useState<File | null>(null);
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const [resumeNotice, setResumeNotice] = useState<Notice>(null);
+  const [resumeState, setResumeState] =
+    useState<WorkspaceResumeUploadResponse | null>(null);
+  const [resumeIntakeMode, setResumeIntakeMode] =
+    useState<ResumeIntakeMode>("upload");
+  const [resumeBuilderSession, setResumeBuilderSession] =
+    useState<ResumeBuilderSessionResponse | null>(null);
+  const [resumeBuilderAnswer, setResumeBuilderAnswer] = useState("");
+  const [resumeBuilderLoading, setResumeBuilderLoading] = useState(false);
+  const [resumeBuilderGenerating, setResumeBuilderGenerating] = useState(false);
+  const [resumeBuilderCommitting, setResumeBuilderCommitting] = useState(false);
+  const [resumeBuilderNotice, setResumeBuilderNotice] = useState<Notice>(null);
+  const [resumeBuilderInitialized, setResumeBuilderInitialized] = useState(false);
+  const [resumeBuilderEditing, setResumeBuilderEditing] = useState(false);
+  const [resumeBuilderCollapsed, setResumeBuilderCollapsed] = useState(false);
+  const [resumeBuilderDraftForm, setResumeBuilderDraftForm] = useState({
+    full_name: "",
+    location: "",
+    contact_lines: "",
+    target_role: "",
+    professional_summary: "",
+    experience_notes: "",
+    education_notes: "",
+    skills: "",
+    certifications: "",
+  });
+
+  const [selectedJobFile, setSelectedJobFile] = useState<File | null>(null);
+  const [jobFileUploading, setJobFileUploading] = useState(false);
+  const [jobFileNotice, setJobFileNotice] = useState<Notice>(null);
+  const [jobFileState, setJobFileState] =
+    useState<WorkspaceJobDescriptionUploadResponse | null>(null);
+  const [jobInputCollapsed, setJobInputCollapsed] = useState(false);
+
+  const [manualJobText, setManualJobText] = useState("");
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisRunMode, setAnalysisRunMode] = useState<WorkflowRunMode | null>(null);
+  const [analysisJobState, setAnalysisJobState] = useState<AnalysisJobState>(null);
+  const [analysisState, setAnalysisState] =
+    useState<WorkspaceAnalysisResponse | null>(null);
+  const [artifactTab, setArtifactTab] = useState<ArtifactTab>("resume");
+  const [artifactExporting, setArtifactExporting] = useState<string | null>(null);
+  const [artifactPreviewHtml, setArtifactPreviewHtml] = useState<string | null>(null);
+  const [artifactPreviewTitle, setArtifactPreviewTitle] = useState<string | null>(null);
+  const [artifactPreviewLoading, setArtifactPreviewLoading] = useState(false);
+
+  const [assistantQuestion, setAssistantQuestion] = useState("");
+  const [assistantSending, setAssistantSending] = useState(false);
+  const [assistantTurns, setAssistantTurns] = useState<AssistantTurn[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrapAuth() {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const authCode = params.get("code");
+      const authFlow = params.get("auth_flow") ?? "";
+      const authErrorDescription =
+        params.get("error_description") ?? params.get("error");
+
+      if (authErrorDescription) {
+        clearStoredAuthTokens();
+        clearAuthQueryParams();
+        if (!cancelled) {
+          setAuthSession(null);
+          setAuthStatus("signed_out");
+          setAuthError(authErrorDescription);
+        }
+        return;
+      }
+
+      if (authCode) {
+        setAuthStatus("restoring");
+        setAuthError(null);
+        try {
+          const response = await exchangeGoogleCode(
+            authCode,
+            authFlow,
+            buildAuthRedirectUrl("/workspace"),
+          );
+          if (!cancelled) {
+            persistAuthTokens(response.session);
+            setAuthSession(response);
+            setAuthStatus("signed_in");
+            setWorkspaceNotice({
+              level: "success",
+              message: `Signed in as ${response.app_user.display_name || response.app_user.email || "your account"}.`,
+            });
+          }
+        } catch (error) {
+          clearStoredAuthTokens();
+          if (!cancelled) {
+            setAuthSession(null);
+            setAuthStatus("signed_out");
+            setAuthError(
+              error instanceof Error
+                ? error.message
+                : "Google sign-in failed unexpectedly.",
+            );
+          }
+        } finally {
+          clearAuthQueryParams();
+        }
+        return;
+      }
+
+      const storedTokens = readStoredAuthTokens();
+      if (!storedTokens) {
+        if (!cancelled) {
+          setAuthStatus("signed_out");
+        }
+        return;
+      }
+
+      setAuthStatus("restoring");
+      setAuthError(null);
+      try {
+        const response = await restoreAuthSession(storedTokens);
+        if (!cancelled) {
+          persistAuthTokens(response.session);
+          setAuthSession(response);
+          setAuthStatus("signed_in");
+        }
+      } catch (error) {
+        clearStoredAuthTokens();
+        if (!cancelled) {
+          setAuthSession(null);
+          setAuthStatus("signed_out");
+          setAuthError(
+            error instanceof Error
+              ? error.message
+              : "The saved login session could not be restored.",
+          );
+        }
+      }
+    }
+
+    void bootstrapAuth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeJob?.description_text) {
+      setManualJobText(activeJob.description_text);
+      setJobFileState(null);
+    }
+  }, [activeJob]);
+
+  useEffect(() => {
+    if (activeJob || jobFileState) {
+      setJobInputCollapsed(true);
+    }
+  }, [activeJob, jobFileState]);
+
+  const authTokens = authSession?.session ?? null;
+  const dailyQuota = authSession?.daily_quota ?? null;
+  const savedJobsEnabled = Boolean(authSession?.features.saved_jobs_enabled);
+
+  useEffect(() => {
+    const sessionTokens = authTokens;
+    if (
+      authStatus !== "signed_in" ||
+      !sessionTokens ||
+      !authSession?.features.saved_jobs_enabled
+    ) {
+      setSavedJobs([]);
+      setSavedJobsLoading(false);
+      return;
+    }
+    const resolvedAuthTokens: AuthTokens = sessionTokens;
+
+    let cancelled = false;
+
+    async function hydrateSavedJobs() {
+      setSavedJobsLoading(true);
+      try {
+        const response = await loadSavedJobs(resolvedAuthTokens);
+        if (!cancelled) {
+          setSavedJobs(sortSavedJobs(response.saved_jobs));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSavedJobsNotice({
+            level: "warning",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Saved jobs could not be loaded right now.",
+          });
+          setSavedJobs([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setSavedJobsLoading(false);
+        }
+      }
+    }
+
+    void hydrateSavedJobs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSession?.features.saved_jobs_enabled, authStatus, authTokens]);
+
+  const savedJobIds = useMemo(
+    () =>
+      new Set(
+        savedJobs
+          .map((job) => job.id.trim())
+          .filter(Boolean),
+      ),
+    [savedJobs],
+  );
+  const latestSavedJobAt = useMemo(
+    () =>
+      savedJobs.reduce((latest, job) => {
+        const savedAt = job.saved_at ?? "";
+        return savedAt > latest ? savedAt : latest;
+      }, ""),
+    [savedJobs],
+  );
+  const activeResumeState = resumeState ?? analysisState;
+  const resumeText = activeResumeState?.resume_document.text ?? "";
+  const currentProfile = activeResumeState?.candidate_profile ?? null;
+  const review = manualJobText.trim()
+    ? buildJobReview(manualJobText, activeJob)
+    : null;
+
+  const analysisIsStale = Boolean(
+    analysisState &&
+      (analysisState.resume_document.text !== resumeText ||
+        analysisState.job_description.raw_text !== manualJobText.trim()),
+  );
+
+  const currentArtifact = useMemo(() => {
+    if (!analysisState) {
+      return null;
+    }
+    if (artifactTab === "resume") {
+      return {
+        ...analysisState.artifacts.tailored_resume,
+        theme: "classic_ats",
+        summary: `Tailored resume draft for ${
+          analysisState.job_description.title || "the target role"
+        }, ready to review and export.`,
+      };
+    }
+    return analysisState.artifacts.cover_letter;
+  }, [analysisState, artifactTab]);
+  const currentArtifactKind = artifactKindFromTab(artifactTab);
+  const workflowStages = useMemo(() => {
+    if (analysisRunMode === "agentic") {
+      return AGENTIC_WORKFLOW_STAGES;
+    }
+    return [] as WorkflowStage[];
+  }, [analysisRunMode]);
+  const currentWorkflowStage = useMemo(() => {
+    if (!analysisLoading || analysisRunMode !== "agentic") {
+      return null;
+    }
+    if (!analysisJobState?.stage_title) {
+      return workflowStages[0] ?? null;
+    }
+    return (
+      workflowStages.find((stage) => stage.title === analysisJobState.stage_title) ?? {
+        title: analysisJobState.stage_title,
+        detail:
+          analysisJobState.stage_detail ||
+          "The workspace crew is moving through the run.",
+        value: analysisJobState.progress_percent || 3,
+      }
+    );
+  }, [analysisJobState, analysisLoading, analysisRunMode, workflowStages]);
+  const workspaceTabs = useMemo(
+    () => [
+      {
+        id: "resume" as const,
+        label: "Resume",
+        title: "Upload profile",
+        copy:
+          "Upload your resume or build one with the assistant so the app can use your background throughout the workflow.",
+        status: currentProfile ? "Ready" : "Start here",
+        tone: currentProfile ? "live" : "ready",
+      },
+      {
+        id: "jobs" as const,
+        label: "Job Search",
+        title: "Search job",
+        copy:
+          "Find a job from the live listings, paste a job link, or open one from your saved jobs.",
+        status: activeJob
+          ? "Role loaded"
+          : searchResults?.results.length
+            ? `${searchResults.total_results} matches`
+            : "Search or import",
+        tone: activeJob
+          ? "live"
+          : searchResults?.results.length
+            ? "ready"
+            : "idle",
+      },
+      {
+        id: "jd" as const,
+        label: "Job Details",
+        title: "Review the job description",
+        copy:
+          "Add the job description and review the key skills, requirements, and summary.",
+        status: review ? "JD ready" : manualJobText.trim() ? "Drafting" : "Add a JD",
+        tone: review ? "live" : manualJobText.trim() ? "ready" : "idle",
+      },
+      {
+        id: "analysis" as const,
+        label: "Analysis & Outputs",
+        title: "Run the workflow",
+        copy:
+          "Trigger the agentic workflow, then review your tailored documents and export them.",
+        status: analysisState
+          ? "Outputs ready"
+          : resumeText.trim() && manualJobText.trim()
+            ? "Ready to run"
+            : "Waiting",
+        tone: analysisState
+          ? "live"
+          : resumeText.trim() && manualJobText.trim()
+            ? "ready"
+            : "idle",
+      },
+    ],
+    [activeJob, analysisState, currentProfile, manualJobText, resumeText, review, searchResults],
+  );
+  const activeMainTabMeta =
+    workspaceTabs.find((tab) => tab.id === mainTab) ?? workspaceTabs[0];
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const accountDisplayName =
+    authSession?.app_user.display_name || authSession?.app_user.email || "Signed in";
+  const accountInitial = accountDisplayName.slice(0, 1).toUpperCase();
+
+  useEffect(() => {
+    if (
+      resumeIntakeMode !== "assistant" ||
+      resumeBuilderSession ||
+      resumeBuilderLoading ||
+      resumeBuilderInitialized
+    ) {
+      return;
+    }
+
+    void handleLoadOrStartResumeBuilder();
+  }, [
+    authStatus,
+    resumeBuilderInitialized,
+    resumeBuilderLoading,
+    resumeBuilderSession,
+    resumeIntakeMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      authStatus === "signed_in" &&
+      resumeIntakeMode === "assistant" &&
+      !resumeBuilderSession
+    ) {
+      setResumeBuilderInitialized(false);
+    }
+  }, [authStatus, resumeBuilderSession, resumeIntakeMode]);
+
+  useEffect(() => {
+    if (!resumeBuilderSession) {
+      return;
+    }
+
+    setResumeBuilderDraftForm({
+      full_name: resumeBuilderSession.draft_profile.full_name || "",
+      location: resumeBuilderSession.draft_profile.location || "",
+      contact_lines: resumeBuilderSession.draft_profile.contact_lines.join("\n"),
+      target_role: resumeBuilderSession.draft_profile.target_role || "",
+      professional_summary:
+        resumeBuilderSession.draft_profile.professional_summary || "",
+      experience_notes: resumeBuilderSession.draft_profile.experience_notes || "",
+      education_notes: resumeBuilderSession.draft_profile.education_notes || "",
+      skills: resumeBuilderSession.draft_profile.skills.join(", "),
+      certifications: resumeBuilderSession.draft_profile.certifications.join(", "),
+    });
+  }, [resumeBuilderSession]);
+
+  useEffect(() => {
+    if (
+      !analysisLoading ||
+      analysisRunMode !== "agentic" ||
+      !analysisJobState?.job_id ||
+      analysisJobState.status === "completed" ||
+      analysisJobState.status === "failed"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const nextJobState = await getWorkspaceAnalysisJob(
+          analysisJobState.job_id,
+          authTokens,
+        );
+        if (cancelled) {
+          return;
+        }
+
+        setAnalysisJobState(nextJobState);
+
+        if (nextJobState.status === "completed" && nextJobState.result) {
+          setAnalysisState(nextJobState.result);
+          setArtifactTab("resume");
+          setMainTab("analysis");
+          setArtifactPreviewHtml(null);
+          setArtifactPreviewTitle(null);
+          const savedWorkspace = await persistLatestWorkspace(nextJobState.result);
+          if (!cancelled) {
+            setWorkspaceNotice({
+              level: "success",
+              message: savedWorkspace
+                ? `Workflow finished in ${nextJobState.result.workflow.mode} mode and saved workspace refreshes until ${formatUtcTimestamp(savedWorkspace.expires_at)} UTC.`
+                : `Workflow finished in ${nextJobState.result.workflow.mode} mode.`,
+            });
+            setAnalysisLoading(false);
+            setAnalysisRunMode(null);
+          }
+          return;
+        }
+
+        if (nextJobState.status === "failed") {
+          setWorkspaceNotice({
+            level: "warning",
+            message:
+              nextJobState.error_message ||
+              "The agentic workflow failed unexpectedly.",
+          });
+          setAnalysisLoading(false);
+          setAnalysisRunMode(null);
+          return;
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setWorkspaceNotice({
+            level: "warning",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Workflow status polling failed unexpectedly.",
+          });
+          setAnalysisLoading(false);
+          setAnalysisRunMode(null);
+        }
+      }
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [analysisJobState, analysisLoading, analysisRunMode, authTokens]);
+
+  const assistantWorkspaceSignature = useMemo(
+    () => buildAssistantWorkspaceSignature(analysisState),
+    [analysisState],
+  );
+  const assistantStorageKey = useMemo(() => {
+    if (!assistantWorkspaceSignature) {
+      return null;
+    }
+    const userScope = authSession?.app_user.id || "anonymous";
+    return `${ASSISTANT_HISTORY_STORAGE_KEY}:${userScope}:${assistantWorkspaceSignature}`;
+  }, [assistantWorkspaceSignature, authSession?.app_user.id]);
+  const latestAssistantTurn = assistantTurns[assistantTurns.length - 1] ?? null;
+  const assistantRequiresWorkspaceRun = !analysisState;
+  const assistantCanSubmit =
+    !assistantRequiresWorkspaceRun &&
+    !assistantSending &&
+    Boolean(assistantQuestion.trim());
+
+  useEffect(() => {
+    if (!assistantStorageKey) {
+      setAssistantTurns([]);
+      return;
+    }
+    setAssistantTurns(readStoredAssistantTurns(assistantStorageKey));
+  }, [assistantStorageKey]);
+
+  useEffect(() => {
+    if (!assistantStorageKey) {
+      return;
+    }
+    persistAssistantTurns(assistantStorageKey, assistantTurns);
+  }, [assistantStorageKey, assistantTurns]);
+
+  async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMainTab("jobs");
+
+    if (!searchQuery.trim()) {
+      setSearchNotice({
+        level: "warning",
+        message: "Enter a search query to look for roles.",
+      });
+      return;
+    }
+
+    setSearching(true);
+    setSearchNotice({
+      level: "info",
+      message: "Searching live job sources...",
+    });
+
+    try {
+      const response = await searchJobs({
+        query: searchQuery.trim(),
+        location: searchLocation.trim(),
+        source_filters: ["greenhouse", "lever"],
+        remote_only: remoteOnly,
+        posted_within_days: postedWithinDays ? Number(postedWithinDays) : null,
+        page_size: 12,
+      });
+      setSearchResults(response);
+      setSearchResultsCollapsed(false);
+      setSearchNotice({
+        level: response.results.length ? "success" : "info",
+        message: response.results.length
+          ? `Found ${response.results.length} matching jobs for the current search.`
+          : "No roles matched this search yet.",
+      });
+    } catch (error) {
+      setSearchNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Something went wrong while searching for roles.",
+      });
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function handleResolveJob(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!jobUrl.trim()) {
+      setWorkspaceNotice({
+        level: "warning",
+        message: "Paste a supported Greenhouse or Lever job URL to import it.",
+      });
+      return;
+    }
+
+    setImporting(true);
+    setWorkspaceNotice({
+      level: "info",
+      message: "Checking that job posting and loading it into your workspace...",
+    });
+
+    try {
+      const response: JobResolveResponse = await resolveJobUrl(jobUrl.trim());
+      if (response.status !== "ok" || !response.job_posting) {
+        throw new Error(
+          response.error_message ||
+            "That URL could not be turned into a supported job posting.",
+        );
+      }
+      setActiveJob(response.job_posting);
+      setMainTab("jd");
+      setWorkspaceNotice({
+        level: "success",
+        message: `Imported ${response.job_posting.title} and loaded it into the workspace review lane.`,
+      });
+    } catch (error) {
+      setWorkspaceNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The job URL import failed unexpectedly.",
+      });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handleSaveJob(job: JobPosting) {
+    if (!authTokens) {
+      setSavedJobsNotice({
+        level: "warning",
+        message: "Sign in with Google before saving jobs to your shortlist.",
+      });
+      return;
+    }
+
+    setSavedJobActionId(job.id);
+    try {
+      const response = await saveSavedJob(job, authTokens);
+      setSavedJobs((current) =>
+        sortSavedJobs([
+          response.saved_job,
+          ...current.filter((item) => item.id !== response.saved_job.id),
+        ]),
+      );
+      setSavedJobsNotice({
+        level: "success",
+        message: response.message,
+      });
+    } catch (error) {
+      setSavedJobsNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "This role could not be saved to your shortlist.",
+      });
+    } finally {
+      setSavedJobActionId(null);
+    }
+  }
+
+  async function handleRemoveSavedJob(job: JobPosting) {
+    if (!authTokens) {
+      setSavedJobsNotice({
+        level: "warning",
+        message: "Sign in with Google before editing your shortlist.",
+      });
+      return;
+    }
+
+    setSavedJobActionId(job.id);
+    try {
+      await removeSavedJob(job.id, authTokens);
+      setSavedJobs((current) => current.filter((item) => item.id !== job.id));
+      setSavedJobsNotice({
+        level: "success",
+        message: `Removed ${job.title || "this role"} from your shortlist.`,
+      });
+    } catch (error) {
+      setSavedJobsNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "This role could not be removed from your shortlist.",
+      });
+    } finally {
+      setSavedJobActionId(null);
+    }
+  }
+
+  function handleLoadSavedJob(job: JobPosting) {
+    setActiveJob(job);
+    setMainTab("jd");
+    setWorkspaceNotice({
+      level: "success",
+      message: `Loaded ${job.title} from your shortlist into the workspace review lane.`,
+    });
+  }
+
+  async function handleResumeUpload(file: File | null = selectedResumeFile) {
+    if (!file) {
+      setResumeNotice({
+        level: "warning",
+        message: "Choose a PDF, DOCX, or TXT resume before uploading.",
+      });
+      return;
+    }
+
+    setResumeUploading(true);
+    setResumeNotice({
+      level: "info",
+      message: `Parsing ${file.name} through the workspace API...`,
+    });
+
+    try {
+      const response = await uploadResumeFile(file, authTokens);
+      setResumeState(response);
+      setResumeIntakeMode("upload");
+      setResumeNotice({
+        level: "success",
+        message: `${response.candidate_profile.full_name || response.resume_document.filetype} is ready in the workspace.`,
+      });
+      setSelectedResumeFile(null);
+    } catch (error) {
+      setResumeNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Resume upload failed unexpectedly.",
+      });
+    } finally {
+      setResumeUploading(false);
+    }
+  }
+
+  async function handleJobDescriptionUpload(file: File | null = selectedJobFile) {
+    if (!file) {
+      setJobFileNotice({
+        level: "warning",
+        message: "Choose a PDF, DOCX, or TXT job description before uploading.",
+      });
+      return;
+    }
+
+    setJobFileUploading(true);
+    setJobFileNotice({
+      level: "info",
+      message: `Parsing ${file.name} through the workspace API...`,
+    });
+
+    try {
+      const response = await uploadJobDescriptionFile(file, authTokens);
+      setJobFileState(response);
+      setManualJobText(response.job_description_text);
+      setActiveJob(null);
+      setMainTab("jd");
+      setJobFileNotice({
+        level: "success",
+        message: `${response.job_description.title} is now loaded into the manual JD lane.`,
+      });
+      setSelectedJobFile(null);
+    } catch (error) {
+      setJobFileNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Job-description upload failed unexpectedly.",
+      });
+    } finally {
+      setJobFileUploading(false);
+    }
+  }
+
+  function handleClearUploadedResumeProfile() {
+    setResumeState(null);
+    setSelectedResumeFile(null);
+    setResumeNotice(null);
+    setResumeBuilderNotice({
+      level: "info",
+      message:
+        "Uploaded resume cleared. You can build a fresh base resume with the assistant now.",
+    });
+  }
+
+  function handleClearLoadedJobDescription() {
+    setActiveJob(null);
+    setJobFileState(null);
+    setSelectedJobFile(null);
+    setManualJobText("");
+    setJobFileNotice({
+      level: "info",
+      message: "Job description cleared. You can upload a new file, paste a JD, or load another role.",
+    });
+    setJobInputCollapsed(false);
+  }
+
+  function applySavedWorkspaceSnapshot(response: LoadSavedWorkspaceResponse) {
+    const snapshot = response.workspace_snapshot;
+    if (!snapshot) {
+      return;
+    }
+
+    setResumeState({
+      resume_document: snapshot.resume_document,
+      candidate_profile: snapshot.candidate_profile,
+    });
+    setJobFileState({
+      job_description_text: snapshot.job_description.raw_text,
+      job_description: snapshot.job_description,
+      jd_summary_view: snapshot.jd_summary_view,
+    });
+    setAnalysisState(snapshot);
+    setActiveJob(snapshot.imported_job_posting ?? null);
+    setManualJobText(snapshot.job_description.raw_text);
+    setSelectedResumeFile(null);
+    setSelectedJobFile(null);
+    setArtifactTab("resume");
+    setArtifactPreviewHtml(null);
+    setArtifactPreviewTitle(null);
+    setAssistantTurns([]);
+    setResumeIntakeMode("upload");
+    setResumeBuilderSession(null);
+    setResumeBuilderInitialized(false);
+    setResumeBuilderAnswer("");
+    setResumeBuilderNotice(null);
+    setMainTab("analysis");
+  }
+
+  async function handleStartResumeBuilder() {
+    setResumeBuilderLoading(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Starting the guided resume builder...",
+    });
+
+    try {
+      const response = await startResumeBuilderSession(authTokens);
+      setResumeBuilderSession(response);
+      setResumeBuilderInitialized(true);
+      setResumeBuilderNotice({
+        level: "success",
+        message: "The guided resume builder is ready. Answer each prompt and we will build your base resume together.",
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The guided resume builder could not be started.",
+      });
+    } finally {
+      setResumeBuilderLoading(false);
+    }
+  }
+
+  async function handleLoadOrStartResumeBuilder() {
+    setResumeBuilderLoading(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: authTokens
+        ? "Checking for your latest resume-builder draft..."
+        : "Starting the guided resume builder...",
+    });
+
+    try {
+      if (authTokens) {
+        try {
+          const latest = await loadLatestResumeBuilderSession(authTokens);
+          if (latest.session) {
+            setResumeBuilderSession(latest.session);
+            setResumeBuilderNotice({
+              level: "success",
+              message: "Your latest resume-builder draft is ready to continue.",
+            });
+            return;
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message.toLowerCase() : "";
+          if (!message.includes("not found")) {
+            throw error;
+          }
+        }
+      }
+
+      const response = await startResumeBuilderSession(authTokens);
+      setResumeBuilderSession(response);
+      setResumeBuilderNotice({
+        level: "success",
+        message: "The guided resume builder is ready. Answer each prompt and we will build your base resume together.",
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The guided resume builder could not be started.",
+      });
+    } finally {
+      setResumeBuilderInitialized(true);
+      setResumeBuilderLoading(false);
+    }
+  }
+
+  async function handleResumeBuilderAnswer() {
+    if (!resumeBuilderSession) {
+      await handleStartResumeBuilder();
+      return;
+    }
+
+    if (!resumeBuilderAnswer.trim()) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message: "Add an answer before continuing.",
+      });
+      return;
+    }
+
+    setResumeBuilderLoading(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Saving your answer and moving to the next step...",
+    });
+
+    try {
+      const response = await sendResumeBuilderMessage(
+        resumeBuilderSession.session_id,
+        resumeBuilderAnswer.trim(),
+        authTokens,
+      );
+      setResumeBuilderSession(response);
+      setResumeBuilderAnswer("");
+      setResumeBuilderNotice({
+        level: "success",
+        message: response.assistant_message,
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "That answer could not be saved.",
+      });
+    } finally {
+      setResumeBuilderLoading(false);
+    }
+  }
+
+  async function handleResumeBuilderGenerate() {
+    if (!resumeBuilderSession) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message: "Start the guided resume builder before generating a base resume.",
+      });
+      return;
+    }
+
+    setResumeBuilderGenerating(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Generating your baseline resume draft...",
+    });
+
+    try {
+      const response = await generateResumeBuilderResume(
+        resumeBuilderSession.session_id,
+        authTokens,
+      );
+      setResumeBuilderSession(response);
+      setResumeBuilderNotice({
+        level: "success",
+        message: "Your base resume draft is ready. Review it, then use this profile to continue into the workspace.",
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The base resume draft could not be generated.",
+      });
+    } finally {
+      setResumeBuilderGenerating(false);
+    }
+  }
+
+  async function handleResumeBuilderDraftSave() {
+    if (!resumeBuilderSession) {
+      return;
+    }
+
+    setResumeBuilderEditing(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Saving your edits to the draft profile...",
+    });
+
+    try {
+      const response = await updateResumeBuilderDraft(
+        resumeBuilderSession.session_id,
+        {
+          full_name: resumeBuilderDraftForm.full_name,
+          location: resumeBuilderDraftForm.location,
+          contact_lines: resumeBuilderDraftForm.contact_lines
+            .split("\n")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          target_role: resumeBuilderDraftForm.target_role,
+          professional_summary: resumeBuilderDraftForm.professional_summary,
+          experience_notes: resumeBuilderDraftForm.experience_notes,
+          education_notes: resumeBuilderDraftForm.education_notes,
+          skills: resumeBuilderDraftForm.skills
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          certifications: resumeBuilderDraftForm.certifications
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+        },
+        authTokens,
+      );
+      setResumeBuilderSession(response);
+      setResumeBuilderNotice({
+        level: "success",
+        message: "Draft updated. You can keep refining it or generate the base resume.",
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Those draft edits could not be saved.",
+      });
+    } finally {
+      setResumeBuilderEditing(false);
+    }
+  }
+
+  async function handleResumeBuilderCommit() {
+    if (!resumeBuilderSession) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message: "Generate a base resume before using it in the workspace.",
+      });
+      return;
+    }
+
+    setResumeBuilderCommitting(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Moving this base resume into your workspace profile...",
+    });
+
+    try {
+      const response = await commitResumeBuilderResume(
+        resumeBuilderSession.session_id,
+        authTokens,
+      );
+      setResumeState({
+        resume_document: response.resume_document,
+        candidate_profile: response.candidate_profile,
+      });
+      setResumeNotice({
+        level: "success",
+        message: `${response.candidate_profile.full_name || "Your new resume"} is ready in the workspace.`,
+      });
+      setResumeBuilderNotice({
+        level: "success",
+        message: "Your base resume is now the active profile for the rest of the workflow.",
+      });
+      setSelectedResumeFile(null);
+      setResumeBuilderSession(null);
+      setResumeBuilderInitialized(false);
+      setResumeBuilderAnswer("");
+      setMainTab("jobs");
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "This base resume could not be moved into the workspace.",
+      });
+    } finally {
+      setResumeBuilderCommitting(false);
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    setAuthActionLoading(true);
+    setAuthError(null);
+    try {
+      const response = await startGoogleSignIn(buildAuthRedirectUrl("/workspace"));
+      window.location.href = response.url;
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : "Google sign-in could not be started.",
+      );
+      setWorkspaceNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Google sign-in could not be started.",
+      });
+      setAuthActionLoading(false);
+    }
+  }
+
+  async function handleSignOut() {
+    if (!authTokens) {
+      return;
+    }
+
+    setAuthActionLoading(true);
+    try {
+      await signOutAuthSession(authTokens);
+    } catch {
+      // Clearing local state is still the right fallback if server sign-out fails.
+    } finally {
+      clearStoredAuthTokens();
+      setAuthSession(null);
+      setAuthStatus("signed_out");
+      setAuthError(null);
+      setWorkspaceSaveMeta(null);
+      setSavedJobs([]);
+      setSavedJobsNotice(null);
+      setResumeBuilderSession(null);
+      setResumeBuilderInitialized(false);
+      setResumeBuilderAnswer("");
+      setResumeBuilderNotice(null);
+      setAuthActionLoading(false);
+      setWorkspaceNotice({
+        level: "info",
+        message: "Signed out. Local account session and saved-state access were cleared.",
+      });
+    }
+  }
+
+  async function handleReloadSavedWorkspace() {
+    if (!authTokens) {
+      setWorkspaceNotice({
+        level: "warning",
+        message: "Sign in with Google before reloading a saved workspace.",
+      });
+      return;
+    }
+
+    setWorkspaceReloading(true);
+    try {
+      const response = await loadSavedWorkspace(authTokens);
+      if (response.status !== "available" || !response.workspace_snapshot) {
+        setWorkspaceNotice({
+          level: response.status === "expired" ? "warning" : "info",
+          message:
+            response.status === "expired"
+              ? "Your saved workspace expired after 24 hours. Run the flow again to save a fresh one."
+              : "No saved workspace is available to reload yet.",
+        });
+        return;
+      }
+
+      applySavedWorkspaceSnapshot(response);
+      setWorkspaceSaveMeta(response.saved_workspace ?? null);
+      setWorkspaceNotice({
+        level: "success",
+        message: `Saved workspace reloaded. Expires ${formatUtcTimestamp(response.saved_workspace?.expires_at ?? "")} UTC.`,
+      });
+    } catch (error) {
+      setWorkspaceNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Saved workspace reload failed unexpectedly.",
+      });
+    } finally {
+      setWorkspaceReloading(false);
+    }
+  }
+
+  async function persistLatestWorkspace(snapshot: WorkspaceAnalysisResponse) {
+    if (!authTokens || !authSession?.features.saved_workspace_enabled) {
+      return null;
+    }
+
+    setAutoSaving(true);
+    try {
+      const response = await saveWorkspaceSnapshot(snapshot, authTokens);
+      setWorkspaceSaveMeta(response.saved_workspace);
+      return response.saved_workspace;
+    } catch (error) {
+      setWorkspaceNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The latest workspace could not be saved.",
+      });
+      return null;
+    } finally {
+      setAutoSaving(false);
+    }
+  }
+
+  async function handleRunAnalysis() {
+    if (!resumeText.trim()) {
+      setWorkspaceNotice({
+        level: "warning",
+        message: "Upload and parse a resume before running the workspace flow.",
+      });
+      return;
+    }
+
+    if (!manualJobText.trim()) {
+      setWorkspaceNotice({
+        level: "warning",
+        message: "Load or paste a job description before running the workspace flow.",
+      });
+      return;
+    }
+
+    if (!authTokens) {
+      setWorkspaceNotice({
+        level: "warning",
+        message: "Sign in with Google before running the AI-assisted workflow.",
+      });
+      return;
+    }
+
+    setAnalysisRunMode("agentic");
+    setAnalysisJobState({
+      job_id: "",
+      status: "queued",
+      stage_title: "Workflow crew",
+      stage_detail: "Opening your application brief and preparing the first agent.",
+      progress_percent: 3,
+      result: null,
+      error_message: null,
+    });
+    setAnalysisLoading(true);
+    setWorkspaceNotice({
+      level: "info",
+      message:
+        "Running the agentic workflow now. The workspace crew will keep you posted as each stage moves.",
+    });
+
+    try {
+      const response = await startWorkspaceAnalysisJob({
+        resume_text: resumeText,
+        resume_filetype: activeResumeState?.resume_document.filetype ?? "TXT",
+        resume_source: activeResumeState?.resume_document.source ?? "workspace",
+        job_description_text: manualJobText.trim(),
+        imported_job_posting: activeJob,
+        run_assisted: true,
+      }, authTokens);
+      setAnalysisJobState({
+        ...response,
+        result: null,
+        error_message: null,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Workspace analysis failed unexpectedly.";
+      setWorkspaceNotice({
+        level: "warning",
+        message: errorMessage,
+      });
+      setAnalysisLoading(false);
+      setAnalysisRunMode(null);
+      setAnalysisJobState(null);
+    }
+  }
+
+  async function submitAssistantQuestion(questionText: string) {
+    const normalizedQuestion = questionText.trim();
+
+    if (!normalizedQuestion) {
+      setWorkspaceNotice({
+        level: "warning",
+        message: "Ask a question before sending it to the assistant.",
+      });
+      return;
+    }
+
+    if (!analysisState) {
+      setWorkspaceNotice({
+        level: "warning",
+        message: "Run the AI analysis first so the assistant has grounded context to use.",
+      });
+      return;
+    }
+
+    setAssistantSending(true);
+
+    try {
+      const response = await askWorkspaceAssistant({
+        question: normalizedQuestion,
+        current_page: "Workspace",
+        workspace_snapshot: analysisState,
+        history: buildAssistantHistoryPayload(assistantTurns),
+      }, authTokens);
+      setAssistantTurns((current) => [
+        ...current,
+        { question: normalizedQuestion, response },
+      ]);
+      setAssistantQuestion("");
+    } catch (error) {
+      setWorkspaceNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Assistant request failed unexpectedly.",
+      });
+    } finally {
+      setAssistantSending(false);
+    }
+  }
+
+  async function handleAssistantSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await submitAssistantQuestion(assistantQuestion);
+  }
+
+  async function handleAssistantFollowUp(question: string) {
+    setAssistantQuestion(question);
+    await submitAssistantQuestion(question);
+  }
+
+  function handleClearAssistantConversation() {
+    setAssistantTurns([]);
+    setAssistantQuestion("");
+    setWorkspaceNotice({
+      level: "info",
+      message: analysisState
+        ? `Cleared the assistant thread for ${analysisState.job_description.title || "the current workspace"}.`
+        : "Cleared the assistant thread.",
+    });
+  }
+
+  async function handleArtifactExport(
+    artifactKind: WorkspaceArtifactKind,
+    exportFormat: "markdown" | "pdf" | "zip",
+  ) {
+    if (!analysisState) {
+      setWorkspaceNotice({
+        level: "warning",
+        message: "Run the workspace flow before exporting artifacts.",
+      });
+      return;
+    }
+
+    const exportKey = `${artifactKind}:${exportFormat}`;
+    setArtifactExporting(exportKey);
+    try {
+      const response = await exportWorkspaceArtifact({
+        workspace_snapshot: analysisState,
+        artifact_kind: artifactKind,
+        export_format: exportFormat,
+        resume_theme: "classic_ats",
+      });
+      downloadBase64File(
+        response.file_name,
+        response.content_base64,
+        response.mime_type,
+      );
+      setWorkspaceNotice({
+        level: "success",
+        message:
+          artifactKind === "bundle"
+            ? `Prepared the full application package as ${response.file_name}.`
+            : `Prepared ${response.artifact_title} as ${response.file_name}.`,
+      });
+    } catch (error) {
+      setWorkspaceNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Artifact export failed unexpectedly.",
+      });
+    } finally {
+      setArtifactExporting(null);
+    }
+  }
+
+  useEffect(() => {
+    const workspaceSnapshot = analysisState;
+    if (!workspaceSnapshot) {
+      setArtifactPreviewHtml(null);
+      setArtifactPreviewTitle(null);
+      setArtifactPreviewLoading(false);
+      return;
+    }
+    const resolvedWorkspaceSnapshot: WorkspaceAnalysisResponse = workspaceSnapshot;
+
+    let cancelled = false;
+
+    async function loadArtifactPreview() {
+      setArtifactPreviewLoading(true);
+      try {
+        const response = await previewWorkspaceArtifact({
+          workspace_snapshot: resolvedWorkspaceSnapshot,
+          artifact_kind: currentArtifactKind,
+          resume_theme: "classic_ats",
+        });
+        if (!cancelled) {
+          setArtifactPreviewHtml(response.html);
+          setArtifactPreviewTitle(response.artifact_title);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setArtifactPreviewHtml(null);
+          setArtifactPreviewTitle(null);
+          setWorkspaceNotice({
+            level: "warning",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Artifact preview could not be generated.",
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setArtifactPreviewLoading(false);
+        }
+      }
+    }
+
+    void loadArtifactPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [analysisState, currentArtifactKind]);
+
+  function clearWorkspaceRole() {
+    setActiveJob(null);
+    setJobFileState(null);
+    setManualJobText("");
+    setAnalysisState(null);
+    setAnalysisJobState(null);
+    setArtifactExporting(null);
+    setArtifactPreviewHtml(null);
+    setArtifactPreviewTitle(null);
+    setArtifactPreviewLoading(false);
+    setWorkspaceNotice({
+      level: "info",
+      message: "Cleared the active role context. Load another role or paste a new JD.",
+    });
+  }
+
+  useEffect(() => {
+    if (
+      authStatus !== "signed_in" ||
+      !authTokens ||
+      !authSession?.features.saved_workspace_enabled ||
+      !analysisState ||
+      workspaceSaveMeta ||
+      autoSaving
+    ) {
+      return;
+    }
+
+    void persistLatestWorkspace(analysisState);
+  }, [
+    analysisState,
+    authSession?.features.saved_workspace_enabled,
+    authStatus,
+    authTokens,
+    autoSaving,
+    workspaceSaveMeta,
+  ]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!accountMenuRef.current?.contains(event.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [accountMenuOpen]);
+
+  return (
+    <div className="workspace-shell">
+      <div className="workspace-shell-inner">
+        <div className="workspace-layout">
+      <Sidebar collapsed={sidebarCollapsed} onCollapse={setSidebarCollapsed}>
+        <AssistantPanel
+          turns={assistantTurns}
+          requiresWorkspaceRun={assistantRequiresWorkspaceRun}
+          question={assistantQuestion}
+          onQuestionChange={setAssistantQuestion}
+          sending={assistantSending}
+          canSubmit={assistantCanSubmit}
+          onSubmit={handleAssistantSubmit}
+          onClearConversation={handleClearAssistantConversation}
+        />
+      </Sidebar>
+
+      <div className="workspace-main">
+        <div className="workspace-main-topbar">
+          <div className="workspace-main-topbar-actions">
+            {authStatus === "signed_in" ? (
+              <div className="workspace-account-menu" ref={accountMenuRef}>
+                <button
+                  aria-expanded={accountMenuOpen}
+                  aria-haspopup="menu"
+                  className="workspace-account-trigger"
+                  onClick={() => setAccountMenuOpen((open) => !open)}
+                  type="button"
+                >
+                  <span className="workspace-account-trigger-avatar">{accountInitial}</span>
+                </button>
+                {accountMenuOpen ? (
+                  <div className="workspace-account-popover" role="menu">
+                    <div className="workspace-auth-panel workspace-auth-panel-inline">
+                      <div className="workspace-auth-avatar">{accountInitial}</div>
+                      <div>
+                        <p className="workspace-auth-title">{accountDisplayName}</p>
+                        <p className="workspace-auth-copy">
+                          {authSession?.app_user.email || "Account session live"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="workspace-sidebar-inline-metrics workspace-account-metrics">
+                      <span className="workspace-meta-chip">
+                        Plan: {authSession?.app_user.plan_tier || "free"}
+                      </span>
+                      <span className="workspace-meta-chip">
+                        Runs left: {formatRemainingCalls(dailyQuota)}
+                      </span>
+                      {workspaceSaveMeta ? (
+                        <span className="workspace-meta-chip">
+                          Saved until {formatUtcTimestamp(workspaceSaveMeta.expires_at)} UTC
+                        </span>
+                      ) : autoSaving ? (
+                        <span className="workspace-meta-chip">Saving latest workspace...</span>
+                      ) : null}
+                    </div>
+                    {authError ? <div className="notice-panel notice-warning">{authError}</div> : null}
+                    <div className="workspace-sidebar-actions workspace-account-actions">
+                      {authSession?.features.saved_workspace_enabled ? (
+                        <button
+                          className="primary-button workspace-button workspace-button-full"
+                          disabled={authActionLoading || workspaceReloading}
+                          onClick={() => void handleReloadSavedWorkspace()}
+                          type="button"
+                        >
+                          {workspaceReloading ? "Reloading..." : "Reload saved workspace"}
+                        </button>
+                      ) : null}
+                      <button
+                        className="secondary-button workspace-button workspace-button-full"
+                        disabled={authActionLoading}
+                        onClick={() => void handleSignOut()}
+                        type="button"
+                      >
+                        {authActionLoading ? "Signing out..." : "Sign out"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <button
+                className="secondary-button workspace-button workspace-topbar-button"
+                disabled={authActionLoading || authStatus === "restoring"}
+                onClick={() => void handleGoogleSignIn()}
+                type="button"
+              >
+                {authStatus === "restoring"
+                  ? "Restoring session..."
+                  : authActionLoading
+                    ? "Redirecting..."
+                    : "Sign in with Google"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <section className="surface-card surface-card-neutral job-hero-panel">
+          <div className="job-hero-grid">
+            <div>
+              <p className="eyebrow">Workspace</p>
+              <h1 className="workspace-hero-title">
+                Job Application Copilot
+              </h1>
+              <p className="workspace-hero-copy">
+                Upload your resume, review job descriptions, run tailored
+                  application analysis, and generate ready-to-use resume, cover
+                letter outputs from one place.
+                </p>
+              </div>
+            </div>
+        </section>
+
+        <div className="workspace-hero-metrics workspace-hero-metrics-outside">
+            <div className="metric-tile workspace-hero-metric-tile">
+              <div className="workspace-hero-metric-head">
+                <span className="workspace-hero-metric-icon" aria-hidden="true">
+                  <ResumeMetricIcon />
+                </span>
+                <span>Resume State</span>
+              </div>
+              <strong>{currentProfile?.full_name || "Waiting for upload"}</strong>
+              <small>{latestRole(currentProfile)}</small>
+            </div>
+            <div className="metric-tile workspace-hero-metric-tile">
+              <div className="workspace-hero-metric-head">
+                <span className="workspace-hero-metric-icon" aria-hidden="true">
+                  <WorkflowMetricIcon />
+                </span>
+                <span>Workflow Mode</span>
+              </div>
+              <strong>{analysisState?.workflow.mode || "Not run yet"}</strong>
+                <small>
+                  {analysisState
+                    ? analysisState.workflow.assisted_requested
+                      ? "AI-assisted analysis is ready to continue."
+                      : "Loaded from an older non-assisted run."
+                    : "Run the AI analysis after loading both inputs."}
+                </small>
+              </div>
+            <div className="metric-tile workspace-hero-metric-tile">
+              <div className="workspace-hero-metric-head">
+                <span className="workspace-hero-metric-icon" aria-hidden="true">
+                  <ArtifactMetricIcon />
+                </span>
+                <span>Artifacts</span>
+              </div>
+                <strong>{analysisState ? "Resume and cover letter" : "Pending"}</strong>
+                <small>
+                  {analysisState
+                    ? "Outputs are ready to review and export."
+                  : "Artifacts appear after the workspace run finishes."}
+              </small>
+            </div>
+        </div>
+        <section className="surface-card surface-card-neutral workspace-main-nav">
+          <div className="workspace-main-nav-head">
+            <div>
+              <p className="eyebrow">Workspace flow</p>
+              <h2 className="workspace-main-nav-title">{activeMainTabMeta.title}</h2>
+              <p className="workspace-main-nav-copy">{activeMainTabMeta.copy}</p>
+            </div>
+            <span
+              className={`workspace-main-tab-status workspace-main-tab-status-${activeMainTabMeta.tone}`}
+            >
+              {activeMainTabMeta.status}
+            </span>
+          </div>
+
+          <div className="workspace-main-tabs" role="tablist" aria-label="Workspace steps">
+            {workspaceTabs.map((tab) => (
+              <button
+                aria-selected={mainTab === tab.id}
+                className={
+                  mainTab === tab.id
+                    ? "workspace-main-tab workspace-main-tab-active"
+                    : "workspace-main-tab"
+                }
+                key={tab.id}
+                onClick={() => setMainTab(tab.id)}
+                role="tab"
+                type="button"
+              >
+                <div className="workspace-main-tab-top">
+                  <span className="workspace-main-tab-label">{tab.label}</span>
+                  <span
+                    className={`workspace-main-tab-status workspace-main-tab-status-${tab.tone}`}
+                  >
+                    {tab.status}
+                  </span>
+                </div>
+                <p className="workspace-main-tab-note">{tab.copy}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {workspaceNotice ? (
+          <div className={noticeClassName(workspaceNotice.level)}>
+            {workspaceNotice.message}
+          </div>
+        ) : null}
+
+        {mainTab === "resume" ? (
+          <ResumeIntake
+            mode={resumeIntakeMode}
+            onModeChange={setResumeIntakeMode}
+            onResetBuilderInitialized={() => setResumeBuilderInitialized(false)}
+            selectedResumeFile={selectedResumeFile}
+            onSelectedResumeFileChange={setSelectedResumeFile}
+            onResumeUpload={(file) => void handleResumeUpload(file)}
+            resumeUploading={resumeUploading}
+            resumeState={resumeState}
+            resumeNotice={resumeNotice}
+            currentProfile={currentProfile}
+            onClearUploadedResumeProfile={handleClearUploadedResumeProfile}
+            authSignedIn={authStatus === "signed_in"}
+            builderSession={resumeBuilderSession}
+            builderCollapsed={resumeBuilderCollapsed}
+            onToggleBuilderCollapsed={() =>
+              setResumeBuilderCollapsed((current) => !current)
+            }
+            builderAnswer={resumeBuilderAnswer}
+            onBuilderAnswerChange={setResumeBuilderAnswer}
+            builderNotice={resumeBuilderNotice}
+            builderLoading={resumeBuilderLoading}
+            builderGenerating={resumeBuilderGenerating}
+            builderCommitting={resumeBuilderCommitting}
+            builderEditing={resumeBuilderEditing}
+            builderDraftForm={resumeBuilderDraftForm}
+            setBuilderDraftForm={setResumeBuilderDraftForm}
+            onBuilderAnswerSubmit={() => void handleResumeBuilderAnswer()}
+            onBuilderGenerate={() => void handleResumeBuilderGenerate()}
+            onBuilderCommit={() => void handleResumeBuilderCommit()}
+            onBuilderDraftSave={() => void handleResumeBuilderDraftSave()}
+          />
+        ) : null}
+
+        {mainTab === "jobs" ? (
+          <JobSearch
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            searchLocation={searchLocation}
+            onSearchLocationChange={setSearchLocation}
+            remoteOnly={remoteOnly}
+            onRemoteOnlyChange={setRemoteOnly}
+            postedWithinDays={postedWithinDays}
+            onPostedWithinDaysChange={setPostedWithinDays}
+            searching={searching}
+            onSearchSubmit={handleSearch}
+            jobUrl={jobUrl}
+            onJobUrlChange={setJobUrl}
+            importing={importing}
+            onImportSubmit={handleResolveJob}
+            searchNotice={searchNotice}
+            searchResults={searchResults}
+            searchResultsCollapsed={searchResultsCollapsed}
+            onToggleSearchResultsCollapsed={() =>
+              setSearchResultsCollapsed((current) => !current)
+            }
+            savedJobIds={savedJobIds}
+            savedJobActionId={savedJobActionId}
+            activeJob={activeJob}
+            onReviewRole={(job) => {
+              setActiveJob(job);
+              setMainTab("jd");
+            }}
+            authSignedIn={authStatus === "signed_in"}
+            onSaveJob={(job) => void handleSaveJob(job)}
+            savedJobsEnabled={savedJobsEnabled}
+            savedJobs={savedJobs}
+            savedJobsNotice={savedJobsNotice}
+            savedJobsLoading={savedJobsLoading}
+            latestSavedJobAt={latestSavedJobAt}
+            onLoadSavedJob={handleLoadSavedJob}
+            onRemoveSavedJob={(job) => void handleRemoveSavedJob(job)}
+          />
+        ) : null}
+        {mainTab === "jd" ? (
+          <JDReview
+            analysisState={analysisState}
+            analysisIsStale={analysisIsStale}
+            review={review}
+            manualJobText={manualJobText}
+            onManualJobTextChange={setManualJobText}
+            selectedJobFile={selectedJobFile}
+            onSelectedJobFileChange={setSelectedJobFile}
+            jobFileState={jobFileState}
+            jobFileUploading={jobFileUploading}
+            jobFileNotice={jobFileNotice}
+            activeJob={activeJob}
+            jobInputCollapsed={jobInputCollapsed}
+            onToggleJobInputCollapsed={() =>
+              setJobInputCollapsed((current) => !current)
+            }
+            onJobDescriptionUpload={(file) =>
+              void handleJobDescriptionUpload(file)
+            }
+            onClearLoadedJobDescription={handleClearLoadedJobDescription}
+          />
+        ) : null}
+
+        {mainTab === "analysis" ? (
+          <>
+            <AnalysisRunner
+              analysisState={analysisState}
+              analysisLoading={analysisLoading}
+              analysisJobState={analysisJobState}
+              analysisIsStale={analysisIsStale}
+              currentWorkflowStage={currentWorkflowStage}
+              onRunAnalysis={() => void handleRunAnalysis()}
+              onClearRole={clearWorkspaceRole}
+            />
+
+            <ArtifactViewer
+              hasAnalysis={Boolean(analysisState)}
+              artifact={currentArtifact}
+              tab={artifactTab}
+              onTabChange={setArtifactTab}
+              exporting={artifactExporting}
+              previewHtml={artifactPreviewHtml}
+              previewTitle={artifactPreviewTitle}
+              previewLoading={artifactPreviewLoading}
+              onExport={(kind, format) => void handleArtifactExport(kind, format)}
+            />
+          </>
+        ) : null}
+      </div>
+        </div>
+      </div>
+    </div>
+  );
+}

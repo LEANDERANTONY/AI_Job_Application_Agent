@@ -1,12 +1,9 @@
-import { JobApplicationWorkspace } from "@/components/job-application-workspace";
-import { WorkspaceShell } from "@/components/workspace-shell";
+import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
 
 export default function WorkspacePage() {
   return (
     <main className="workspace-page">
-      <WorkspaceShell>
-        <JobApplicationWorkspace />
-      </WorkspaceShell>
+      <WorkspaceShell />
     </main>
   );
 }
