@@ -281,6 +281,64 @@ export function buildJobReview(text: string, job: JobPosting | null): JobReview 
   };
 }
 
+function normalizeSectionSentence(value: string) {
+  const cleaned = value
+    .replace(/\s+/g, " ")
+    .replace(/^[\-••\s]+/, "")
+    .trim();
+  if (!cleaned) {
+    return "";
+  }
+  if (/^(key|listed above\.?)$/i.test(cleaned)) {
+    return "";
+  }
+  if (!/[.!?]$/.test(cleaned) && cleaned.length > 18) {
+    return `${cleaned}.`;
+  }
+  return cleaned;
+}
+
+/**
+ * Turn a JD section's bullet items into a tidy run of paragraphs:
+ * splits each item on sentence boundaries, normalizes whitespace and
+ * trailing punctuation, dedupes, and packs sentences into ≤ 4 paragraphs
+ * of up to ~420 chars each. Used by `JDReview` to render JD summary
+ * sections.
+ */
+export function buildSectionParagraphs(items: string[]) {
+  const sentences = items
+    .flatMap((item) =>
+      item
+        .split(/(?<=[.!?])\s+/)
+        .map(normalizeSectionSentence)
+        .filter(Boolean),
+    )
+    .filter((sentence, index, all) => all.indexOf(sentence) === index);
+
+  if (!sentences.length) {
+    return [];
+  }
+
+  const paragraphs: string[] = [];
+  let current = "";
+
+  for (const sentence of sentences) {
+    const next = current ? `${current} ${sentence}` : sentence;
+    if (next.length > 420 && current) {
+      paragraphs.push(current);
+      current = sentence;
+      continue;
+    }
+    current = next;
+  }
+
+  if (current) {
+    paragraphs.push(current);
+  }
+
+  return paragraphs.slice(0, 4);
+}
+
 export const stagedLanes: WorkspaceLane[] = [
   {
     title: "Resume Intake",
