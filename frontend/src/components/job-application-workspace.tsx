@@ -74,6 +74,10 @@ import {
   type WorkflowStage,
 } from "@/components/workspace/AnalysisRunner";
 import { JDReview } from "@/components/workspace/JDReview";
+import {
+  ResumeIntake,
+  type ResumeIntakeMode,
+} from "@/components/workspace/ResumeIntake";
 import { Sidebar } from "@/components/workspace/Sidebar";
 
 type Notice = {
@@ -82,7 +86,6 @@ type Notice = {
 } | null;
 
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
-type ResumeIntakeMode = "upload" | "assistant";
 
 type AuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
 
@@ -90,14 +93,6 @@ type WorkflowRunMode = "preview" | "agentic";
 
 const ASSISTANT_HISTORY_STORAGE_KEY = "workspace-assistant-history-v1";
 const MAX_PERSISTED_ASSISTANT_TURNS = 8;
-const RESUME_BUILDER_STEP_LABELS: Record<string, string> = {
-  basics: "Basics",
-  role: "Target role",
-  experience: "Experience",
-  education: "Education",
-  skills: "Skills",
-  review: "Review",
-};
 const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
   {
     title: "Workflow crew",
@@ -662,9 +657,6 @@ export function JobApplicationWorkspace() {
   const activeResumeState = resumeState ?? analysisState;
   const resumeText = activeResumeState?.resume_document.text ?? "";
   const currentProfile = activeResumeState?.candidate_profile ?? null;
-  const resumeBuilderStepLabel = resumeBuilderSession
-    ? RESUME_BUILDER_STEP_LABELS[resumeBuilderSession.current_step] ?? "Resume builder"
-    : "Resume builder";
   const review = manualJobText.trim()
     ? buildJobReview(manualJobText, activeJob)
     : null;
@@ -2117,481 +2109,38 @@ export function JobApplicationWorkspace() {
         ) : null}
 
         {mainTab === "resume" ? (
-          <section className="workspace-section-stack">
-            <article className="surface-card surface-card-neutral">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Step 1</p>
-                  <h2 className="section-title">Resume intake</h2>
-                </div>
-                <span className="status-chip">
-                  {resumeState ? "Ready" : "Start here"}
-                </span>
-              </div>
-                <p className="section-copy">
-                  Bring in an existing resume or build a base one with the assistant.
-                </p>
-
-              <div className="workspace-tab-row">
-                {(["upload", "assistant"] as ResumeIntakeMode[]).map((mode) => (
-                  <button
-                    className={
-                      resumeIntakeMode === mode
-                        ? "inspector-tab inspector-tab-active"
-                        : "inspector-tab"
-                    }
-                    key={mode}
-                    onClick={() => {
-                      setResumeIntakeMode(mode);
-                      if (mode === "assistant") {
-                        setResumeBuilderInitialized(false);
-                      }
-                    }}
-                    type="button"
-                  >
-                    {mode === "upload" ? "Upload Resume" : "Build With Assistant"}
-                  </button>
-                ))}
-              </div>
-
-              {resumeIntakeMode === "upload" ? (
-                <>
-                  <div className="workspace-uploader">
-                    <label className="primary-button workspace-button workspace-upload-trigger" htmlFor="resume-upload">
-                      Upload resume
-                    </label>
-                    <input
-                      accept=".pdf,.docx,.txt"
-                      className="workspace-hidden-input"
-                      id="resume-upload"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        setSelectedResumeFile(file);
-                        void handleResumeUpload(file);
-                        event.target.value = "";
-                      }}
-                      type="file"
-                    />
-                    <span className="workspace-file-name">
-                      {selectedResumeFile?.name ||
-                        resumeState?.resume_document.filetype ||
-                        "No resume selected"}
-                    </span>
-                    {resumeUploading ? (
-                      <span className="workspace-file-status">Parsing resume...</span>
-                    ) : null}
-                    {currentProfile ? (
-                      <button
-                        className="danger-button workspace-button workspace-action-end"
-                        onClick={handleClearUploadedResumeProfile}
-                        type="button"
-                      >
-                        Clear uploaded resume
-                      </button>
-                    ) : null}
-                  </div>
-
-                  {resumeNotice ? (
-                    <div className={noticeClassName(resumeNotice.level)}>
-                      {resumeNotice.message}
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <div className="workspace-builder-stack">
-                    <div className="workspace-section-card">
-                      <div className="section-head">
-                        <div>
-                          <span className="workspace-label">Resume builder assistant</span>
-                          <h3>{resumeBuilderStepLabel}</h3>
-                        </div>
-                        <button
-                          className="secondary-button workspace-button workspace-button-small"
-                          onClick={() =>
-                            setResumeBuilderCollapsed((current) => !current)
-                          }
-                          type="button"
-                        >
-                          {resumeBuilderCollapsed ? "Show builder" : "Hide builder"}
-                        </button>
-                      </div>
-
-                      {!resumeBuilderCollapsed ? (
-                        <>
-                          <p className="workspace-role-copy">
-                            {resumeBuilderSession?.assistant_message ||
-                              "The guided assistant will ask a few focused questions and turn your answers into a base resume."}
-                          </p>
-
-                          {authStatus === "signed_in" ? (
-                            <p className="workspace-muted-copy">
-                              Your latest draft will reopen here automatically when available.
-                            </p>
-                          ) : null}
-
-                          {resumeBuilderSession ? (
-                            <div className="workspace-chip-grid">
-                              {Object.entries(RESUME_BUILDER_STEP_LABELS).map(([key, label]) => {
-                                const isActive = resumeBuilderSession.current_step === key;
-                                const isComplete =
-                                  key !== "review" &&
-                                  resumeBuilderSession.completed_steps >
-                                    Object.keys(RESUME_BUILDER_STEP_LABELS).indexOf(key);
-                                return (
-                                  <span
-                                    className={isActive ? "workspace-meta-chip workspace-builder-chip-active" : "workspace-meta-chip"}
-                                    key={key}
-                                  >
-                                    {label}
-                                    {isComplete && !isActive ? " - Done" : ""}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-
-                          {resumeBuilderNotice ? (
-                            <div className={noticeClassName(resumeBuilderNotice.level)}>
-                              {resumeBuilderNotice.message}
-                            </div>
-                          ) : null}
-
-                          {!resumeBuilderSession && resumeBuilderLoading ? (
-                            <div className="workspace-empty-state">
-                              Starting the guided resume builder...
-                            </div>
-                          ) : null}
-
-                          {resumeBuilderSession && !resumeBuilderSession.ready_to_generate ? (
-                            <div className="workspace-form-stack">
-                              <textarea
-                                className="workspace-textarea workspace-builder-answer"
-                                onChange={(event) => setResumeBuilderAnswer(event.target.value)}
-                                placeholder="Type your answer here. Keep it natural - the assistant will structure it for you."
-                                value={resumeBuilderAnswer}
-                              />
-                              <div className="workspace-run-actions">
-                                <button
-                                  className="primary-button workspace-button"
-                                  disabled={resumeBuilderLoading}
-                                  onClick={() => void handleResumeBuilderAnswer()}
-                                  type="button"
-                                >
-                                  {resumeBuilderLoading ? "Saving..." : "Continue"}
-                                </button>
-                              </div>
-                            </div>
-                          ) : null}
-
-                          {resumeBuilderSession?.ready_to_generate &&
-                          !resumeBuilderSession.generated_resume_markdown ? (
-                            <div className="workspace-run-actions">
-                              <button
-                                className="primary-button workspace-button"
-                                disabled={resumeBuilderGenerating}
-                                onClick={() => void handleResumeBuilderGenerate()}
-                                type="button"
-                              >
-                                {resumeBuilderGenerating ? "Generating..." : "Generate Base Resume"}
-                              </button>
-                            </div>
-                          ) : null}
-
-                          {resumeBuilderSession?.generated_resume_markdown ? (
-                            <div className="workspace-run-actions">
-                              <button
-                                className="primary-button workspace-button"
-                                disabled={resumeBuilderCommitting}
-                                onClick={() => void handleResumeBuilderCommit()}
-                                type="button"
-                              >
-                                {resumeBuilderCommitting ? "Using profile..." : "Use This Profile"}
-                              </button>
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <p className="workspace-muted-copy workspace-builder-collapsed-copy">
-                          The assistant is hidden for now. You can reopen it anytime to continue answering questions.
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="workspace-section-card">
-                      <span className="workspace-label">Draft profile</span>
-                      <h3>
-                        {resumeBuilderSession?.draft_profile.full_name ||
-                          "Your base resume will build here"}
-                      </h3>
-                      <p className="workspace-role-copy">
-                        {resumeBuilderSession?.generated_resume_markdown
-                          ? "Review the generated base resume before moving it into the workspace."
-                          : "As you answer each prompt, the assistant will collect the details needed to create a clean starting resume."}
-                      </p>
-
-                      {resumeBuilderSession ? (
-                        <>
-                          <div className="workspace-summary-grid">
-                            <div className="metric-tile">
-                              <span>Target role</span>
-                              <strong>
-                                {resumeBuilderSession.draft_profile.target_role || "Still collecting"}
-                              </strong>
-                              <small>The role direction you want this base resume to support.</small>
-                            </div>
-                            <div className="metric-tile">
-                              <span>Skills</span>
-                              <strong>{resumeBuilderSession.draft_profile.skills.length}</strong>
-                              <small>Skills or tools confirmed so far.</small>
-                            </div>
-                            <div className="metric-tile">
-                              <span>Progress</span>
-                              <strong>{resumeBuilderSession.progress_percent}%</strong>
-                              <small>{resumeBuilderSession.status === "ready" ? "Base resume generated." : "Guided intake in progress."}</small>
-                            </div>
-                          </div>
-
-                          <div className="workspace-review-columns">
-                            <div className="soft-panel">
-                              <span className="soft-panel-label">Contact</span>
-                              <ul className="workspace-feature-list workspace-feature-list-compact">
-                                {resumeBuilderSession.draft_profile.contact_lines.length ? (
-                                  resumeBuilderSession.draft_profile.contact_lines.map((line) => (
-                                    <li key={line}>{line}</li>
-                                  ))
-                                ) : (
-                                  <li>Add your email, phone, and links in the basics step.</li>
-                                )}
-                              </ul>
-                            </div>
-                            <div className="soft-panel">
-                              <span className="soft-panel-label">Skills</span>
-                              <div className="workspace-chip-grid">
-                                {resumeBuilderSession.draft_profile.skills.length ? (
-                                  resumeBuilderSession.draft_profile.skills.map((skill) => (
-                                    <span className="workspace-meta-chip" key={skill}>
-                                      {skill}
-                                    </span>
-                                  ))
-                                ) : (
-                                  <p className="workspace-muted-copy">
-                                    Skills will appear here once you reach that step.
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="workspace-form-stack workspace-builder-edit-grid">
-                            <label className="workspace-field">
-                              <span className="workspace-label">Full name</span>
-                              <input
-                                className="workspace-input"
-                                onChange={(event) =>
-                                  setResumeBuilderDraftForm((current) => ({
-                                    ...current,
-                                    full_name: event.target.value,
-                                  }))
-                                }
-                                value={resumeBuilderDraftForm.full_name}
-                              />
-                            </label>
-                            <label className="workspace-field">
-                              <span className="workspace-label">Location</span>
-                              <input
-                                className="workspace-input"
-                                onChange={(event) =>
-                                  setResumeBuilderDraftForm((current) => ({
-                                    ...current,
-                                    location: event.target.value,
-                                  }))
-                                }
-                                value={resumeBuilderDraftForm.location}
-                              />
-                            </label>
-                            <label className="workspace-field">
-                              <span className="workspace-label">Target role</span>
-                              <input
-                                className="workspace-input"
-                                onChange={(event) =>
-                                  setResumeBuilderDraftForm((current) => ({
-                                    ...current,
-                                    target_role: event.target.value,
-                                  }))
-                                }
-                                value={resumeBuilderDraftForm.target_role}
-                              />
-                            </label>
-                            <label className="workspace-field workspace-builder-field-wide">
-                              <span className="workspace-label">Contact lines</span>
-                              <textarea
-                                className="workspace-textarea workspace-builder-compact-textarea"
-                                onChange={(event) =>
-                                  setResumeBuilderDraftForm((current) => ({
-                                    ...current,
-                                    contact_lines: event.target.value,
-                                  }))
-                                }
-                                placeholder="One line per item: email, phone, LinkedIn, GitHub..."
-                                value={resumeBuilderDraftForm.contact_lines}
-                              />
-                            </label>
-                            <label className="workspace-field workspace-builder-field-wide">
-                              <span className="workspace-label">Summary</span>
-                              <textarea
-                                className="workspace-textarea workspace-builder-compact-textarea"
-                                onChange={(event) =>
-                                  setResumeBuilderDraftForm((current) => ({
-                                    ...current,
-                                    professional_summary: event.target.value,
-                                  }))
-                                }
-                                value={resumeBuilderDraftForm.professional_summary}
-                              />
-                            </label>
-                            <label className="workspace-field workspace-builder-field-wide">
-                              <span className="workspace-label">Experience notes</span>
-                              <textarea
-                                className="workspace-textarea workspace-builder-compact-textarea"
-                                onChange={(event) =>
-                                  setResumeBuilderDraftForm((current) => ({
-                                    ...current,
-                                    experience_notes: event.target.value,
-                                  }))
-                                }
-                                value={resumeBuilderDraftForm.experience_notes}
-                              />
-                            </label>
-                            <label className="workspace-field workspace-builder-field-wide">
-                              <span className="workspace-label">Education</span>
-                              <textarea
-                                className="workspace-textarea workspace-builder-compact-textarea"
-                                onChange={(event) =>
-                                  setResumeBuilderDraftForm((current) => ({
-                                    ...current,
-                                    education_notes: event.target.value,
-                                  }))
-                                }
-                                value={resumeBuilderDraftForm.education_notes}
-                              />
-                            </label>
-                            <label className="workspace-field">
-                              <span className="workspace-label">Skills</span>
-                              <input
-                                className="workspace-input"
-                                onChange={(event) =>
-                                  setResumeBuilderDraftForm((current) => ({
-                                    ...current,
-                                    skills: event.target.value,
-                                  }))
-                                }
-                                placeholder="Python, FastAPI, Docker, SQL"
-                                value={resumeBuilderDraftForm.skills}
-                              />
-                            </label>
-                            <label className="workspace-field">
-                              <span className="workspace-label">Certifications</span>
-                              <input
-                                className="workspace-input"
-                                onChange={(event) =>
-                                  setResumeBuilderDraftForm((current) => ({
-                                    ...current,
-                                    certifications: event.target.value,
-                                  }))
-                                }
-                                placeholder="Optional"
-                                value={resumeBuilderDraftForm.certifications}
-                              />
-                            </label>
-                          </div>
-
-                          <div className="workspace-run-actions">
-                            <button
-                              className="secondary-button workspace-button"
-                              disabled={resumeBuilderEditing}
-                              onClick={() => void handleResumeBuilderDraftSave()}
-                              type="button"
-                            >
-                              {resumeBuilderEditing ? "Saving edits..." : "Save Draft Edits"}
-                            </button>
-                          </div>
-
-                          {resumeBuilderSession.generated_resume_markdown ? (
-                            <div className="workspace-section-card workspace-builder-preview-card">
-                              <span className="workspace-label">Base resume preview</span>
-                              <pre className="workspace-builder-preview">
-                                {resumeBuilderSession.generated_resume_markdown}
-                              </pre>
-                            </div>
-                          ) : (
-                            <div className="workspace-empty-state workspace-empty-state-compact">
-                              Your base resume preview will appear here once the guided intake is complete.
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="workspace-empty-state workspace-empty-state-compact">
-                          Switch to the assistant lane to start building a resume from scratch.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {resumeIntakeMode === "upload" && currentProfile ? (
-                <>
-                  <div className="workspace-summary-grid">
-                    <div className="metric-tile">
-                      <span>Candidate</span>
-                      <strong>{currentProfile.full_name || "Name not inferred"}</strong>
-                      <small>{currentProfile.location || "Location not inferred"}</small>
-                    </div>
-                    <div className="metric-tile">
-                      <span>Skills</span>
-                      <strong>{currentProfile.skills.length}</strong>
-                      <small>Matched skill signals from the parsed resume.</small>
-                    </div>
-                    <div className="metric-tile">
-                      <span>Experience Entries</span>
-                      <strong>{currentProfile.experience.length}</strong>
-                      <small>Structured roles or project entries available for reuse.</small>
-                    </div>
-                  </div>
-
-                  <div className="workspace-review-columns">
-                    <div className="soft-panel">
-                      <span className="soft-panel-label">Top skills</span>
-                      <div className="workspace-chip-grid">
-                        {currentProfile.skills.slice(0, 10).map((skill) => (
-                          <span className="workspace-meta-chip" key={skill}>
-                            {skill}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="soft-panel">
-                      <span className="soft-panel-label">Resume signals</span>
-                      <ul className="workspace-feature-list workspace-feature-list-compact">
-                        {currentProfile.source_signals.slice(0, 4).map((signal) => (
-                          <li key={signal}>{signal}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="workspace-next-step-note">
-                    You can proceed to Job Search if you want help finding roles, or move to the JD section if you already have a job description ready.
-                  </div>
-                </>
-              ) : resumeIntakeMode === "upload" ? (
-                <div className="workspace-empty-state">
-                  Your parsed candidate snapshot will appear here after the upload finishes.
-                </div>
-              ) : null}
-            </article>
-          </section>
+          <ResumeIntake
+            mode={resumeIntakeMode}
+            onModeChange={setResumeIntakeMode}
+            onResetBuilderInitialized={() => setResumeBuilderInitialized(false)}
+            selectedResumeFile={selectedResumeFile}
+            onSelectedResumeFileChange={setSelectedResumeFile}
+            onResumeUpload={(file) => void handleResumeUpload(file)}
+            resumeUploading={resumeUploading}
+            resumeState={resumeState}
+            resumeNotice={resumeNotice}
+            currentProfile={currentProfile}
+            onClearUploadedResumeProfile={handleClearUploadedResumeProfile}
+            authSignedIn={authStatus === "signed_in"}
+            builderSession={resumeBuilderSession}
+            builderCollapsed={resumeBuilderCollapsed}
+            onToggleBuilderCollapsed={() =>
+              setResumeBuilderCollapsed((current) => !current)
+            }
+            builderAnswer={resumeBuilderAnswer}
+            onBuilderAnswerChange={setResumeBuilderAnswer}
+            builderNotice={resumeBuilderNotice}
+            builderLoading={resumeBuilderLoading}
+            builderGenerating={resumeBuilderGenerating}
+            builderCommitting={resumeBuilderCommitting}
+            builderEditing={resumeBuilderEditing}
+            builderDraftForm={resumeBuilderDraftForm}
+            setBuilderDraftForm={setResumeBuilderDraftForm}
+            onBuilderAnswerSubmit={() => void handleResumeBuilderAnswer()}
+            onBuilderGenerate={() => void handleResumeBuilderGenerate()}
+            onBuilderCommit={() => void handleResumeBuilderCommit()}
+            onBuilderDraftSave={() => void handleResumeBuilderDraftSave()}
+          />
         ) : null}
 
         {mainTab === "jobs" ? (
