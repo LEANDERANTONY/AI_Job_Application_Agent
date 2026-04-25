@@ -5,7 +5,6 @@ from src.prompts import (
     build_fit_agent_prompt,
     build_resume_generation_agent_prompt,
     build_review_agent_prompt,
-    build_strategy_agent_prompt,
 )
 
 
@@ -66,20 +65,6 @@ def test_unified_assistant_prompt_mentions_retrieved_knowledge_hits_and_cover_le
     assert "cover letter" in prompt["system"].lower()
     assert "Assistant Context" in prompt["user"]
 
-
-def test_strategy_prompt_uses_current_grounded_sections_only():
-    prompt = build_strategy_agent_prompt(
-        candidate_profile={"education": [{"degree": "Master of Science in AI/ML"}]},
-        job_description={"title": "ML Engineer"},
-        fit_analysis={"gaps": ["SQL"]},
-        fit_output={"top_matches": ["Python", "XGBoost"]},
-        tailoring_output={"professional_summary": "Project-focused summary."},
-    )
-
-    assert "Tailoring Agent Output" in prompt["user"]
-    assert "Fit Agent Output" in prompt["user"]
-    assert "Previous Strategy Output" not in prompt["user"]
-    assert "Revision Requests" not in prompt["user"]
 
 
 def test_review_prompt_allows_null_corrections_when_no_rewrite_is_needed():
