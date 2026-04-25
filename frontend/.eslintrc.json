@@ -1,0 +1,9 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "ignorePatterns": [
+    ".next/**",
+    "node_modules/**",
+    "out/**",
+    "tsconfig.tsbuildinfo"
+  ]
+}
