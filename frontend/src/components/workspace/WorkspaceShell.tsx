@@ -9,12 +9,9 @@ import {
   generateResumeBuilderResume,
   getWorkspaceAnalysisJob,
   loadLatestResumeBuilderSession,
-  loadSavedJobs,
   loadSavedWorkspace,
-  removeSavedJob,
   resolveJobUrl,
   restoreAuthSession,
-  saveSavedJob,
   saveWorkspaceSnapshot,
   searchJobs,
   sendResumeBuilderMessage,
@@ -82,6 +79,7 @@ import {
   buildAssistantHistoryPayload,
   useAssistantHistory,
 } from "@/hooks/useAssistantHistory";
+import { useSavedJobs } from "@/hooks/useSavedJobs";
 
 type Notice = {
   level: "info" | "success" | "warning";
@@ -187,22 +185,6 @@ function formatRemainingCalls(dailyQuota: DailyQuotaStatus | null) {
   return `${dailyQuota.remaining_calls}/${dailyQuota.max_calls}`;
 }
 
-function sortSavedJobs(jobs: JobPosting[]) {
-  return [...jobs].sort((left, right) => {
-    const leftSaved = left.saved_at ?? "";
-    const rightSaved = right.saved_at ?? "";
-    if (leftSaved !== rightSaved) {
-      return rightSaved.localeCompare(leftSaved);
-    }
-    const leftPosted = left.posted_at ?? "";
-    const rightPosted = right.posted_at ?? "";
-    if (leftPosted !== rightPosted) {
-      return rightPosted.localeCompare(leftPosted);
-    }
-    return left.title.localeCompare(right.title);
-  });
-}
-
 function getInitialSidebarCollapsed() {
   if (typeof window === "undefined") {
     return false;
@@ -260,10 +242,6 @@ export function WorkspaceShell() {
   );
   const [searchResultsCollapsed, setSearchResultsCollapsed] = useState(false);
   const [searchNotice, setSearchNotice] = useState<Notice>(null);
-  const [savedJobs, setSavedJobs] = useState<JobPosting[]>([]);
-  const [savedJobsLoading, setSavedJobsLoading] = useState(false);
-  const [savedJobsNotice, setSavedJobsNotice] = useState<Notice>(null);
-  const [savedJobActionId, setSavedJobActionId] = useState<string | null>(null);
 
   const [jobUrl, setJobUrl] = useState("");
   const [importing, setImporting] = useState(false);
@@ -450,72 +428,20 @@ export function WorkspaceShell() {
 
   const authTokens = authSession?.session ?? null;
   const dailyQuota = authSession?.daily_quota ?? null;
-  const savedJobsEnabled = Boolean(authSession?.features.saved_jobs_enabled);
 
-  useEffect(() => {
-    const sessionTokens = authTokens;
-    if (
-      authStatus !== "signed_in" ||
-      !sessionTokens ||
-      !authSession?.features.saved_jobs_enabled
-    ) {
-      setSavedJobs([]);
-      setSavedJobsLoading(false);
-      return;
-    }
-    const resolvedAuthTokens: AuthTokens = sessionTokens;
+  const {
+    savedJobs,
+    savedJobsLoading,
+    savedJobsNotice,
+    savedJobActionId,
+    savedJobIds,
+    latestSavedJobAt,
+    savedJobsEnabled,
+    saveJob: handleSaveJob,
+    removeJob: handleRemoveSavedJob,
+    resetSavedJobs,
+  } = useSavedJobs({ authStatus, authTokens, authSession });
 
-    let cancelled = false;
-
-    async function hydrateSavedJobs() {
-      setSavedJobsLoading(true);
-      try {
-        const response = await loadSavedJobs(resolvedAuthTokens);
-        if (!cancelled) {
-          setSavedJobs(sortSavedJobs(response.saved_jobs));
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setSavedJobsNotice({
-            level: "warning",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Saved jobs could not be loaded right now.",
-          });
-          setSavedJobs([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setSavedJobsLoading(false);
-        }
-      }
-    }
-
-    void hydrateSavedJobs();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authSession?.features.saved_jobs_enabled, authStatus, authTokens]);
-
-  const savedJobIds = useMemo(
-    () =>
-      new Set(
-        savedJobs
-          .map((job) => job.id.trim())
-          .filter(Boolean),
-      ),
-    [savedJobs],
-  );
-  const latestSavedJobAt = useMemo(
-    () =>
-      savedJobs.reduce((latest, job) => {
-        const savedAt = job.saved_at ?? "";
-        return savedAt > latest ? savedAt : latest;
-      }, ""),
-    [savedJobs],
-  );
   const activeResumeState = resumeState ?? analysisState;
   const resumeText = activeResumeState?.resume_document.text ?? "";
   const currentProfile = activeResumeState?.candidate_profile ?? null;
@@ -835,71 +761,6 @@ export function WorkspaceShell() {
       });
     } finally {
       setImporting(false);
-    }
-  }
-
-  async function handleSaveJob(job: JobPosting) {
-    if (!authTokens) {
-      setSavedJobsNotice({
-        level: "warning",
-        message: "Sign in with Google before saving jobs to your shortlist.",
-      });
-      return;
-    }
-
-    setSavedJobActionId(job.id);
-    try {
-      const response = await saveSavedJob(job, authTokens);
-      setSavedJobs((current) =>
-        sortSavedJobs([
-          response.saved_job,
-          ...current.filter((item) => item.id !== response.saved_job.id),
-        ]),
-      );
-      setSavedJobsNotice({
-        level: "success",
-        message: response.message,
-      });
-    } catch (error) {
-      setSavedJobsNotice({
-        level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "This role could not be saved to your shortlist.",
-      });
-    } finally {
-      setSavedJobActionId(null);
-    }
-  }
-
-  async function handleRemoveSavedJob(job: JobPosting) {
-    if (!authTokens) {
-      setSavedJobsNotice({
-        level: "warning",
-        message: "Sign in with Google before editing your shortlist.",
-      });
-      return;
-    }
-
-    setSavedJobActionId(job.id);
-    try {
-      await removeSavedJob(job.id, authTokens);
-      setSavedJobs((current) => current.filter((item) => item.id !== job.id));
-      setSavedJobsNotice({
-        level: "success",
-        message: `Removed ${job.title || "this role"} from your shortlist.`,
-      });
-    } catch (error) {
-      setSavedJobsNotice({
-        level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "This role could not be removed from your shortlist.",
-      });
-    } finally {
-      setSavedJobActionId(null);
     }
   }
 
@@ -1346,8 +1207,7 @@ export function WorkspaceShell() {
       setAuthStatus("signed_out");
       setAuthError(null);
       setWorkspaceSaveMeta(null);
-      setSavedJobs([]);
-      setSavedJobsNotice(null);
+      resetSavedJobs();
       setResumeBuilderSession(null);
       setResumeBuilderInitialized(false);
       setResumeBuilderAnswer("");
