@@ -415,6 +415,7 @@ export function WorkspaceShell() {
     }
 
     void handleLoadOrStartResumeBuilder();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleLoadOrStartResumeBuilder is intentionally re-resolved per call. The gate above + these state deps fully describes when this effect should fire; adding the function would make the effect re-run on every render.
   }, [
     authStatus,
     resumeBuilderInitialized,
@@ -1074,6 +1075,7 @@ export function WorkspaceShell() {
     }
 
     void persistLatestWorkspace(analysisState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- persistLatestWorkspace comes from useWorkspaceSession and is re-bound each render; the gate above + these deps fully describe the fire condition (one save per analysisState transition while save-meta is empty).
   }, [
     analysisState,
     authSession?.features.saved_workspace_enabled,
