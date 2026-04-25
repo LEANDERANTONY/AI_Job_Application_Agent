@@ -5,18 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   askWorkspaceAssistant,
   commitResumeBuilderResume,
-  exchangeGoogleCode,
   generateResumeBuilderResume,
   loadLatestResumeBuilderSession,
-  loadSavedWorkspace,
   resolveJobUrl,
-  restoreAuthSession,
-  saveWorkspaceSnapshot,
   searchJobs,
   sendResumeBuilderMessage,
-  signOutAuthSession,
   startResumeBuilderSession,
-  startGoogleSignIn,
   updateResumeBuilderDraft,
   uploadJobDescriptionFile,
   uploadResumeFile,
@@ -40,13 +34,6 @@ import {
   buildJobResultBadges,
   buildJobReview,
 } from "@/lib/job-workspace";
-import {
-  buildAuthRedirectUrl,
-  clearAuthQueryParams,
-  clearStoredAuthTokens,
-  persistAuthTokens,
-  readStoredAuthTokens,
-} from "@/lib/auth-session";
 import {
   ArtifactMetricIcon,
   ResumeMetricIcon,
@@ -75,6 +62,7 @@ import {
 } from "@/hooks/useAssistantHistory";
 import { useAnalysisJob } from "@/hooks/useAnalysisJob";
 import { useSavedJobs } from "@/hooks/useSavedJobs";
+import { useWorkspaceSession } from "@/hooks/useWorkspaceSession";
 
 type Notice = {
   level: "info" | "success" | "warning";
@@ -82,8 +70,6 @@ type Notice = {
 } | null;
 
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
-
-type AuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
 
 function noticeClassName(level: NonNullable<Notice>["level"]) {
   if (level === "success") {
@@ -180,15 +166,26 @@ function getInitialMainTab(): WorkspaceMainTab {
 export function WorkspaceShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialSidebarCollapsed);
   const [mainTab, setMainTab] = useState<WorkspaceMainTab>(getInitialMainTab);
-  const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
-  const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authActionLoading, setAuthActionLoading] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [workspaceReloading, setWorkspaceReloading] = useState(false);
-  const [workspaceSaveMeta, setWorkspaceSaveMeta] =
-    useState<SavedWorkspaceMeta | null>(null);
-  const [autoSaving, setAutoSaving] = useState(false);
+  const [workspaceNotice, setWorkspaceNotice] = useState<Notice>(null);
+
+  const {
+    authStatus,
+    authSession,
+    setAuthSession,
+    authError,
+    authActionLoading,
+    workspaceSaveMeta,
+    setWorkspaceSaveMeta,
+    workspaceReloading,
+    autoSaving,
+    authTokens,
+    dailyQuota,
+    signIn: handleGoogleSignIn,
+    signOutAuth,
+    persistLatestWorkspace,
+    reloadSavedWorkspace,
+  } = useWorkspaceSession({ setNotice: setWorkspaceNotice });
 
   const [searchQuery, setSearchQuery] = useState("machine learning engineer");
   const [searchLocation, setSearchLocation] = useState("");
@@ -203,7 +200,6 @@ export function WorkspaceShell() {
 
   const [jobUrl, setJobUrl] = useState("");
   const [importing, setImporting] = useState(false);
-  const [workspaceNotice, setWorkspaceNotice] = useState<Notice>(null);
   const [activeJob, setActiveJob] = useState<JobPosting | null>(null);
 
   const [selectedResumeFile, setSelectedResumeFile] = useState<File | null>(null);
@@ -271,104 +267,6 @@ export function WorkspaceShell() {
   const [assistantSending, setAssistantSending] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function bootstrapAuth() {
-      if (typeof window === "undefined") {
-        return;
-      }
-
-      const params = new URLSearchParams(window.location.search);
-      const authCode = params.get("code");
-      const authFlow = params.get("auth_flow") ?? "";
-      const authErrorDescription =
-        params.get("error_description") ?? params.get("error");
-
-      if (authErrorDescription) {
-        clearStoredAuthTokens();
-        clearAuthQueryParams();
-        if (!cancelled) {
-          setAuthSession(null);
-          setAuthStatus("signed_out");
-          setAuthError(authErrorDescription);
-        }
-        return;
-      }
-
-      if (authCode) {
-        setAuthStatus("restoring");
-        setAuthError(null);
-        try {
-          const response = await exchangeGoogleCode(
-            authCode,
-            authFlow,
-            buildAuthRedirectUrl("/workspace"),
-          );
-          if (!cancelled) {
-            persistAuthTokens(response.session);
-            setAuthSession(response);
-            setAuthStatus("signed_in");
-            setWorkspaceNotice({
-              level: "success",
-              message: `Signed in as ${response.app_user.display_name || response.app_user.email || "your account"}.`,
-            });
-          }
-        } catch (error) {
-          clearStoredAuthTokens();
-          if (!cancelled) {
-            setAuthSession(null);
-            setAuthStatus("signed_out");
-            setAuthError(
-              error instanceof Error
-                ? error.message
-                : "Google sign-in failed unexpectedly.",
-            );
-          }
-        } finally {
-          clearAuthQueryParams();
-        }
-        return;
-      }
-
-      const storedTokens = readStoredAuthTokens();
-      if (!storedTokens) {
-        if (!cancelled) {
-          setAuthStatus("signed_out");
-        }
-        return;
-      }
-
-      setAuthStatus("restoring");
-      setAuthError(null);
-      try {
-        const response = await restoreAuthSession(storedTokens);
-        if (!cancelled) {
-          persistAuthTokens(response.session);
-          setAuthSession(response);
-          setAuthStatus("signed_in");
-        }
-      } catch (error) {
-        clearStoredAuthTokens();
-        if (!cancelled) {
-          setAuthSession(null);
-          setAuthStatus("signed_out");
-          setAuthError(
-            error instanceof Error
-              ? error.message
-              : "The saved login session could not be restored.",
-          );
-        }
-      }
-    }
-
-    void bootstrapAuth();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     if (activeJob?.description_text) {
       setManualJobText(activeJob.description_text);
       setJobFileState(null);
@@ -380,9 +278,6 @@ export function WorkspaceShell() {
       setJobInputCollapsed(true);
     }
   }, [activeJob, jobFileState]);
-
-  const authTokens = authSession?.session ?? null;
-  const dailyQuota = authSession?.daily_quota ?? null;
 
   const {
     savedJobs,
@@ -1059,122 +954,31 @@ export function WorkspaceShell() {
     }
   }
 
-  async function handleGoogleSignIn() {
-    setAuthActionLoading(true);
-    setAuthError(null);
-    try {
-      const response = await startGoogleSignIn(buildAuthRedirectUrl("/workspace"));
-      window.location.href = response.url;
-    } catch (error) {
-      setAuthError(
-        error instanceof Error
-          ? error.message
-          : "Google sign-in could not be started.",
-      );
-      setWorkspaceNotice({
-        level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Google sign-in could not be started.",
-      });
-      setAuthActionLoading(false);
-    }
-  }
-
+  // Sign-out wraps the hook's auth-only `signOutAuth` with cross-slice
+  // resets (saved jobs, resume builder fields) that the hook can't
+  // reach into.
   async function handleSignOut() {
-    if (!authTokens) {
-      return;
-    }
-
-    setAuthActionLoading(true);
-    try {
-      await signOutAuthSession(authTokens);
-    } catch {
-      // Clearing local state is still the right fallback if server sign-out fails.
-    } finally {
-      clearStoredAuthTokens();
-      setAuthSession(null);
-      setAuthStatus("signed_out");
-      setAuthError(null);
-      setWorkspaceSaveMeta(null);
-      resetSavedJobs();
-      setResumeBuilderSession(null);
-      setResumeBuilderInitialized(false);
-      setResumeBuilderAnswer("");
-      setResumeBuilderNotice(null);
-      setAuthActionLoading(false);
-      setWorkspaceNotice({
-        level: "info",
-        message: "Signed out. Local account session and saved-state access were cleared.",
-      });
-    }
+    await signOutAuth();
+    resetSavedJobs();
+    setResumeBuilderSession(null);
+    setResumeBuilderInitialized(false);
+    setResumeBuilderAnswer("");
+    setResumeBuilderNotice(null);
   }
 
+  // Reload-saved-workspace wraps the hook's `reloadSavedWorkspace` to
+  // apply the returned snapshot across the shell's other slices and
+  // surface the success notice.
   async function handleReloadSavedWorkspace() {
-    if (!authTokens) {
-      setWorkspaceNotice({
-        level: "warning",
-        message: "Sign in with Google before reloading a saved workspace.",
-      });
+    const result = await reloadSavedWorkspace();
+    if (result.kind !== "snapshot") {
       return;
     }
-
-    setWorkspaceReloading(true);
-    try {
-      const response = await loadSavedWorkspace(authTokens);
-      if (response.status !== "available" || !response.workspace_snapshot) {
-        setWorkspaceNotice({
-          level: response.status === "expired" ? "warning" : "info",
-          message:
-            response.status === "expired"
-              ? "Your saved workspace expired after 24 hours. Run the flow again to save a fresh one."
-              : "No saved workspace is available to reload yet.",
-        });
-        return;
-      }
-
-      applySavedWorkspaceSnapshot(response);
-      setWorkspaceSaveMeta(response.saved_workspace ?? null);
-      setWorkspaceNotice({
-        level: "success",
-        message: `Saved workspace reloaded. Expires ${formatUtcTimestamp(response.saved_workspace?.expires_at ?? "")} UTC.`,
-      });
-    } catch (error) {
-      setWorkspaceNotice({
-        level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Saved workspace reload failed unexpectedly.",
-      });
-    } finally {
-      setWorkspaceReloading(false);
-    }
-  }
-
-  async function persistLatestWorkspace(snapshot: WorkspaceAnalysisResponse) {
-    if (!authTokens || !authSession?.features.saved_workspace_enabled) {
-      return null;
-    }
-
-    setAutoSaving(true);
-    try {
-      const response = await saveWorkspaceSnapshot(snapshot, authTokens);
-      setWorkspaceSaveMeta(response.saved_workspace);
-      return response.saved_workspace;
-    } catch (error) {
-      setWorkspaceNotice({
-        level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The latest workspace could not be saved.",
-      });
-      return null;
-    } finally {
-      setAutoSaving(false);
-    }
+    applySavedWorkspaceSnapshot(result.response);
+    setWorkspaceNotice({
+      level: "success",
+      message: `Saved workspace reloaded. Expires ${formatUtcTimestamp(result.response.saved_workspace?.expires_at ?? "")} UTC.`,
+    });
   }
 
   async function submitAssistantQuestion(questionText: string) {
