@@ -42,7 +42,6 @@ import type {
   WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
   WorkspaceArtifactKind,
-  WorkspaceAssistantResponse,
   WorkspaceJobDescriptionUploadResponse,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
@@ -62,6 +61,11 @@ import {
   ResumeMetricIcon,
   WorkflowMetricIcon,
 } from "@/components/workspace/icons";
+import {
+  AssistantPanel,
+  type AssistantTurn,
+} from "@/components/workspace/AssistantPanel";
+import { Sidebar } from "@/components/workspace/Sidebar";
 
 type Notice = {
   level: "info" | "success" | "warning";
@@ -71,11 +75,6 @@ type Notice = {
 type ArtifactTab = "resume" | "cover-letter";
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
 type ResumeIntakeMode = "upload" | "assistant";
-
-type AssistantTurn = {
-  question: string;
-  response: WorkspaceAssistantResponse;
-};
 
 type AuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
 
@@ -1994,120 +1993,18 @@ export function JobApplicationWorkspace() {
 
   return (
     <div className="workspace-layout">
-      {sidebarCollapsed ? (
-        <button
-          aria-expanded={!sidebarCollapsed}
-          aria-label="Open workspace drawer"
-          className="workspace-drawer-toggle"
-          onClick={() => setSidebarCollapsed(false)}
-          type="button"
-        >
-          <span />
-          <span />
-          <span />
-        </button>
-      ) : null}
-
-      {!sidebarCollapsed ? (
-        <button
-          aria-label="Close workspace drawer"
-          className="workspace-drawer-backdrop"
-          onClick={() => setSidebarCollapsed(true)}
-          type="button"
+      <Sidebar collapsed={sidebarCollapsed} onCollapse={setSidebarCollapsed}>
+        <AssistantPanel
+          turns={assistantTurns}
+          requiresWorkspaceRun={assistantRequiresWorkspaceRun}
+          question={assistantQuestion}
+          onQuestionChange={setAssistantQuestion}
+          sending={assistantSending}
+          canSubmit={assistantCanSubmit}
+          onSubmit={handleAssistantSubmit}
+          onClearConversation={handleClearAssistantConversation}
         />
-      ) : null}
-
-      <aside
-        className={
-          sidebarCollapsed
-            ? "workspace-sidebar workspace-sidebar-closed"
-            : "workspace-sidebar workspace-sidebar-open"
-        }
-        aria-hidden={sidebarCollapsed}
-      >
-        <div className="workspace-sidebar-shell">
-          <div className="workspace-sidebar-head">
-            <div className="workspace-brand-lockup">
-              <span className="workspace-brand-mark">AJ</span>
-              <div>
-                <p className="workspace-brand-title">Job Application Agent</p>
-              </div>
-            </div>
-
-            <button
-              aria-label="Close workspace drawer"
-              className="workspace-sidebar-toggle workspace-sidebar-close"
-              onClick={() => setSidebarCollapsed(true)}
-              type="button"
-            >
-              <span />
-              <span />
-            </button>
-          </div>
-
-          <div className="workspace-sidebar-card workspace-assistant-card">
-                <p className="eyebrow">Assistant</p>
-
-                <div className="workspace-assistant-thread">
-                  {assistantTurns.length ? (
-                    <div className="workspace-chat-history">
-                      {assistantTurns.map((turn, index) => (
-                        <div className="workspace-chat-turn" key={`${index}-${turn.question.slice(0, 18)}`}>
-                          <div className="workspace-chat-bubble workspace-chat-user">
-                            {turn.question}
-                          </div>
-                          <div className="workspace-chat-bubble workspace-chat-assistant">
-                            {turn.response.answer}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : !assistantRequiresWorkspaceRun ? (
-                      <div className="workspace-empty-state workspace-empty-state-compact">
-                      Ask about your tailored resume, cover letter, or
-                        the current package.
-                      </div>
-                    ) : null}
-                </div>
-
-                <form className="workspace-assistant-form" onSubmit={handleAssistantSubmit}>
-                  <textarea
-                    className="workspace-assistant-textarea"
-                    disabled={assistantRequiresWorkspaceRun || assistantSending}
-                    onChange={(event) => setAssistantQuestion(event.target.value)}
-                    placeholder={
-                      assistantRequiresWorkspaceRun
-                        ? "Assistant unlocks after your first workspace run."
-                        : "Ask about your package, resume, cover letter, or the current outputs..."
-                    }
-                    value={assistantQuestion}
-                  />
-                  <div className="workspace-sidebar-actions">
-                    <button
-                      className="primary-button workspace-button workspace-button-full"
-                      disabled={!assistantCanSubmit}
-                      type="submit"
-                    >
-                      {assistantSending
-                        ? "Sending..."
-                        : assistantRequiresWorkspaceRun
-                          ? "Awaiting workspace run"
-                          : "Send to assistant"}
-                    </button>
-                    <button
-                      className="secondary-button workspace-button workspace-button-full"
-                      disabled={!assistantTurns.length}
-                      onClick={handleClearAssistantConversation}
-                      type="button"
-                    >
-                      Clear chat
-                    </button>
-                  </div>
-                </form>
-          </div>
-
-        </div>
-      </aside>
+      </Sidebar>
 
       <div className="workspace-main">
         <div className="workspace-main-topbar">
