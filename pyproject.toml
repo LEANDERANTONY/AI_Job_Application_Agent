@@ -16,6 +16,7 @@ dependencies = [
     "weasyprint==64.1",
     "reportlab==3.6.12",
     "python-dotenv==1.0.1",
+    "slowapi==0.1.9",
 ]
 
 [dependency-groups]

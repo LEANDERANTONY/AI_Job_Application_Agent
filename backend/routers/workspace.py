@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
 from backend.request_auth import get_optional_auth_tokens
 from backend.services.resume_builder_persistence_service import (
     clear_resume_builder_session,
@@ -59,7 +60,8 @@ def _raise_http_error(error: AppError):
 
 
 @router.post("/resume/upload")
-def upload_resume(payload: UploadedFilePayloadModel):
+@limiter.limit(LIMIT_PARSE)
+def upload_resume(request: Request, payload: UploadedFilePayloadModel):
     try:
         return parse_resume_upload(
             filename=payload.filename,
@@ -71,7 +73,8 @@ def upload_resume(payload: UploadedFilePayloadModel):
 
 
 @router.post("/job-description/upload")
-def upload_job_description(payload: UploadedFilePayloadModel):
+@limiter.limit(LIMIT_PARSE)
+def upload_job_description(request: Request, payload: UploadedFilePayloadModel):
     try:
         return parse_job_description_upload(
             filename=payload.filename,
@@ -83,7 +86,8 @@ def upload_job_description(payload: UploadedFilePayloadModel):
 
 
 @router.post("/resume-builder/start")
-def start_resume_builder_route(auth_tokens=Depends(get_optional_auth_tokens)):
+@limiter.limit(LIMIT_LLM)
+def start_resume_builder_route(request: Request, auth_tokens=Depends(get_optional_auth_tokens)):
     access_token, refresh_token = auth_tokens
     try:
         payload = start_resume_builder_session()
@@ -107,7 +111,9 @@ def load_resume_builder_route(auth_tokens=Depends(get_optional_auth_tokens)):
 
 
 @router.post("/resume-builder/message")
+@limiter.limit(LIMIT_LLM)
 def answer_resume_builder_route(
+    request: Request,
     payload: ResumeBuilderMessageRequestModel,
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
@@ -128,7 +134,9 @@ def answer_resume_builder_route(
 
 
 @router.post("/resume-builder/generate")
+@limiter.limit(LIMIT_HEAVY)
 def generate_resume_builder_route(
+    request: Request,
     payload: ResumeBuilderSessionRequestModel,
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
@@ -146,7 +154,9 @@ def generate_resume_builder_route(
 
 
 @router.post("/resume-builder/update")
+@limiter.limit(LIMIT_LLM)
 def update_resume_builder_route(
+    request: Request,
     payload: ResumeBuilderUpdateRequestModel,
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
@@ -167,7 +177,9 @@ def update_resume_builder_route(
 
 
 @router.post("/resume-builder/commit")
+@limiter.limit(LIMIT_HEAVY)
 def commit_resume_builder_route(
+    request: Request,
     payload: ResumeBuilderSessionRequestModel,
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
@@ -184,7 +196,9 @@ def commit_resume_builder_route(
 
 
 @router.post("/analyze")
+@limiter.limit(LIMIT_HEAVY)
 def analyze_workspace(
+    request: Request,
     payload: WorkspaceAnalyzeRequestModel,
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
@@ -208,7 +222,9 @@ def analyze_workspace(
     "/analyze-jobs",
     response_model=WorkspaceAnalyzeJobCreatedResponseModel,
 )
+@limiter.limit(LIMIT_HEAVY)
 def start_workspace_analysis_job_route(
+    request: Request,
     payload: WorkspaceAnalyzeRequestModel,
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
@@ -236,7 +252,9 @@ def get_workspace_analysis_job_route(job_id: str):
 
 
 @router.post("/assistant/answer")
+@limiter.limit(LIMIT_LLM)
 def answer_assistant_question(
+    request: Request,
     payload: WorkspaceAssistantRequestModel,
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
@@ -336,7 +354,8 @@ def remove_saved_job_route(job_id: str, auth_tokens=Depends(get_optional_auth_to
 
 
 @router.post("/artifacts/export")
-def export_workspace_artifact_route(payload: WorkspaceArtifactExportRequestModel):
+@limiter.limit(LIMIT_PARSE)
+def export_workspace_artifact_route(request: Request, payload: WorkspaceArtifactExportRequestModel):
     try:
         return export_workspace_artifact(
             workspace_snapshot=payload.workspace_snapshot,
@@ -349,7 +368,8 @@ def export_workspace_artifact_route(payload: WorkspaceArtifactExportRequestModel
 
 
 @router.post("/artifacts/preview")
-def preview_workspace_artifact_route(payload: WorkspaceArtifactPreviewRequestModel):
+@limiter.limit(LIMIT_PARSE)
+def preview_workspace_artifact_route(request: Request, payload: WorkspaceArtifactPreviewRequestModel):
     try:
         return preview_workspace_artifact(
             workspace_snapshot=payload.workspace_snapshot,
