@@ -65,6 +65,10 @@ import {
   AssistantPanel,
   type AssistantTurn,
 } from "@/components/workspace/AssistantPanel";
+import {
+  ArtifactViewer,
+  type ArtifactTab,
+} from "@/components/workspace/ArtifactViewer";
 import { Sidebar } from "@/components/workspace/Sidebar";
 
 type Notice = {
@@ -72,7 +76,6 @@ type Notice = {
   message: string;
 } | null;
 
-type ArtifactTab = "resume" | "cover-letter";
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
 type ResumeIntakeMode = "upload" | "assistant";
 
@@ -375,13 +378,6 @@ function latestRole(profile: CandidateProfile | null) {
     return `${entry.title} at ${entry.organization}`;
   }
   return entry.title || entry.organization || "No parsed role yet";
-}
-
-function renderArtifactTitle(tab: ArtifactTab) {
-  if (tab === "resume") {
-    return "Tailored Resume";
-  }
-  return "Cover Letter";
 }
 
 function artifactKindFromTab(tab: ArtifactTab): Exclude<WorkspaceArtifactKind, "bundle" | "report"> {
@@ -3279,103 +3275,17 @@ export function JobApplicationWorkspace() {
               )}
             </section>
 
-            <section className="surface-card surface-card-neutral">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Outputs</p>
-                  <h2 className="section-title">Documents</h2>
-                </div>
-                <span className="status-chip">
-                  {analysisState ? "Ready to review" : "Waiting for run"}
-                </span>
-              </div>
-              <p className="section-copy">
-                Review and download your documents.
-              </p>
-
-              {analysisState ? (
-                  <>
-                    <div className="workspace-tab-row">
-                    {(["resume", "cover-letter"] as ArtifactTab[]).map((tab) => (
-                        <button
-                          className={artifactTab === tab ? "inspector-tab inspector-tab-active" : "inspector-tab"}
-                          key={tab}
-                        onClick={() => setArtifactTab(tab)}
-                        type="button"
-                      >
-                        {renderArtifactTitle(tab)}
-                      </button>
-                    ))}
-                  </div>
-
-                  {currentArtifact ? (
-                    <div className="workspace-artifact-panel">
-                      <div className="workspace-artifact-head">
-                        <div>
-                          <p className="workspace-label">Current document</p>
-                          <h3 className="workspace-role-title">{currentArtifact.title}</h3>
-                          <p className="workspace-role-copy">{currentArtifact.summary}</p>
-                        </div>
-                        <div className="workspace-artifact-actions">
-                          <button
-                            className="secondary-button workspace-button workspace-button-small"
-                            disabled={artifactExporting !== null}
-                            onClick={() =>
-                              void handleArtifactExport(currentArtifactKind, "markdown")
-                            }
-                            type="button"
-                          >
-                            {artifactExporting === `${currentArtifactKind}:markdown`
-                              ? "Preparing..."
-                              : "Download Markdown"}
-                          </button>
-                          <button
-                            className="secondary-button workspace-button workspace-button-small"
-                            disabled={artifactExporting !== null}
-                            onClick={() =>
-                              void handleArtifactExport(currentArtifactKind, "pdf")
-                            }
-                            type="button"
-                          >
-                            {artifactExporting === `${currentArtifactKind}:pdf`
-                              ? "Preparing..."
-                              : "Download PDF"}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="workspace-section-card">
-                        <h3>Preview</h3>
-                        <p className="workspace-muted-copy">
-                          {artifactPreviewTitle
-                            ? `Preview of ${artifactPreviewTitle}.`
-                            : "A preview of the current document will appear here once it is ready."}
-                        </p>
-                        {artifactPreviewLoading ? (
-                          <div className="workspace-empty-state">
-                            Preparing the artifact preview...
-                          </div>
-                        ) : artifactPreviewHtml ? (
-                          <iframe
-                            className="workspace-artifact-preview-frame"
-                            srcDoc={artifactPreviewHtml}
-                            title={`${renderArtifactTitle(artifactTab)} preview`}
-                          />
-                      ) : (
-                          <div className="workspace-empty-state">
-                            The artifact preview is temporarily unavailable, but the download actions still work.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-                </>
-                ) : (
-                  <div className="workspace-empty-state">
-                  The tailored resume and cover letter will appear here after the workflow runs.
-                  </div>
-                )}
-              </section>
+            <ArtifactViewer
+              hasAnalysis={Boolean(analysisState)}
+              artifact={currentArtifact}
+              tab={artifactTab}
+              onTabChange={setArtifactTab}
+              exporting={artifactExporting}
+              previewHtml={artifactPreviewHtml}
+              previewTitle={artifactPreviewTitle}
+              previewLoading={artifactPreviewLoading}
+              onExport={(kind, format) => void handleArtifactExport(kind, format)}
+            />
           </>
         ) : null}
       </div>
