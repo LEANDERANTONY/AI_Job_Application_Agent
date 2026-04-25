@@ -129,6 +129,21 @@ export function formatPostedLabel(postedAt: string) {
   return postedAt ? postedAt.slice(0, 10) : "";
 }
 
+export function formatSavedLabel(value: string) {
+  return value ? `Saved ${value.slice(0, 10)}` : "Saved";
+}
+
+export function resultPreview(job: JobPosting) {
+  if (job.summary.trim()) {
+    return job.summary.trim();
+  }
+  if (job.description_text.trim()) {
+    const text = job.description_text.replace(/\s+/g, " ").trim();
+    return text.length > 220 ? `${text.slice(0, 217)}...` : text;
+  }
+  return "Open the role in the workspace to inspect the normalized JD review.";
+}
+
 export function buildJobResultBadges(job: JobPosting) {
   const badges = [
     job.employment_type,
