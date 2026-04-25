@@ -1,3 +1,5 @@
+> **Archived 2026-04-25.** This document describes the pre-migration Streamlit + Render product state and a now-completed transition to Next.js + FastAPI. It is kept for historical reference only. See `README.md`, `DEVLOG.md`, and `docs/architecture.md` for the current product and architecture state.
+
 # Roadmap
 
 This roadmap reflects the current product state and the next major build priorities for the AI Job Application Agent.
@@ -12,8 +14,7 @@ Current product baseline:
 - backend-powered job search across Greenhouse and Lever
 - direct job-link import into the JD flow
 - saved-jobs shortlist on the feature branch
-- supervised agentic analysis
-- tailored resume generation
+- supervised agentic analysis- tailored resume generation
 - cover letter generation
 - application strategy report
 - one in-app assistant chat with lighter internal routing and session-scoped conversation reuse on the feature branch
