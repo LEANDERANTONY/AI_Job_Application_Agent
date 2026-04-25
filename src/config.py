@@ -30,7 +30,7 @@ OPENAI_REASONING_HIGH_TRUST = os.getenv(
     "OPENAI_REASONING_HIGH_TRUST", "high"
 ).strip().lower()
 OPENAI_REASONING_ASSISTANT = os.getenv(
-    "OPENAI_REASONING_ASSISTANT", "low"
+    "OPENAI_REASONING_ASSISTANT", "medium"
 ).strip().lower()
 OPENAI_MODEL_ROUTING = {
     "jd_summary": os.getenv("OPENAI_MODEL_JD_SUMMARY", OPENAI_MODEL_MID_TIER),
