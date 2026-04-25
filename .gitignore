@@ -269,3 +269,12 @@ reports/
 !static/demo_job_description/**
 !static/demo_resume/
 !static/demo_resume/**
+
+# Local-only working files (codex CLI process logs, eval artifacts)
+.codex-local/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Local design/planning notes
+VISUAL_LOOP_MVP.md
