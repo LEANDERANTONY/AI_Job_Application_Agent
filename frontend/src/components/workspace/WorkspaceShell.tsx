@@ -7,7 +7,6 @@ import {
   commitResumeBuilderResume,
   exchangeGoogleCode,
   generateResumeBuilderResume,
-  getWorkspaceAnalysisJob,
   loadLatestResumeBuilderSession,
   loadSavedWorkspace,
   resolveJobUrl,
@@ -16,7 +15,6 @@ import {
   searchJobs,
   sendResumeBuilderMessage,
   signOutAuthSession,
-  startWorkspaceAnalysisJob,
   startResumeBuilderSession,
   startGoogleSignIn,
   updateResumeBuilderDraft,
@@ -34,7 +32,6 @@ import type {
   LoadSavedWorkspaceResponse,
   ResumeBuilderSessionResponse,
   SavedWorkspaceMeta,
-  WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
   WorkspaceJobDescriptionUploadResponse,
   WorkspaceResumeUploadResponse,
@@ -63,10 +60,7 @@ import {
   ArtifactViewer,
   type ArtifactTab,
 } from "@/components/workspace/ArtifactViewer";
-import {
-  AnalysisRunner,
-  type WorkflowStage,
-} from "@/components/workspace/AnalysisRunner";
+import { AnalysisRunner } from "@/components/workspace/AnalysisRunner";
 import { JDReview } from "@/components/workspace/JDReview";
 import { JobSearch } from "@/components/workspace/JobSearch";
 import {
@@ -79,6 +73,7 @@ import {
   buildAssistantHistoryPayload,
   useAssistantHistory,
 } from "@/hooks/useAssistantHistory";
+import { useAnalysisJob } from "@/hooks/useAnalysisJob";
 import { useSavedJobs } from "@/hooks/useSavedJobs";
 
 type Notice = {
@@ -89,43 +84,6 @@ type Notice = {
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
 
 type AuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
-
-type WorkflowRunMode = "preview" | "agentic";
-
-const AGENTIC_WORKFLOW_STAGES: WorkflowStage[] = [
-  {
-    title: "Workflow crew",
-    detail: "Opening your application brief and assigning the first agent.",
-    value: 3,
-  },
-  {
-    title: "Matchmaker agent",
-    detail: "Comparing both sides, scoring overlap, and flagging the real gaps.",
-    value: 23,
-  },
-  {
-    title: "Forge agent",
-    detail: "Rewriting the draft so it speaks directly to this role.",
-    value: 41,
-  },
-  {
-    title: "Gatekeeper agent",
-    detail: "Reviewing the drafted outputs and applying grounded corrections.",
-    value: 63,
-  },
-  {
-    title: "Builder agent",
-    detail: "Packaging the final tailored resume and lining up the finish.",
-    value: 84,
-  },
-  {
-    title: "Cover letter agent",
-    detail: "Turning the approved story into a role-specific cover letter that is ready to send.",
-    value: 97,
-  },
-];
-
-type AnalysisJobState = WorkspaceAnalysisJobStatusResponse | null;
 
 function noticeClassName(level: NonNullable<Notice>["level"]) {
   if (level === "success") {
@@ -285,9 +243,6 @@ export function WorkspaceShell() {
   const [jobInputCollapsed, setJobInputCollapsed] = useState(false);
 
   const [manualJobText, setManualJobText] = useState("");
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [analysisRunMode, setAnalysisRunMode] = useState<WorkflowRunMode | null>(null);
-  const [analysisJobState, setAnalysisJobState] = useState<AnalysisJobState>(null);
   const [analysisState, setAnalysisState] =
     useState<WorkspaceAnalysisResponse | null>(null);
 
@@ -455,29 +410,41 @@ export function WorkspaceShell() {
         analysisState.job_description.raw_text !== manualJobText.trim()),
   );
 
-  const workflowStages = useMemo(() => {
-    if (analysisRunMode === "agentic") {
-      return AGENTIC_WORKFLOW_STAGES;
-    }
-    return [] as WorkflowStage[];
-  }, [analysisRunMode]);
-  const currentWorkflowStage = useMemo(() => {
-    if (!analysisLoading || analysisRunMode !== "agentic") {
-      return null;
-    }
-    if (!analysisJobState?.stage_title) {
-      return workflowStages[0] ?? null;
-    }
-    return (
-      workflowStages.find((stage) => stage.title === analysisJobState.stage_title) ?? {
-        title: analysisJobState.stage_title,
-        detail:
-          analysisJobState.stage_detail ||
-          "The workspace crew is moving through the run.",
-        value: analysisJobState.progress_percent || 3,
-      }
-    );
-  }, [analysisJobState, analysisLoading, analysisRunMode, workflowStages]);
+  const {
+    analysisLoading,
+    analysisJobState,
+    setAnalysisJobState,
+    currentWorkflowStage,
+    runAnalysis: handleRunAnalysis,
+    resetAnalysis,
+  } = useAnalysisJob({
+    resumeText,
+    jobDescriptionText: manualJobText,
+    resumeFiletype: activeResumeState?.resume_document.filetype,
+    resumeSource: activeResumeState?.resume_document.source,
+    importedJobPosting: activeJob,
+    authTokens,
+    setNotice: setWorkspaceNotice,
+    setAnalysisState,
+    onCompleted: onAnalysisCompleted,
+  });
+
+  // Hoisted via `function` declaration so it's accessible at the
+  // hook-call site above. Closure-resolves at call-time, by which
+  // point all referenced bindings (setArtifactTab, resetArtifacts,
+  // persistLatestWorkspace) are in scope.
+  async function onAnalysisCompleted(
+    result: WorkspaceAnalysisResponse,
+  ): Promise<string> {
+    setArtifactTab("resume");
+    setMainTab("analysis");
+    resetArtifacts();
+    const savedWorkspace = await persistLatestWorkspace(result);
+    return savedWorkspace
+      ? `Workflow finished in ${result.workflow.mode} mode and saved workspace refreshes until ${formatUtcTimestamp(savedWorkspace.expires_at)} UTC.`
+      : `Workflow finished in ${result.workflow.mode} mode.`;
+  }
+
   const workspaceTabs = useMemo(
     () => [
       {
@@ -589,82 +556,6 @@ export function WorkspaceShell() {
       certifications: resumeBuilderSession.draft_profile.certifications.join(", "),
     });
   }, [resumeBuilderSession]);
-
-  useEffect(() => {
-    if (
-      !analysisLoading ||
-      analysisRunMode !== "agentic" ||
-      !analysisJobState?.job_id ||
-      analysisJobState.status === "completed" ||
-      analysisJobState.status === "failed"
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const timeout = window.setTimeout(async () => {
-      try {
-        const nextJobState = await getWorkspaceAnalysisJob(
-          analysisJobState.job_id,
-          authTokens,
-        );
-        if (cancelled) {
-          return;
-        }
-
-        setAnalysisJobState(nextJobState);
-
-        if (nextJobState.status === "completed" && nextJobState.result) {
-          setAnalysisState(nextJobState.result);
-          setArtifactTab("resume");
-          setMainTab("analysis");
-          resetArtifacts();
-          const savedWorkspace = await persistLatestWorkspace(nextJobState.result);
-          if (!cancelled) {
-            setWorkspaceNotice({
-              level: "success",
-              message: savedWorkspace
-                ? `Workflow finished in ${nextJobState.result.workflow.mode} mode and saved workspace refreshes until ${formatUtcTimestamp(savedWorkspace.expires_at)} UTC.`
-                : `Workflow finished in ${nextJobState.result.workflow.mode} mode.`,
-            });
-            setAnalysisLoading(false);
-            setAnalysisRunMode(null);
-          }
-          return;
-        }
-
-        if (nextJobState.status === "failed") {
-          setWorkspaceNotice({
-            level: "warning",
-            message:
-              nextJobState.error_message ||
-              "The agentic workflow failed unexpectedly.",
-          });
-          setAnalysisLoading(false);
-          setAnalysisRunMode(null);
-          return;
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setWorkspaceNotice({
-            level: "warning",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Workflow status polling failed unexpectedly.",
-          });
-          setAnalysisLoading(false);
-          setAnalysisRunMode(null);
-        }
-      }
-    }, 1200);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-    };
-  }, [analysisJobState, analysisLoading, analysisRunMode, authTokens]);
 
   const assistantRequiresWorkspaceRun = !analysisState;
   const assistantCanSubmit =
@@ -1286,77 +1177,6 @@ export function WorkspaceShell() {
     }
   }
 
-  async function handleRunAnalysis() {
-    if (!resumeText.trim()) {
-      setWorkspaceNotice({
-        level: "warning",
-        message: "Upload and parse a resume before running the workspace flow.",
-      });
-      return;
-    }
-
-    if (!manualJobText.trim()) {
-      setWorkspaceNotice({
-        level: "warning",
-        message: "Load or paste a job description before running the workspace flow.",
-      });
-      return;
-    }
-
-    if (!authTokens) {
-      setWorkspaceNotice({
-        level: "warning",
-        message: "Sign in with Google before running the AI-assisted workflow.",
-      });
-      return;
-    }
-
-    setAnalysisRunMode("agentic");
-    setAnalysisJobState({
-      job_id: "",
-      status: "queued",
-      stage_title: "Workflow crew",
-      stage_detail: "Opening your application brief and preparing the first agent.",
-      progress_percent: 3,
-      result: null,
-      error_message: null,
-    });
-    setAnalysisLoading(true);
-    setWorkspaceNotice({
-      level: "info",
-      message:
-        "Running the agentic workflow now. The workspace crew will keep you posted as each stage moves.",
-    });
-
-    try {
-      const response = await startWorkspaceAnalysisJob({
-        resume_text: resumeText,
-        resume_filetype: activeResumeState?.resume_document.filetype ?? "TXT",
-        resume_source: activeResumeState?.resume_document.source ?? "workspace",
-        job_description_text: manualJobText.trim(),
-        imported_job_posting: activeJob,
-        run_assisted: true,
-      }, authTokens);
-      setAnalysisJobState({
-        ...response,
-        result: null,
-        error_message: null,
-      });
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Workspace analysis failed unexpectedly.";
-      setWorkspaceNotice({
-        level: "warning",
-        message: errorMessage,
-      });
-      setAnalysisLoading(false);
-      setAnalysisRunMode(null);
-      setAnalysisJobState(null);
-    }
-  }
-
   async function submitAssistantQuestion(questionText: string) {
     const normalizedQuestion = questionText.trim();
 
@@ -1429,7 +1249,7 @@ export function WorkspaceShell() {
     setJobFileState(null);
     setManualJobText("");
     setAnalysisState(null);
-    setAnalysisJobState(null);
+    resetAnalysis();
     resetArtifacts();
     setWorkspaceNotice({
       level: "info",
