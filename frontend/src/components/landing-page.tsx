@@ -222,7 +222,7 @@ export function LandingPage() {
 
           <div className="hero-actions">
             {isSignedIn ? (
-              <Link href="/workspace" className="primary-button">
+              <Link href="https://app.job-application-copilot.xyz" className="primary-button">
                 Enter workspace
               </Link>
             ) : (
