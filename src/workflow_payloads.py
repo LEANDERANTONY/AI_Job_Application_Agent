@@ -286,6 +286,10 @@ def build_saved_workflow_snapshot_from_data(payload: dict):
     )
 
 
+def _as_dict(payload):
+    return payload if isinstance(payload, dict) else {}
+
+
 def _build_imported_job_posting(payload):
     if not isinstance(payload, dict):
         return None
@@ -309,6 +313,7 @@ def _build_imported_job_posting(payload):
 
 
 def _build_candidate_profile(payload: dict):
+    payload = _as_dict(payload)
     return CandidateProfile(
         full_name=str(payload.get("full_name", "") or ""),
         location=str(payload.get("location", "") or ""),
@@ -324,6 +329,7 @@ def _build_candidate_profile(payload: dict):
 
 
 def _build_work_experience(payload: dict):
+    payload = _as_dict(payload)
     return WorkExperience(
         title=str(payload.get("title", "") or ""),
         organization=str(payload.get("organization", "") or ""),
@@ -335,6 +341,7 @@ def _build_work_experience(payload: dict):
 
 
 def _build_education_entry(payload: dict):
+    payload = _as_dict(payload)
     return EducationEntry(
         institution=str(payload.get("institution", "") or ""),
         degree=str(payload.get("degree", "") or ""),
@@ -345,7 +352,9 @@ def _build_education_entry(payload: dict):
 
 
 def _build_job_description(payload: dict):
+    payload = _as_dict(payload)
     requirements = payload.get("requirements") or {}
+    requirements = _as_dict(requirements)
     return JobDescription(
         title=str(payload.get("title", "") or ""),
         raw_text=str(payload.get("raw_text", "") or ""),
@@ -362,6 +371,7 @@ def _build_job_description(payload: dict):
 
 
 def _build_fit_analysis(payload: dict):
+    payload = _as_dict(payload)
     return FitAnalysis(
         target_role=str(payload.get("target_role", "") or ""),
         overall_score=int(payload.get("overall_score", 0) or 0),
@@ -378,6 +388,7 @@ def _build_fit_analysis(payload: dict):
 
 
 def _build_tailored_draft(payload: dict):
+    payload = _as_dict(payload)
     return TailoredResumeDraft(
         target_role=str(payload.get("target_role", "") or ""),
         professional_summary=str(payload.get("professional_summary", "") or ""),
@@ -388,6 +399,7 @@ def _build_tailored_draft(payload: dict):
 
 
 def _build_profile_output(payload: dict):
+    payload = _as_dict(payload)
     return ProfileAgentOutput(
         positioning_headline=str(payload.get("positioning_headline", "") or ""),
         evidence_highlights=[str(item) for item in payload.get("evidence_highlights", []) or []],
@@ -397,6 +409,7 @@ def _build_profile_output(payload: dict):
 
 
 def _build_job_output(payload: dict):
+    payload = _as_dict(payload)
     return JobAgentOutput(
         requirement_summary=str(payload.get("requirement_summary", "") or ""),
         priority_skills=[str(item) for item in payload.get("priority_skills", []) or []],
@@ -406,6 +419,7 @@ def _build_job_output(payload: dict):
 
 
 def _build_fit_output(payload: dict):
+    payload = _as_dict(payload)
     return FitAgentOutput(
         fit_summary=str(payload.get("fit_summary", "") or ""),
         top_matches=[str(item) for item in payload.get("top_matches", []) or []],
@@ -414,6 +428,7 @@ def _build_fit_output(payload: dict):
 
 
 def _build_tailoring_output(payload: dict):
+    payload = _as_dict(payload)
     return TailoringAgentOutput(
         professional_summary=str(payload.get("professional_summary", "") or ""),
         rewritten_bullets=[str(item) for item in payload.get("rewritten_bullets", []) or []],
@@ -425,6 +440,7 @@ def _build_tailoring_output(payload: dict):
 def _build_strategy_output(payload):
     if not payload:
         return None
+    payload = _as_dict(payload)
     return StrategyAgentOutput(
         recruiter_positioning=str(payload.get("recruiter_positioning", "") or ""),
         cover_letter_talking_points=[str(item) for item in payload.get("cover_letter_talking_points", []) or []],
@@ -433,6 +449,7 @@ def _build_strategy_output(payload):
 
 
 def _build_review_output(payload: dict):
+    payload = _as_dict(payload)
     return ReviewAgentOutput(
         approved=bool(payload.get("approved", False)),
         grounding_issues=[str(item) for item in payload.get("grounding_issues", []) or []],
@@ -447,6 +464,7 @@ def _build_review_output(payload: dict):
 def _build_resume_generation_output(payload):
     if not payload:
         return None
+    payload = _as_dict(payload)
     return ResumeGenerationAgentOutput(
         professional_summary=str(payload.get("professional_summary", "") or ""),
         highlighted_skills=[str(item) for item in payload.get("highlighted_skills", []) or []],
@@ -459,6 +477,7 @@ def _build_resume_generation_output(payload):
 def _build_cover_letter_output(payload):
     if not payload:
         return None
+    payload = _as_dict(payload)
     return CoverLetterAgentOutput(
         greeting=str(payload.get("greeting", "") or ""),
         opening_paragraph=str(payload.get("opening_paragraph", "") or ""),
@@ -470,6 +489,7 @@ def _build_cover_letter_output(payload):
 
 
 def _build_review_pass_result(payload: dict):
+    payload = _as_dict(payload)
     return ReviewPassResult(
         pass_index=int(payload.get("pass_index", 0) or 0),
         tailoring=_build_tailoring_output(payload.get("tailoring") or {}),
@@ -481,6 +501,7 @@ def _build_review_pass_result(payload: dict):
 def _build_agent_result(payload):
     if not payload:
         return None
+    payload = _as_dict(payload)
     return AgentWorkflowResult(
         mode=str(payload.get("mode", "") or ""),
         model=str(payload.get("model", "") or ""),

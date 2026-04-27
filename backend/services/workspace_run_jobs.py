@@ -7,11 +7,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.errors import AppError
+from src.logging_utils import get_logger, log_event
 
 from backend.services.workspace_service import run_workspace_analysis
 
 
 JOB_TTL_SECONDS = 60 * 30
+LOGGER = get_logger(__name__)
 
 
 @dataclass
@@ -102,6 +104,15 @@ def _run_job(
             job.updated_at = time.time()
     except AppError as error:
         message = error.user_message
+        log_event(
+            LOGGER,
+            30,
+            "workspace_run_job_failed",
+            "The background workspace analysis job failed with an application error.",
+            job_id=job_id,
+            error_type=type(error).__name__,
+            message=message,
+        )
         with _LOCK:
             job = _JOBS.get(job_id)
             if job is None:
@@ -110,6 +121,7 @@ def _run_job(
             job.error_message = message
             job.updated_at = time.time()
     except Exception as error:  # pragma: no cover - defensive server fallback
+        LOGGER.exception("Background workspace analysis job crashed.", extra={"job_id": job_id})
         with _LOCK:
             job = _JOBS.get(job_id)
             if job is None:
