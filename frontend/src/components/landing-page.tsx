@@ -7,6 +7,7 @@ import {
   exchangeGoogleCode,
   restoreAuthSession,
   signOutAuthSession,
+  startWorkspaceHandoff,
   startGoogleSignIn,
 } from "@/lib/api";
 import type { AuthSessionResponse } from "@/lib/api-types";
@@ -147,6 +148,24 @@ export function LandingPage() {
     }
   }
 
+  async function handleEnterWorkspace() {
+    setAuthActionLoading(true);
+    setAuthError(null);
+    try {
+      const response = await startWorkspaceHandoff(
+        "https://app.job-application-copilot.xyz",
+      );
+      window.location.href = response.redirect_url;
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : "Workspace handoff failed unexpectedly.",
+      );
+      setAuthActionLoading(false);
+    }
+  }
+
   const isSignedIn = authStatus === "signed_in";
   const signedInLabel =
     authSession?.app_user.display_name ||
@@ -207,9 +226,14 @@ export function LandingPage() {
 
           <div className="hero-actions">
             {isSignedIn ? (
-              <Link href="https://app.job-application-copilot.xyz" className="primary-button">
-                Enter workspace
-              </Link>
+              <button
+                className="primary-button"
+                disabled={authActionLoading}
+                onClick={() => void handleEnterWorkspace()}
+                type="button"
+              >
+                {authActionLoading ? "Opening workspace..." : "Enter workspace"}
+              </button>
             ) : (
               <button
                 className="primary-button"

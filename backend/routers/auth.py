@@ -3,11 +3,17 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from backend.auth_models import (
     GoogleSignInExchangeRequestModel,
     GoogleSignInStartRequestModel,
+    WorkspaceHandoffExchangeRequestModel,
+    WorkspaceHandoffStartRequestModel,
 )
 from backend.request_auth import get_optional_auth_tokens
 from backend.services.auth_cookies import (
     clear_auth_cookies,
     set_auth_cookies,
+)
+from backend.services.auth_handoff_service import (
+    exchange_workspace_handoff,
+    start_workspace_handoff,
 )
 from backend.services.auth_session_service import (
     exchange_google_code,
@@ -89,6 +95,37 @@ def restore_session_route(
         # Re-issue the cookies on each restore. Even if the underlying
         # tokens didn't rotate, this slides the browser-side expiry so a
         # daily-active user effectively stays signed in indefinitely.
+        _apply_session_cookies(response, result)
+        return _scrub_session_tokens(result)
+    except AppError as error:
+        _raise_http_error(error)
+
+
+@router.post("/workspace-handoff/start")
+def start_workspace_handoff_route(
+    payload: WorkspaceHandoffStartRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    access_token, refresh_token = auth_tokens
+    try:
+        return start_workspace_handoff(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            target_url=payload.target_url,
+        )
+    except AppError as error:
+        _raise_http_error(error)
+
+
+@router.post("/workspace-handoff/exchange")
+def exchange_workspace_handoff_route(
+    payload: WorkspaceHandoffExchangeRequestModel,
+    response: Response,
+):
+    try:
+        result = exchange_workspace_handoff(
+            handoff_token=payload.handoff_token,
+        )
         _apply_session_cookies(response, result)
         return _scrub_session_tokens(result)
     except AppError as error:

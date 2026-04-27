@@ -23,6 +23,7 @@ import type {
   WorkspaceArtifactExportResponse,
   WorkspaceArtifactPreviewRequest,
   WorkspaceArtifactPreviewResponse,
+  WorkspaceHandoffStartResponse,
   AssistantStreamEvent,
   WorkspaceAssistantRequest,
   WorkspaceAssistantResponse,
@@ -173,6 +174,26 @@ export async function restoreAuthSession() {
 export async function signOutAuthSession() {
   return request<{ authenticated: boolean; status: string }>("/auth/session/sign-out", {
     method: "POST",
+  });
+}
+
+export async function startWorkspaceHandoff(targetUrl: string) {
+  return request<WorkspaceHandoffStartResponse>("/auth/workspace-handoff/start", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ target_url: targetUrl }),
+  });
+}
+
+export async function exchangeWorkspaceHandoff(handoffToken: string) {
+  return request<AuthSessionResponse>("/auth/workspace-handoff/exchange", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ handoff_token: handoffToken }),
   });
 }
 

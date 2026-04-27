@@ -26,6 +26,7 @@ import {
 } from "react";
 
 import {
+  exchangeWorkspaceHandoff,
   exchangeGoogleCode,
   loadSavedWorkspace,
   restoreAuthSession,
@@ -132,6 +133,7 @@ export function useWorkspaceSession({
       clearLegacyAuthTokens();
 
       const params = new URLSearchParams(window.location.search);
+      const handoffToken = params.get("handoff");
       const authCode = params.get("code");
       const authFlow = params.get("auth_flow") ?? "";
       const authErrorDescription =
@@ -143,6 +145,39 @@ export function useWorkspaceSession({
           setAuthSession(null);
           setAuthStatus("signed_out");
           setAuthError(authErrorDescription);
+        }
+        return;
+      }
+
+      if (handoffToken) {
+        setAuthStatus("restoring");
+        setAuthError(null);
+        try {
+          const response = await exchangeWorkspaceHandoff(handoffToken);
+          if (!cancelled) {
+            setAuthSession(response);
+            setAuthStatus("signed_in");
+            setNotice({
+              level: "success",
+              message: `Signed in as ${
+                response.app_user.display_name ||
+                response.app_user.email ||
+                "your account"
+              }.`,
+            });
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setAuthSession(null);
+            setAuthStatus("signed_out");
+            setAuthError(
+              error instanceof Error
+                ? error.message
+                : "Workspace handoff failed unexpectedly.",
+            );
+          }
+        } finally {
+          clearAuthQueryParams();
         }
         return;
       }

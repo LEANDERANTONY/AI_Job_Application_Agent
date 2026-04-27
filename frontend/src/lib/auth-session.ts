@@ -33,6 +33,7 @@ export function clearAuthQueryParams() {
   url.searchParams.delete("auth_flow");
   url.searchParams.delete("error");
   url.searchParams.delete("error_description");
+  url.searchParams.delete("handoff");
   window.history.replaceState({}, document.title, url.toString());
 }
 

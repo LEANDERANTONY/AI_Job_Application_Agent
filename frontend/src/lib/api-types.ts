@@ -521,6 +521,11 @@ export type GoogleSignInStartResponse = {
   redirect_url: string;
 };
 
+export type WorkspaceHandoffStartResponse = {
+  status: string;
+  redirect_url: string;
+};
+
 export type SavedWorkspaceMeta = {
   job_title: string;
   expires_at: string;
