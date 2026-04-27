@@ -262,6 +262,8 @@ def test_workspace_analyze_job_start_returns_job_handle(monkeypatch):
             "stage_title": "Workflow crew",
             "stage_detail": "Preparing the first agent.",
             "progress_percent": 3,
+            "result": None,
+            "error_message": None,
         },
     )
 
@@ -281,6 +283,8 @@ def test_workspace_analyze_job_start_returns_job_handle(monkeypatch):
     assert payload["job_id"] == "job-123"
     assert payload["status"] == "queued"
     assert payload["stage_title"] == "Workflow crew"
+    assert payload["result"] is None
+    assert payload["error_message"] is None
 
 
 def test_workspace_analyze_job_status_returns_completed_result(monkeypatch):

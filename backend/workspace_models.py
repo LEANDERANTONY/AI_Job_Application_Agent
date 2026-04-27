@@ -46,6 +46,8 @@ class WorkspaceAnalyzeJobCreatedResponseModel(BaseModel):
     stage_title: str | None = None
     stage_detail: str | None = None
     progress_percent: int = 0
+    result: dict[str, Any] | None = None
+    error_message: str | None = None
 
 
 class WorkspaceAnalyzeJobStatusResponseModel(BaseModel):
