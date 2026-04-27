@@ -6,6 +6,10 @@
 
 AI Job Application Agent is a Vercel-hosted Next.js workspace with a FastAPI backend for resume parsing, JD review, grounded agentic tailoring, and exportable job application documents.
 
+Live landing page: https://job-application-copilot.xyz
+
+Workspace app: https://app.job-application-copilot.xyz
+
 ## Product Flow
 
 1. Sign in with Google
