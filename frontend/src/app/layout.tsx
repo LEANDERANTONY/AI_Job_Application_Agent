@@ -15,9 +15,16 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "AI Job Application Agent",
+  title: "Job Application Copilot",
   description:
-    "Next.js transition skeleton for a Vercel frontend and FastAPI VPS backend.",
+    "Upload your resume, review a role, and generate tailored application documents in one workspace.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({
