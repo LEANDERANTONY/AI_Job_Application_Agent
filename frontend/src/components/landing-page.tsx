@@ -13,9 +13,7 @@ import type { AuthSessionResponse } from "@/lib/api-types";
 import {
   buildAuthRedirectUrl,
   clearAuthQueryParams,
-  clearStoredAuthTokens,
-  persistAuthTokens,
-  readStoredAuthTokens,
+  clearLegacyAuthTokens,
 } from "@/lib/auth-session";
 
 const SOCIAL_LINKS = [
@@ -41,6 +39,10 @@ export function LandingPage() {
     let cancelled = false;
 
     async function bootAuthState() {
+      // One-shot migration off the old localStorage token blob; safe to
+      // remove a few weeks after the cookie cutover lands.
+      clearLegacyAuthTokens();
+
       const currentUrl = new URL(window.location.href);
       const authCode = currentUrl.searchParams.get("code");
       const authFlow = currentUrl.searchParams.get("auth_flow") ?? "";
@@ -49,7 +51,6 @@ export function LandingPage() {
         currentUrl.searchParams.get("error");
 
       if (authErrorDescription) {
-        clearStoredAuthTokens();
         clearAuthQueryParams();
         if (!cancelled) {
           setAuthSession(null);
@@ -69,12 +70,10 @@ export function LandingPage() {
             buildAuthRedirectUrl("/"),
           );
           if (!cancelled) {
-            persistAuthTokens(response.session);
             setAuthSession(response);
             setAuthStatus("signed_in");
           }
         } catch (error) {
-          clearStoredAuthTokens();
           if (!cancelled) {
             setAuthSession(null);
             setAuthStatus("signed_out");
@@ -90,33 +89,21 @@ export function LandingPage() {
         return;
       }
 
-      const storedTokens = readStoredAuthTokens();
-      if (!storedTokens) {
-        if (!cancelled) {
-          setAuthStatus("signed_out");
-        }
-        return;
-      }
-
+      // No URL code: try a silent restore. Cookie may or may not be
+      // present; failure here is the expected first-visit state, so we
+      // suppress the error toast.
       setAuthStatus("restoring");
       setAuthError(null);
       try {
-        const response = await restoreAuthSession(storedTokens);
+        const response = await restoreAuthSession();
         if (!cancelled) {
-          persistAuthTokens(response.session);
           setAuthSession(response);
           setAuthStatus("signed_in");
         }
-      } catch (error) {
-        clearStoredAuthTokens();
+      } catch {
         if (!cancelled) {
           setAuthSession(null);
           setAuthStatus("signed_out");
-          setAuthError(
-            error instanceof Error
-              ? error.message
-              : "The saved login session could not be restored.",
-          );
         }
       }
     }
@@ -149,13 +136,11 @@ export function LandingPage() {
     setAuthError(null);
 
     try {
-      if (authSession?.session) {
-        await signOutAuthSession(authSession.session);
-      }
+      await signOutAuthSession();
     } catch {
-      // Local cleanup remains the important part here.
+      // Sign-out may fail if the cookie is already invalid. Treat as
+      // success on the client. Backend clears cookies on failure too.
     } finally {
-      clearStoredAuthTokens();
       setAuthSession(null);
       setAuthStatus("signed_out");
       setAuthActionLoading(false);

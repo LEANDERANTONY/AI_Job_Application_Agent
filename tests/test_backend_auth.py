@@ -28,7 +28,7 @@ def test_auth_google_start_endpoint_returns_redirect_details(monkeypatch):
     assert payload["redirect_url"] == "https://frontend.example/workspace"
 
 
-def test_auth_google_exchange_endpoint_returns_session_payload(monkeypatch):
+def test_auth_google_exchange_endpoint_returns_scrubbed_session_and_cookies(monkeypatch):
     monkeypatch.setattr(
         "backend.routers.auth.exchange_google_code",
         lambda auth_code, auth_flow, redirect_url: {
@@ -75,8 +75,13 @@ def test_auth_google_exchange_endpoint_returns_session_payload(monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload["authenticated"] is True
-    assert payload["session"]["access_token"] == "access-token"
+    assert payload["session"] == {"authenticated": True}
     assert payload["app_user"]["id"] == "user-123"
+    assert response.cookies["ja_access_token"] == "access-token"
+    assert response.cookies["ja_refresh_token"] == "refresh-token"
+    set_cookie_headers = response.headers.get_list("set-cookie")
+    assert any("ja_access_token=access-token" in value for value in set_cookie_headers)
+    assert any("HttpOnly" in value for value in set_cookie_headers)
 
 
 def test_auth_session_restore_endpoint_forwards_header_tokens(monkeypatch):

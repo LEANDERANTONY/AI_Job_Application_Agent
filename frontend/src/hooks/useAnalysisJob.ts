@@ -25,7 +25,6 @@ import {
   startWorkspaceAnalysisJob,
 } from "@/lib/api";
 import type {
-  AuthTokens,
   JobPosting,
   WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
@@ -80,7 +79,7 @@ export type UseAnalysisJobOptions = {
   resumeFiletype: string | undefined;
   resumeSource: string | undefined;
   importedJobPosting: JobPosting | null;
-  authTokens: AuthTokens | null;
+  authStatus: "loading" | "restoring" | "signed_out" | "signed_in";
   setNotice: (notice: Notice) => void;
   /**
    * Owner of the canonical `analysisState`. Polling completion calls
@@ -124,7 +123,7 @@ export function useAnalysisJob({
   resumeFiletype,
   resumeSource,
   importedJobPosting,
-  authTokens,
+  authStatus,
   setNotice,
   setAnalysisState,
   onCompleted,
@@ -192,7 +191,6 @@ export function useAnalysisJob({
       try {
         const nextJobState = await getWorkspaceAnalysisJob(
           analysisJobState.job_id,
-          authTokens,
         );
         if (cancelled) {
           return;
@@ -241,7 +239,7 @@ export function useAnalysisJob({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [analysisJobState, analysisLoading, analysisRunMode, authTokens]);
+  }, [analysisJobState, analysisLoading, analysisRunMode]);
 
   async function runAnalysis() {
     if (!resumeText.trim()) {
@@ -261,7 +259,7 @@ export function useAnalysisJob({
       return;
     }
 
-    if (!authTokens) {
+    if (authStatus !== "signed_in") {
       setNotice({
         level: "warning",
         message: "Sign in with Google before running the AI-assisted workflow.",
@@ -288,17 +286,14 @@ export function useAnalysisJob({
     });
 
     try {
-      const response = await startWorkspaceAnalysisJob(
-        {
-          resume_text: resumeText,
-          resume_filetype: resumeFiletype ?? "TXT",
-          resume_source: resumeSource ?? "workspace",
-          job_description_text: jobDescriptionText.trim(),
-          imported_job_posting: importedJobPosting,
-          run_assisted: true,
-        },
-        authTokens,
-      );
+      const response = await startWorkspaceAnalysisJob({
+        resume_text: resumeText,
+        resume_filetype: resumeFiletype ?? "TXT",
+        resume_source: resumeSource ?? "workspace",
+        job_description_text: jobDescriptionText.trim(),
+        imported_job_posting: importedJobPosting,
+        run_assisted: true,
+      });
       setAnalysisJobState({
         ...response,
         result: null,

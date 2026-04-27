@@ -65,12 +65,22 @@ def _encode_text_file_payload(filename: str, text: str):
     }
 
 
-def _fire_uploads(client: TestClient, count: int, headers: dict | None = None) -> Iterable[int]:
+def _fire_uploads(
+    client: TestClient,
+    count: int,
+    headers: dict | None = None,
+    cookies: dict | None = None,
+) -> Iterable[int]:
     """Fire `count` resume uploads and yield each status code."""
+    request_headers = dict(headers or {})
+    if cookies:
+        request_headers["Cookie"] = "; ".join(
+            f"{key}={value}" for key, value in cookies.items()
+        )
     for i in range(count):
         response = client.post(
             "/api/workspace/resume/upload",
-            headers=headers or {},
+            headers=request_headers,
             json=_encode_text_file_payload(f"r{i}.txt", "Leander\nPython"),
         )
         yield response.status_code
@@ -119,6 +129,19 @@ def test_two_authenticated_users_get_independent_buckets(monkeypatch: pytest.Mon
     next_b = list(_fire_uploads(client, count=1, headers=headers_b))
     assert next_a == [429], next_a
     assert next_b == [429], next_b
+
+
+def test_authenticated_cookie_uses_user_bucket(monkeypatch: pytest.MonkeyPatch):
+    """Cookie-authenticated requests should use the same per-user
+    bucket behavior as the legacy auth header fallback."""
+    client = _reload_app(monkeypatch, override="2/minute")
+
+    cookies_a = {"ja_access_token": _make_jwt_with_sub("cookie-user-aaa")}
+    cookies_b = {"ja_access_token": _make_jwt_with_sub("cookie-user-bbb")}
+
+    assert list(_fire_uploads(client, count=2, cookies=cookies_a)) == [200, 200]
+    assert list(_fire_uploads(client, count=2, cookies=cookies_b)) == [200, 200]
+    assert list(_fire_uploads(client, count=1, cookies=cookies_a)) == [429]
 
 
 # ---------------------------------------------------------------------------

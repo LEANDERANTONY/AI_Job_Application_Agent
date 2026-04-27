@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  askWorkspaceAssistant,
   commitResumeBuilderResume,
   generateResumeBuilderResume,
   loadLatestResumeBuilderSession,
@@ -11,13 +10,13 @@ import {
   searchJobs,
   sendResumeBuilderMessage,
   startResumeBuilderSession,
+  streamWorkspaceAssistantAnswer,
   updateResumeBuilderDraft,
   uploadJobDescriptionFile,
   uploadResumeFile,
 } from "@/lib/api";
 import type {
   AuthSessionResponse,
-  AuthTokens,
   CandidateProfile,
   DailyQuotaStatus,
   JobPosting,
@@ -41,6 +40,7 @@ import {
 } from "@/components/workspace/icons";
 import {
   AssistantPanel,
+  type AssistantStreamingTurn,
   type AssistantTurn,
 } from "@/components/workspace/AssistantPanel";
 import {
@@ -179,7 +179,6 @@ export function WorkspaceShell() {
     setWorkspaceSaveMeta,
     workspaceReloading,
     autoSaving,
-    authTokens,
     dailyQuota,
     signIn: handleGoogleSignIn,
     signOutAuth,
@@ -265,6 +264,21 @@ export function WorkspaceShell() {
 
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantSending, setAssistantSending] = useState(false);
+  const [assistantStreamingTurn, setAssistantStreamingTurn] =
+    useState<AssistantStreamingTurn | null>(null);
+  // Holds the AbortController for the in-flight stream so route changes
+  // (or a clear-conversation press) can cancel the fetch and stop
+  // accumulating tokens into a turn the user no longer wants.
+  const assistantStreamAbortRef = useRef<AbortController | null>(null);
+
+  // Cancel any in-flight stream on unmount so a user navigating away
+  // mid-answer doesn't leak the connection.
+  useEffect(() => {
+    return () => {
+      assistantStreamAbortRef.current?.abort();
+      assistantStreamAbortRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (activeJob?.description_text) {
@@ -290,7 +304,7 @@ export function WorkspaceShell() {
     saveJob: handleSaveJob,
     removeJob: handleRemoveSavedJob,
     resetSavedJobs,
-  } = useSavedJobs({ authStatus, authTokens, authSession });
+  } = useSavedJobs({ authStatus, authSession });
 
   const activeResumeState = resumeState ?? analysisState;
   const resumeText = activeResumeState?.resume_document.text ?? "";
@@ -318,7 +332,7 @@ export function WorkspaceShell() {
     resumeFiletype: activeResumeState?.resume_document.filetype,
     resumeSource: activeResumeState?.resume_document.source,
     importedJobPosting: activeJob,
-    authTokens,
+    authStatus,
     setNotice: setWorkspaceNotice,
     setAnalysisState,
     onCompleted: onAnalysisCompleted,
@@ -576,7 +590,7 @@ export function WorkspaceShell() {
     });
 
     try {
-      const response = await uploadResumeFile(file, authTokens);
+      const response = await uploadResumeFile(file);
       setResumeState(response);
       setResumeIntakeMode("upload");
       setResumeNotice({
@@ -613,7 +627,7 @@ export function WorkspaceShell() {
     });
 
     try {
-      const response = await uploadJobDescriptionFile(file, authTokens);
+      const response = await uploadJobDescriptionFile(file);
       setJobFileState(response);
       setManualJobText(response.job_description_text);
       setActiveJob(null);
@@ -698,7 +712,7 @@ export function WorkspaceShell() {
     });
 
     try {
-      const response = await startResumeBuilderSession(authTokens);
+      const response = await startResumeBuilderSession();
       setResumeBuilderSession(response);
       setResumeBuilderInitialized(true);
       setResumeBuilderNotice({
@@ -719,18 +733,19 @@ export function WorkspaceShell() {
   }
 
   async function handleLoadOrStartResumeBuilder() {
+    const isSignedIn = authStatus === "signed_in";
     setResumeBuilderLoading(true);
     setResumeBuilderNotice({
       level: "info",
-      message: authTokens
+      message: isSignedIn
         ? "Checking for your latest resume-builder draft..."
         : "Starting the guided resume builder...",
     });
 
     try {
-      if (authTokens) {
+      if (isSignedIn) {
         try {
-          const latest = await loadLatestResumeBuilderSession(authTokens);
+          const latest = await loadLatestResumeBuilderSession();
           if (latest.session) {
             setResumeBuilderSession(latest.session);
             setResumeBuilderNotice({
@@ -748,7 +763,7 @@ export function WorkspaceShell() {
         }
       }
 
-      const response = await startResumeBuilderSession(authTokens);
+      const response = await startResumeBuilderSession();
       setResumeBuilderSession(response);
       setResumeBuilderNotice({
         level: "success",
@@ -792,7 +807,6 @@ export function WorkspaceShell() {
       const response = await sendResumeBuilderMessage(
         resumeBuilderSession.session_id,
         resumeBuilderAnswer.trim(),
-        authTokens,
       );
       setResumeBuilderSession(response);
       setResumeBuilderAnswer("");
@@ -831,7 +845,6 @@ export function WorkspaceShell() {
     try {
       const response = await generateResumeBuilderResume(
         resumeBuilderSession.session_id,
-        authTokens,
       );
       setResumeBuilderSession(response);
       setResumeBuilderNotice({
@@ -885,7 +898,6 @@ export function WorkspaceShell() {
             .map((item) => item.trim())
             .filter(Boolean),
         },
-        authTokens,
       );
       setResumeBuilderSession(response);
       setResumeBuilderNotice({
@@ -923,7 +935,6 @@ export function WorkspaceShell() {
     try {
       const response = await commitResumeBuilderResume(
         resumeBuilderSession.session_id,
-        authTokens,
       );
       setResumeState({
         resume_document: response.resume_document,
@@ -1001,21 +1012,106 @@ export function WorkspaceShell() {
       return;
     }
 
+    // Abort any previous stream still in flight before starting a new one —
+    // double-submits should never produce overlapping streamingTurn updates.
+    assistantStreamAbortRef.current?.abort();
+    const abortController = new AbortController();
+    assistantStreamAbortRef.current = abortController;
+
     setAssistantSending(true);
+    setAssistantStreamingTurn({
+      question: normalizedQuestion,
+      partialAnswer: "",
+      sources: [],
+      isStreaming: true,
+      error: null,
+    });
+
+    let accumulatedAnswer = "";
+    let collectedSources: string[] = [];
+    let streamErrorDetail: string | null = null;
 
     try {
-      const response = await askWorkspaceAssistant({
-        question: normalizedQuestion,
-        current_page: "Workspace",
-        workspace_snapshot: analysisState,
-        history: buildAssistantHistoryPayload(assistantTurns),
-      }, authTokens);
+      await streamWorkspaceAssistantAnswer(
+        {
+          question: normalizedQuestion,
+          current_page: "Workspace",
+          workspace_snapshot: analysisState,
+          history: buildAssistantHistoryPayload(assistantTurns),
+        },
+        (event) => {
+          switch (event.type) {
+            case "meta":
+              collectedSources = event.sources;
+              setAssistantStreamingTurn((current) =>
+                current
+                  ? { ...current, sources: event.sources }
+                  : current,
+              );
+              break;
+            case "delta":
+              accumulatedAnswer += event.text;
+              // Snapshot into a local for the closure-stable update.
+              setAssistantStreamingTurn((current) =>
+                current
+                  ? { ...current, partialAnswer: accumulatedAnswer }
+                  : current,
+              );
+              break;
+            case "error":
+              streamErrorDetail = event.detail;
+              break;
+            case "done":
+              // Handled below — reaching here just means the stream
+              // closed normally.
+              break;
+          }
+        },
+        abortController.signal,
+      );
+
+      if (streamErrorDetail) {
+        // The backend emitted an `error` SSE frame; surface it to the
+        // user and leave any partial answer visible so they can retry.
+        setAssistantStreamingTurn((current) =>
+          current
+            ? { ...current, isStreaming: false, error: streamErrorDetail }
+            : current,
+        );
+        setWorkspaceNotice({
+          level: "warning",
+          message: streamErrorDetail,
+        });
+        return;
+      }
+
+      // Commit the completed turn into history so it persists across
+      // reloads via useAssistantHistory's localStorage layer.
+      // `suggested_follow_ups` stays as `[]` because the streaming
+      // contract no longer carries them and the panel doesn't render
+      // them — the field is kept on the type only because legacy
+      // stored turns and the non-streaming endpoint still include it.
       setAssistantTurns((current) => [
         ...current,
-        { question: normalizedQuestion, response },
+        {
+          question: normalizedQuestion,
+          response: {
+            answer: accumulatedAnswer,
+            sources: collectedSources,
+            suggested_follow_ups: [],
+          },
+        },
       ]);
+      setAssistantStreamingTurn(null);
       setAssistantQuestion("");
     } catch (error) {
+      // AbortError on user-driven cancel: silently drop, no notice.
+      const isAbort =
+        error instanceof DOMException && error.name === "AbortError";
+      if (isAbort) {
+        setAssistantStreamingTurn(null);
+        return;
+      }
       setWorkspaceNotice({
         level: "warning",
         message:
@@ -1023,8 +1119,23 @@ export function WorkspaceShell() {
             ? error.message
             : "Assistant request failed unexpectedly.",
       });
+      setAssistantStreamingTurn((current) =>
+        current
+          ? {
+              ...current,
+              isStreaming: false,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Assistant request failed unexpectedly.",
+            }
+          : current,
+      );
     } finally {
       setAssistantSending(false);
+      if (assistantStreamAbortRef.current === abortController) {
+        assistantStreamAbortRef.current = null;
+      }
     }
   }
 
@@ -1039,6 +1150,11 @@ export function WorkspaceShell() {
   }
 
   function handleClearAssistantConversation() {
+    // Cancel any in-flight stream so its delta events don't keep
+    // appending to a turn the user has just discarded.
+    assistantStreamAbortRef.current?.abort();
+    assistantStreamAbortRef.current = null;
+    setAssistantStreamingTurn(null);
     setAssistantTurns([]);
     setAssistantQuestion("");
     setWorkspaceNotice({
@@ -1065,7 +1181,6 @@ export function WorkspaceShell() {
   useEffect(() => {
     if (
       authStatus !== "signed_in" ||
-      !authTokens ||
       !authSession?.features.saved_workspace_enabled ||
       !analysisState ||
       workspaceSaveMeta ||
@@ -1080,7 +1195,6 @@ export function WorkspaceShell() {
     analysisState,
     authSession?.features.saved_workspace_enabled,
     authStatus,
-    authTokens,
     autoSaving,
     workspaceSaveMeta,
   ]);
@@ -1117,6 +1231,7 @@ export function WorkspaceShell() {
       <Sidebar collapsed={sidebarCollapsed} onCollapse={setSidebarCollapsed}>
         <AssistantPanel
           turns={assistantTurns}
+          streamingTurn={assistantStreamingTurn}
           requiresWorkspaceRun={assistantRequiresWorkspaceRun}
           question={assistantQuestion}
           onQuestionChange={setAssistantQuestion}

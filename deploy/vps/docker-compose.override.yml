@@ -1,0 +1,10 @@
+services:
+  api:
+    container_name: ai-job-application-agent-api
+    networks:
+      - shared_ingress
+
+networks:
+  shared_ingress:
+    external: true
+    name: vps_default

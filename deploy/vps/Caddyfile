@@ -1,5 +1,13 @@
 {$AI_JOB_APPLICATION_API_DOMAIN} {
     encode gzip zstd
 
-    reverse_proxy api:8000
+    reverse_proxy api:8000 {
+        # Disable response buffering so Server-Sent Events from
+        # `/api/workspace/assistant/answer/stream` are flushed to the
+        # browser frame-by-frame instead of being held until the
+        # upstream response closes. The endpoint also sets
+        # `X-Accel-Buffering: no`; this directive is the
+        # belt-and-braces side of that contract.
+        flush_interval -1
+    }
 }

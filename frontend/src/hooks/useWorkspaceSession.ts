@@ -1,19 +1,22 @@
 "use client";
 
 // Hook owning the auth session + workspace-save-meta lifecycle.
-// Lifted from `WorkspaceShell.tsx` as part of the Item 2 frontend
-// split (see `docs/NEXT-STEPS-FRONTEND.md`, task #13).
 //
 // CRITICAL ORDERING (handoff hard rule, paraphrased):
-//   1. Auth restore (URL ?code= → exchange OR localStorage → restore)
-//   2. Session restored — `authStatus` flips to `"signed_in"`.
+//   1. Auth restore (URL ?code= -> exchange OR cookie -> /session/restore).
+//   2. Session restored; `authStatus` flips to `"signed_in"`.
 //   3. `useSavedJobs` reacts to `authStatus` change and pulls saved jobs.
-//   4. `WorkspaceShell` reads URL ?tab=… via the `ui` slice's
+//   4. `WorkspaceShell` reads URL ?tab=... via the `ui` slice's
 //      `hydrateUiFromUrl()` action (called separately by the shell).
 //
 // This hook owns step 1 only. Steps 2-4 happen via the dependent hooks
 // reacting to the state we publish here. Wrong order = lost state on
-// refresh — do not change without re-reading the handoff.
+// refresh. Do not change without re-reading the handoff.
+//
+// Tokens live in HttpOnly cookies (see backend/services/auth_cookies.py
+// and frontend/src/lib/auth-session.ts). The frontend never sees them
+// directly: every `fetch` is sent with `credentials: "include"` and the
+// browser handles the rest.
 
 import {
   useEffect,
@@ -32,7 +35,6 @@ import {
 } from "@/lib/api";
 import type {
   AuthSessionResponse,
-  AuthTokens,
   DailyQuotaStatus,
   LoadSavedWorkspaceResponse,
   SavedWorkspaceMeta,
@@ -41,9 +43,7 @@ import type {
 import {
   buildAuthRedirectUrl,
   clearAuthQueryParams,
-  clearStoredAuthTokens,
-  persistAuthTokens,
-  readStoredAuthTokens,
+  clearLegacyAuthTokens,
 } from "@/lib/auth-session";
 
 type Notice =
@@ -75,7 +75,6 @@ export type UseWorkspaceSessionReturn = {
   workspaceReloading: boolean;
   setWorkspaceReloading: Dispatch<SetStateAction<boolean>>;
   autoSaving: boolean;
-  authTokens: AuthTokens | null;
   dailyQuota: DailyQuotaStatus | null;
   signIn: () => Promise<void>;
   /**
@@ -114,11 +113,11 @@ export function useWorkspaceSession({
   const [workspaceReloading, setWorkspaceReloading] = useState(false);
   const [autoSaving, setAutoSaving] = useState(false);
 
-  const authTokens = authSession?.session ?? null;
   const dailyQuota = authSession?.daily_quota ?? null;
 
-  // Bootstrap on mount: handle ?code= → token exchange OR
-  // localStorage → session restore. See ORDERING note at top of file.
+  // Bootstrap on mount: handle ?code= token exchange OR
+  // probe /auth/session/restore. Backend reads the cookie, returns
+  // the user record on success or a 400 on no cookie / expired session.
   useEffect(() => {
     let cancelled = false;
 
@@ -127,6 +126,11 @@ export function useWorkspaceSession({
         return;
       }
 
+      // One-shot migration: drop the legacy localStorage token blob.
+      // Cookies replace it; this is just hygiene so the old key doesn't
+      // sit in users' browsers forever. Safe to delete in a few weeks.
+      clearLegacyAuthTokens();
+
       const params = new URLSearchParams(window.location.search);
       const authCode = params.get("code");
       const authFlow = params.get("auth_flow") ?? "";
@@ -134,7 +138,6 @@ export function useWorkspaceSession({
         params.get("error_description") ?? params.get("error");
 
       if (authErrorDescription) {
-        clearStoredAuthTokens();
         clearAuthQueryParams();
         if (!cancelled) {
           setAuthSession(null);
@@ -154,7 +157,6 @@ export function useWorkspaceSession({
             buildAuthRedirectUrl("/workspace"),
           );
           if (!cancelled) {
-            persistAuthTokens(response.session);
             setAuthSession(response);
             setAuthStatus("signed_in");
             setNotice({
@@ -167,7 +169,6 @@ export function useWorkspaceSession({
             });
           }
         } catch (error) {
-          clearStoredAuthTokens();
           if (!cancelled) {
             setAuthSession(null);
             setAuthStatus("signed_out");
@@ -183,33 +184,24 @@ export function useWorkspaceSession({
         return;
       }
 
-      const storedTokens = readStoredAuthTokens();
-      if (!storedTokens) {
-        if (!cancelled) {
-          setAuthStatus("signed_out");
-        }
-        return;
-      }
-
+      // No URL code: try a silent restore. The browser will attach
+      // the auth cookie if one is present; the backend returns the
+      // session on success or 400 on absent/expired cookie. We treat
+      // any failure here as "not signed in" without surfacing an
+      // error, because a fresh first-time visitor will hit this path
+      // legitimately and shouldn't see an error toast.
       setAuthStatus("restoring");
       setAuthError(null);
       try {
-        const response = await restoreAuthSession(storedTokens);
+        const response = await restoreAuthSession();
         if (!cancelled) {
-          persistAuthTokens(response.session);
           setAuthSession(response);
           setAuthStatus("signed_in");
         }
-      } catch (error) {
-        clearStoredAuthTokens();
+      } catch {
         if (!cancelled) {
           setAuthSession(null);
           setAuthStatus("signed_out");
-          setAuthError(
-            error instanceof Error
-              ? error.message
-              : "The saved login session could not be restored.",
-          );
         }
       }
     }
@@ -248,18 +240,14 @@ export function useWorkspaceSession({
   }
 
   async function signOutAuth() {
-    if (!authTokens) {
-      return;
-    }
-
     setAuthActionLoading(true);
     try {
-      await signOutAuthSession(authTokens);
+      await signOutAuthSession();
     } catch {
-      // Server-side sign-out failure is non-fatal; we still clear
-      // local state so the user is logged out from this device.
+      // Server-side sign-out failure is non-fatal; the backend clears
+      // cookies on failure too, and we always reset local state below
+      // so the user is logged out from this device regardless.
     } finally {
-      clearStoredAuthTokens();
       setAuthSession(null);
       setAuthStatus("signed_out");
       setAuthError(null);
@@ -276,13 +264,16 @@ export function useWorkspaceSession({
   async function persistLatestWorkspace(
     snapshot: WorkspaceAnalysisResponse,
   ): Promise<SavedWorkspaceMeta | null> {
-    if (!authTokens || !authSession?.features.saved_workspace_enabled) {
+    if (
+      authStatus !== "signed_in" ||
+      !authSession?.features.saved_workspace_enabled
+    ) {
       return null;
     }
 
     setAutoSaving(true);
     try {
-      const response = await saveWorkspaceSnapshot(snapshot, authTokens);
+      const response = await saveWorkspaceSnapshot(snapshot);
       setWorkspaceSaveMeta(response.saved_workspace);
       return response.saved_workspace;
     } catch (error) {
@@ -300,7 +291,7 @@ export function useWorkspaceSession({
   }
 
   async function reloadSavedWorkspace(): Promise<ReloadSavedWorkspaceResult> {
-    if (!authTokens) {
+    if (authStatus !== "signed_in") {
       setNotice({
         level: "warning",
         message: "Sign in with Google before reloading a saved workspace.",
@@ -310,7 +301,7 @@ export function useWorkspaceSession({
 
     setWorkspaceReloading(true);
     try {
-      const response = await loadSavedWorkspace(authTokens);
+      const response = await loadSavedWorkspace();
       if (response.status !== "available" || !response.workspace_snapshot) {
         setNotice({
           level: response.status === "expired" ? "warning" : "info",
@@ -354,7 +345,6 @@ export function useWorkspaceSession({
     workspaceReloading,
     setWorkspaceReloading,
     autoSaving,
-    authTokens,
     dailyQuota,
     signIn,
     signOutAuth,

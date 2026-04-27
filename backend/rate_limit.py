@@ -2,7 +2,7 @@
 
 Bucketing strategy:
 - Authenticated requests bucket by Supabase user-id (decoded locally
-  from the access-token JWT, no signature verification — see
+  from the access-token JWT, no signature verification; see
   _extract_user_id_from_jwt for why this is safe).
 - Anonymous requests fall back to client IP.
 - Both bucket key forms are namespaced so a forged JWT 'sub' cannot
@@ -12,7 +12,7 @@ Limits are exposed as named constants so each route picks a tier
 explicitly and the budgets are easy to audit in one place.
 
 A RATE_LIMIT_OVERRIDE env var (e.g. "2/minute") can be set at process
-startup to globally override the budgets — used by the test suite to
+startup to globally override the budgets; used by the test suite to
 exercise the limiter without firing dozens of real requests.
 """
 from __future__ import annotations
@@ -29,6 +29,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from backend.services.auth_cookies import ACCESS_TOKEN_COOKIE
 from src.logging_utils import get_logger, log_event
 
 
@@ -45,7 +46,7 @@ def _extract_user_id_from_jwt(token: str) -> Optional[str]:
        still verifies the token via Supabase before performing any
        privileged action. A forged token cannot do real work.
     2. A forger of someone else's 'sub' would burn through that user's
-       rate quota only — a denial-of-service against one account, not
+       rate quota only: a denial-of-service against one account, not
        privilege escalation. To bound that risk further, anonymous and
        authenticated buckets share a namespace prefix below so an
        attacker still has to forge a valid-shape JWT to even attempt it.
@@ -78,7 +79,10 @@ def resolve_rate_limit_key(request: Request) -> str:
     otherwise. The namespacing prevents a forged JWT bucket from
     sharing state with an IP bucket.
     """
-    access_token = request.headers.get("X-Auth-Access-Token", "").strip()
+    access_token = (
+        request.cookies.get(ACCESS_TOKEN_COOKIE, "").strip()
+        or request.headers.get("X-Auth-Access-Token", "").strip()
+    )
     user_id = _extract_user_id_from_jwt(access_token) if access_token else None
     if user_id:
         return f"user:{user_id}"
@@ -98,7 +102,7 @@ def _budget(default: str) -> str:
 LIMIT_HEAVY = _budget("10/minute")
 # Tier 2: single LLM call or external job-board fan-out.
 LIMIT_LLM = _budget("30/minute")
-# Tier 3: file parsing, artifact rendering — CPU-bound but cheap.
+# Tier 3: file parsing, artifact rendering: CPU-bound but cheap.
 LIMIT_PARSE = _budget("60/minute")
 
 

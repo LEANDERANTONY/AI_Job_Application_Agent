@@ -57,9 +57,13 @@ export type JobResolveResponse = {
   source_details: Record<string, string>;
 };
 
-export type AuthTokens = {
-  access_token: string;
-  refresh_token: string;
+// Tokens live in HttpOnly cookies. Frontend never reads or sends them
+// directly. This type is retained only as a marker for the response
+// shape of /auth/session/restore, which still echoes
+// `session: { authenticated: true }` so callers can distinguish a
+// success payload from a sign-in prompt.
+export type AuthSessionMarker = {
+  authenticated: boolean;
 };
 
 export type AuthUser = {
@@ -378,6 +382,40 @@ export type WorkspaceAssistantResponse = {
   suggested_follow_ups: string[];
 };
 
+// Server-Sent Events emitted by `POST /api/workspace/assistant/answer/stream`.
+// Order on the happy path: meta -> delta* -> done.
+// Order on failure: error -> done. The frontend treats either `done`
+// or `error` as terminal and stops reading the stream.
+//
+// A `followups` event used to sit between the last `delta` and `done`,
+// but the suggested-follow-up UI was removed (commit 9138ead) and the
+// event became dead code on both ends. Re-add the event type if/when
+// the panel is reintroduced.
+export type AssistantStreamMetaEvent = {
+  type: "meta";
+  sources: string[];
+};
+
+export type AssistantStreamDeltaEvent = {
+  type: "delta";
+  text: string;
+};
+
+export type AssistantStreamDoneEvent = {
+  type: "done";
+};
+
+export type AssistantStreamErrorEvent = {
+  type: "error";
+  detail: string;
+};
+
+export type AssistantStreamEvent =
+  | AssistantStreamMetaEvent
+  | AssistantStreamDeltaEvent
+  | AssistantStreamDoneEvent
+  | AssistantStreamErrorEvent;
+
 export type WorkspaceAssistantHistoryTurn = {
   question: string;
   answer: string;
@@ -470,7 +508,7 @@ export type AuthFeatures = {
 
 export type AuthSessionResponse = {
   authenticated: boolean;
-  session: AuthTokens;
+  session: AuthSessionMarker | null;
   user: AuthUser;
   app_user: AppUserRecord;
   daily_quota: DailyQuotaStatus | null;

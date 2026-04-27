@@ -8,6 +8,7 @@ from src.logging_utils import get_logger, log_event
 from src.product_knowledge import retrieve_product_knowledge
 from src.prompts import (
     build_assistant_prompt,
+    build_assistant_text_prompt,
 )
 from src.config import get_openai_max_completion_tokens_for_task
 from src.schemas import AssistantResponse
@@ -80,6 +81,93 @@ class AssistantService:
             report=report,
             app_context=product_context,
         )
+
+    def stream_answer(
+        self,
+        question,
+        *,
+        current_page,
+        workflow_view_model=None,
+        report=None,
+        artifact=None,
+        history=None,
+        app_context=None,
+        assistant_scope="assistant",
+    ):
+        """Streaming counterpart of ``answer``.
+
+        Yields **text chunks** (str). The router wraps each chunk in an
+        SSE ``delta`` event. Sources and follow-up suggestions are
+        computed by the caller (``stream_workspace_question``) from the
+        workspace snapshot — they don't flow through this generator.
+
+        Falls back to a single deterministic chunk when OpenAI is not
+        configured, so the streaming surface stays usable in tests and
+        when the user is not signed in / no key is provisioned.
+        """
+        product_context = {
+            **(app_context or {}),
+            "knowledge_hits": (app_context or {}).get(
+                "knowledge_hits",
+                retrieve_product_knowledge(question, current_page=current_page),
+            ),
+        }
+        workflow_context = self._build_application_qa_context(
+            workflow_view_model,
+            report=report,
+            artifact=artifact,
+        )
+        assistant_context = {
+            "assistant_scope": assistant_scope,
+            "current_page": current_page,
+            "product_context": product_context,
+            "workflow_context": workflow_context,
+        }
+
+        if self._openai_service and self._openai_service.is_available():
+            try:
+                task_name = "assistant"
+                prompt = build_assistant_text_prompt(
+                    assistant_context,
+                    question,
+                    history=self._compact_history(history),
+                )
+                yielded_any = False
+                for chunk in self._openai_service.run_text_stream(
+                    prompt["system"],
+                    prompt["user"],
+                    temperature=None,
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task(
+                        task_name
+                    ),
+                    task_name=task_name,
+                ):
+                    if chunk:
+                        yielded_any = True
+                        yield chunk
+                if yielded_any:
+                    return
+                # The model returned an empty stream — fall through to
+                # the deterministic answer so the user always sees text.
+                self._log_assistant_fallback(
+                    task_name,
+                    AgentExecutionError(
+                        "The assistant stream produced no text deltas."
+                    ),
+                )
+            except AgentExecutionError as exc:
+                self._log_assistant_fallback("assistant", exc)
+
+        fallback = self._fallback_unified(
+            question,
+            current_page=current_page,
+            workflow_view_model=workflow_view_model,
+            artifact=artifact,
+            report=report,
+            app_context=product_context,
+        )
+        if fallback.answer:
+            yield fallback.answer
 
     def answer_product_help(self, question, current_page, history=None, app_context=None):
         return self.answer(

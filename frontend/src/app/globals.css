@@ -2203,6 +2203,32 @@ code {
   color: #d7e3fb;
 }
 
+/* Streaming-turn affordances — Item 3 (assistant streaming via SSE).
+   The cursor is purely visual and runs while `isStreaming === true`.
+   The thinking label fills the gap between the POST and the first
+   delta event so the bubble doesn't render as empty. */
+.workspace-chat-cursor {
+  display: inline-block;
+  margin-left: 0.15rem;
+  color: #7ea8ff;
+  animation: workspace-chat-cursor-blink 1s steps(2, end) infinite;
+}
+
+@keyframes workspace-chat-cursor-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.workspace-chat-thinking {
+  color: rgba(215, 227, 251, 0.55);
+  font-style: italic;
+}
+
+.workspace-chat-error {
+  color: #f3a8a8;
+}
+
 .workspace-chat-followups {
   display: flex;
   flex-wrap: wrap;

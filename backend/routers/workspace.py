@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
 from backend.request_auth import get_optional_auth_tokens
@@ -30,6 +31,7 @@ from backend.services.workspace_service import (
     parse_job_description_upload,
     parse_resume_upload,
     run_workspace_analysis,
+    stream_workspace_question,
 )
 from backend.services.workspace_run_jobs import (
     get_workspace_analysis_job,
@@ -270,6 +272,43 @@ def answer_assistant_question(
         )
     except AppError as error:
         _raise_http_error(error)
+
+
+@router.post("/assistant/answer/stream")
+@limiter.limit(LIMIT_LLM)
+def stream_assistant_answer(
+    request: Request,
+    payload: WorkspaceAssistantRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    """Server-Sent Events sibling of ``/assistant/answer``.
+
+    Same request body, but the response is ``text/event-stream`` and
+    emits ``meta`` → ``delta``... → ``followups`` → ``done`` events
+    (or ``error`` → ``done`` on failure). See
+    ``stream_workspace_question`` for the event contract.
+
+    The ``X-Accel-Buffering: no`` header tells Caddy (and any other
+    well-behaved reverse proxy) to flush each frame immediately
+    instead of buffering the response. The Caddyfile also sets
+    ``flush_interval -1`` for belt-and-braces.
+    """
+    access_token, refresh_token = auth_tokens
+    return StreamingResponse(
+        stream_workspace_question(
+            question=payload.question,
+            current_page=payload.current_page,
+            workspace_snapshot=payload.workspace_snapshot,
+            history=[item.model_dump() for item in payload.history],
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/save")

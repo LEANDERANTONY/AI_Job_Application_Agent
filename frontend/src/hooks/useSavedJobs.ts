@@ -9,7 +9,7 @@
 // by the JobSearch surface.
 //
 // Note: `handleLoadSavedJob` (which sets the active job + main tab +
-// notice) is NOT in this hook — that's a cross-slice action handled
+// notice) is NOT in this hook; that's a cross-slice action handled
 // by the parent shell.
 
 import { useEffect, useMemo, useState } from "react";
@@ -17,7 +17,6 @@ import { useEffect, useMemo, useState } from "react";
 import { loadSavedJobs, removeSavedJob, saveSavedJob } from "@/lib/api";
 import type {
   AuthSessionResponse,
-  AuthTokens,
   JobPosting,
 } from "@/lib/api-types";
 
@@ -45,7 +44,6 @@ function sortSavedJobs(jobs: JobPosting[]): JobPosting[] {
 
 export type UseSavedJobsOptions = {
   authStatus: AuthStatus;
-  authTokens: AuthTokens | null;
   authSession: AuthSessionResponse | null;
 };
 
@@ -65,7 +63,6 @@ export type UseSavedJobsReturn = {
 
 export function useSavedJobs({
   authStatus,
-  authTokens,
   authSession,
 }: UseSavedJobsOptions): UseSavedJobsReturn {
   const [savedJobs, setSavedJobs] = useState<JobPosting[]>([]);
@@ -78,24 +75,18 @@ export function useSavedJobs({
   const savedJobsEnabled = Boolean(authSession?.features.saved_jobs_enabled);
 
   useEffect(() => {
-    const sessionTokens = authTokens;
-    if (
-      authStatus !== "signed_in" ||
-      !sessionTokens ||
-      !savedJobsEnabled
-    ) {
+    if (authStatus !== "signed_in" || !savedJobsEnabled) {
       setSavedJobs([]);
       setSavedJobsLoading(false);
       return;
     }
-    const resolvedAuthTokens: AuthTokens = sessionTokens;
 
     let cancelled = false;
 
     async function hydrateSavedJobs() {
       setSavedJobsLoading(true);
       try {
-        const response = await loadSavedJobs(resolvedAuthTokens);
+        const response = await loadSavedJobs();
         if (!cancelled) {
           setSavedJobs(sortSavedJobs(response.saved_jobs));
         }
@@ -122,7 +113,7 @@ export function useSavedJobs({
     return () => {
       cancelled = true;
     };
-  }, [savedJobsEnabled, authStatus, authTokens]);
+  }, [savedJobsEnabled, authStatus]);
 
   const savedJobIds = useMemo(
     () =>
@@ -140,7 +131,7 @@ export function useSavedJobs({
   );
 
   async function saveJob(job: JobPosting) {
-    if (!authTokens) {
+    if (authStatus !== "signed_in") {
       setSavedJobsNotice({
         level: "warning",
         message: "Sign in with Google before saving jobs to your shortlist.",
@@ -150,7 +141,7 @@ export function useSavedJobs({
 
     setSavedJobActionId(job.id);
     try {
-      const response = await saveSavedJob(job, authTokens);
+      const response = await saveSavedJob(job);
       setSavedJobs((current) =>
         sortSavedJobs([
           response.saved_job,
@@ -175,7 +166,7 @@ export function useSavedJobs({
   }
 
   async function removeJob(job: JobPosting) {
-    if (!authTokens) {
+    if (authStatus !== "signed_in") {
       setSavedJobsNotice({
         level: "warning",
         message: "Sign in with Google before editing your shortlist.",
@@ -185,7 +176,7 @@ export function useSavedJobs({
 
     setSavedJobActionId(job.id);
     try {
-      await removeSavedJob(job.id, authTokens);
+      await removeSavedJob(job.id);
       setSavedJobs((current) => current.filter((item) => item.id !== job.id));
       setSavedJobsNotice({
         level: "success",

@@ -1,51 +1,20 @@
 "use client";
 
-import type { AuthTokens } from "@/lib/api-types";
+// Auth tokens now live exclusively in HttpOnly cookies set by the
+// backend's /auth/google/exchange and /auth/session/restore endpoints,
+// and are sent automatically by the browser on every API call via
+// `credentials: "include"`. The frontend has no read or write access to
+// the raw tokens. That's the whole point.
+//
+// What stays in this module:
+//   - `buildAuthRedirectUrl`: still needed because Google OAuth calls
+//     back to our origin and we have to tell it which URL to use.
+//   - `clearAuthQueryParams`: post-OAuth cleanup of `?code=` etc.
+//   - `clearLegacyAuthTokens`: one-shot cleanup of the old localStorage
+//     entry so returning users don't carry stale data across the
+//     cookie-migration cutover. Safe to remove after a few weeks.
 
-export const AUTH_SESSION_STORAGE_KEY = "workspace-auth-session-v1";
-
-export function readStoredAuthTokens(): AuthTokens | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const payload = JSON.parse(raw);
-    if (
-      typeof payload?.access_token === "string" &&
-      typeof payload?.refresh_token === "string" &&
-      payload.access_token.trim() &&
-      payload.refresh_token.trim()
-    ) {
-      return {
-        access_token: payload.access_token,
-        refresh_token: payload.refresh_token,
-      };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-export function persistAuthTokens(tokens: AuthTokens) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(tokens));
-}
-
-export function clearStoredAuthTokens() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
-}
+const LEGACY_AUTH_STORAGE_KEY = "workspace-auth-session-v1";
 
 export function buildAuthRedirectUrl(path = "/") {
   if (typeof window === "undefined") {
@@ -65,4 +34,16 @@ export function clearAuthQueryParams() {
   url.searchParams.delete("error");
   url.searchParams.delete("error_description");
   window.history.replaceState({}, document.title, url.toString());
+}
+
+export function clearLegacyAuthTokens() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+  } catch {
+    // localStorage may be unavailable in privacy modes / sandboxed
+    // contexts; nothing to clean up there anyway.
+  }
 }

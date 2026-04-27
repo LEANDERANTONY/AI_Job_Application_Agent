@@ -1,12 +1,14 @@
 "use client";
 
-// Assistant chat surface — extracted from `job-application-workspace.tsx`
+// Assistant chat surface extracted from `job-application-workspace.tsx`
 // as part of the Item 2 frontend split (see
 // `docs/NEXT-STEPS-FRONTEND.md`).
 //
-// This is the home for the future SSE streaming logic from Item 3.
-// The `AssistantTurn` type is the canonical definition; the monolith
-// (and the localStorage helpers) import it from here.
+// Item 3 added the streaming surface: while a question is in flight,
+// the parent passes a `streamingTurn` describing the current partial
+// answer (sources from the `meta` event, text growing with each
+// `delta` event). On `done`, the parent commits the turn into the
+// regular `turns` array and clears `streamingTurn` to null.
 //
 // Note: the suggested-follow-up panel was removed in commit 9138ead
 // per the user's intentional product decision. Do not restore it here
@@ -21,10 +23,29 @@ export type AssistantTurn = {
   response: WorkspaceAssistantResponse;
 };
 
+/**
+ * In-flight streaming turn the panel renders below committed `turns`
+ * while a request is open. Cleared by the parent on stream
+ * completion (success or error).
+ */
+export type AssistantStreamingTurn = {
+  question: string;
+  /** Grows with each `delta` event. */
+  partialAnswer: string;
+  /** Populated by the `meta` event up front. */
+  sources: string[];
+  /** True between the first POST and the terminal `done`/`error` event. */
+  isStreaming: boolean;
+  /** Set to the SSE `error` event's `detail`, or null on the happy path. */
+  error: string | null;
+};
+
 export type AssistantPanelProps = {
   turns: AssistantTurn[];
+  /** In-flight streaming turn, or null when no request is open. */
+  streamingTurn?: AssistantStreamingTurn | null;
   /**
-   * `true` while the workspace has not yet been analyzed — the assistant
+   * `true` while the workspace has not yet been analyzed; the assistant
    * is gated on a successful analysis run for the application-Q&A surface.
    */
   requiresWorkspaceRun: boolean;
@@ -38,6 +59,7 @@ export type AssistantPanelProps = {
 
 export function AssistantPanel({
   turns,
+  streamingTurn = null,
   requiresWorkspaceRun,
   question,
   onQuestionChange,
@@ -46,12 +68,14 @@ export function AssistantPanel({
   onSubmit,
   onClearConversation,
 }: AssistantPanelProps) {
+  const hasContent = turns.length > 0 || streamingTurn !== null;
+
   return (
     <div className="workspace-sidebar-card workspace-assistant-card">
       <p className="eyebrow">Assistant</p>
 
       <div className="workspace-assistant-thread">
-        {turns.length ? (
+        {hasContent ? (
           <div className="workspace-chat-history">
             {turns.map((turn, index) => (
               <div
@@ -66,6 +90,40 @@ export function AssistantPanel({
                 </div>
               </div>
             ))}
+            {streamingTurn ? (
+              <div
+                className="workspace-chat-turn workspace-chat-turn-streaming"
+                key="streaming"
+              >
+                <div className="workspace-chat-bubble workspace-chat-user">
+                  {streamingTurn.question}
+                </div>
+                <div className="workspace-chat-bubble workspace-chat-assistant">
+                  {streamingTurn.error ? (
+                    <span className="workspace-chat-error">
+                      {streamingTurn.error}
+                    </span>
+                  ) : (
+                    <>
+                      {streamingTurn.partialAnswer}
+                      {streamingTurn.isStreaming ? (
+                        <span
+                          aria-hidden="true"
+                          className="workspace-chat-cursor"
+                        >
+                          |
+                        </span>
+                      ) : null}
+                      {!streamingTurn.partialAnswer && streamingTurn.isStreaming ? (
+                        <span className="workspace-chat-thinking">
+                          Thinking...
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : !requiresWorkspaceRun ? (
           <div className="workspace-empty-state workspace-empty-state-compact">
@@ -101,7 +159,7 @@ export function AssistantPanel({
           </button>
           <button
             className="secondary-button workspace-button workspace-button-full"
-            disabled={!turns.length}
+            disabled={!turns.length && !streamingTurn}
             onClick={onClearConversation}
             type="button"
           >

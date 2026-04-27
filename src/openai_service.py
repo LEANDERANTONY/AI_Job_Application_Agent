@@ -361,6 +361,166 @@ class OpenAIService:
             )
         return payload
 
+    def run_text_stream(
+        self,
+        system_prompt,
+        user_prompt,
+        *,
+        temperature=None,
+        max_completion_tokens=1200,
+        task_name=None,
+        model=None,
+        metadata=None,
+    ):
+        """Stream a plain-text response from the Responses API.
+
+        Yields text deltas as strings as they arrive. Records usage and
+        last-response metadata once the stream completes — the same way
+        ``run_json_prompt`` does — so per-session budgets stay enforced.
+
+        Intentionally separate from ``run_json_prompt``: the assistant
+        streaming surface (``stream_workspace_question``) uses a plain-
+        text prompt because incremental JSON parsing is fragile. Other
+        agents continue to use the JSON path unchanged.
+        """
+        if not self.is_available():
+            raise AgentExecutionError(
+                "OpenAI is not configured for AI-assisted orchestration."
+            )
+
+        self._enforce_budget()
+        resolved_model = self._resolve_model(task_name=task_name, model=model)
+        reasoning_effort = self._resolve_reasoning_effort(task_name=task_name)
+        request_metadata = {
+            key: str(value)
+            for key, value in dict(metadata or {}).items()
+            if value is not None
+        }
+        if task_name:
+            request_metadata.setdefault("task_name", task_name)
+
+        started_at = time.perf_counter()
+        log_event(
+            LOGGER,
+            logging.INFO,
+            "openai_request_started",
+            "Starting OpenAI text-stream request.",
+            model=resolved_model,
+            task_name=task_name,
+            temperature=temperature,
+            reasoning_effort=reasoning_effort,
+            max_completion_tokens=max_completion_tokens,
+            stream=True,
+            system_prompt_chars=len(system_prompt or ""),
+            user_prompt_chars=len(user_prompt or ""),
+        )
+
+        request_payload = {
+            "model": resolved_model,
+            "instructions": system_prompt,
+            "input": str(user_prompt or ""),
+            "store": False,
+            "max_output_tokens": max_completion_tokens,
+            "metadata": request_metadata or None,
+            "stream": True,
+        }
+        if self._supports_reasoning_effort(resolved_model) and reasoning_effort:
+            request_payload["reasoning"] = {"effort": reasoning_effort}
+
+        final_response = None
+        try:
+            stream = self._client.responses.create(**request_payload)
+            for event in stream:
+                event_type = self._get_field(event, "type", "")
+                if event_type == "response.output_text.delta":
+                    delta = self._get_field(event, "delta", "")
+                    if delta:
+                        yield str(delta)
+                elif event_type == "response.completed":
+                    final_response = self._get_field(event, "response")
+                elif event_type == "response.failed":
+                    detail = self._get_field(event, "response")
+                    raise AgentExecutionError(
+                        "The AI workflow request failed mid-stream.",
+                        details=str(detail) if detail is not None else None,
+                    )
+                elif event_type == "response.error":
+                    detail = self._get_field(event, "error")
+                    raise AgentExecutionError(
+                        "The AI workflow returned an error event.",
+                        details=str(detail) if detail is not None else None,
+                    )
+        except AgentExecutionError:
+            raise
+        except Exception as exc:
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "openai_request_failed",
+                "OpenAI text-stream request failed.",
+                model=resolved_model,
+                task_name=task_name,
+                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                error_type=type(exc).__name__,
+                details=str(exc),
+            )
+            raise AgentExecutionError(
+                "The AI workflow request failed.",
+                details=str(exc),
+            ) from exc
+
+        usage = getattr(final_response, "usage", None) if final_response else None
+        status = getattr(final_response, "status", None) if final_response else None
+        incomplete_details = getattr(final_response, "incomplete_details", None) if final_response else None
+        incomplete_reason = getattr(incomplete_details, "reason", None) if incomplete_details else None
+        output_token_details = getattr(usage, "output_tokens_details", None) if usage else None
+        reasoning_tokens = getattr(output_token_details, "reasoning_tokens", 0) or 0 if output_token_details else 0
+        prompt_tokens = (getattr(usage, "input_tokens", 0) or 0) if usage else 0
+        completion_tokens = (getattr(usage, "output_tokens", 0) or 0) if usage else 0
+        total_tokens = (getattr(usage, "total_tokens", 0) or 0) if usage else 0
+        self._record_usage(resolved_model, prompt_tokens, completion_tokens, total_tokens)
+        self._last_response_metadata = {
+            "response_id": getattr(final_response, "id", None) if final_response else None,
+            "status": status,
+            "incomplete_reason": incomplete_reason,
+            "model": resolved_model,
+            "task_name": task_name,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "stream": True,
+        }
+        log_event(
+            LOGGER,
+            logging.INFO,
+            "openai_request_completed",
+            "OpenAI text-stream request completed.",
+            model=resolved_model,
+            task_name=task_name,
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+            response_id=getattr(final_response, "id", None) if final_response else None,
+            status=status,
+            incomplete_reason=incomplete_reason,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
+            stream=True,
+        )
+        self._record_usage_event(
+            {
+                "task_name": task_name or "",
+                "model_name": resolved_model,
+                "request_count": 1,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "response_id": (getattr(final_response, "id", None) if final_response else "") or "",
+                "status": status or "",
+            }
+        )
+
     def _retry_with_higher_output_budget(
         self,
         *,

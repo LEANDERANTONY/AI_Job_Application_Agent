@@ -359,6 +359,44 @@ def build_assistant_prompt(
     }
 
 
+def build_assistant_text_prompt(
+    assistant_context: Dict[str, Any],
+    question: str,
+    history: Any = None,
+) -> Dict[str, Any]:
+    """Plain-prose variant of ``build_assistant_prompt`` for the SSE
+    streaming endpoint.
+
+    Same context, same grounding rules, but instructs the model to
+    return prose only (no JSON contract) so the response can be
+    streamed token-by-token. Sources and follow-up suggestions are
+    computed deterministically from the workspace snapshot in the
+    streaming caller (see ``stream_workspace_question``).
+    """
+    user_prompt = "\n\n".join(
+        [
+            _json_block("Assistant Context", assistant_context),
+            _json_block("User Question", {"question": question}),
+        ]
+        + ([_json_block("Recent History", history[-4:])] if history else [])
+    )
+    return {
+        "system": (
+            "You are the in-app assistant for an AI job application app. "
+            "You answer both product questions and grounded questions about the user's current package in one conversation. "
+            "Explain only features and artifacts that are present in the provided context. "
+            "Use retrieved product knowledge hits when they are provided, but treat runtime session context as authoritative for current state such as quotas, page availability, saved workspace behavior, and active artifacts. "
+            "If the user asks about navigation, explain the current sidebar pages and signed-in actions from the provided context. "
+            "If the user asks about the current resume, cover letter, report, or fit analysis, ground the answer in the workflow context and say directly when evidence is weak or unavailable. "
+            "If the user asks for broader resume or application coaching, you may provide general advice, but anchor it back to the current package when possible and separate general guidance from context-specific recommendations when helpful. "
+            "If the user asks about limits, tokens, quota, warnings, or fallback behavior, explain the signed-in account-level daily quota using the provided context and do not describe any browser-session budget model. "
+            "If the user asks who you are or what your name is, answer as the in-app assistant for this product. "
+            "Respond as a concise, direct prose answer. Do not return JSON, do not wrap the answer in code fences, and do not list sources — sources are surfaced separately by the app."
+        ),
+        "user": user_prompt,
+    }
+
+
 def build_assistant_followup_prompt(
     question: str,
     *,
