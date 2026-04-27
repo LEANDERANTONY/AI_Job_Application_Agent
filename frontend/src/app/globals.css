@@ -148,15 +148,20 @@ code {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 1rem;
-  background: linear-gradient(180deg, #4a78ff, #3064ff);
-  box-shadow: 0 18px 35px rgba(48, 100, 255, 0.26);
-  font-family: var(--font-space-grotesk), sans-serif;
-  font-weight: 700;
+  overflow: hidden;
+}
+
+.brand-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 1rem;
 }
 
 .brand-title {
@@ -963,11 +968,14 @@ code {
   width: 3rem;
   height: 3rem;
   border-radius: 1rem;
-  background: linear-gradient(180deg, #4a78ff, #3064ff);
-  color: white;
-  font-family: var(--font-space-grotesk), sans-serif;
-  font-weight: 700;
-  box-shadow: 0 12px 26px rgba(48, 100, 255, 0.18);
+  overflow: hidden;
+}
+
+.workspace-brand-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 1rem;
 }
 
 .workspace-brand-title {

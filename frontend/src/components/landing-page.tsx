@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+import { BrandLogo } from "@/components/BrandLogo";
 import {
   exchangeGoogleCode,
   restoreAuthSession,
@@ -179,7 +180,9 @@ export function LandingPage() {
 
       <header className="topbar">
           <div className="brand">
-            <div className="brand-mark">AJ</div>
+            <div className="brand-mark">
+              <BrandLogo className="brand-logo-image" size={44} />
+            </div>
             <div>
               <p className="brand-title">Job Application Copilot</p>
             </div>

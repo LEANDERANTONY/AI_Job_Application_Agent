@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { BrandLogo } from "@/components/BrandLogo";
+
 const EFFECTIVE_DATE = "April 24, 2026";
 
 export default function PrivacyPage() {
@@ -10,7 +12,9 @@ export default function PrivacyPage() {
 
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">AJ</div>
+          <div className="brand-mark">
+            <BrandLogo className="brand-logo-image" size={44} />
+          </div>
           <div>
             <p className="brand-title">Job Application Copilot</p>
           </div>

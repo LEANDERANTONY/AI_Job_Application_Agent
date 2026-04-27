@@ -11,6 +11,8 @@
 
 import type { ReactNode } from "react";
 
+import { BrandLogo } from "@/components/BrandLogo";
+
 export type SidebarProps = {
   collapsed: boolean;
   onCollapse: (collapsed: boolean) => void;
@@ -54,9 +56,11 @@ export function Sidebar({ collapsed, onCollapse, children }: SidebarProps) {
         <div className="workspace-sidebar-shell">
           <div className="workspace-sidebar-head">
             <div className="workspace-brand-lockup">
-              <span className="workspace-brand-mark">AJ</span>
+              <span className="workspace-brand-mark">
+                <BrandLogo className="workspace-brand-logo-image" size={48} />
+              </span>
               <div>
-                <p className="workspace-brand-title">Job Application Agent</p>
+                <p className="workspace-brand-title">Job Application Copilot</p>
               </div>
             </div>
 
