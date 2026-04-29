@@ -9,9 +9,9 @@ Accepted
 The earlier supervised workflow had grown into a more expensive sequence than the product needed:
 
 - `ProfileAgent` and `JobAgent` were generating summaries that mostly restated deterministic candidate and JD structure already available elsewhere in the system
-- the orchestrator ran a bounded revision loop that resent tailoring, strategy, and review through another full pass when review rejected the first draft
+- the orchestrator ran a bounded revision loop that resent tailoring and review through another full pass when review rejected the first draft
 - Review was functioning as both a gate and a revision trigger, but the product goal had shifted toward direct grounded correction rather than repeated full-pipeline iteration
-- real runtime logs showed that the second tailoring + strategy + review pass was one of the largest contributors to total latency
+- real runtime logs showed that the second tailoring + review pass was one of the largest contributors to total latency
 - the final high-trust stages were worth more model budget than the early summarization stages, but the routing defaults had not yet been tightened around that reality
 
 At the same time, the product still needed:
@@ -29,16 +29,16 @@ The accepted workflow is:
 
 1. `fit`
 2. `tailoring`
-3. `strategy`
-4. `review`
-5. `resume_generation`
+3. `review`
+4. `resume_generation`
+5. `cover_letter`
 
 Implementation details:
 
 1. remove live `ProfileAgent` and `JobAgent` execution from the active orchestrator path
 2. keep deterministic `CandidateProfile`, `JobDescription`, `FitAnalysis`, and `TailoredResumeDraft` as the source-of-truth inputs
-3. make Review return direct corrected tailoring and strategy outputs when repairs are straightforward
-4. stop rerunning the entire tailoring / strategy / review chain after review feedback
+3. make Review return direct corrected tailoring output when repairs are straightforward
+4. stop rerunning the entire tailoring / review chain after review feedback
 5. define review approval in terms of the final corrected state, not only the cleanliness of the incoming draft
 6. route earlier cheaper stages to cheaper reasoning levels than the final grounding stages
 7. tune output-token caps by observed usage instead of using one oversized default for every task
@@ -47,13 +47,13 @@ The current routing defaults following this decision are:
 
 - `fit`: `gpt-5-mini-2025-08-07` with `low` reasoning and a 1600-token output cap
 - `tailoring`: `gpt-5-mini-2025-08-07` with `medium` reasoning and a 3200-token output cap
-- `strategy`: `gpt-5-mini-2025-08-07` with `low` reasoning and a 1500-token output cap
 - `review`: `gpt-5.4` with `medium` reasoning and a 4000-token output cap
 - `resume_generation`: `gpt-5.4` with `medium` reasoning and a 3000-token output cap
+- `cover_letter`: `gpt-5.4` with `medium` reasoning and a 3000-token output cap
 
 ## Alternatives Considered
 
-### 1. Keep the full Profile + Job + Fit + Tailoring + Strategy + Review + Resume Generation stack
+### 1. Keep the full Profile + Job + Fit + Tailoring + Review + Resume Generation stack
 
 Rejected because Profile and Job were not adding enough unique value relative to the deterministic data they were summarizing, while still costing additional sequential model latency.
 
@@ -61,13 +61,13 @@ Rejected because Profile and Job were not adding enough unique value relative to
 
 Rejected because the largest avoidable cost was architectural: repeated full-pipeline passes. Model tuning alone would not remove that structural latency.
 
-### 3. Remove Review entirely and trust Tailoring / Strategy output directly
+### 3. Remove Review entirely and trust Tailoring output directly
 
 Rejected because Review is still the main grounding defense against unsupported claims, inferred tenure, and overstated tooling experience.
 
 ### 4. Lower every stage to the same cheapest reasoning tier
 
-Rejected because the stages do not have the same risk profile. Review and final resume generation justify more careful reasoning than early fit and strategy summarization.
+Rejected because the stages do not have the same risk profile. Review and final resume generation justify more careful reasoning than early fit and tailoring guidance.
 
 ## Consequences
 
