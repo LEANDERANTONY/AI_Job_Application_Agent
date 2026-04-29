@@ -55,65 +55,12 @@ Each agent follows the same operating shape: deterministic baseline first, LLM-a
 7. Ask grounded follow-up questions in the workspace assistant
 8. Export Markdown or WeasyPrint-backed PDF documents
 
-## Stack
-
-- Next.js frontend in `frontend/`
-- FastAPI backend in `backend/`
-- Shared Python workflow, agents, builders, and services in `src/`
-- Supabase for Google auth, quota tracking, saved workspaces, and saved jobs
-- Greenhouse and Lever job-source clients with matching and registry layers
-- OpenAI Responses API for assisted generation
-- WeasyPrint-backed PDF export pipeline
-- Docker Compose + Caddy deployment bundle in `deploy/vps/`
-
 ## Engineering Notes
 
 - 37 focused Python test files cover parsing, normalization, fitting, tailoring, orchestration, builders, exports, auth, quotas, persistence, and backend routes.
 - 12 ADRs in `docs/adr/` record product and architecture decisions, including the Streamlit-first to Next.js + FastAPI transition.
 - Architecture details live in [docs/architecture.md](docs/architecture.md).
 - Deployment notes live in [docs/next-fastapi-transition.md](docs/next-fastapi-transition.md).
-
-## Local Development
-
-Run the backend:
-
-```powershell
-uv run uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
-```
-
-Run the frontend:
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-Recommended local frontend env:
-
-```env
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
-```
-
-Recommended backend env:
-
-```env
-ENABLE_JOB_SEARCH_BACKEND=true
-JOB_BACKEND_BASE_URL=http://127.0.0.1:8000
-GREENHOUSE_BOARD_TOKENS=narvar,gleanwork,wayve,datadog,moloco,figma,qualtrics,thumbtack,placerlabs,zscaler,coinbase,typeface
-LEVER_SITE_NAMES=dnb,plaid,mistral
-```
-
-## Core Checks
-
-1. Open `http://127.0.0.1:8000/api/health`
-2. Open `http://localhost:3000/workspace`
-3. Upload a resume
-4. Search or import a job
-5. Load or paste a JD
-6. Run the agentic analysis
-7. Verify resume, cover letter, assistant, and exports
 
 ## Deployment Shape
 
