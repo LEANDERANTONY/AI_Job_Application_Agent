@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 580" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif">
+  <defs>
+    <style>
+      .title { font-size: 26px; font-weight: 800; fill: #0F172A; }
+      .subtitle { font-size: 13px; font-weight: 400; fill: #475569; }
+      .lane { font-size: 10.5px; font-weight: 700; fill: #94A3B8; letter-spacing: 0.18em; }
+      .nh { font-size: 13px; font-weight: 700; fill: #0F172A; text-anchor: middle; }
+      .nd { font-size: 10.5px; font-weight: 400; fill: #475569; text-anchor: middle; }
+      .stage-num { font-size: 11px; font-weight: 800; fill: #94A3B8; text-anchor: middle; letter-spacing: 0.05em; }
+      .badge-amber { font-size: 10px; font-weight: 800; fill: #92400E; letter-spacing: 0.08em; text-anchor: middle; }
+      .badge-emerald { font-size: 10px; font-weight: 800; fill: #047857; letter-spacing: 0.08em; text-anchor: middle; }
+      .badge-blue { font-size: 10px; font-weight: 800; fill: #1E40AF; letter-spacing: 0.08em; text-anchor: middle; }
+      .anno { font-size: 10px; font-weight: 500; fill: #64748B; font-style: italic; }
+      .cond { font-size: 10px; font-weight: 600; fill: #64748B; text-anchor: middle; }
+    </style>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94A3B8"/>
+    </marker>
+    <marker id="ar-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#F59E0B"/>
+    </marker>
+    <marker id="ar-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#10B981"/>
+    </marker>
+    <marker id="ar-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3B82F6"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="580" fill="#FAFAFA"/>
+
+  <!-- Title -->
+  <text x="60" y="48" class="title">AI Job Application Agent</text>
+  <text x="60" y="70" class="subtitle">Searches Greenhouse and Lever boards, then tailors your resume and cover letter through a five-agent pipeline with a grounded Review Agent that flags unsupported claims.</text>
+
+  <!-- INPUTS LANE -->
+  <text x="60" y="118" class="lane">INPUTS</text>
+  <line x1="125" y1="114" x2="280" y2="114" stroke="#E2E8F0" stroke-width="1"/>
+
+  <g transform="translate(60, 138)">
+    <rect width="200" height="56" rx="8" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
+    <text x="100" y="26" class="nh">Resume</text>
+    <text x="100" y="44" class="nd">PDF · parsed profile</text>
+  </g>
+
+  <g transform="translate(60, 210)">
+    <rect width="200" height="74" rx="8" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.8"/>
+    <text x="100" y="22" class="badge-blue">JOB SEARCH</text>
+    <text x="100" y="44" class="nh">Greenhouse + Lever</text>
+    <text x="100" y="62" class="nd">12 + 3 indexed boards · matching</text>
+  </g>
+
+  <g transform="translate(60, 304)">
+    <rect width="200" height="56" rx="8" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
+    <text x="100" y="26" class="nh">Selected JD</text>
+    <text x="100" y="44" class="nd">or pasted manually</text>
+  </g>
+
+  <!-- AGENT PIPELINE LANE -->
+  <text x="296" y="118" class="lane">5-AGENT PIPELINE</text>
+  <line x1="416" y1="114" x2="1140" y2="114" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- Agent 1: Fit -->
+  <g transform="translate(296, 138)">
+    <rect width="148" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
+    <text x="74" y="22" class="stage-num">1</text>
+    <text x="74" y="46" class="nh">Fit Agent</text>
+    <text x="74" y="64" class="nd">match score</text>
+    <text x="74" y="78" class="nd">grounded gaps</text>
+  </g>
+
+  <!-- arrow -->
+  <line x1="446" y1="188" x2="468" y2="188" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- Agent 2: Tailoring -->
+  <g transform="translate(470, 138)">
+    <rect width="148" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
+    <text x="74" y="22" class="stage-num">2</text>
+    <text x="74" y="46" class="nh">Tailoring Agent</text>
+    <text x="74" y="64" class="nd">rewrites bullets</text>
+    <text x="74" y="78" class="nd">to match the JD</text>
+  </g>
+
+  <line x1="620" y1="188" x2="642" y2="188" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- Agent 3: Review (HIGHLIGHTED) -->
+  <g transform="translate(644, 133)">
+    <rect width="180" height="110" rx="12" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2.2"/>
+    <text x="90" y="22" class="stage-num" fill="#92400E">3</text>
+    <text x="90" y="42" class="badge-amber">GROUNDED REVIEW</text>
+    <text x="90" y="66" class="nh">Review Agent</text>
+    <text x="90" y="86" class="nd">flags unsupported claims</text>
+    <text x="90" y="100" class="nd">revises or rejects</text>
+  </g>
+
+  <line x1="826" y1="188" x2="848" y2="188" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- Agent 4: Resume Generation -->
+  <g transform="translate(850, 138)">
+    <rect width="140" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
+    <text x="70" y="22" class="stage-num">4</text>
+    <text x="70" y="46" class="nh">Resume Builder</text>
+    <text x="70" y="64" class="nd">final assembly</text>
+    <text x="70" y="78" class="nd">structured layout</text>
+  </g>
+
+  <line x1="992" y1="188" x2="1014" y2="188" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+
+  <!-- Agent 5: Cover Letter -->
+  <g transform="translate(1016, 138)">
+    <rect width="140" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
+    <text x="70" y="22" class="stage-num">5</text>
+    <text x="70" y="46" class="nh">Cover Letter</text>
+    <text x="70" y="64" class="nd">role-specific</text>
+    <text x="70" y="78" class="nd">narrative</text>
+  </g>
+
+  <!-- Job Search -> Selected JD (down arrow) -->
+  <line x1="160" y1="284" x2="160" y2="302" stroke="#3B82F6" stroke-width="1.6" marker-end="url(#ar-blue)"/>
+
+  <!-- Inputs -> Pipeline arrows (Resume from top, Selected JD from bottom, converging at x=282 then into Fit Agent) -->
+  <path d="M 264 166 L 282 166 L 282 188 L 294 188" fill="none" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#ar)"/>
+  <path d="M 264 332 L 282 332 L 282 188" fill="none" stroke="#94A3B8" stroke-width="1.5"/>
+
+  <!-- Revision loop: Review back to Tailoring -->
+  <path d="M 734 243 L 734 280 L 544 280 L 544 240" fill="none" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ar-amber)"/>
+  <text x="640" y="296" class="anno" text-anchor="middle">if review flags unsupported claims → revise</text>
+
+  <!-- Conditional cover letter annotation -->
+  <text x="1003" y="178" class="cond" text-anchor="middle">only if approved</text>
+
+  <!-- OUTPUTS LANE -->
+  <text x="60" y="392" class="lane">OUTPUTS</text>
+  <line x1="135" y1="388" x2="1140" y2="388" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- output arrow rails -->
+  <path d="M 920 240 L 920 414 L 720 414" fill="none" stroke="#10B981" stroke-width="1.5" marker-end="url(#ar-emerald)"/>
+  <path d="M 1086 240 L 1086 438 L 996 438" fill="none" stroke="#10B981" stroke-width="1.5" marker-end="url(#ar-emerald)"/>
+
+  <g transform="translate(520, 410)">
+    <rect width="200" height="62" rx="8" fill="#ECFDF5" stroke="#10B981" stroke-width="1.8"/>
+    <text x="100" y="22" class="badge-emerald">TAILORED RESUME</text>
+    <text x="100" y="44" class="nd">Markdown · WeasyPrint PDF</text>
+  </g>
+
+  <g transform="translate(796, 410)">
+    <rect width="200" height="62" rx="8" fill="#ECFDF5" stroke="#10B981" stroke-width="1.8"/>
+    <text x="100" y="22" class="badge-emerald">COVER LETTER</text>
+    <text x="100" y="44" class="nd">Markdown · WeasyPrint PDF</text>
+  </g>
+
+  <!-- Foundation row: shared infrastructure -->
+  <text x="60" y="498" class="lane">SHARED INFRASTRUCTURE</text>
+  <line x1="245" y1="494" x2="1140" y2="494" stroke="#E2E8F0" stroke-width="1"/>
+
+  <g transform="translate(60, 514)">
+    <rect width="540" height="50" rx="8" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
+    <text x="270" y="22" class="nh">Each agent: deterministic baseline + LLM on top + JSON-contracted output</text>
+    <text x="270" y="38" class="nd">graceful fallback to deterministic mode if the model is unavailable</text>
+  </g>
+
+  <g transform="translate(620, 514)">
+    <rect width="520" height="50" rx="8" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
+    <text x="260" y="22" class="nh">Supabase auth · saved workspaces · quota tracking · rate limiting</text>
+    <text x="260" y="38" class="nd">FastAPI backend · Next.js workspace · Vercel + VPS deployment</text>
+  </g>
+</svg>

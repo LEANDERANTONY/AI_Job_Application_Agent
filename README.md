@@ -4,15 +4,19 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Live App](https://img.shields.io/badge/Live%20App-Vercel-2563eb?logo=vercel&logoColor=white)](https://job-application-copilot.xyz/)
 
-AI Job Application Agent is a grounded resume-tailoring product: a five-stage agent pipeline that turns a source resume and job description into an evidence-backed tailored resume and cover letter.
+AI Job Application Agent is a grounded job-application copilot with three first-class systems: integrated job discovery across Greenhouse and Lever boards, a five-agent tailoring pipeline built on deterministic baselines plus LLM refinement, and grounded review that revises or rejects unsupported claims before export.
 
-The core differentiator is grounded review. The pipeline is designed to detect and correct unsupported claims before export, so tailoring can emphasize the candidate's strongest relevant evidence without inventing skills or experience.
+The result is more than a paste-a-JD resume tool. It can search indexed job boards, match postings, tailor a resume and cover letter through supervised agents, and keep the final package anchored to evidence from the source profile.
 
-![Agentic workflow](docs/screenshots/agentic_workflow.jpg)
+![Architecture diagram](docs/job-agent-architecture.svg)
 
 Live landing page: https://job-application-copilot.xyz
 
 Workspace app: https://app.job-application-copilot.xyz
+
+## Job Discovery
+
+The app can search configured Greenhouse and Lever boards before the agent workflow starts. The default local configuration indexes 12 Greenhouse boards and 3 Lever sites, normalizes postings through provider-specific clients, and ranks results through the matching layer before a selected JD enters the tailoring pipeline.
 
 ## Agent Pipeline
 
