@@ -10,9 +10,7 @@ The result is more than a paste-a-JD resume tool. It can search indexed job boar
 
 ![Architecture diagram](docs/job-agent-architecture.svg)
 
-Live landing page: https://job-application-copilot.xyz
-
-Workspace app: https://app.job-application-copilot.xyz
+Live landing page: https://job-application-copilot.xyz; Workspace app: https://app.job-application-copilot.xyz
 
 ## Job Discovery
 
