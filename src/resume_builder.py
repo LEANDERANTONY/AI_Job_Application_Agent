@@ -194,12 +194,11 @@ def _build_resume_markdown(
             line += " ({dates})".format(dates=" - ".join(date_parts))
         education_lines.append(line)
 
-    # Summary / Core Skills / Experience / Education are workflow
-    # outputs and always render — if any is empty that signals a
-    # workflow or parsing failure, and showing "No X generated." makes
-    # the failure visible rather than silently hiding the section.
-    # Certifications is the only genuinely optional section (many
-    # candidates have none) and drops entirely when empty.
+    # Summary always renders (placeholder surfaces a workflow failure).
+    # Core Skills and Education always render — both are user-supplied
+    # content the resume requires. Experience and Certifications drop
+    # entirely when empty: students / early-career candidates may have
+    # neither, and a placeholder there reads as awkward filler.
     cert_values = [item for item in certifications if str(item or "").strip()]
 
     sections: list[str] = [
@@ -207,9 +206,10 @@ def _build_resume_markdown(
         theme_config["tagline"],
         "## Professional Summary\n\n" + (professional_summary or "No professional summary generated."),
         "## Core Skills\n\n" + render_markdown_list(highlighted_skills, "No highlighted skills generated."),
-        "## Professional Experience\n\n" + ("\n\n".join(experience_blocks) if experience_blocks else "No structured experience entries were inferred from the current resume."),
-        "## Education\n\n" + render_markdown_list(education_lines, "No education entries available."),
     ]
+    if experience_blocks:
+        sections.append("## Professional Experience\n\n" + "\n\n".join(experience_blocks))
+    sections.append("## Education\n\n" + render_markdown_list(education_lines, "No education entries available."))
     if cert_values:
         sections.append("## Certifications\n\n" + render_markdown_list(cert_values, ""))
     sections.append("## Change Summary\n\n" + render_markdown_list(change_log, "No change summary available."))

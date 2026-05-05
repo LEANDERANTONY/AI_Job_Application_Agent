@@ -642,12 +642,15 @@ def _build_resume_skills_inline_html(skills):
 
 
 def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
-    # Summary / Core Skills / Experience / Education are workflow
-    # outputs and should always render — if any is empty that signals a
-    # workflow or parsing failure, so we keep the placeholder text
-    # rather than silently hiding the section. Certifications is the
-    # only genuinely optional section (many candidates have none); it
-    # drops entirely when empty.
+    # Summary always renders — if the workflow didn't produce one we
+    # show the placeholder so the failure surfaces. Core Skills and
+    # Education always render too: both are user-supplied content the
+    # resume requires. Experience and Certifications are the two
+    # genuinely-optional sections — students / early-career candidates
+    # may have neither — so they drop entirely when empty rather than
+    # showing filler. Internships are modelled as regular Experience
+    # entries (no separate Internships section); there is currently no
+    # Projects section in the schema either.
     name = html.escape(artifact.header.full_name or artifact.title or "Candidate")
     contact_values = []
     if artifact.header.location:
@@ -655,6 +658,16 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
     contact_values.extend(item for item in artifact.header.contact_lines if str(item or "").strip())
     contact_html = _build_resume_contact_inline_html(contact_values)
     skills_html = _build_resume_skills_inline_html(artifact.highlighted_skills)
+
+    experience_entries = list(artifact.experience_entries or [])
+    experience_section = ""
+    if experience_entries:
+        experience_section = """
+    <section class="resume-classic-section">
+        <h2>Experience</h2>
+        {experience}
+    </section>
+        """.format(experience=_build_resume_experience_html(experience_entries))
 
     certifications = [item for item in artifact.certifications if str(item or "").strip()]
     certifications_section = ""
@@ -685,10 +698,7 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         <h2>Core Skills</h2>
         {skills}
     </section>
-    <section class="resume-classic-section">
-        <h2>Experience</h2>
-        {experience}
-    </section>
+    {experience_section}
     <section class="resume-classic-section">
         <h2>Education</h2>
         {education}
@@ -699,7 +709,7 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         contact_block=contact_html,
         summary=html.escape(artifact.professional_summary or "No professional summary generated."),
         skills=skills_html,
-        experience=_build_resume_experience_html(artifact.experience_entries),
+        experience_section=experience_section,
         education=_build_resume_education_html(artifact.education_entries),
         certifications_section=certifications_section,
     )
