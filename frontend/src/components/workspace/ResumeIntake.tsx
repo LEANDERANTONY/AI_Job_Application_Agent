@@ -232,48 +232,81 @@ export function ResumeIntake({
 
         {mode === "upload" ? (
           <>
-            <div className="b-drop">
-              <span className="b-drop-icon">
-                <UploadIcon />
-              </span>
-              <div className="b-drop-title">Drop your resume here</div>
-              <div className="b-drop-sub">PDF, DOCX or TXT · Up to 5MB</div>
-              <label
-                className="rd-btn rd-btn-ghost rd-btn-sm"
-                htmlFor="resume-upload"
-                style={{ marginTop: 12 }}
-              >
-                Choose file
-              </label>
-              <input
-                accept=".pdf,.docx,.txt"
-                id="resume-upload"
-                onChange={handleFileInputChange}
-                style={{ display: "none" }}
-                type="file"
-              />
-              {profileFileLabel ? (
-                <div className="b-drop-meta">
-                  Last upload:{" "}
-                  <span className="rd-mono" style={{ color: "var(--fg-2)" }}>
-                    {profileFileLabel}
-                  </span>
+            <input
+              accept=".pdf,.docx,.txt"
+              id="resume-upload"
+              onChange={handleFileInputChange}
+              style={{ display: "none" }}
+              type="file"
+            />
+            {currentProfile ? (
+              // Parsed state — collapse the dropzone to a compact "Last
+              // upload" row + Re-upload / Clear actions. Frees up the
+              // canvas for the parsed-profile hero, two-up, and
+              // signals.
+              <div className="b-intake-compact">
+                <div className="b-intake-compact-meta">
+                  <span className="b-section-label">Last upload</span>
+                  {profileFileLabel ? (
+                    <span
+                      className="rd-mono"
+                      style={{ color: "var(--fg)", fontSize: 13 }}
+                    >
+                      {profileFileLabel}
+                    </span>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
+                <div className="b-intake-compact-actions">
+                  {resumeUploading ? (
+                    <span style={{ fontSize: 12.5, color: "var(--fg-3)" }}>
+                      Parsing resume…
+                    </span>
+                  ) : null}
+                  <label
+                    className="rd-btn rd-btn-ghost rd-btn-sm"
+                    htmlFor="resume-upload"
+                  >
+                    <UploadIcon /> Re-upload
+                  </label>
+                  <button
+                    className="rd-btn rd-btn-danger rd-btn-sm"
+                    onClick={onClearUploadedResumeProfile}
+                    type="button"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="b-drop">
+                  <span className="b-drop-icon">
+                    <UploadIcon />
+                  </span>
+                  <div className="b-drop-title">Drop your resume here</div>
+                  <div className="b-drop-sub">PDF, DOCX or TXT · Up to 5MB</div>
+                  <label
+                    className="rd-btn rd-btn-ghost rd-btn-sm"
+                    htmlFor="resume-upload"
+                    style={{ marginTop: 12 }}
+                  >
+                    Choose file
+                  </label>
+                  {profileFileLabel ? (
+                    <div className="b-drop-meta">
+                      Last upload:{" "}
+                      <span className="rd-mono" style={{ color: "var(--fg-2)" }}>
+                        {profileFileLabel}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
 
-            <div className="b-intake-status-row">
-              {resumeUploading ? <span>Parsing resume…</span> : null}
-              {currentProfile ? (
-                <button
-                  className="rd-btn rd-btn-danger rd-btn-sm"
-                  onClick={onClearUploadedResumeProfile}
-                  type="button"
-                >
-                  Clear uploaded resume
-                </button>
-              ) : null}
-            </div>
+                <div className="b-intake-status-row">
+                  {resumeUploading ? <span>Parsing resume…</span> : null}
+                </div>
+              </>
+            )}
 
             {resumeNotice ? (
               <div

@@ -3479,6 +3479,13 @@ code {
   background: linear-gradient(180deg, rgba(48, 100, 255, 0.04), transparent);
   border-bottom: 1px solid var(--hairline);
   position: relative;
+  /* Cap the reading width so on a 32" / 4K monitor the strip doesn't
+     stretch corner-to-corner and feel sparse. Same cap is applied to
+     .b-canvas below; both center as a coherent column. */
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 .b-hero-title {
   font-family: var(--font-display);
@@ -3520,6 +3527,10 @@ code {
   flex-direction: column;
   gap: 24px;
   overflow: auto;
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .b-region {
@@ -3670,6 +3681,30 @@ code {
   margin-top: 14px;
   font-size: 12.5px;
   color: var(--fg-3);
+}
+
+/* Compact intake row — replaces the full dropzone once a profile is
+   parsed so the canvas has room for the parsed hero + two-up + signals
+   without forcing the user to scroll past a tall empty dropzone. */
+.b-intake-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 4px;
+}
+.b-intake-compact-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.b-intake-compact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* ── Parsed-result hero (Resume + JD share this) ───────────────── */
@@ -4237,14 +4272,27 @@ code {
 
 .b-pipeline {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  /* 3 columns × 2 rows for a 6-stage pipeline so each card has room
+     for the title, detail text, and progress bar instead of being
+     squeezed into a 250px column. Falls back to a single column on
+     narrow viewports. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+@media (max-width: 980px) {
+  .b-pipeline { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  .b-pipeline { grid-template-columns: 1fr; }
 }
 .b-pipeline-stage {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
+  gap: 8px;
+  padding: 16px 18px;
+  /* Min-height keeps done/active/standby cards on the same row even
+     when the active stage has multi-line detail text. */
+  min-height: 110px;
   background: rgba(0, 0, 0, 0.40);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -4287,10 +4335,10 @@ code {
 }
 .b-pipeline-stage-detail { font-size: 12.5px; color: var(--fg-3); }
 .b-pipeline-stage-bar {
-  height: 2px;
-  border-radius: 2px;
+  height: 4px;
+  border-radius: 3px;
   background: rgba(255, 255, 255, 0.06);
-  margin-top: 4px;
+  margin-top: auto;
   overflow: hidden;
 }
 .b-pipeline-stage-bar > span {
