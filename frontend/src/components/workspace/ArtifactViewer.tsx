@@ -1,13 +1,18 @@
 "use client";
 
 // Artifact viewer (Resume / Cover Letter tabs + preview iframe + export
-// buttons) — extracted from `job-application-workspace.tsx` as part of
-// the Item 2 frontend split (see `docs/NEXT-STEPS-FRONTEND.md`).
+// buttons) — Direction B redesign.
 //
-// Today this is a "use client" island that consumes preview HTML and
-// export handlers from the parent. The handoff suggests rendering
-// markdown → HTML server-side as a future optimisation; that's a
-// separate follow-up and not part of Item 2.
+// Behavior preservation:
+//   - Tabs: Tailored Resume | Cover Letter (parent owns artifactTab)
+//   - Markdown / PDF download buttons → onExport(kind, format)
+//   - Server-rendered preview iframe via previewHtml
+//   - Loading + missing-preview fallbacks retained
+//
+// Layout (per handoff specs/04-analysis.md):
+//   - b-artifact-tabs — pill row above the doc
+//   - b-artifact-body — 2-col grid: doc body (iframe) + right-rail
+//   - b-artifact-aside — title, summary, download buttons, meta line
 
 import type { WorkspaceArtifactKind } from "@/lib/api-types";
 
@@ -43,8 +48,7 @@ export type ArtifactViewerProps = {
   /**
    * Key of the export currently in flight, formatted as
    * `${artifactKind}:${exportFormat}` (e.g. `"tailored_resume:pdf"`).
-   * `null` when no export is in progress. Matches the parent's
-   * `artifactExporting` state.
+   * `null` when no export is in progress.
    */
   exporting: string | null;
   previewHtml: string | null;
@@ -66,103 +70,106 @@ export function ArtifactViewer({
 }: ArtifactViewerProps) {
   const artifactKind = kindForTab(tab);
 
-  return (
-    <section className="surface-card surface-card-neutral">
-      <div className="section-head">
-        <div>
-          <p className="eyebrow">Outputs</p>
-          <h2 className="section-title">Documents</h2>
-        </div>
-        <span className="status-chip">
-          {hasAnalysis ? "Ready to review" : "Waiting for run"}
-        </span>
-      </div>
-      <p className="section-copy">Review and download your documents.</p>
-
-      {hasAnalysis ? (
-        <>
-          <div className="workspace-tab-row">
-            {TAB_ORDER.map((value) => (
-              <button
-                className={
-                  tab === value
-                    ? "inspector-tab inspector-tab-active"
-                    : "inspector-tab"
-                }
-                key={value}
-                onClick={() => onTabChange(value)}
-                type="button"
-              >
-                {TAB_LABELS[value]}
-              </button>
-            ))}
-          </div>
-
-          {artifact ? (
-            <div className="workspace-artifact-panel">
-              <div className="workspace-artifact-head">
-                <div>
-                  <p className="workspace-label">Current document</p>
-                  <h3 className="workspace-role-title">{artifact.title}</h3>
-                  <p className="workspace-role-copy">{artifact.summary}</p>
-                </div>
-                <div className="workspace-artifact-actions">
-                  <button
-                    className="secondary-button workspace-button workspace-button-small"
-                    disabled={exporting !== null}
-                    onClick={() => onExport(artifactKind, "markdown")}
-                    type="button"
-                  >
-                    {exporting === `${artifactKind}:markdown`
-                      ? "Preparing..."
-                      : "Download Markdown"}
-                  </button>
-                  <button
-                    className="secondary-button workspace-button workspace-button-small"
-                    disabled={exporting !== null}
-                    onClick={() => onExport(artifactKind, "pdf")}
-                    type="button"
-                  >
-                    {exporting === `${artifactKind}:pdf`
-                      ? "Preparing..."
-                      : "Download PDF"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="workspace-section-card">
-                <h3>Preview</h3>
-                <p className="workspace-muted-copy">
-                  {previewTitle
-                    ? `Preview of ${previewTitle}.`
-                    : "A preview of the current document will appear here once it is ready."}
-                </p>
-                {previewLoading ? (
-                  <div className="workspace-empty-state">
-                    Preparing the artifact preview...
-                  </div>
-                ) : previewHtml ? (
-                  <iframe
-                    className="workspace-artifact-preview-frame"
-                    srcDoc={previewHtml}
-                    title={`${TAB_LABELS[tab]} preview`}
-                  />
-                ) : (
-                  <div className="workspace-empty-state">
-                    The artifact preview is temporarily unavailable, but the
-                    download actions still work.
-                  </div>
-                )}
-              </div>
+  if (!hasAnalysis) {
+    return (
+      <div className="b-region">
+        <div className="b-region-head">
+          <div>
+            <div className="b-region-title">Documents</div>
+            <div className="b-region-sub">
+              The tailored resume and cover letter appear here after the run.
             </div>
-          ) : null}
-        </>
-      ) : (
-        <div className="workspace-empty-state">
-          The tailored resume and cover letter will appear here after the
-          workflow runs.
+          </div>
         </div>
-      )}
-    </section>
+        <div className="b-twoup-empty">
+          Run the workflow first — artifact previews and downloads unlock once
+          the analysis completes.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="b-region">
+      <div className="b-region-head">
+        <div>
+          <div className="b-region-title">Documents</div>
+          <div className="b-region-sub">
+            Review and download your tailored package.
+          </div>
+        </div>
+      </div>
+
+      <div className="b-artifact-tabs" role="tablist">
+        {TAB_ORDER.map((value) => (
+          <button
+            aria-selected={tab === value}
+            className="b-artifact-tab"
+            key={value}
+            onClick={() => onTabChange(value)}
+            role="tab"
+            type="button"
+          >
+            {TAB_LABELS[value]}
+          </button>
+        ))}
+      </div>
+
+      <div className="b-artifact-body">
+        <div className="b-artifact-doc">
+          {previewLoading ? (
+            <div className="b-twoup-empty" style={{ padding: 24 }}>
+              Preparing the artifact preview…
+            </div>
+          ) : previewHtml ? (
+            <iframe
+              className="b-artifact-doc-frame"
+              srcDoc={previewHtml}
+              title={`${TAB_LABELS[tab]} preview`}
+            />
+          ) : (
+            <div className="b-twoup-empty" style={{ padding: 24 }}>
+              The artifact preview is temporarily unavailable, but the download
+              actions still work.
+            </div>
+          )}
+        </div>
+
+        <div className="b-artifact-aside">
+          <h4 className="b-artifact-aside-title">
+            {artifact?.title ?? TAB_LABELS[tab]}
+          </h4>
+          {artifact?.summary ? (
+            <p className="b-artifact-aside-text">{artifact.summary}</p>
+          ) : null}
+          <hr className="rd-hairline" />
+          <div className="b-artifact-actions">
+            <button
+              className="rd-btn rd-btn-primary rd-btn-sm"
+              disabled={exporting !== null}
+              onClick={() => onExport(artifactKind, "pdf")}
+              type="button"
+            >
+              {exporting === `${artifactKind}:pdf`
+                ? "Preparing…"
+                : "Download PDF"}
+            </button>
+            <button
+              className="rd-btn rd-btn-ghost rd-btn-sm"
+              disabled={exporting !== null}
+              onClick={() => onExport(artifactKind, "markdown")}
+              type="button"
+            >
+              {exporting === `${artifactKind}:markdown`
+                ? "Preparing…"
+                : "Download Markdown"}
+            </button>
+          </div>
+          {previewTitle ? (
+            <div className="b-artifact-meta">Preview · {previewTitle}</div>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }

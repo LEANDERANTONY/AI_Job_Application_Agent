@@ -1,34 +1,33 @@
 "use client";
 
-// Workflow run + progress card — extracted from
-// `job-application-workspace.tsx` as part of the Item 2 frontend split
-// (see `docs/NEXT-STEPS-FRONTEND.md`).
+// Workflow run + progress card — Direction B redesign.
 //
-// Owns the markup for `mainTab === "analysis"`'s first section. The
-// ArtifactViewer that lives next to it on the same tab is its own
-// component and stays a sibling in the parent.
+// Behavior preservation:
+//   - "Run analysis" disabled until parent reports `ready` (resume + JD)
+//   - useAnalysisJob polling drives `currentWorkflowStage`; pipeline
+//     reflects that. The `analysisJobState.progress_percent` overrides
+//     the stage's static value when present.
+//   - Stale notice + Clear-role action retained.
+//
+// Layout (per handoff specs/04-analysis.md):
+//   1. Region head (title + STEP 04 tag)
+//   2. b-run-bar — status pip, Re-run / Clear actions
+//   3. b-pipeline — multi-column stage cards with active glow
+//
+// The ArtifactViewer that renders below this component on the same tab
+// is its own sibling component — no change here.
 
 import type {
   WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
 } from "@/lib/api-types";
+import { PlayIcon } from "@/components/workspace/icons";
 
 export type WorkflowStage = {
   title: string;
   detail: string;
   value: number;
 };
-
-function workflowProgressTone(title: string) {
-  if (title === "Workflow crew") return "crew";
-  if (title === "Backup workflow") return "backup";
-  if (title === "Matchmaker agent") return "matchmaker";
-  if (title === "Forge agent") return "forge";
-  if (title === "Gatekeeper agent") return "gatekeeper";
-  if (title === "Builder agent") return "builder";
-  if (title === "Cover letter agent") return "coverletter";
-  return "crew";
-}
 
 export type AnalysisRunnerProps = {
   analysisState: WorkspaceAnalysisResponse | null;
@@ -38,7 +37,21 @@ export type AnalysisRunnerProps = {
   currentWorkflowStage: WorkflowStage | null;
   onRunAnalysis: () => void;
   onClearRole: () => void;
+  /** True when both a resume + JD are present. */
+  ready: boolean;
 };
+
+// Pipeline stages shown in the redesigned layout. The actual progress
+// values come from `currentWorkflowStage` + `analysisJobState`; this
+// list defines the order and labels.
+const PIPELINE_STAGE_ORDER = [
+  "Workflow crew",
+  "Matchmaker agent",
+  "Forge agent",
+  "Gatekeeper agent",
+  "Builder agent",
+  "Cover letter agent",
+];
 
 export function AnalysisRunner({
   analysisState,
@@ -48,101 +61,156 @@ export function AnalysisRunner({
   currentWorkflowStage,
   onRunAnalysis,
   onClearRole,
+  ready,
 }: AnalysisRunnerProps) {
+  const liveStageTitle = currentWorkflowStage?.title ?? null;
+  const livePercent =
+    analysisJobState?.progress_percent ?? currentWorkflowStage?.value ?? null;
+
+  // Build the pipeline view: each stage has a state (done/active/next)
+  // and a value. We mark stages BEFORE the live one as done, the live
+  // one as active w/ the live percent, and stages AFTER as next.
+  // After analysis completes, every stage ticks to done.
+  const liveIndex = liveStageTitle
+    ? PIPELINE_STAGE_ORDER.indexOf(liveStageTitle)
+    : -1;
+
+  const stages = PIPELINE_STAGE_ORDER.map((title, index) => {
+    let state: "done" | "active" | "next" = "next";
+    let value = 0;
+    let detail = "";
+
+    if (analysisState) {
+      state = "done";
+      value = 100;
+    } else if (analysisLoading) {
+      if (liveIndex >= 0) {
+        if (index < liveIndex) {
+          state = "done";
+          value = 100;
+        } else if (index === liveIndex) {
+          state = "active";
+          value = livePercent ?? 50;
+          detail = currentWorkflowStage?.detail ?? "";
+        }
+      } else if (index === 0) {
+        state = "active";
+        value = livePercent ?? 25;
+        detail = "Coordinating agents";
+      }
+    }
+    return { title, state, value, detail };
+  });
+
   return (
-    <section className="surface-card surface-card-neutral">
-      <div className="section-head">
+    <div className="b-region">
+      <div className="b-region-head">
         <div>
-          <p className="eyebrow">Run</p>
-          <h2 className="section-title">Build the workspace package</h2>
+          <div className="b-region-title">Workflow run</div>
+          <div className="b-region-sub">
+            {analysisState
+              ? `${analysisState.workflow.mode} · ${
+                  analysisState.workflow.review_approved
+                    ? "review approved"
+                    : "review pending"
+                }`
+              : analysisLoading
+                ? "Generating tailored documents…"
+                : ready
+                  ? "Ready to run — both inputs are loaded."
+                  : "Need a parsed resume + JD to run."}
+          </div>
         </div>
-        <span className="status-chip">
-          {analysisState ? analysisState.workflow.mode : "Not run yet"}
-        </span>
-      </div>
-      <p className="section-copy">
-        Run the agentic workflow once your resume and job description are
-        ready.
-      </p>
-
-      <div className="workspace-run-actions">
-        <button
-          className="primary-button workspace-button"
-          disabled={analysisLoading}
-          onClick={onRunAnalysis}
-          type="button"
-        >
-          {analysisLoading ? "Running..." : "Run workflow"}
-        </button>
-        <button
-          className="danger-button workspace-button workspace-action-end"
-          onClick={onClearRole}
-          type="button"
-        >
-          Clear role
-        </button>
+        <span className="b-region-tag">STEP 04</span>
       </div>
 
-      {analysisLoading && currentWorkflowStage ? (
-        <div
-          className={`workspace-progress-card workspace-progress-tone-${workflowProgressTone(
-            currentWorkflowStage.title,
-          )}`}
-        >
-          <div className="workspace-progress-head">
-            <span className="workspace-progress-tag">
-              {currentWorkflowStage.title}
+      <div className="b-run-bar">
+        <div className="b-run-bar-info">
+          <span
+            className={
+              analysisState
+                ? "rd-pip rd-pip-live"
+                : analysisLoading
+                  ? "rd-pip rd-pip-ready"
+                  : "rd-pip"
+            }
+          >
+            {analysisState
+              ? "Outputs ready"
+              : analysisLoading
+                ? "Running…"
+                : ready
+                  ? "Idle"
+                  : "Inputs needed"}
+          </span>
+          {currentWorkflowStage && analysisLoading ? (
+            <span style={{ fontSize: 13, color: "var(--fg-3)" }}>
+              {currentWorkflowStage.title} · {analysisJobState?.stage_detail ??
+                currentWorkflowStage.detail}
             </span>
-            <span className="workspace-progress-percent">
-              {analysisJobState?.progress_percent ??
-                currentWorkflowStage.value}
-              %
-            </span>
-          </div>
-          <p className="workspace-progress-detail">
-            {analysisJobState?.stage_detail ?? currentWorkflowStage.detail}
-          </p>
-          <div aria-hidden="true" className="workspace-progress-bar">
-            <span
-              style={{
-                width: `${
-                  analysisJobState?.progress_percent ??
-                  currentWorkflowStage.value
-                }%`,
-              }}
-            />
-          </div>
-          <div className="workspace-progress-stage-list">
-            <div className="workspace-progress-stage workspace-progress-stage-live">
-              <span className="workspace-progress-stage-title">
-                {currentWorkflowStage.title}
-              </span>
-              <small>
-                {analysisJobState?.stage_detail ?? currentWorkflowStage.detail}
-              </small>
-            </div>
-          </div>
-          <p className="workspace-muted-copy workspace-progress-note">
-            This card now follows the real backend stage instead of stepping
-            forward on a timer.
-          </p>
+          ) : null}
         </div>
-      ) : null}
+        <div className="b-run-bar-actions">
+          <button
+            className="rd-btn rd-btn-primary rd-btn-sm"
+            disabled={!ready || analysisLoading}
+            onClick={onRunAnalysis}
+            type="button"
+          >
+            <PlayIcon /> {analysisLoading ? "Running…" : analysisState ? "Re-run" : "Run analysis"}
+          </button>
+          <button
+            className="rd-btn rd-btn-danger rd-btn-sm"
+            disabled={analysisLoading}
+            onClick={onClearRole}
+            type="button"
+          >
+            Clear role
+          </button>
+        </div>
+      </div>
 
       {analysisIsStale ? (
-        <div className="notice-panel notice-warning">
+        <div className="b-notice b-notice-warning">
           The inputs changed after the last run. Re-run the workflow to refresh
           your documents.
         </div>
       ) : null}
 
-      {analysisState ? (
-        <></>
-      ) : (
-        <div className="workspace-empty-state">
-          Run the workflow once to unlock your tailored documents.
+      <div className="b-pipeline">
+        {stages.map((stage) => (
+          <div
+            className="b-pipeline-stage"
+            data-state={stage.state}
+            key={stage.title}
+          >
+            <div className="b-pipeline-stage-head">
+              <span className="b-pipeline-stage-name">{stage.title}</span>
+              <span className="b-pipeline-stage-percent">
+                {Math.round(stage.value)}%
+              </span>
+            </div>
+            <div className="b-pipeline-stage-detail">
+              {stage.state === "active" && stage.detail
+                ? stage.detail
+                : stage.state === "done"
+                  ? "Complete"
+                  : "Standby"}
+            </div>
+            <div aria-hidden="true" className="b-pipeline-stage-bar">
+              <span style={{ width: `${stage.value}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!analysisState && !analysisLoading ? (
+        <div className="b-twoup-empty">
+          {ready
+            ? "Run the workflow once to unlock your tailored documents."
+            : "Add a parsed resume and JD before running the analysis."}
         </div>
-      )}
-    </section>
+      ) : null}
+    </div>
   );
 }

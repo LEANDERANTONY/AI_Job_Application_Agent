@@ -1,17 +1,27 @@
 "use client";
 
-// Resume intake (upload + guided builder) — extracted from
-// `job-application-workspace.tsx` as part of the Item 2 frontend split
-// (see `docs/NEXT-STEPS-FRONTEND.md`).
+// Resume intake (upload + guided builder) — Direction B redesign.
 //
-// Two modes share this surface:
-//   - "upload": file picker + parsed candidate snapshot.
-//   - "assistant": guided builder Q&A + draft-profile editor.
-// State stays in the parent for now and is passed as props; the lift
-// to a Zustand `resumeIntake` slice is a separate task (#13).
+// Behavior preservation:
+//   - Drag/picker upload → onResumeUpload
+//   - "Build with assistant" toggle → load/start builder session
+//   - Edit-in-place draft fields → onBuilderDraftSave
+//   - Generated resume preview + commit → onBuilderCommit
+//   - Last-upload metadata + clear-uploaded-resume button retained
+//
+// Layout (per handoff specs/01-resume.md):
+//   1. b-intake-panel — header (eyebrow + title + mode toggle), body
+//      switches between upload dropzone and builder Q&A
+//   2. b-resume-hero — parsed-profile hero (name, title, meta dots)
+//   3. b-resume-twoup — Skills + Experience side-by-side
+//   4. b-twoup-section — Parser signals row
 
 import type { ChangeEvent, Dispatch, SetStateAction } from "react";
 
+import {
+  CheckIcon,
+  UploadIcon,
+} from "@/components/workspace/icons";
 import type {
   CandidateProfile,
   ResumeBuilderSessionResponse,
@@ -97,9 +107,9 @@ const DRAFT_FIELDS: DraftFieldConfig[] = [
 ];
 
 function noticeClassName(level: ResumeIntakeNotice["level"]) {
-  if (level === "success") return "notice-panel notice-success";
-  if (level === "warning") return "notice-panel notice-warning";
-  return "notice-panel notice-info";
+  if (level === "success") return "b-notice b-notice-success";
+  if (level === "warning") return "b-notice b-notice-warning";
+  return "b-notice";
 }
 
 export type ResumeIntakeProps = {
@@ -183,73 +193,80 @@ export function ResumeIntake({
     setBuilderDraftForm((current) => ({ ...current, [key]: value }));
   }
 
-  return (
-    <section className="workspace-section-stack">
-      <article className="surface-card surface-card-neutral">
-        <div className="section-head">
-          <div>
-            <p className="eyebrow">Step 1</p>
-            <h2 className="section-title">Resume intake</h2>
-          </div>
-          <span className="status-chip">
-            {resumeState ? "Ready" : "Start here"}
-          </span>
-        </div>
-        <p className="section-copy">
-          Bring in an existing resume or build a base one with the assistant.
-        </p>
+  const profileFileLabel =
+    selectedResumeFile?.name ||
+    resumeState?.resume_document.filetype ||
+    null;
 
-        <div className="workspace-tab-row">
-          {(["upload", "assistant"] as ResumeIntakeMode[]).map((value) => (
+  return (
+    <div className="b-region">
+      {/* 1 — Intake panel: upload OR guided builder */}
+      <div className="b-intake-panel">
+        <div className="b-intake-head">
+          <div>
+            <div className="b-section-label">Step 01 · Import resume</div>
+            <div className="b-intake-title">Bring in your resume</div>
+          </div>
+          <div className="b-intake-modes">
             <button
-              className={
-                mode === value
-                  ? "inspector-tab inspector-tab-active"
-                  : "inspector-tab"
-              }
-              key={value}
+              className="b-intake-mode"
+              data-active={mode === "upload"}
+              onClick={() => onModeChange("upload")}
+              type="button"
+            >
+              Upload
+            </button>
+            <button
+              className="b-intake-mode"
+              data-active={mode === "assistant"}
               onClick={() => {
-                onModeChange(value);
-                if (value === "assistant") {
-                  onResetBuilderInitialized();
-                }
+                onModeChange("assistant");
+                onResetBuilderInitialized();
               }}
               type="button"
             >
-              {value === "upload" ? "Upload Resume" : "Build With Assistant"}
+              Build with assistant
             </button>
-          ))}
+          </div>
         </div>
 
         {mode === "upload" ? (
           <>
-            <div className="workspace-uploader">
+            <div className="b-drop">
+              <span className="b-drop-icon">
+                <UploadIcon />
+              </span>
+              <div className="b-drop-title">Drop your resume here</div>
+              <div className="b-drop-sub">PDF, DOCX or TXT · Up to 5MB</div>
               <label
-                className="primary-button workspace-button workspace-upload-trigger"
+                className="rd-btn rd-btn-ghost rd-btn-sm"
                 htmlFor="resume-upload"
+                style={{ marginTop: 12 }}
               >
-                Upload resume
+                Choose file
               </label>
               <input
                 accept=".pdf,.docx,.txt"
-                className="workspace-hidden-input"
                 id="resume-upload"
                 onChange={handleFileInputChange}
+                style={{ display: "none" }}
                 type="file"
               />
-              <span className="workspace-file-name">
-                {selectedResumeFile?.name ||
-                  resumeState?.resume_document.filetype ||
-                  "No resume selected"}
-              </span>
-              {resumeUploading ? (
-                <span className="workspace-file-status">
-                  Parsing resume...
-                </span>
+              {profileFileLabel ? (
+                <div className="b-drop-meta">
+                  Last upload:{" "}
+                  <span className="rd-mono" style={{ color: "var(--fg-2)" }}>
+                    {profileFileLabel}
+                  </span>
+                </div>
               ) : null}
+            </div>
+
+            <div className="b-intake-status-row">
+              {resumeUploading ? <span>Parsing resume…</span> : null}
               {currentProfile ? (
                 <button
-                  className="danger-button workspace-button workspace-action-end"
+                  className="rd-btn rd-btn-danger rd-btn-sm"
                   onClick={onClearUploadedResumeProfile}
                   type="button"
                 >
@@ -259,351 +276,382 @@ export function ResumeIntake({
             </div>
 
             {resumeNotice ? (
-              <div className={noticeClassName(resumeNotice.level)}>
+              <div
+                className={noticeClassName(resumeNotice.level)}
+                style={{ marginTop: 12 }}
+              >
                 {resumeNotice.message}
               </div>
             ) : null}
           </>
         ) : (
-          <div className="workspace-builder-stack">
-            <div className="workspace-section-card">
-              <div className="section-head">
-                <div>
-                  <span className="workspace-label">
-                    Resume builder assistant
-                  </span>
-                  <h3>{builderStepLabel}</h3>
-                </div>
-                <button
-                  className="secondary-button workspace-button workspace-button-small"
-                  onClick={onToggleBuilderCollapsed}
-                  type="button"
-                >
-                  {builderCollapsed ? "Show builder" : "Hide builder"}
-                </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <p style={{ fontSize: 13, color: "var(--fg-2)", lineHeight: 1.65 }}>
+              The guided builder asks short, focused questions and turns your
+              answers into a clean base resume.
+            </p>
+
+            {authSignedIn ? (
+              <p style={{ fontSize: 12, color: "var(--fg-3)" }}>
+                Your latest draft will reopen here automatically when available.
+              </p>
+            ) : null}
+
+            {builderSession ? (
+              <div className="b-builder-steps">
+                {BUILDER_STEP_KEYS.map((key) => {
+                  const label = RESUME_BUILDER_STEP_LABELS[key];
+                  const isActive = builderSession.current_step === key;
+                  const isComplete =
+                    key !== "review" &&
+                    builderSession.completed_steps >
+                      BUILDER_STEP_KEYS.indexOf(key);
+                  return (
+                    <div
+                      className="b-builder-step"
+                      data-active={isActive || undefined}
+                      data-done={isComplete && !isActive ? true : undefined}
+                      key={key}
+                    >
+                      <span>{label}</span>
+                      <span className="b-builder-step-status">
+                        {isComplete && !isActive
+                          ? "DONE"
+                          : isActive
+                            ? "ACTIVE"
+                            : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
+            ) : null}
 
-              {!builderCollapsed ? (
-                <>
-                  <p className="workspace-role-copy">
-                    {builderSession?.assistant_message ||
-                      "The guided assistant will ask a few focused questions and turn your answers into a base resume."}
-                  </p>
-
-                  {authSignedIn ? (
-                    <p className="workspace-muted-copy">
-                      Your latest draft will reopen here automatically when
-                      available.
-                    </p>
-                  ) : null}
-
-                  {builderSession ? (
-                    <div className="workspace-chip-grid">
-                      {BUILDER_STEP_KEYS.map((key) => {
-                        const label = RESUME_BUILDER_STEP_LABELS[key];
-                        const isActive = builderSession.current_step === key;
-                        const isComplete =
-                          key !== "review" &&
-                          builderSession.completed_steps >
-                            BUILDER_STEP_KEYS.indexOf(key);
-                        return (
-                          <span
-                            className={
-                              isActive
-                                ? "workspace-meta-chip workspace-builder-chip-active"
-                                : "workspace-meta-chip"
-                            }
-                            key={key}
-                          >
-                            {label}
-                            {isComplete && !isActive ? " - Done" : ""}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-
-                  {builderNotice ? (
-                    <div className={noticeClassName(builderNotice.level)}>
-                      {builderNotice.message}
-                    </div>
-                  ) : null}
-
-                  {!builderSession && builderLoading ? (
-                    <div className="workspace-empty-state">
-                      Starting the guided resume builder...
-                    </div>
-                  ) : null}
-
-                  {builderSession && !builderSession.ready_to_generate ? (
-                    <div className="workspace-form-stack">
-                      <textarea
-                        className="workspace-textarea workspace-builder-answer"
-                        onChange={(event) =>
-                          onBuilderAnswerChange(event.target.value)
-                        }
-                        placeholder="Type your answer here. Keep it natural - the assistant will structure it for you."
-                        value={builderAnswer}
-                      />
-                      <div className="workspace-run-actions">
-                        <button
-                          className="primary-button workspace-button"
-                          disabled={builderLoading}
-                          onClick={onBuilderAnswerSubmit}
-                          type="button"
-                        >
-                          {builderLoading ? "Saving..." : "Continue"}
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {builderSession?.ready_to_generate &&
-                  !builderSession.generated_resume_markdown ? (
-                    <div className="workspace-run-actions">
-                      <button
-                        className="primary-button workspace-button"
-                        disabled={builderGenerating}
-                        onClick={onBuilderGenerate}
-                        type="button"
-                      >
-                        {builderGenerating
-                          ? "Generating..."
-                          : "Generate Base Resume"}
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {builderSession?.generated_resume_markdown ? (
-                    <div className="workspace-run-actions">
-                      <button
-                        className="primary-button workspace-button"
-                        disabled={builderCommitting}
-                        onClick={onBuilderCommit}
-                        type="button"
-                      >
-                        {builderCommitting
-                          ? "Using profile..."
-                          : "Use This Profile"}
-                      </button>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <p className="workspace-muted-copy workspace-builder-collapsed-copy">
-                  The assistant is hidden for now. You can reopen it anytime to
-                  continue answering questions.
-                </p>
-              )}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div
+                className="b-section-label"
+                style={{ textTransform: "uppercase" }}
+              >
+                {builderStepLabel}
+              </div>
+              <button
+                className="rd-btn rd-btn-ghost rd-btn-sm"
+                onClick={onToggleBuilderCollapsed}
+                type="button"
+              >
+                {builderCollapsed ? "Show builder" : "Hide builder"}
+              </button>
             </div>
 
-            <div className="workspace-section-card">
-              <span className="workspace-label">Draft profile</span>
-              <h3>
-                {builderSession?.draft_profile.full_name ||
-                  "Your base resume will build here"}
-              </h3>
-              <p className="workspace-role-copy">
-                {builderSession?.generated_resume_markdown
-                  ? "Review the generated base resume before moving it into the workspace."
-                  : "As you answer each prompt, the assistant will collect the details needed to create a clean starting resume."}
-              </p>
+            {!builderCollapsed ? (
+              <>
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "var(--fg-2)",
+                    lineHeight: 1.65,
+                  }}
+                >
+                  {builderSession?.assistant_message ||
+                    "The guided assistant will ask a few focused questions and turn your answers into a base resume."}
+                </p>
 
-              {builderSession ? (
-                <>
-                  <div className="workspace-summary-grid">
-                    <div className="metric-tile">
-                      <span>Target role</span>
-                      <strong>
-                        {builderSession.draft_profile.target_role ||
-                          "Still collecting"}
-                      </strong>
-                      <small>
-                        The role direction you want this base resume to
-                        support.
-                      </small>
-                    </div>
-                    <div className="metric-tile">
-                      <span>Skills</span>
-                      <strong>{builderSession.draft_profile.skills.length}</strong>
-                      <small>Skills or tools confirmed so far.</small>
-                    </div>
-                    <div className="metric-tile">
-                      <span>Progress</span>
-                      <strong>{builderSession.progress_percent}%</strong>
-                      <small>
-                        {builderSession.status === "ready"
-                          ? "Base resume generated."
-                          : "Guided intake in progress."}
-                      </small>
-                    </div>
+                {builderNotice ? (
+                  <div className={noticeClassName(builderNotice.level)}>
+                    {builderNotice.message}
                   </div>
+                ) : null}
 
-                  <div className="workspace-review-columns">
-                    <div className="soft-panel">
-                      <span className="soft-panel-label">Contact</span>
-                      <ul className="workspace-feature-list workspace-feature-list-compact">
-                        {builderSession.draft_profile.contact_lines.length ? (
-                          builderSession.draft_profile.contact_lines.map(
-                            (line) => <li key={line}>{line}</li>,
-                          )
-                        ) : (
-                          <li>
-                            Add your email, phone, and links in the basics
-                            step.
-                          </li>
-                        )}
-                      </ul>
-                    </div>
-                    <div className="soft-panel">
-                      <span className="soft-panel-label">Skills</span>
-                      <div className="workspace-chip-grid">
-                        {builderSession.draft_profile.skills.length ? (
-                          builderSession.draft_profile.skills.map((skill) => (
-                            <span className="workspace-meta-chip" key={skill}>
-                              {skill}
-                            </span>
-                          ))
-                        ) : (
-                          <p className="workspace-muted-copy">
-                            Skills will appear here once you reach that step.
-                          </p>
-                        )}
-                      </div>
-                    </div>
+                {!builderSession && builderLoading ? (
+                  <div className="b-twoup-empty">
+                    Starting the guided resume builder…
                   </div>
+                ) : null}
 
-                  <div className="workspace-form-stack workspace-builder-edit-grid">
-                    {DRAFT_FIELDS.map((field) => (
-                      <label
-                        className={
-                          field.wide
-                            ? "workspace-field workspace-builder-field-wide"
-                            : "workspace-field"
-                        }
-                        key={field.key}
+                {builderSession && !builderSession.ready_to_generate ? (
+                  <>
+                    <textarea
+                      className="rd-textarea"
+                      onChange={(event) =>
+                        onBuilderAnswerChange(event.target.value)
+                      }
+                      placeholder="Type your answer here. Keep it natural — the assistant will structure it for you."
+                      value={builderAnswer}
+                    />
+                    <div>
+                      <button
+                        className="rd-btn rd-btn-primary rd-btn-sm"
+                        disabled={builderLoading}
+                        onClick={onBuilderAnswerSubmit}
+                        type="button"
                       >
-                        <span className="workspace-label">{field.label}</span>
-                        {field.kind === "input" ? (
-                          <input
-                            className="workspace-input"
-                            onChange={(event) =>
-                              setDraftField(field.key, event.target.value)
-                            }
-                            placeholder={field.placeholder}
-                            value={builderDraftForm[field.key]}
-                          />
-                        ) : (
-                          <textarea
-                            className="workspace-textarea workspace-builder-compact-textarea"
-                            onChange={(event) =>
-                              setDraftField(field.key, event.target.value)
-                            }
-                            placeholder={field.placeholder}
-                            value={builderDraftForm[field.key]}
-                          />
-                        )}
-                      </label>
-                    ))}
-                  </div>
+                        {builderLoading ? "Saving…" : "Continue"}
+                      </button>
+                    </div>
+                  </>
+                ) : null}
 
-                  <div className="workspace-run-actions">
+                {builderSession?.ready_to_generate &&
+                !builderSession.generated_resume_markdown ? (
+                  <div>
                     <button
-                      className="secondary-button workspace-button"
-                      disabled={builderEditing}
-                      onClick={onBuilderDraftSave}
+                      className="rd-btn rd-btn-primary rd-btn-sm"
+                      disabled={builderGenerating}
+                      onClick={onBuilderGenerate}
                       type="button"
                     >
-                      {builderEditing ? "Saving edits..." : "Save Draft Edits"}
+                      {builderGenerating
+                        ? "Generating…"
+                        : "Generate base resume"}
                     </button>
                   </div>
+                ) : null}
 
-                  {builderSession.generated_resume_markdown ? (
-                    <div className="workspace-section-card workspace-builder-preview-card">
-                      <span className="workspace-label">
-                        Base resume preview
-                      </span>
-                      <pre className="workspace-builder-preview">
-                        {builderSession.generated_resume_markdown}
-                      </pre>
-                    </div>
-                  ) : (
-                    <div className="workspace-empty-state workspace-empty-state-compact">
-                      Your base resume preview will appear here once the guided
-                      intake is complete.
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="workspace-empty-state workspace-empty-state-compact">
-                  Switch to the assistant lane to start building a resume from
-                  scratch.
+                {builderSession?.generated_resume_markdown ? (
+                  <div>
+                    <button
+                      className="rd-btn rd-btn-primary rd-btn-sm"
+                      disabled={builderCommitting}
+                      onClick={onBuilderCommit}
+                      type="button"
+                    >
+                      {builderCommitting
+                        ? "Using profile…"
+                        : "Use this profile"}
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p style={{ fontSize: 12.5, color: "var(--fg-3)" }}>
+                The assistant is hidden for now. You can reopen it anytime to
+                continue answering questions.
+              </p>
+            )}
+
+            {builderSession ? (
+              <div
+                className="b-builder-preview-card"
+                style={{ marginTop: 0 }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "baseline",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div className="b-twoup-title">Draft profile</div>
+                  <span className="b-twoup-sub">
+                    Progress · {builderSession.progress_percent}%
+                  </span>
                 </div>
-              )}
-            </div>
+
+                <div className="b-builder-form">
+                  {DRAFT_FIELDS.map((field) => (
+                    <label
+                      className={
+                        field.wide
+                          ? "b-builder-field b-builder-field-wide"
+                          : "b-builder-field"
+                      }
+                      key={field.key}
+                    >
+                      <span className="b-builder-field-label">
+                        {field.label}
+                      </span>
+                      {field.kind === "input" ? (
+                        <input
+                          className="rd-input"
+                          onChange={(event) =>
+                            setDraftField(field.key, event.target.value)
+                          }
+                          placeholder={field.placeholder}
+                          value={builderDraftForm[field.key]}
+                        />
+                      ) : (
+                        <textarea
+                          className="rd-textarea"
+                          onChange={(event) =>
+                            setDraftField(field.key, event.target.value)
+                          }
+                          placeholder={field.placeholder}
+                          style={{ minHeight: 70 }}
+                          value={builderDraftForm[field.key]}
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <button
+                    className="rd-btn rd-btn-ghost rd-btn-sm"
+                    disabled={builderEditing}
+                    onClick={onBuilderDraftSave}
+                    type="button"
+                  >
+                    {builderEditing ? "Saving edits…" : "Save draft edits"}
+                  </button>
+                </div>
+
+                {builderSession.generated_resume_markdown ? (
+                  <pre className="b-builder-preview">
+                    {builderSession.generated_resume_markdown}
+                  </pre>
+                ) : (
+                  <div
+                    className="b-twoup-empty"
+                    style={{ marginTop: 12 }}
+                  >
+                    Your base resume preview will appear here once the guided
+                    intake is complete.
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         )}
+      </div>
 
-        {mode === "upload" && currentProfile ? (
-          <>
-            <div className="workspace-summary-grid">
-              <div className="metric-tile">
-                <span>Candidate</span>
-                <strong>
-                  {currentProfile.full_name || "Name not inferred"}
-                </strong>
-                <small>
-                  {currentProfile.location || "Location not inferred"}
-                </small>
-              </div>
-              <div className="metric-tile">
-                <span>Skills</span>
-                <strong>{currentProfile.skills.length}</strong>
-                <small>Matched skill signals from the parsed resume.</small>
-              </div>
-              <div className="metric-tile">
-                <span>Experience Entries</span>
-                <strong>{currentProfile.experience.length}</strong>
-                <small>
-                  Structured roles or project entries available for reuse.
-                </small>
-              </div>
-            </div>
-
-            <div className="workspace-review-columns">
-              <div className="soft-panel">
-                <span className="soft-panel-label">Top skills</span>
-                <div className="workspace-chip-grid">
-                  {currentProfile.skills.slice(0, 10).map((skill) => (
-                    <span className="workspace-meta-chip" key={skill}>
-                      {skill}
+      {/* 2 — Parsed profile hero (only after upload) */}
+      {currentProfile ? (
+        <div className="b-resume-hero">
+          <div className="b-resume-hero-head">
+            <div>
+              <span className="b-resume-hero-pill">Parsed profile</span>
+              <h1 className="b-resume-hero-title">
+                {currentProfile.full_name || "Name not inferred"}
+              </h1>
+              <div className="b-resume-hero-meta">
+                <span>
+                  {currentProfile.experience?.[0]?.title || "Role pending"}
+                </span>
+                {currentProfile.location ? (
+                  <span>{currentProfile.location}</span>
+                ) : null}
+                <span>
+                  {currentProfile.experience.length} role
+                  {currentProfile.experience.length === 1 ? "" : "s"} ·{" "}
+                  {currentProfile.skills.length} skill
+                  {currentProfile.skills.length === 1 ? "" : "s"} detected
+                </span>
+                {profileFileLabel ? (
+                  <span>
+                    <span className="rd-mono" style={{ color: "var(--fg-2)" }}>
+                      {profileFileLabel}
                     </span>
-                  ))}
-                </div>
-              </div>
-              <div className="soft-panel">
-                <span className="soft-panel-label">Resume signals</span>
-                <ul className="workspace-feature-list workspace-feature-list-compact">
-                  {currentProfile.source_signals.slice(0, 4).map((signal) => (
-                    <li key={signal}>{signal}</li>
-                  ))}
-                </ul>
+                  </span>
+                ) : null}
               </div>
             </div>
-
-            <div className="workspace-next-step-note">
-              You can proceed to Job Search if you want help finding roles, or
-              move to the JD section if you already have a job description
-              ready.
-            </div>
-          </>
-        ) : mode === "upload" ? (
-          <div className="workspace-empty-state">
-            Your parsed candidate snapshot will appear here after the upload
-            finishes.
+            <button
+              className="rd-btn rd-btn-ghost rd-btn-sm"
+              onClick={onClearUploadedResumeProfile}
+              type="button"
+            >
+              Re-upload
+            </button>
           </div>
-        ) : null}
-      </article>
-    </section>
+        </div>
+      ) : null}
+
+      {/* 3 — Skills + Experience two-up (only after parse) */}
+      {currentProfile ? (
+        <div className="b-resume-twoup">
+          <div className="b-twoup-section">
+            <div className="b-twoup-head">
+              <div className="b-twoup-title">Skills</div>
+              <div className="b-twoup-sub">
+                {currentProfile.skills.length} detected
+              </div>
+            </div>
+            {currentProfile.skills.length ? (
+              <div className="b-skill-chips">
+                {currentProfile.skills.map((skill, index) => (
+                  <span
+                    className="b-skill-chip"
+                    data-tone={index % 4 === 0 ? "bold" : undefined}
+                    key={skill}
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="b-twoup-empty">
+                Skills will surface once the parser settles.
+              </div>
+            )}
+          </div>
+
+          <div className="b-twoup-section">
+            <div className="b-twoup-head">
+              <div className="b-twoup-title">Experience</div>
+              <div className="b-twoup-sub">
+                {currentProfile.experience.length} role
+                {currentProfile.experience.length === 1 ? "" : "s"}
+              </div>
+            </div>
+            {currentProfile.experience.length ? (
+              <div className="b-twoup-body">
+                {currentProfile.experience.map((entry, index) => (
+                  <div
+                    className="b-experience-card"
+                    key={`${entry.organization}-${entry.title}-${index}`}
+                  >
+                    <div>
+                      <div className="b-experience-title">
+                        {entry.title || "Role title pending"}
+                      </div>
+                      <div className="b-experience-org">
+                        {entry.organization || "Organisation pending"}
+                      </div>
+                    </div>
+                    <div className="b-experience-period">
+                      {entry.start || "—"}
+                      {" — "}
+                      {entry.end || "Now"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="b-twoup-empty">
+                Experience entries will populate after the parser runs.
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {/* 4 — Parser signals row (only after parse) */}
+      {currentProfile && currentProfile.source_signals.length ? (
+        <div className="b-twoup-section">
+          <div className="b-twoup-head">
+            <div className="b-twoup-title">Parser signals</div>
+            <div className="b-twoup-sub">Live read of your CV</div>
+          </div>
+          <ul className="b-signal-list">
+            {currentProfile.source_signals.slice(0, 6).map((signal) => (
+              <li className="b-signal-item" key={signal}>
+                <span className="b-signal-icon">
+                  <CheckIcon />
+                </span>
+                {signal}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
