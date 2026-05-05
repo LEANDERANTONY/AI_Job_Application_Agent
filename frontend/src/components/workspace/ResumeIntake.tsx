@@ -584,7 +584,7 @@ export function ResumeIntake({
 
                 <div className="b-doc-frame-actions">
                   <button
-                    className="rd-btn rd-btn-ghost rd-btn-sm"
+                    className="rd-btn rd-btn-soft rd-btn-sm"
                     disabled={builderEditing}
                     onClick={onBuilderDraftSave}
                     type="button"

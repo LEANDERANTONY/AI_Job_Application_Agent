@@ -3010,6 +3010,20 @@ code {
   pointer-events: none;
   z-index: 0;
 }
+/* Fine grain texture overlay — adds the same atmospheric depth that
+   premium SaaS pages get from a noise filter. SVG turbulence keeps
+   the file inline with no extra fetch. Opacity is dialled to barely
+   perceptible — readers feel "richer surface" without seeing noise. */
+.b-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1   0 0 0 0 1   0 0 0 0 1   0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/></svg>");
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 0;
+}
 .b-shell > * { position: relative; z-index: 1; }
 
 /* ── Shared atoms (rd-*) ───────────────────────────────────────── */
@@ -3097,6 +3111,23 @@ code {
   background: rgba(255, 255, 255, 0.05);
   border-color: var(--border-strong);
   color: var(--fg);
+}
+
+/* Soft accent button — middle tier between the loud emissive primary
+   and the quiet ghost. Used for secondary-but-on-brand actions
+   (Save draft edits, Re-run with new role, etc). Keeps the accent
+   colour on the page without dropping a full blue gradient every
+   time. */
+.b-shell .rd-btn-soft {
+  background: rgba(48, 100, 255, 0.10);
+  color: var(--accent-strong);
+  border: 1px solid rgba(90, 134, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.b-shell .rd-btn-soft:hover {
+  background: rgba(48, 100, 255, 0.16);
+  border-color: rgba(90, 134, 255, 0.45);
+  color: #cfdcff;
 }
 
 .b-shell .rd-btn-quiet {
@@ -3288,44 +3319,72 @@ code {
 .b-account-name { font-size: 13.5px; color: var(--fg-2); }
 .b-account-popover {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 10px);
   right: 0;
-  width: 300px;
-  background: rgba(14, 18, 28, 0.95);
-  border: 1px solid var(--border);
+  width: 320px;
+  /* Glassy near-black surface w/ a top emissive accent edge; matches
+     the same atmospheric treatment used by intake panels + heroes so
+     the popover feels native. */
+  background:
+    linear-gradient(180deg, rgba(48, 100, 255, 0.06), transparent 30%),
+    rgba(8, 11, 18, 0.96);
+  border: 1px solid var(--border-strong);
   border-radius: 14px;
-  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(12px);
-  padding: 14px;
+  box-shadow:
+    0 0 0 1px rgba(90, 134, 255, 0.06),
+    0 24px 60px -20px rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(18px);
+  padding: 0;
   z-index: 30;
   cursor: default;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  overflow: hidden;
 }
+.b-account-popover::before {
+  /* Top emissive hairline — same trick used on intake/artifact cards. */
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(120, 155, 230, 0.32), transparent);
+  pointer-events: none;
+}
+.b-account-popover > * { padding: 0 14px; }
+.b-account-popover > .b-account-pop-head { padding-top: 14px; }
+.b-account-popover > .b-account-pop-actions { padding-bottom: 14px; }
+.b-account-popover .rd-hairline { margin: 0; }
 .b-account-pop-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  padding-bottom: 12px;
 }
 .b-account-pop-name {
-  font-size: 13.5px;
+  font-family: var(--font-display);
+  font-size: 14.5px;
   font-weight: 600;
+  letter-spacing: -0.015em;
   color: var(--fg);
 }
 .b-account-pop-email {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--fg-3);
+  margin-top: 2px;
 }
 .b-account-pop-meta {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  padding: 12px 0;
 }
 .b-account-pop-actions {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding-top: 12px;
 }
 
 /* Command palette trigger pill in topbar */
@@ -3501,8 +3560,10 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 18px 28px;
-  background: linear-gradient(180deg, rgba(48, 100, 255, 0.04), transparent);
+  padding: 22px 28px;
+  background:
+    radial-gradient(560px 200px at 22% 0%, rgba(48, 100, 255, 0.10), transparent 70%),
+    linear-gradient(180deg, rgba(48, 100, 255, 0.04), transparent);
   border-bottom: 1px solid var(--hairline);
   position: relative;
   /* Cap the reading width so on a 32" / 4K monitor the strip doesn't
@@ -3512,6 +3573,24 @@ code {
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
+  overflow: hidden;
+}
+/* Thin emissive accent line at the top of the hero — the same trick
+   the artifact viewer + intake panel use, so the chrome reads as
+   layered surfaces instead of flat bands. */
+.b-hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 24px;
+  right: 24px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(120, 155, 230, 0.32),
+    rgba(120, 155, 230, 0.18),
+    transparent);
+  pointer-events: none;
 }
 .b-hero-title {
   font-family: var(--font-display);
@@ -3736,10 +3815,16 @@ code {
 /* ── Parsed-result hero (Resume + JD share this) ───────────────── */
 .b-resume-hero {
   position: relative;
-  padding: 26px 28px 24px;
-  background: rgba(0, 0, 0, 0.40);
+  padding: 32px 32px 28px;
+  /* Layered atmospheric surface — radial accent halo behind the title
+     + a quiet base wash. Feels cinematic without overpowering the
+     name/title typography. */
+  background:
+    radial-gradient(640px 240px at 18% 0%, rgba(48, 100, 255, 0.10), transparent 70%),
+    linear-gradient(180deg, rgba(48, 100, 255, 0.04), transparent 50%),
+    rgba(0, 0, 0, 0.45);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
 }
 .b-resume-hero::before {
@@ -3749,7 +3834,7 @@ code {
   left: 24px;
   right: 24px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(120, 155, 230, 0.32), transparent);
+  background: linear-gradient(90deg, transparent, rgba(120, 155, 230, 0.40), rgba(120, 155, 230, 0.20), transparent);
   pointer-events: none;
 }
 .b-resume-hero > * { position: relative; }
@@ -3783,12 +3868,12 @@ code {
   box-shadow: 0 0 6px rgba(90, 134, 255, 0.55);
 }
 .b-resume-hero-title {
-  margin: 14px 0 10px;
+  margin: 16px 0 12px;
   font-family: var(--font-display);
-  font-size: 34px;
+  font-size: 38px;
   font-weight: 600;
-  line-height: 1.05;
-  letter-spacing: -0.025em;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
   color: var(--fg);
 }
 .b-resume-hero-meta {
@@ -4347,7 +4432,7 @@ code {
 }
 @media (max-width: 880px) { .b-job-grid { grid-template-columns: 1fr; } }
 .b-job-card {
-  padding: 14px;
+  padding: 16px;
   background: rgba(0, 0, 0, 0.40);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -4355,9 +4440,12 @@ code {
   flex-direction: column;
   gap: 8px;
   position: relative;
-  transition: border-color .15s, background .15s, transform .12s;
+  overflow: hidden;
+  transition: border-color .18s, background .18s, transform .18s, box-shadow .18s;
   cursor: pointer;
 }
+/* Top hairline gradient — same trick used elsewhere; subtle layered
+   surface cue. */
 .b-job-card::before {
   content: "";
   position: absolute;
@@ -4366,11 +4454,28 @@ code {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
   border-radius: 12px 12px 0 0;
 }
+/* Accent left-bar that slides in on hover — gives a clear visual
+   "this row is interactive" cue. Animation grows from 0 → 3px. */
+.b-job-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18px;
+  bottom: 18px;
+  width: 0;
+  background: var(--accent-strong);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 12px var(--accent-glow);
+  transition: width .18s ease;
+}
 .b-job-card:hover {
   border-color: var(--border-strong);
   background: var(--bg-card-2);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 32px -20px rgba(0, 0, 0, 0.6);
 }
+.b-job-card:hover::after { width: 3px; }
+.b-job-card:hover .b-job-card-actions { opacity: 1; }
 .b-job-card[data-active="true"] {
   border-color: rgba(90, 134, 255, 0.35);
   box-shadow: 0 0 0 1px rgba(48, 100, 255, 0.20), 0 16px 36px -16px var(--accent-glow);
@@ -4417,6 +4522,10 @@ code {
   gap: 6px;
   margin-top: 4px;
   flex-wrap: wrap;
+  /* Subtly hidden by default; sharpen on card hover so the resting
+     grid feels less busy. */
+  opacity: 0.65;
+  transition: opacity .18s ease;
 }
 .b-job-card-aside {
   display: flex;
@@ -4529,12 +4638,40 @@ code {
   border-radius: 12px;
   border-left: 3px solid rgba(255, 255, 255, 0.06);
   position: relative;
-  transition: border-color .15s;
+  overflow: hidden;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
 }
-.b-pipeline-stage[data-state="done"]   { border-left-color: var(--success); }
+/* Done — quiet success-tinted top wash + subtle left accent. */
+.b-pipeline-stage[data-state="done"] {
+  border-left-color: var(--success);
+  background:
+    linear-gradient(180deg, rgba(127, 224, 176, 0.05), transparent 60%),
+    rgba(0, 0, 0, 0.40);
+}
+/* Active — emissive accent gradient + ring glow. The card visibly
+   "lights up" relative to its done/standby neighbors. */
 .b-pipeline-stage[data-state="active"] {
   border-left-color: var(--accent-strong);
-  box-shadow: 0 0 0 1px rgba(48, 100, 255, 0.18), 0 14px 32px -16px var(--accent-glow);
+  background:
+    linear-gradient(180deg, rgba(48, 100, 255, 0.10), transparent 65%),
+    rgba(0, 0, 0, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(48, 100, 255, 0.22),
+    0 14px 32px -16px var(--accent-glow);
+}
+.b-pipeline-stage[data-state="active"]::before {
+  /* Top-right radial halo on the active card — adds depth without
+     disturbing the title typography. */
+  content: "";
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(48, 100, 255, 0.18), transparent 70%);
+  pointer-events: none;
 }
 .b-pipeline-stage[data-state="active"]::after {
   content: "";
@@ -4772,36 +4909,52 @@ code {
 /* ── Floating assistant FAB + popover ──────────────────────────── */
 .b-shell .rd-fab {
   position: fixed;
-  bottom: 22px;
-  right: 22px;
-  width: 52px;
-  height: 52px;
+  bottom: 24px;
+  right: 24px;
+  width: 54px;
+  height: 54px;
   border-radius: 999px;
-  border: 1px solid rgba(140, 175, 255, 0.4);
-  background: linear-gradient(180deg, var(--accent-strong), #114be9);
+  border: 1px solid rgba(140, 175, 255, 0.45);
+  /* Layered gradient: highlight on the upper-left, deep accent on the
+     lower-right — gives the button a glassy, lit-from-above sheen
+     instead of a flat blue puck. */
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.22), transparent 55%),
+    linear-gradient(180deg, var(--accent-strong) 0%, #114be9 100%);
   color: white;
   display: grid;
   place-items: center;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
     0 0 0 4px rgba(48, 100, 255, 0.10),
-    0 18px 40px -12px rgba(48, 100, 255, 0.55);
+    0 20px 44px -12px rgba(48, 100, 255, 0.55);
   cursor: pointer;
   z-index: 30;
-  transition: transform 140ms ease;
+  transition: transform 180ms ease, box-shadow 180ms ease;
   font: inherit;
 }
 .b-shell .rd-fab::before {
   content: "";
   position: absolute;
-  inset: -8px;
+  inset: -10px;
   border-radius: 999px;
-  background: radial-gradient(closest-side, rgba(48, 100, 255, 0.45), transparent 70%);
-  filter: blur(12px);
+  background: radial-gradient(closest-side, rgba(48, 100, 255, 0.50), transparent 70%);
+  filter: blur(14px);
   z-index: -1;
   pointer-events: none;
+  opacity: 0.85;
+  transition: opacity 180ms ease;
 }
-.b-shell .rd-fab:hover { transform: translateY(-2px) scale(1.04); }
+.b-shell .rd-fab:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 0 0 5px rgba(48, 100, 255, 0.14),
+    0 24px 56px -12px rgba(48, 100, 255, 0.65);
+}
+.b-shell .rd-fab:hover::before { opacity: 1; }
 .b-shell .rd-fab-dot {
   position: absolute;
   top: 6px;
@@ -5311,15 +5464,18 @@ code {
   border: 0;
   border-bottom: 1px solid var(--hairline);
   border-radius: 0;
-  padding: 6px 0;
+  padding: 8px 0;
   color: var(--fg);
   font-family: inherit;
   font-size: 14.5px;
   outline: none;
-  transition: border-color 120ms ease;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 .b-shell .b-doc-input:focus {
   border-bottom-color: var(--accent-strong);
+  /* Soft accent glow under the focused input — feels like the field
+     is "lit" from below, premium SaaS focus ring without a hard ring. */
+  box-shadow: 0 1px 0 rgba(90, 134, 255, 0.55), 0 6px 16px -6px var(--accent-glow);
 }
 .b-shell .b-doc-input::placeholder { color: var(--fg-4); }
 .b-shell .b-doc-textarea {
