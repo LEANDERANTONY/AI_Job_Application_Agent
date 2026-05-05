@@ -5684,6 +5684,12 @@ code {
     gap: 12px;
   }
   .b-shell .b-intake-head-actions { justify-content: flex-start; }
+  /* Mode toggle stretches full width; share evenly between the two
+     buttons so the segmented control fills its container instead of
+     leaving a gap to the right of the wider "Build with assistant"
+     label. */
+  .b-shell .b-intake-modes { display: flex; }
+  .b-shell .b-intake-mode { flex: 1; text-align: center; }
 
   /* Compact intake (post-parse) — stack meta + actions vertically. */
   .b-shell .b-intake-compact { flex-direction: column; align-items: stretch; gap: 10px; padding: 6px 0; }
