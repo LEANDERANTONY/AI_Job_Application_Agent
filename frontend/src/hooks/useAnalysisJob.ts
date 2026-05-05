@@ -146,6 +146,19 @@ export function useAnalysisJob({
     setAnalysisStateRef.current = setAnalysisState;
   });
 
+  // True until the hook unmounts. Distinct from the polling effect's
+  // local `cancelled` flag, which flips every time the effect re-runs
+  // (including in response to our own state setters). The post-await
+  // success-notice path gates on this so it survives the self-induced
+  // cleanup that fires when we publish the completed job state.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const workflowStages = useMemo(() => {
     if (analysisRunMode === "agentic") {
       return AGENTIC_WORKFLOW_STAGES;
@@ -199,12 +212,20 @@ export function useAnalysisJob({
         setAnalysisJobState(nextJobState);
 
         if (nextJobState.status === "completed" && nextJobState.result) {
+          // Flip the running flags + publish the snapshot synchronously
+          // BEFORE the persistLatestWorkspace await below. Otherwise our
+          // own setAnalysisJobState(nextJobState) above triggers the
+          // polling effect's cleanup → cancelled becomes true →
+          // every post-await reset gets dropped, leaving the UI stuck
+          // on "Running…" even though `analysisState` is already set.
           setAnalysisStateRef.current(nextJobState.result);
+          setAnalysisLoading(false);
+          setAnalysisRunMode(null);
           const message = await onCompletedRef.current(nextJobState.result);
-          if (!cancelled) {
+          // Notice is gated on real unmount, not on the polling
+          // effect's self-induced cancellation.
+          if (mountedRef.current) {
             setNoticeRef.current({ level: "success", message });
-            setAnalysisLoading(false);
-            setAnalysisRunMode(null);
           }
           return;
         }
