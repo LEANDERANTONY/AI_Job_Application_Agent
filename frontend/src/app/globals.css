@@ -2931,9 +2931,12 @@ code {
   --danger:         #ff8b8b;
   --danger-soft:    rgba(255, 139, 139, 0.16);
 
-  /* Type */
-  --font-display:   var(--font-geist), "Geist", "Inter", system-ui, sans-serif;
-  --font-body:      var(--font-geist), "Geist", "Inter", system-ui, sans-serif;
+  /* Type — match the landing page's pair (Space Grotesk display +
+     DM Sans body) so the workspace and marketing share one voice.
+     Mono stays Geist Mono — landing doesn't load a mono and this
+     reads well alongside both. */
+  --font-display:   var(--font-space-grotesk), "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body:      var(--font-dm-sans), "DM Sans", "Inter", system-ui, sans-serif;
   --font-mono:      var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
 
   /* Radius / spacing */
@@ -3884,6 +3887,53 @@ code {
   font-size: 12.5px;
   color: var(--fg-3);
   padding: 8px 0;
+}
+
+/* CollapsibleSection — the section head becomes a clickable button.
+   Caret on the right rotates 90° when the section is open. The body
+   wrapper is just a div; we use the `hidden` attribute to remove it
+   from layout when closed. Padding-bottom on the closed-state head
+   trims the gap that the (now empty) body would otherwise leave. */
+.b-twoup-head-toggle {
+  background: transparent;
+  border: 0;
+  padding: 0 0 10px;
+  margin: 0 0 14px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.b-twoup-section[data-collapsed="true"] .b-twoup-head-toggle {
+  margin-bottom: 0;
+}
+.b-twoup-toggle-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--hairline);
+  color: var(--fg-3);
+  transition: transform .15s ease, color .15s, border-color .15s;
+  transform: rotate(0deg);
+  flex: 0 0 auto;
+  align-self: center;
+}
+.b-twoup-section:not([data-collapsed="true"]) .b-twoup-toggle-caret {
+  transform: rotate(90deg);
+  color: var(--fg-2);
+}
+.b-twoup-head-toggle:hover .b-twoup-toggle-caret {
+  color: var(--fg);
+  border-color: var(--border-strong);
 }
 
 /* Quiet placeholder shown when a tab's empty area would otherwise be

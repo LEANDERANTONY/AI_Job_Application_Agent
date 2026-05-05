@@ -22,6 +22,7 @@ import {
   CheckIcon,
   UploadIcon,
 } from "@/components/workspace/icons";
+import { CollapsibleSection } from "@/components/workspace/CollapsibleSection";
 import type {
   CandidateProfile,
   ResumeBuilderSessionResponse,
@@ -597,18 +598,17 @@ export function ResumeIntake({
         </div>
       ) : null}
 
-      {/* 3 — Skills (full-width) — stacked vertically with Experience
-          below. Stacked rather than two-up so a long resume's
-          experience list doesn't overshoot the much-shorter skills
-          column, and so the layout reads naturally on phones too. */}
+      {/* 3 — Skills (full-width, collapsible) — stacked vertically with
+          Experience below. Stacked rather than two-up so a long
+          resume's experience list doesn't overshoot the much-shorter
+          skills column, and so the layout reads naturally on phones.
+          Collapsible so phone users can fold a section closed and
+          scroll past it quickly. */}
       {currentProfile ? (
-        <div className="b-twoup-section">
-          <div className="b-twoup-head">
-            <div className="b-twoup-title">Skills</div>
-            <div className="b-twoup-sub">
-              {currentProfile.skills.length} detected
-            </div>
-          </div>
+        <CollapsibleSection
+          sub={`${currentProfile.skills.length} detected`}
+          title="Skills"
+        >
           {currentProfile.skills.length ? (
             <div className="b-skill-chips">
               {currentProfile.skills.map((skill, index) => (
@@ -626,18 +626,14 @@ export function ResumeIntake({
               Skills will surface once the parser settles.
             </div>
           )}
-        </div>
+        </CollapsibleSection>
       ) : null}
 
       {currentProfile ? (
-        <div className="b-twoup-section">
-          <div className="b-twoup-head">
-            <div className="b-twoup-title">Experience</div>
-            <div className="b-twoup-sub">
-              {currentProfile.experience.length} role
-              {currentProfile.experience.length === 1 ? "" : "s"}
-            </div>
-          </div>
+        <CollapsibleSection
+          sub={`${currentProfile.experience.length} role${currentProfile.experience.length === 1 ? "" : "s"}`}
+          title="Experience"
+        >
           {currentProfile.experience.length ? (
             <div className="b-twoup-body">
               {currentProfile.experience.map((entry, index) => (
@@ -666,16 +662,12 @@ export function ResumeIntake({
               Experience entries will populate after the parser runs.
             </div>
           )}
-        </div>
+        </CollapsibleSection>
       ) : null}
 
       {/* 4 — Parser signals row (only after parse) */}
       {currentProfile && currentProfile.source_signals.length ? (
-        <div className="b-twoup-section">
-          <div className="b-twoup-head">
-            <div className="b-twoup-title">Parser signals</div>
-            <div className="b-twoup-sub">Live read of your CV</div>
-          </div>
+        <CollapsibleSection sub="Live read of your CV" title="Parser signals">
           <ul className="b-signal-list">
             {currentProfile.source_signals.slice(0, 6).map((signal) => (
               <li className="b-signal-item" key={signal}>
@@ -686,7 +678,7 @@ export function ResumeIntake({
               </li>
             ))}
           </ul>
-        </div>
+        </CollapsibleSection>
       ) : null}
 
       {/* Empty-state placeholder shown when nothing has been parsed yet

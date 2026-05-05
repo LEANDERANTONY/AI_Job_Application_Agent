@@ -21,6 +21,7 @@
 import type { ChangeEvent } from "react";
 
 import { UploadIcon } from "@/components/workspace/icons";
+import { CollapsibleSection } from "@/components/workspace/CollapsibleSection";
 import type {
   JobPosting,
   WorkspaceAnalysisResponse,
@@ -311,13 +312,9 @@ export function JDReview({
         </div>
       ) : null}
 
-      {/* 3 — Summary block */}
+      {/* 3 — Summary block (collapsible) */}
       {summaryText ? (
-        <div className="b-twoup-section">
-          <div className="b-twoup-head">
-            <div className="b-twoup-title">Summary</div>
-            <div className="b-twoup-sub">At a glance</div>
-          </div>
+        <CollapsibleSection sub="At a glance" title="Summary">
           <p
             style={{
               fontSize: 13.5,
@@ -328,17 +325,16 @@ export function JDReview({
           >
             {summaryText}
           </p>
-        </div>
+        </CollapsibleSection>
       ) : null}
 
-      {/* 4 — Hard / Soft skills two-up */}
+      {/* 4 — Hard / Soft skills two-up (each collapsible) */}
       {review || analysisState ? (
         <div className="b-resume-twoup">
-          <div className="b-twoup-section">
-            <div className="b-twoup-head">
-              <div className="b-twoup-title">Hard skills</div>
-              <div className="b-twoup-sub">{hardSkills.length} required</div>
-            </div>
+          <CollapsibleSection
+            sub={`${hardSkills.length} required`}
+            title="Hard skills"
+          >
             {hardSkills.length ? (
               <div className="b-skill-chips">
                 {hardSkills.map((skill, index) => (
@@ -356,12 +352,11 @@ export function JDReview({
                 No explicit hard-skill keywords detected yet.
               </div>
             )}
-          </div>
-          <div className="b-twoup-section">
-            <div className="b-twoup-head">
-              <div className="b-twoup-title">Soft skills</div>
-              <div className="b-twoup-sub">{softSkills.length} signals</div>
-            </div>
+          </CollapsibleSection>
+          <CollapsibleSection
+            sub={`${softSkills.length} signals`}
+            title="Soft skills"
+          >
             {softSkills.length ? (
               <div className="b-skill-chips">
                 {softSkills.map((skill) => (
@@ -375,25 +370,21 @@ export function JDReview({
                 No explicit soft-skill signals detected yet.
               </div>
             )}
-          </div>
+          </CollapsibleSection>
         </div>
       ) : null}
 
-      {/* 5 — JD body sections (parser output, in order) */}
+      {/* 5 — JD body sections (parser output, in order — each collapsible) */}
       {bodySections.map((section) => {
         const paragraphs = buildSectionParagraphs(section.items);
         return (
-          <div className="b-jd-block" key={section.title}>
-            <div className="b-jd-block-head">
-              <div className="b-section-label">{section.title}</div>
-              <div className="b-jd-block-title">{section.title}</div>
-            </div>
+          <CollapsibleSection key={section.title} title={section.title}>
             <div className="b-jd-block-body">
               {paragraphs.map((paragraph) => (
                 <p key={paragraph}>{paragraph}</p>
               ))}
             </div>
-          </div>
+          </CollapsibleSection>
         );
       })}
 
