@@ -3367,7 +3367,7 @@ code {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 14px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--hairline);
 }
 .b-account-pop-name {
@@ -3391,7 +3391,7 @@ code {
   flex-direction: column;
   gap: 9px;
   margin: 0;
-  padding: 14px 0;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--hairline);
 }
 .b-account-pop-stats > div {
@@ -3419,8 +3419,11 @@ code {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-top: 14px;
+  padding: 14px 16px;
 }
+/* When an auth error notice is rendered between stats and actions, keep
+   it inset to match the surrounding section padding. */
+.b-account-popover > .b-notice { margin: 14px 16px 0; }
 
 /* Command palette trigger pill in topbar */
 .b-cmd-trigger {
