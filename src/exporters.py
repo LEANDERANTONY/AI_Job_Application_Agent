@@ -13,7 +13,7 @@ from markdown_it.tree import SyntaxTreeNode
 
 from src.errors import ExportError
 from src.logging_utils import get_logger, log_event
-from src.schemas import ApplicationReport, CoverLetterArtifact, TailoredResumeArtifact
+from src.schemas import ApplicationReport, CoverLetterArtifact, ProjectEntry, TailoredResumeArtifact
 
 
 _MARKDOWN = MarkdownIt("commonmark", {"html": False})
@@ -590,6 +590,66 @@ def _build_resume_experience_html(experience_entries):
     return "".join(cards)
 
 
+def _build_resume_projects_html(project_entries: list[ProjectEntry]) -> str:
+    if not project_entries:
+        return ""
+    cards: list[str] = []
+    for project in project_entries:
+        name = html.escape(project.name or "Project")
+        date_parts = [part for part in [project.start, project.end] if part]
+        date_text = html.escape(" - ".join(date_parts)) if date_parts else ""
+        description = html.escape(project.description or "")
+        bullets_html = ""
+        if project.bullets:
+            bullets_html = _build_resume_section_list(
+                project.bullets,
+                "",
+                class_name="resume-bullet-list",
+            )
+        meta_parts: list[str] = []
+        if project.technologies:
+            meta_parts.append(
+                "Tech: " + html.escape(", ".join(project.technologies))
+            )
+        if project.link:
+            meta_parts.append("Link: " + html.escape(project.link))
+        meta_html = (
+            '<p class="resume-role-meta">{meta}</p>'.format(meta=" | ".join(meta_parts))
+            if meta_parts
+            else ""
+        )
+        cards.append(
+            """
+            <article class="resume-project-card">
+                <div class="resume-role-row">
+                    <div>
+                        <h3>{name}</h3>
+                        {description}
+                    </div>
+                    {dates}
+                </div>
+                {bullets}
+                {meta}
+            </article>
+            """.format(
+                name=name,
+                description=(
+                    '<p class="resume-role-meta">{description}</p>'.format(description=description)
+                    if description
+                    else ""
+                ),
+                dates=(
+                    '<p class="resume-role-dates">{dates}</p>'.format(dates=date_text)
+                    if date_text
+                    else ""
+                ),
+                bullets=bullets_html,
+                meta=meta_html,
+            )
+        )
+    return "".join(cards)
+
+
 def _build_resume_education_html(education_entries):
     if not education_entries:
         return '<p class="resume-empty">No education entries were available.</p>'
@@ -642,15 +702,17 @@ def _build_resume_skills_inline_html(skills):
 
 
 def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
-    # Summary always renders — if the workflow didn't produce one we
-    # show the placeholder so the failure surfaces. Core Skills and
-    # Education always render too: both are user-supplied content the
-    # resume requires. Experience and Certifications are the two
-    # genuinely-optional sections — students / early-career candidates
-    # may have neither — so they drop entirely when empty rather than
-    # showing filler. Internships are modelled as regular Experience
-    # entries (no separate Internships section); there is currently no
-    # Projects section in the schema either.
+    # Summary, Core Skills, Education always render — Summary because
+    # the workflow always generates one (placeholder surfaces a
+    # failure), Skills and Education because both are user-supplied
+    # content the resume requires.
+    #
+    # Experience, Projects, Publications, Certifications drop entirely
+    # when empty: students / early-career candidates may legitimately
+    # have any combination of these missing, and a placeholder reads as
+    # awkward filler rather than as a useful diagnostic. Internships
+    # are modelled as regular Experience entries (no separate
+    # Internships section).
     name = html.escape(artifact.header.full_name or artifact.title or "Candidate")
     contact_values = []
     if artifact.header.location:
@@ -668,6 +730,32 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         {experience}
     </section>
         """.format(experience=_build_resume_experience_html(experience_entries))
+
+    project_entries = list(artifact.project_entries or [])
+    projects_section = ""
+    if project_entries:
+        projects_section = """
+    <section class="resume-classic-section">
+        <h2>Projects</h2>
+        {projects}
+    </section>
+        """.format(projects=_build_resume_projects_html(project_entries))
+
+    publication_entries = [item for item in (artifact.publication_entries or []) if str(item or "").strip()]
+    publications_section = ""
+    if publication_entries:
+        publications_section = """
+    <section class="resume-classic-section">
+        <h2>Publications</h2>
+        {publications}
+    </section>
+        """.format(
+            publications=_build_resume_section_list(
+                publication_entries,
+                "",
+                class_name="resume-plain-list",
+            )
+        )
 
     certifications = [item for item in artifact.certifications if str(item or "").strip()]
     certifications_section = ""
@@ -699,10 +787,12 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         {skills}
     </section>
     {experience_section}
+    {projects_section}
     <section class="resume-classic-section">
         <h2>Education</h2>
         {education}
     </section>
+    {publications_section}
     {certifications_section}
     """.format(
         name=name,
@@ -710,7 +800,9 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         summary=html.escape(artifact.professional_summary or "No professional summary generated."),
         skills=skills_html,
         experience_section=experience_section,
+        projects_section=projects_section,
         education=_build_resume_education_html(artifact.education_entries),
+        publications_section=publications_section,
         certifications_section=certifications_section,
     )
 
@@ -746,7 +838,17 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
            reads as a set with the cover letter while keeping the
            classic ATS-resume scannability for everything else. */
         .resume-summary, .resume-bullet-list li {{ font-family: Georgia, "Times New Roman", serif; line-height: 1.55; }}
-        .resume-shell {{ position: relative; min-height: 297mm; background: #fffdfa; padding: 13mm 15mm 13mm; overflow: hidden; }}
+        /* min-height keeps short resumes filling a single A4 page; we
+           deliberately drop `overflow: hidden` (which previously
+           clipped any content past page 1) so WeasyPrint paginates
+           naturally when the resume runs long. overflow-x: hidden
+           still prevents the negative-margin h2 trick from leaking
+           past the page edge horizontally. */
+        .resume-shell {{ position: relative; min-height: 297mm; background: #fffdfa; padding: 13mm 15mm 13mm; overflow-x: hidden; }}
+        /* Pagination guards: keep cards intact across page breaks and
+           keep section headings with their first child. */
+        .resume-experience-card, .resume-education-card, .resume-project-card {{ page-break-inside: avoid; break-inside: avoid; }}
+        h2, h3 {{ page-break-after: avoid; break-after: avoid; }}
         .resume-shell::before {{ content: none; }}
         .resume-shell::after {{ content: none; }}
         h1 {{ font-size: 17.5pt; margin: 0 0 5px; letter-spacing: 0.1em; color: #0f172a; text-transform: uppercase; }}
@@ -766,15 +868,17 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         .resume-skill-inline {{ color: #0f172a; font-size: 9.5pt; line-height: 1.7; }}
         .resume-classic-section {{ position: relative; z-index: 1; margin-top: 12px; }}
         .resume-classic-section--plain-head h2 {{ border-bottom: 0; padding-bottom: 0; }}
-        .resume-experience-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
+        .resume-experience-card, .resume-project-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
         .resume-education-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
         .resume-role-row {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
         .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 4px; }}
         .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: #6b5648; font-size: 9.2pt; }}
         .resume-bullet-list, .resume-contact-list, .resume-plain-list {{ margin: 0; padding-left: 1rem; }}
         .resume-empty {{ color: #6b5648; font-style: italic; }}
-        .resume-experience-card + .resume-experience-card {{ position: relative; margin-top: 10px; padding-top: 10px; }}
-        .resume-experience-card + .resume-experience-card::before {{ content: ""; position: absolute; top: 0; left: 12px; right: 12px; border-top: 1px solid #d4beab; }}
+        .resume-experience-card + .resume-experience-card,
+        .resume-project-card + .resume-project-card {{ position: relative; margin-top: 10px; padding-top: 10px; }}
+        .resume-experience-card + .resume-experience-card::before,
+        .resume-project-card + .resume-project-card::before {{ content: ""; position: absolute; top: 0; left: 12px; right: 12px; border-top: 1px solid #d4beab; }}
         .resume-education-card + .resume-education-card {{ margin-top: 10px; }}
         @media all and (max-width: 720px) {{ .resume-classic-header {{ padding: 0 15mm 10px; margin: 0 -15mm; }} .resume-contact-inline {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
     </style>

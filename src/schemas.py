@@ -22,6 +22,17 @@ class WorkExperience:
 
 
 @dataclass
+class ProjectEntry:
+    name: str
+    description: str = ""
+    bullets: List[str] = field(default_factory=list)
+    technologies: List[str] = field(default_factory=list)
+    start: str = ""
+    end: str = ""
+    link: str = ""
+
+
+@dataclass
 class CandidateProfile:
     full_name: str = ""
     location: str = ""
@@ -32,6 +43,8 @@ class CandidateProfile:
     experience: List[WorkExperience] = field(default_factory=list)
     education: List[EducationEntry] = field(default_factory=list)
     certifications: List[str] = field(default_factory=list)
+    projects: List[ProjectEntry] = field(default_factory=list)
+    publications: List[str] = field(default_factory=list)
     source_signals: List[str] = field(default_factory=list)
 
 
@@ -281,6 +294,8 @@ class TailoredResumeArtifact:
     experience_entries: List[ResumeExperienceEntry] = field(default_factory=list)
     education_entries: List[EducationEntry] = field(default_factory=list)
     certifications: List[str] = field(default_factory=list)
+    project_entries: List[ProjectEntry] = field(default_factory=list)
+    publication_entries: List[str] = field(default_factory=list)
     change_log: List[str] = field(default_factory=list)
     validation_notes: List[str] = field(default_factory=list)
 

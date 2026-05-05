@@ -7,6 +7,7 @@ from src.schemas import (
     EducationEntry,
     FitAnalysis,
     JobDescription,
+    ProjectEntry,
     ResumeExperienceEntry,
     ResumeHeader,
     TailoredResumeArtifact,
@@ -60,6 +61,37 @@ def _build_header(candidate_profile: CandidateProfile) -> ResumeHeader:
         location=candidate_profile.location,
         contact_lines=dedupe_strings(candidate_profile.contact_lines),
     )
+
+
+def _build_project_entries(candidate_profile: CandidateProfile) -> list[ProjectEntry]:
+    """Pass project entries from the parsed profile through to the
+    tailored artifact. Currently the workflow does not re-tailor
+    project bullets per JD — the schema and renderer are wired up so
+    that capability can be added later without further migrations."""
+    cleaned: list[ProjectEntry] = []
+    for project in (candidate_profile.projects or [])[:6]:
+        bullets = dedupe_strings(
+            list(project.bullets or [])
+            + (_description_to_bullets(project.description) if project.description and not project.bullets else [])
+        )[:4]
+        cleaned.append(
+            ProjectEntry(
+                name=project.name or "Project",
+                description=project.description if not bullets else "",
+                bullets=bullets,
+                technologies=list(project.technologies or [])[:8],
+                start=project.start,
+                end=project.end,
+                link=project.link,
+            )
+        )
+    return cleaned
+
+
+def _build_publication_entries(candidate_profile: CandidateProfile) -> list[str]:
+    return dedupe_strings(
+        [str(item or "").strip() for item in candidate_profile.publications if str(item or "").strip()]
+    )[:12]
 
 
 def _build_experience_entries(
@@ -159,9 +191,11 @@ def _build_resume_markdown(
     change_log: list[str],
     validation_notes: list[str],
     theme: str,
+    project_entries: list[ProjectEntry] | None = None,
+    publication_entries: list[str] | None = None,
 ) -> str:
     theme_config = RESUME_THEMES.get(theme, RESUME_THEMES["classic_ats"])
-    header_block = ["# " + (header.full_name or "Candidate")] 
+    header_block = ["# " + (header.full_name or "Candidate")]
     personal_details = [part for part in [header.location] + list(header.contact_lines) if part]
     if personal_details:
         header_block.append(safe_join_strings(personal_details, fallback=""))
@@ -183,6 +217,23 @@ def _build_resume_markdown(
             )
         )
 
+    project_blocks: list[str] = []
+    for project in project_entries or []:
+        title_line = project.name or "Project"
+        date_parts = [part for part in [project.start, project.end] if part]
+        if date_parts:
+            title_line += " ({dates})".format(dates=" - ".join(date_parts))
+        block_lines = ["### " + title_line]
+        if project.description:
+            block_lines.append(project.description)
+        if project.bullets:
+            block_lines.append(render_markdown_list(project.bullets, ""))
+        if project.technologies:
+            block_lines.append("*Tech:* " + ", ".join(project.technologies))
+        if project.link:
+            block_lines.append("*Link:* " + project.link)
+        project_blocks.append("\n".join(part for part in block_lines if part))
+
     education_lines = []
     for education in education_entries[:4]:
         line = education.institution or "Education"
@@ -194,12 +245,13 @@ def _build_resume_markdown(
             line += " ({dates})".format(dates=" - ".join(date_parts))
         education_lines.append(line)
 
-    # Summary always renders (placeholder surfaces a workflow failure).
-    # Core Skills and Education always render — both are user-supplied
-    # content the resume requires. Experience and Certifications drop
-    # entirely when empty: students / early-career candidates may have
-    # neither, and a placeholder there reads as awkward filler.
+    # Summary / Core Skills / Education always render. Experience,
+    # Projects, Publications, and Certifications drop entirely when
+    # empty — students / early-career candidates may have any
+    # combination of these, and placeholder filler reads worse than
+    # the absence.
     cert_values = [item for item in certifications if str(item or "").strip()]
+    pub_values = [item for item in (publication_entries or []) if str(item or "").strip()]
 
     sections: list[str] = [
         "\n".join(part for part in header_block if part),
@@ -209,7 +261,11 @@ def _build_resume_markdown(
     ]
     if experience_blocks:
         sections.append("## Professional Experience\n\n" + "\n\n".join(experience_blocks))
+    if project_blocks:
+        sections.append("## Projects\n\n" + "\n\n".join(project_blocks))
     sections.append("## Education\n\n" + render_markdown_list(education_lines, "No education entries available."))
+    if pub_values:
+        sections.append("## Publications\n\n" + render_markdown_list(pub_values, ""))
     if cert_values:
         sections.append("## Certifications\n\n" + render_markdown_list(cert_values, ""))
     sections.append("## Change Summary\n\n" + render_markdown_list(change_log, "No change summary available."))
@@ -241,6 +297,8 @@ def build_tailored_resume_artifact(
     )[:8]
     header = _build_header(candidate_profile)
     experience_entries = _build_experience_entries(candidate_profile, tailored_draft, agent_result)
+    project_entries = _build_project_entries(candidate_profile)
+    publication_entries = _build_publication_entries(candidate_profile)
     change_log = _build_change_log(job_description, tailored_draft, agent_result, theme)
     validation_notes = _build_validation_notes(candidate_profile, fit_analysis, agent_result)
     title = "{name} - {role} Tailored Resume".format(
@@ -265,6 +323,8 @@ def build_tailored_resume_artifact(
         change_log,
         validation_notes,
         theme,
+        project_entries=project_entries,
+        publication_entries=publication_entries,
     )
     summary = "Tailored resume draft for {role}, ready to review and export.".format(
         role=job_description.title or "the target role",
@@ -283,6 +343,8 @@ def build_tailored_resume_artifact(
         experience_entries=experience_entries,
         education_entries=list(candidate_profile.education),
         certifications=list(candidate_profile.certifications),
+        project_entries=project_entries,
+        publication_entries=publication_entries,
         change_log=change_log,
         validation_notes=validation_notes,
     )

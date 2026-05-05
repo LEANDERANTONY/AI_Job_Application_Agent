@@ -62,6 +62,8 @@ def _build_candidate_section(candidate_profile: CandidateProfile) -> str:
                 value=safe_join_strings(candidate_profile.skills, fallback="No explicit skills detected", limit=10)
             ),
             "- Experience Entries: {value}".format(value=len(candidate_profile.experience)),
+            "- Project Entries: {value}".format(value=len(candidate_profile.projects)),
+            "- Publication Entries: {value}".format(value=len(candidate_profile.publications)),
             "- Certifications: {value}".format(
                 value=safe_join_strings(candidate_profile.certifications, fallback="None listed", limit=6)
             ),

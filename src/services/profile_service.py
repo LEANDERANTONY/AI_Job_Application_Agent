@@ -6,6 +6,7 @@ from src.openai_service import OpenAIService
 from src.schemas import (
     CandidateProfile,
     EducationEntry,
+    ProjectEntry,
     ResumeDocument,
     WorkExperience,
 )
@@ -25,6 +26,7 @@ SECTION_HEADERS = {
     "summary",
     "profile",
     "certifications",
+    "publications",
     "achievements",
 }
 
@@ -41,9 +43,10 @@ SECTION_ALIASES = {
     "education": "education",
     "certifications": "certifications",
     "certification": "certifications",
-    "publications": "achievements",
-    "publication": "achievements",
+    "publications": "publications",
+    "publication": "publications",
     "achievements": "achievements",
+    "achievement": "achievements",
 }
 
 DEGREE_KEYWORDS = (
@@ -578,8 +581,8 @@ def _looks_like_project_title(line: str) -> bool:
     return titleish_words >= max(2, len(words) // 2)
 
 
-def _parse_project_entries(section_lines: List[str]) -> List[WorkExperience]:
-    projects: List[WorkExperience] = []
+def _parse_project_entries(section_lines: List[str]) -> List[ProjectEntry]:
+    projects: List[ProjectEntry] = []
     current_title = ""
     current_lines: List[str] = []
     current_status = ""
@@ -588,14 +591,15 @@ def _parse_project_entries(section_lines: List[str]) -> List[WorkExperience]:
         nonlocal current_title, current_lines
         if not current_title:
             return
-        description = "\n".join(line for line in current_lines if line).strip()
+        bullets = [line for line in current_lines if line]
+        description = ""
         if current_status and current_status.lower() not in current_title.lower():
-            description = (current_status + "\n" + description).strip()
+            description = current_status
         projects.append(
-            WorkExperience(
-                title=current_title,
-                organization="Project Portfolio",
+            ProjectEntry(
+                name=current_title,
                 description=description,
+                bullets=bullets,
             )
         )
         current_title = ""
@@ -616,6 +620,20 @@ def _parse_project_entries(section_lines: List[str]) -> List[WorkExperience]:
 
     flush_current()
     return projects
+
+
+def _parse_publication_entries(section_lines: List[str]) -> List[str]:
+    """Each non-empty line in the Publications block becomes one entry.
+    Free-form citation strings — same shape as certifications."""
+    entries: List[str] = []
+    for raw_line in section_lines:
+        line = _clean_bullet_prefix(raw_line).strip(" .")
+        if not line:
+            continue
+        if _normalize_section_header(line) == "publications":
+            continue
+        entries.append(line)
+    return dedupe_strings(entries)
 
 
 def _parse_education_entries(section_lines: List[str]) -> List[EducationEntry]:
@@ -805,7 +823,11 @@ def _extract_contact_lines_from_resume(text: str) -> List[str]:
 
 
 def _collect_resume_signals(
-    resume_document: ResumeDocument, skills: List[str], sections: dict[str, List[str]], project_entries: List[WorkExperience]
+    resume_document: ResumeDocument,
+    skills: List[str],
+    sections: dict[str, List[str]],
+    project_entries: List[ProjectEntry],
+    publication_entries: List[str] | None = None,
 ) -> List[str]:
     signals = [f"Resume parsed from {resume_document.filetype} upload."]
     if skills:
@@ -814,6 +836,8 @@ def _collect_resume_signals(
         signals.append("Resume text appears detailed enough for downstream tailoring.")
     if project_entries:
         signals.append(f"Structured {len(project_entries)} project entries from the Projects section.")
+    if publication_entries:
+        signals.append(f"Captured {len(publication_entries)} publication entries from the resume.")
     if sections.get("education"):
         signals.append("Education details were found in the resume.")
     if sections.get("certifications"):
@@ -831,6 +855,7 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
         match_keywords(resume_text, HARD_SKILL_KEYWORDS + SOFT_SKILL_KEYWORDS)
     )
     project_entries = _parse_project_entries(sections.get("projects", []))
+    publication_entries = _parse_publication_entries(sections.get("publications", []))
     professional_experience = _parse_experience_entries(sections.get("experience", []), resume_text.splitlines())
     education_entries = _parse_education_entries(sections.get("education", []))
     if len(education_entries) < 2:
@@ -843,6 +868,9 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
     certifications = _parse_certifications(sections.get("certifications", []))
     if not certifications:
         certifications = _parse_certifications_from_resume_text(resume_text)
+    # Projects no longer fall back into experience: students who only
+    # have project work get an empty Experience section (which the
+    # exporter drops) and a populated Projects section instead.
     return CandidateProfile(
         full_name=_extract_name_from_resume(resume_text),
         location=_extract_location_from_resume(resume_text),
@@ -850,14 +878,17 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
         source=resume_document.source or "resume_upload",
         resume_text=resume_text,
         skills=detected_skills,
-        experience=professional_experience or project_entries,
+        experience=professional_experience,
         education=education_entries,
         certifications=certifications,
+        projects=project_entries,
+        publications=publication_entries,
         source_signals=_collect_resume_signals(
             resume_document,
             detected_skills,
             sections,
             project_entries,
+            publication_entries,
         ),
     )
 
@@ -883,6 +914,49 @@ def _build_experience_entry_from_llm_payload(
     )
 
 
+def _build_project_entry_from_llm_payload(entry: dict) -> ProjectEntry | None:
+    name = _normalize_line(entry.get("title")) or _normalize_line(entry.get("name"))
+    description = _normalize_line(entry.get("description"))
+    start = _normalize_line(entry.get("start"))
+    end = _normalize_line(entry.get("end"))
+    bullets_payload = entry.get("bullets") or entry.get("highlights") or []
+    if isinstance(bullets_payload, list):
+        bullets = [_normalize_line(item) for item in bullets_payload if _normalize_line(item)]
+    else:
+        bullets = []
+    if not bullets and description:
+        # If the LLM only returned a free-form description, split it into
+        # bullet-style sentences so the renderer has something useful.
+        sentences = [
+            piece.strip()
+            for piece in re.split(r"(?<=[.!?])\s+", description)
+            if piece.strip()
+        ]
+        bullets = sentences[:3]
+    technologies_payload = entry.get("technologies") or entry.get("tech_stack") or []
+    if isinstance(technologies_payload, list):
+        technologies = [_normalize_line(item) for item in technologies_payload if _normalize_line(item)]
+    else:
+        technologies = []
+    links_payload = entry.get("links") or []
+    link = ""
+    if isinstance(links_payload, list) and links_payload:
+        link = _normalize_line(links_payload[0])
+    elif isinstance(links_payload, str):
+        link = _normalize_line(links_payload)
+    if not (name or description or bullets):
+        return None
+    return ProjectEntry(
+        name=name or "Project",
+        description=description,
+        bullets=bullets,
+        technologies=technologies,
+        start=start,
+        end=end,
+        link=link,
+    )
+
+
 def _llm_payload_has_viable_snapshot(
     payload: dict, resume_text: str, deterministic_profile: CandidateProfile
 ) -> bool:
@@ -896,6 +970,7 @@ def _llm_payload_has_viable_snapshot(
             combined_experience,
             list(payload.get("education") or []),
             list(payload.get("certifications") or []),
+            list(payload.get("publications") or []),
         ]
     )
     if not has_structured_content:
@@ -918,13 +993,20 @@ def _build_candidate_profile_from_llm_payload(
         experience = _build_experience_entry_from_llm_payload(entry)
         if experience:
             experience_entries.append(experience)
+
+    project_entries: list[ProjectEntry] = []
     for entry in payload.get("projects") or []:
-        project = _build_experience_entry_from_llm_payload(
-            entry,
-            fallback_organization="Project Portfolio",
-        )
+        if not isinstance(entry, dict):
+            continue
+        project = _build_project_entry_from_llm_payload(entry)
         if project:
-            experience_entries.append(project)
+            project_entries.append(project)
+
+    publication_entries = [
+        _normalize_line(item)
+        for item in (payload.get("publications") or [])
+        if _normalize_line(item)
+    ]
 
     education_entries = []
     for item in payload.get("education") or []:
@@ -941,11 +1023,17 @@ def _build_candidate_profile_from_llm_payload(
         )
 
     llm_source_signals = dedupe_strings(payload.get("source_signals") or [])
-    project_count = len(payload.get("projects") or [])
+    project_count = len(project_entries)
     if project_count:
         llm_source_signals.append(
             "Structured {count} project entries with the LLM parser.".format(
                 count=project_count
+            )
+        )
+    if publication_entries:
+        llm_source_signals.append(
+            "Captured {count} publication entries with the LLM parser.".format(
+                count=len(publication_entries)
             )
         )
     llm_source_signals.append("Candidate profile structured with the LLM parser.")
@@ -964,6 +1052,10 @@ def _build_candidate_profile_from_llm_payload(
         or list(deterministic_profile.education),
         certifications=dedupe_strings(
             payload.get("certifications") or deterministic_profile.certifications
+        ),
+        projects=project_entries or list(deterministic_profile.projects),
+        publications=dedupe_strings(
+            publication_entries or deterministic_profile.publications
         ),
         source_signals=dedupe_strings(
             llm_source_signals + list(deterministic_profile.source_signals)
