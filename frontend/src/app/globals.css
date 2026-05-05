@@ -3237,7 +3237,7 @@ code {
 .b-brand-name {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 15.5px;
   letter-spacing: -0.02em;
   color: var(--fg);
   white-space: nowrap;
@@ -3282,7 +3282,7 @@ code {
   font-size: 11px;
   flex: 0 0 auto;
 }
-.b-account-name { font-size: 12.5px; color: var(--fg-2); }
+.b-account-name { font-size: 13.5px; color: var(--fg-2); }
 .b-account-popover {
   position: absolute;
   top: calc(100% + 8px);
@@ -3330,17 +3330,17 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  height: 30px;
-  padding: 0 10px 0 12px;
+  height: 34px;
+  padding: 0 12px 0 14px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.35);
   color: var(--fg-3);
-  font-size: 12px;
+  font-size: 13px;
   letter-spacing: -0.005em;
   cursor: pointer;
   transition: border-color .15s, background .15s, color .15s;
-  min-width: 220px;
+  min-width: 240px;
   font-family: inherit;
 }
 .b-cmd-trigger:hover {
@@ -3413,12 +3413,12 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px;
+  padding: 8px 16px;
   border-radius: 8px;
   border: 0;
   background: transparent;
   color: var(--fg-3);
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 500;
   letter-spacing: -0.005em;
   transition: color .15s, background .15s;
@@ -3437,15 +3437,15 @@ code {
   background: rgba(255, 255, 255, 0.04);
 }
 .b-rail-num {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
   display: grid;
   place-items: center;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--fg-3);
   transition: all .15s;
 }
@@ -3482,14 +3482,14 @@ code {
 }
 .b-hero-title {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.025em;
   color: var(--fg);
 }
 .b-hero-sub {
   color: var(--fg-3);
-  font-size: 13px;
+  font-size: 14px;
   margin-top: 4px;
 }
 .b-hero-stats {
@@ -3503,11 +3503,11 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
+  padding: 6px 14px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--fg-2);
   letter-spacing: -0.005em;
 }
@@ -3542,25 +3542,25 @@ code {
 }
 .b-region-title {
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--fg);
 }
 .b-region-sub {
   color: var(--fg-3);
-  font-size: 12.5px;
-  margin-top: 3px;
+  font-size: 13.5px;
+  margin-top: 4px;
 }
 .b-region-tag {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--fg-4);
   letter-spacing: 0.08em;
 }
 .b-section-label {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   letter-spacing: 0.08em;
   color: var(--fg-3);
   font-weight: 600;
@@ -3602,7 +3602,7 @@ code {
 }
 .b-intake-title {
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--fg);
@@ -3619,9 +3619,9 @@ code {
 .b-intake-mode {
   background: transparent;
   border: 0;
-  padding: 6px 12px;
+  padding: 7px 14px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -3658,9 +3658,9 @@ code {
   color: var(--accent-strong);
   margin-bottom: 4px;
 }
-.b-drop-title { font-size: 13.5px; color: var(--fg); font-weight: 500; }
-.b-drop-sub { font-size: 12.5px; color: var(--fg-3); }
-.b-drop-meta { font-size: 12px; color: var(--fg-3); margin-top: 8px; }
+.b-drop-title { font-size: 15px; color: var(--fg); font-weight: 500; }
+.b-drop-sub { font-size: 13.5px; color: var(--fg-3); }
+.b-drop-meta { font-size: 13px; color: var(--fg-3); margin-top: 8px; }
 
 .b-intake-status-row {
   display: flex;
@@ -3724,7 +3724,7 @@ code {
 .b-resume-hero-title {
   margin: 14px 0 10px;
   font-family: var(--font-display);
-  font-size: 32px;
+  font-size: 34px;
   font-weight: 600;
   line-height: 1.05;
   letter-spacing: -0.025em;
@@ -3734,7 +3734,7 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 18px;
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--fg-3);
 }
 .b-resume-hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
@@ -3758,21 +3758,21 @@ code {
 .b-jd-metric { display: flex; flex-direction: column; gap: 4px; }
 .b-jd-metric-label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--fg-3);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .b-jd-metric-value {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 600;
   letter-spacing: -0.025em;
   color: var(--fg);
   line-height: 1;
 }
 .b-jd-metric-unit {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--fg-3);
   font-weight: 500;
   margin-left: 2px;
@@ -3805,14 +3805,14 @@ code {
 }
 .b-twoup-title {
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: 17.5px;
   font-weight: 600;
   letter-spacing: -0.015em;
   color: var(--fg);
 }
 .b-twoup-sub {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--fg-3);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -3831,8 +3831,8 @@ code {
 /* Skill chips */
 .b-skill-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .b-skill-chip {
-  font-size: 11.5px;
-  padding: 5px 11px;
+  font-size: 13px;
+  padding: 6px 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--hairline);
@@ -3858,19 +3858,19 @@ code {
   border: 1px solid var(--hairline);
 }
 .b-experience-title {
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--fg);
   letter-spacing: -0.005em;
 }
 .b-experience-org {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--fg-3);
   margin-top: 2px;
 }
 .b-experience-period {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--fg-3);
   letter-spacing: 0.02em;
   flex: 0 0 auto;
@@ -4118,13 +4118,13 @@ code {
 .b-job-card-title {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 14.5px;
+  font-size: 16px;
   line-height: 1.25;
   color: var(--fg);
 }
-.b-job-card-company { color: var(--fg-3); font-size: 12.5px; margin-top: 2px; }
+.b-job-card-company { color: var(--fg-3); font-size: 13.5px; margin-top: 2px; }
 .b-job-card-summary {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--fg-2);
   line-height: 1.55;
   display: -webkit-box;
@@ -4137,7 +4137,7 @@ code {
   align-items: center;
   gap: 10px;
   color: var(--fg-3);
-  font-size: 12px;
+  font-size: 13px;
   flex-wrap: wrap;
 }
 .b-job-card-meta-dot {
@@ -4275,17 +4275,17 @@ code {
   align-items: baseline;
 }
 .b-pipeline-stage-name {
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 600;
   color: var(--fg);
   letter-spacing: -0.005em;
 }
 .b-pipeline-stage-percent {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--fg-3);
 }
-.b-pipeline-stage-detail { font-size: 11.5px; color: var(--fg-3); }
+.b-pipeline-stage-detail { font-size: 12.5px; color: var(--fg-3); }
 .b-pipeline-stage-bar {
   height: 2px;
   border-radius: 2px;
@@ -4327,8 +4327,8 @@ code {
 .b-artifact-tab {
   background: transparent;
   border: 0;
-  padding: 10px 16px;
-  font-size: 13.5px;
+  padding: 11px 18px;
+  font-size: 14.5px;
   color: var(--fg-3);
   font-weight: 500;
   letter-spacing: -0.005em;
@@ -4360,7 +4360,7 @@ code {
   border-radius: 12px;
   padding: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.8;
   color: var(--fg-2);
   max-height: 540px;
@@ -4414,14 +4414,14 @@ code {
 }
 .b-artifact-aside-title {
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 15.5px;
   font-weight: 600;
   letter-spacing: -0.015em;
   color: var(--fg);
   margin: 0;
 }
 .b-artifact-aside-text {
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--fg-2);
   line-height: 1.6;
   margin: 0;
