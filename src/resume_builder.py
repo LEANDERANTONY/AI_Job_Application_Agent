@@ -194,24 +194,22 @@ def _build_resume_markdown(
             line += " ({dates})".format(dates=" - ".join(date_parts))
         education_lines.append(line)
 
-    # Build only the sections that have real content. Empty sections
-    # are dropped entirely rather than showing "No X listed." filler —
-    # matches the structured HTML/PDF output. Change Summary is the
-    # exception: it's an audit-log of what the workflow changed, not
-    # part of the resume itself, so it stays even when empty.
-    skill_values = [item for item in highlighted_skills if str(item or "").strip()]
+    # Summary / Core Skills / Experience / Education are workflow
+    # outputs and always render — if any is empty that signals a
+    # workflow or parsing failure, and showing "No X generated." makes
+    # the failure visible rather than silently hiding the section.
+    # Certifications is the only genuinely optional section (many
+    # candidates have none) and drops entirely when empty.
     cert_values = [item for item in certifications if str(item or "").strip()]
-    summary_text = (professional_summary or "").strip()
 
-    sections: list[str] = ["\n".join(part for part in header_block if part), theme_config["tagline"]]
-    if summary_text:
-        sections.append("## Professional Summary\n\n" + summary_text)
-    if skill_values:
-        sections.append("## Core Skills\n\n" + render_markdown_list(skill_values, ""))
-    if experience_blocks:
-        sections.append("## Professional Experience\n\n" + "\n\n".join(experience_blocks))
-    if education_lines:
-        sections.append("## Education\n\n" + render_markdown_list(education_lines, ""))
+    sections: list[str] = [
+        "\n".join(part for part in header_block if part),
+        theme_config["tagline"],
+        "## Professional Summary\n\n" + (professional_summary or "No professional summary generated."),
+        "## Core Skills\n\n" + render_markdown_list(highlighted_skills, "No highlighted skills generated."),
+        "## Professional Experience\n\n" + ("\n\n".join(experience_blocks) if experience_blocks else "No structured experience entries were inferred from the current resume."),
+        "## Education\n\n" + render_markdown_list(education_lines, "No education entries available."),
+    ]
     if cert_values:
         sections.append("## Certifications\n\n" + render_markdown_list(cert_values, ""))
     sections.append("## Change Summary\n\n" + render_markdown_list(change_log, "No change summary available."))
