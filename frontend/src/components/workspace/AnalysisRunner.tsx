@@ -41,16 +41,55 @@ export type AnalysisRunnerProps = {
   ready: boolean;
 };
 
-// Pipeline stages shown in the redesigned layout. The actual progress
-// values come from `currentWorkflowStage` + `analysisJobState`; this
-// list defines the order and labels.
-const PIPELINE_STAGE_ORDER = [
-  "Workflow crew",
-  "Matchmaker agent",
-  "Forge agent",
-  "Gatekeeper agent",
-  "Builder agent",
-  "Cover letter agent",
+// Pipeline stages shown in the redesigned layout.
+//
+// Each stage carries:
+//   - `key`: backend `stage_title` (must match useAnalysisJob's
+//     AGENTIC_WORKFLOW_STAGES so we can locate the live stage).
+//   - `displayTitle`: user-facing action label, e.g. "Drafting
+//     tailored resume". This is the primary text the user sees.
+//   - `agentLabel`: which background agent owns this step. Surfaced
+//     as a small mono badge so users understand WHO is doing it,
+//     without needing to know what a "Forge agent" is up front.
+//
+// Progress values still come from `currentWorkflowStage` +
+// `analysisJobState`; this list only controls order + labels.
+type PipelineStageDef = {
+  key: string;
+  displayTitle: string;
+  agentLabel: string;
+};
+const PIPELINE_STAGES: PipelineStageDef[] = [
+  {
+    key: "Workflow crew",
+    displayTitle: "Reading inputs",
+    agentLabel: "Workflow crew",
+  },
+  {
+    key: "Matchmaker agent",
+    displayTitle: "Scoring role fit",
+    agentLabel: "Matchmaker agent",
+  },
+  {
+    key: "Forge agent",
+    displayTitle: "Drafting tailored resume",
+    agentLabel: "Forge agent",
+  },
+  {
+    key: "Gatekeeper agent",
+    displayTitle: "Reviewing outputs",
+    agentLabel: "Gatekeeper agent",
+  },
+  {
+    key: "Builder agent",
+    displayTitle: "Final assembly",
+    agentLabel: "Builder agent",
+  },
+  {
+    key: "Cover letter agent",
+    displayTitle: "Drafting cover letter",
+    agentLabel: "Cover letter agent",
+  },
 ];
 
 export function AnalysisRunner({
@@ -72,10 +111,10 @@ export function AnalysisRunner({
   // one as active w/ the live percent, and stages AFTER as next.
   // After analysis completes, every stage ticks to done.
   const liveIndex = liveStageTitle
-    ? PIPELINE_STAGE_ORDER.indexOf(liveStageTitle)
+    ? PIPELINE_STAGES.findIndex((stage) => stage.key === liveStageTitle)
     : -1;
 
-  const stages = PIPELINE_STAGE_ORDER.map((title, index) => {
+  const stages = PIPELINE_STAGES.map((stage, index) => {
     let state: "done" | "active" | "next" = "next";
     let value = 0;
     let detail = "";
@@ -99,7 +138,7 @@ export function AnalysisRunner({
         detail = "Coordinating agents";
       }
     }
-    return { title, state, value, detail };
+    return { ...stage, state, value, detail };
   });
 
   return (
@@ -182,20 +221,34 @@ export function AnalysisRunner({
           <div
             className="b-pipeline-stage"
             data-state={stage.state}
-            key={stage.title}
+            key={stage.key}
           >
             <div className="b-pipeline-stage-head">
-              <span className="b-pipeline-stage-name">{stage.title}</span>
+              <span className="b-pipeline-stage-name">
+                {stage.displayTitle}
+              </span>
               <span className="b-pipeline-stage-percent">
                 {Math.round(stage.value)}%
+              </span>
+            </div>
+            <div className="b-pipeline-stage-agent-row">
+              <span className="b-pipeline-stage-agent">
+                {stage.agentLabel}
+              </span>
+              <span className="b-pipeline-stage-state">
+                {stage.state === "done"
+                  ? "complete"
+                  : stage.state === "active"
+                    ? "running"
+                    : "standby"}
               </span>
             </div>
             <div className="b-pipeline-stage-detail">
               {stage.state === "active" && stage.detail
                 ? stage.detail
                 : stage.state === "done"
-                  ? "Complete"
-                  : "Standby"}
+                  ? "All done — output committed."
+                  : "Waiting its turn."}
             </div>
             <div aria-hidden="true" className="b-pipeline-stage-bar">
               <span style={{ width: `${stage.value}%` }} />
@@ -205,10 +258,13 @@ export function AnalysisRunner({
       </div>
 
       {!analysisState && !analysisLoading ? (
-        <div className="b-twoup-empty">
-          {ready
-            ? "Run the workflow once to unlock your tailored documents."
-            : "Add a parsed resume and JD before running the analysis."}
+        <div className="b-empty-hint">
+          <div className="b-empty-hint-eyebrow">Once the workflow runs</div>
+          <div className="b-empty-hint-body">
+            {ready
+              ? "Press Run analysis above to unlock your tailored resume + cover letter. Each agent posts its progress here as it works."
+              : "Add a parsed resume and a job description before running the analysis. The Documents section below will fill in once the workflow completes."}
+          </div>
         </div>
       ) : null}
     </div>

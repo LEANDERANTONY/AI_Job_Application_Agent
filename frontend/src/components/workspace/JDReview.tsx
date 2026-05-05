@@ -398,9 +398,12 @@ export function JDReview({
       })}
 
       {!review && !analysisState ? (
-        <div className="b-twoup-empty">
-          Once a job description is loaded, this region mirrors the parsed JD
-          with summary, skills, and structured sections.
+        <div className="b-empty-hint">
+          <div className="b-empty-hint-eyebrow">Once a JD is loaded</div>
+          <div className="b-empty-hint-body">
+            The parsed hero, hard / soft skills, and structured body sections
+            will appear here. Paste a JD or upload a file above to begin.
+          </div>
         </div>
       ) : null}
     </div>

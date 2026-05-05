@@ -597,72 +597,75 @@ export function ResumeIntake({
         </div>
       ) : null}
 
-      {/* 3 — Skills + Experience two-up (only after parse) */}
+      {/* 3 — Skills (full-width) — stacked vertically with Experience
+          below. Stacked rather than two-up so a long resume's
+          experience list doesn't overshoot the much-shorter skills
+          column, and so the layout reads naturally on phones too. */}
       {currentProfile ? (
-        <div className="b-resume-twoup">
-          <div className="b-twoup-section">
-            <div className="b-twoup-head">
-              <div className="b-twoup-title">Skills</div>
-              <div className="b-twoup-sub">
-                {currentProfile.skills.length} detected
-              </div>
+        <div className="b-twoup-section">
+          <div className="b-twoup-head">
+            <div className="b-twoup-title">Skills</div>
+            <div className="b-twoup-sub">
+              {currentProfile.skills.length} detected
             </div>
-            {currentProfile.skills.length ? (
-              <div className="b-skill-chips">
-                {currentProfile.skills.map((skill, index) => (
-                  <span
-                    className="b-skill-chip"
-                    data-tone={index % 4 === 0 ? "bold" : undefined}
-                    key={skill}
-                  >
-                    {skill}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <div className="b-twoup-empty">
-                Skills will surface once the parser settles.
-              </div>
-            )}
           </div>
-
-          <div className="b-twoup-section">
-            <div className="b-twoup-head">
-              <div className="b-twoup-title">Experience</div>
-              <div className="b-twoup-sub">
-                {currentProfile.experience.length} role
-                {currentProfile.experience.length === 1 ? "" : "s"}
-              </div>
+          {currentProfile.skills.length ? (
+            <div className="b-skill-chips">
+              {currentProfile.skills.map((skill, index) => (
+                <span
+                  className="b-skill-chip"
+                  data-tone={index % 4 === 0 ? "bold" : undefined}
+                  key={skill}
+                >
+                  {skill}
+                </span>
+              ))}
             </div>
-            {currentProfile.experience.length ? (
-              <div className="b-twoup-body">
-                {currentProfile.experience.map((entry, index) => (
-                  <div
-                    className="b-experience-card"
-                    key={`${entry.organization}-${entry.title}-${index}`}
-                  >
-                    <div>
-                      <div className="b-experience-title">
-                        {entry.title || "Role title pending"}
-                      </div>
-                      <div className="b-experience-org">
-                        {entry.organization || "Organisation pending"}
-                      </div>
+          ) : (
+            <div className="b-twoup-empty">
+              Skills will surface once the parser settles.
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {currentProfile ? (
+        <div className="b-twoup-section">
+          <div className="b-twoup-head">
+            <div className="b-twoup-title">Experience</div>
+            <div className="b-twoup-sub">
+              {currentProfile.experience.length} role
+              {currentProfile.experience.length === 1 ? "" : "s"}
+            </div>
+          </div>
+          {currentProfile.experience.length ? (
+            <div className="b-twoup-body">
+              {currentProfile.experience.map((entry, index) => (
+                <div
+                  className="b-experience-card"
+                  key={`${entry.organization}-${entry.title}-${index}`}
+                >
+                  <div>
+                    <div className="b-experience-title">
+                      {entry.title || "Role title pending"}
                     </div>
-                    <div className="b-experience-period">
-                      {entry.start || "—"}
-                      {" — "}
-                      {entry.end || "Now"}
+                    <div className="b-experience-org">
+                      {entry.organization || "Organisation pending"}
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="b-twoup-empty">
-                Experience entries will populate after the parser runs.
-              </div>
-            )}
-          </div>
+                  <div className="b-experience-period">
+                    {entry.start || "—"}
+                    {" — "}
+                    {entry.end || "Now"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="b-twoup-empty">
+              Experience entries will populate after the parser runs.
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -683,6 +686,18 @@ export function ResumeIntake({
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {/* Empty-state placeholder shown when nothing has been parsed yet
+          so the canvas isn't a tall black void below the intake card. */}
+      {!currentProfile && mode === "upload" ? (
+        <div className="b-empty-hint">
+          <div className="b-empty-hint-eyebrow">Once parsed</div>
+          <div className="b-empty-hint-body">
+            Your candidate profile, detected skills, experience timeline,
+            and parser signals will appear right here.
+          </div>
         </div>
       ) : null}
     </div>

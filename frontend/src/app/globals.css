@@ -3463,6 +3463,29 @@ code {
   border-color: rgba(127, 224, 176, 0.22);
   color: var(--success);
 }
+/* Visual hint for the next-up step: subtle accent border + a small
+   pulsing dot off the upper-right corner so the user knows where to
+   click after finishing the current step. */
+.b-rail-step[data-next="true"] {
+  color: var(--fg-2);
+}
+.b-rail-step[data-next="true"] .b-rail-num {
+  border-color: rgba(90, 134, 255, 0.45);
+  color: var(--accent-strong);
+  position: relative;
+}
+.b-rail-step[data-next="true"] .b-rail-num::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 8px var(--accent-glow);
+  animation: b-live-pulse 1.6s ease-in-out infinite;
+}
 .b-rail-divider {
   width: 14px;
   height: 1px;
@@ -3861,6 +3884,31 @@ code {
   font-size: 12.5px;
   color: var(--fg-3);
   padding: 8px 0;
+}
+
+/* Quiet placeholder shown when a tab's empty area would otherwise be
+   a tall black void. Sits under the intake card to telegraph what the
+   canvas will fill in once data arrives. */
+.b-empty-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 22px;
+  border: 1px dashed var(--hairline);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.015);
+}
+.b-empty-hint-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-4);
+}
+.b-empty-hint-body {
+  font-size: 13.5px;
+  color: var(--fg-3);
+  line-height: 1.55;
 }
 
 /* Skill chips */
@@ -4333,6 +4381,41 @@ code {
   font-size: 12px;
   color: var(--fg-3);
 }
+.b-pipeline-stage-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.b-pipeline-stage-agent {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
+  color: var(--fg-3);
+}
+.b-pipeline-stage[data-state="active"] .b-pipeline-stage-agent {
+  background: rgba(48, 100, 255, 0.10);
+  border-color: rgba(90, 134, 255, 0.30);
+  color: var(--accent-strong);
+}
+.b-pipeline-stage[data-state="done"] .b-pipeline-stage-agent {
+  background: rgba(127, 224, 176, 0.08);
+  border-color: rgba(127, 224, 176, 0.22);
+  color: var(--success);
+}
+.b-pipeline-stage-state {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--fg-4);
+}
+.b-pipeline-stage[data-state="active"] .b-pipeline-stage-state { color: var(--accent-strong); }
+.b-pipeline-stage[data-state="done"] .b-pipeline-stage-state { color: var(--success); }
 .b-pipeline-stage-detail { font-size: 12.5px; color: var(--fg-3); }
 .b-pipeline-stage-bar {
   height: 4px;

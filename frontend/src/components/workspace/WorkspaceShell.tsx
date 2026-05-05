@@ -454,11 +454,13 @@ export function WorkspaceShell() {
 
   const activeTabMeta = tabsMeta[mainTab];
 
-  // Hero context shown across all tabs.
+  // Hero context shown across all tabs. Falls back to honest text
+  // when no role is loaded — never displays a fake placeholder role
+  // (the prior "Anthropic · Senior ML Engineer" placeholder read like
+  // a bug to first-time users).
   const heroJobLine = useMemo(() => {
     if (analysisState?.job_description.title) {
-      const jd = analysisState.job_description;
-      return jd.title;
+      return analysisState.job_description.title;
     }
     if (activeJob?.title) {
       return `${activeJob.company} · ${activeJob.title}`;
@@ -466,7 +468,7 @@ export function WorkspaceShell() {
     if (jobFileState?.job_description?.title) {
       return jobFileState.job_description.title;
     }
-    return "Anthropic · Senior ML Engineer";
+    return "No role loaded yet";
   }, [activeJob, analysisState, jobFileState]);
 
   const heroResumeLine = currentProfile?.full_name || "Resume not uploaded";
@@ -1441,11 +1443,21 @@ export function WorkspaceShell() {
 
       <div className="b-rail-row">
         <div className="b-rail" role="tablist">
-          {STEP_ORDER.map((step, index) => {
+          {(() => {
+            // The "next-up" step is the first ready, not-active,
+            // not-done step in order. We highlight it with a subtle
+            // accent dot so the user has a visual hint where to click
+            // after finishing the current step.
+            const nextStep = STEP_ORDER.find(
+              (step) =>
+                step !== mainTab && stepReady[step] && !stepDone[step],
+            );
+            return STEP_ORDER.map((step, index) => {
             const meta = STEP_LABELS[step];
             const ready = stepReady[step];
             const done = stepDone[step] && step !== mainTab;
             const active = mainTab === step;
+            const isNext = step === nextStep;
             return (
               <div
                 key={step}
@@ -1455,6 +1467,7 @@ export function WorkspaceShell() {
                   aria-selected={active}
                   className="b-rail-step"
                   data-done={done || undefined}
+                  data-next={isNext || undefined}
                   disabled={!ready}
                   onClick={() => {
                     if (ready) setMainTab(step);
@@ -1472,7 +1485,8 @@ export function WorkspaceShell() {
                 ) : null}
               </div>
             );
-          })}
+            });
+          })()}
         </div>
       </div>
 
