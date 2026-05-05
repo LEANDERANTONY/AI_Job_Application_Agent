@@ -1460,52 +1460,80 @@ export function WorkspaceShell() {
       </div>
 
       <div className="b-rail-row">
-        <div className="b-rail" role="tablist">
-          {(() => {
-            // The "next-up" step is the first ready, not-active,
-            // not-done step in order. We highlight it with a subtle
-            // accent dot so the user has a visual hint where to click
-            // after finishing the current step.
-            const nextStep = STEP_ORDER.find(
-              (step) =>
-                step !== mainTab && stepReady[step] && !stepDone[step],
-            );
-            return STEP_ORDER.map((step, index) => {
-            const meta = STEP_LABELS[step];
-            const ready = stepReady[step];
-            const done = stepDone[step] && step !== mainTab;
-            const active = mainTab === step;
-            const isNext = step === nextStep;
-            return (
-              <div
-                key={step}
-                style={{ display: "contents" }}
-              >
-                <button
-                  aria-selected={active}
-                  className="b-rail-step"
-                  data-done={done || undefined}
-                  data-next={isNext || undefined}
-                  disabled={!ready}
-                  onClick={() => {
-                    if (ready) setMainTab(step);
-                  }}
-                  role="tab"
-                  type="button"
-                >
-                  <span className="b-rail-num">
-                    {done ? <CheckIcon /> : meta.number}
-                  </span>
-                  {meta.label}
-                </button>
-                {index < STEP_ORDER.length - 1 ? (
-                  <span aria-hidden="true" className="b-rail-divider" />
-                ) : null}
-              </div>
-            );
-            });
-          })()}
-        </div>
+        {(() => {
+          // Connector-line progress: how far the workflow has gotten,
+          // 0..1. Counts each done step + a half-credit for the
+          // currently-active step so the line visibly reaches the
+          // chip the user is on.
+          const doneCount = STEP_ORDER.filter(
+            (step) => stepDone[step] && step !== mainTab,
+          ).length;
+          const activeContribution = STEP_ORDER.indexOf(mainTab) >= 0 ? 0.5 : 0;
+          const railProgress =
+            (doneCount + activeContribution) /
+            Math.max(1, STEP_ORDER.length - 1);
+          // First ready, not-active, not-done step → next nudge target.
+          const nextStep = STEP_ORDER.find(
+            (step) => step !== mainTab && stepReady[step] && !stepDone[step],
+          );
+          // Honest tooltip per step state — locked steps explain WHY.
+          const lockReason: Record<WorkspaceMainTab, string> = {
+            resume: "",
+            jobs: "Upload a resume to unlock.",
+            jd: "Upload a resume to unlock.",
+            analysis: "Need a parsed resume + job description first.",
+          };
+          return (
+            <div
+              className="b-rail"
+              role="tablist"
+              style={
+                {
+                  ["--b-rail-progress" as string]: Math.min(
+                    1,
+                    Math.max(0, railProgress),
+                  ),
+                } as React.CSSProperties
+              }
+            >
+              {STEP_ORDER.map((step) => {
+                const meta = STEP_LABELS[step];
+                const ready = stepReady[step];
+                const done = stepDone[step] && step !== mainTab;
+                const active = mainTab === step;
+                const isNext = step === nextStep;
+                const tooltip = !ready
+                  ? lockReason[step]
+                  : active
+                    ? `${meta.label} · current step`
+                    : done
+                      ? `${meta.label} · complete · click to revisit`
+                      : `${meta.label} · click to open`;
+                return (
+                  <button
+                    aria-selected={active}
+                    className="b-rail-step"
+                    data-done={done || undefined}
+                    data-next={isNext || undefined}
+                    disabled={!ready}
+                    key={step}
+                    onClick={() => {
+                      if (ready) setMainTab(step);
+                    }}
+                    role="tab"
+                    title={tooltip}
+                    type="button"
+                  >
+                    <span className="b-rail-num">
+                      {done ? <CheckIcon /> : meta.number}
+                    </span>
+                    {meta.label}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
 
       <div className="b-hero">
