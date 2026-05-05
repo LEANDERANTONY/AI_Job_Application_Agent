@@ -101,39 +101,164 @@ def _looks_like_location(value: str) -> bool:
     return "," in value or "remote" in lowered or len(value.split()) <= 4
 
 
+_LOCATION_PREAMBLE_PATTERN = re.compile(
+    r"\b(?:based in|from|located in|living in|currently in|in)\b\s+",
+    re.IGNORECASE,
+)
+_NAME_PREAMBLE_PATTERN = re.compile(
+    r"^(?:i\s+am|i'?m|my\s+name\s+is|name[:]?)\s*",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_personal_name(value: str) -> bool:
+    """Heuristic: looks like a person's name (1-5 short words, mostly letters)."""
+    cleaned = value.strip(" ,.;-").strip()
+    if not cleaned or "@" in cleaned or "/" in cleaned or "http" in cleaned.lower():
+        return False
+    words = cleaned.split()
+    if not (1 <= len(words) <= 5):
+        return False
+    for word in words:
+        # Allow single initials like "A" but reject digit-heavy or symbolic tokens.
+        if not re.fullmatch(r"[A-Za-z][A-Za-z'\-\.]*", word):
+            return False
+    return True
+
+
 def _apply_basics(session: ResumeBuilderSession, message: str):
-    lines = _normalize_lines(message)
-    if not lines:
+    """Pull out name, location, and contact lines from a free-form answer.
+
+    Users typically reply on one line ("Leander Antony A, based in Chennai,
+    India. Email: …, phone: …, GitHub: …") so the prior implementation
+    that only split on newlines fell back to empty name/location every
+    time. This pass splits the message on commas + sentence boundaries,
+    classifies each chunk, and threads the leftovers into name/location
+    detection.
+    """
+    text = str(message or "").strip()
+    if not text:
         return
 
+    # Coarse split: commas, semicolons, pipes, newlines, AND sentence
+    # boundaries. The contact extractor below only cares about chunks
+    # that hold a contact pattern; the rest are name/location candidates.
+    coarse_parts = [
+        part.strip()
+        for part in re.split(r"[\n,;|]+|(?<=[.!?])\s+", text)
+        if part and part.strip()
+    ]
+    if not coarse_parts:
+        return
+
+    contact_chunks: list[str] = []
+    leftover_chunks: list[str] = []
+
+    for part in coarse_parts:
+        is_contact = bool(
+            EMAIL_PATTERN.search(part)
+            or PHONE_PATTERN.search(part)
+            or URL_PATTERN.search(part)
+        )
+        if is_contact:
+            # Extract just the contact-bearing token out of the chunk —
+            # avoids storing prose like "phone: +91 …" with the
+            # leading label, which doesn't belong on a resume header.
+            contact_chunks.extend(_extract_contact_lines(part) or [part])
+        else:
+            leftover_chunks.append(part.rstrip(".").strip())
+
     session.draft.contact_lines = dedupe_strings(
-        session.draft.contact_lines + _extract_contact_lines(message)
+        session.draft.contact_lines + contact_chunks
     )
 
-    non_contact_lines = [
-        line
-        for line in lines
-        if line not in session.draft.contact_lines
-        and not EMAIL_PATTERN.search(line)
-        and not PHONE_PATTERN.search(line)
-        and not URL_PATTERN.search(line)
-    ]
+    if not leftover_chunks:
+        return
 
-    if non_contact_lines:
-        session.draft.full_name = non_contact_lines[0]
-    if len(non_contact_lines) > 1 and _looks_like_location(non_contact_lines[1]):
-        session.draft.location = non_contact_lines[1]
+    # Strip "I'm / my name is" preambles before classifying.
+    cleaned_chunks: list[str] = []
+    for chunk in leftover_chunks:
+        cleaned = _NAME_PREAMBLE_PATTERN.sub("", chunk).strip()
+        # Strip "based in X" → "X" so the location chunk is just the
+        # place; the preamble itself is noise.
+        if _LOCATION_PREAMBLE_PATTERN.search(cleaned):
+            cleaned = _LOCATION_PREAMBLE_PATTERN.sub("", cleaned, count=1).strip()
+        if cleaned:
+            cleaned_chunks.append(cleaned)
+
+    if not cleaned_chunks:
+        return
+
+    # First chunk that looks like a personal name → full_name.
+    name_index: int | None = None
+    for index, chunk in enumerate(cleaned_chunks):
+        if _looks_like_personal_name(chunk):
+            session.draft.full_name = chunk
+            name_index = index
+            break
+
+    # Location: combine adjacent chunks that look like place fragments
+    # ("Chennai" + "India" → "Chennai, India"). Skip the name chunk.
+    location_parts: list[str] = []
+    for index, chunk in enumerate(cleaned_chunks):
+        if index == name_index:
+            continue
+        if _looks_like_location(chunk):
+            location_parts.append(chunk)
+    if location_parts:
+        session.draft.location = ", ".join(location_parts[:2])
+
+
+_ROLE_PREAMBLE_PATTERN = re.compile(
+    r"^\s*(?:i'?m\s+)?(?:currently\s+|primarily\s+|mostly\s+)?"
+    r"(?:targeting|looking\s+for|aiming\s+for|seeking|interested\s+in)\s+",
+    re.IGNORECASE,
+)
+_ROLE_SUFFIX_PATTERN = re.compile(r"\s+roles?\s*$", re.IGNORECASE)
 
 
 def _apply_role(session: ResumeBuilderSession, message: str):
-    lines = _normalize_lines(message)
-    if not lines:
+    """Split the role answer into a SHORT title + a free-form summary.
+
+    Users routinely answer with a paragraph ("Targeting Senior ML
+    Engineer / Applied AI roles. Independent ML engineer with 4 years
+    building production AI systems including …"). The prior version
+    stuffed the whole paragraph into target_role AND professional_summary,
+    which then renders as a cramped multi-line role title in the resume
+    header. Now we split on the first sentence boundary, strip
+    "Targeting / looking for" preambles, and cap the title length.
+    """
+    text = str(message or "").strip()
+    if not text:
         return
-    session.draft.target_role = lines[0]
-    if len(lines) > 1:
-        session.draft.professional_summary = " ".join(lines[1:])
-    else:
-        session.draft.professional_summary = lines[0]
+
+    # Split on the first sentence boundary so the role title is just
+    # the lead clause, and any background narrative becomes the summary.
+    sentence_split = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)
+    title_chunk = sentence_split[0].strip().rstrip(".!?,;: ")
+    summary_chunk = sentence_split[1].strip() if len(sentence_split) > 1 else ""
+
+    # Strip "Targeting" / "Looking for" / trailing "roles" so the stored
+    # value is the role TITLE itself, not the user's framing of it.
+    title_chunk = _ROLE_PREAMBLE_PATTERN.sub("", title_chunk).strip()
+    title_chunk = _ROLE_SUFFIX_PATTERN.sub("", title_chunk).strip()
+
+    # Cap the title at 80 chars so we don't render paragraphs in the
+    # resume header. Trim on the last word boundary when over budget.
+    if len(title_chunk) > 80:
+        truncated = title_chunk[:80]
+        last_space = truncated.rfind(" ")
+        if last_space > 40:
+            truncated = truncated[:last_space]
+        title_chunk = f"{truncated}…"
+
+    session.draft.target_role = title_chunk
+
+    # Summary defaults to the post-title sentences. If the user wrote
+    # only a single sentence (no period), fall back to the whole text
+    # so the summary slot isn't empty and the resume preview reads
+    # naturally.
+    session.draft.professional_summary = summary_chunk or text
 
 
 def _apply_experience(session: ResumeBuilderSession, message: str):
@@ -363,12 +488,17 @@ def _serialize_session(
     *,
     assistant_message: str | None = None,
 ):
-    step_position = min(_step_index(session.current_step), len(RESUME_BUILDER_STEPS) - 1)
-    completed_steps = (
-        len(RESUME_BUILDER_STEPS)
-        if session.status == "ready"
-        else step_position
-    )
+    # `_step_index("review")` returns 0 because "review" isn't in
+    # RESUME_BUILDER_STEPS — that used to flicker the UI back to 0%
+    # and drop every DONE badge the moment the user landed on Review.
+    # Treat "review" (and "ready") as all-steps-complete instead.
+    if session.current_step == "review" or session.status in {"reviewing", "ready"}:
+        completed_steps = len(RESUME_BUILDER_STEPS)
+    else:
+        completed_steps = min(
+            _step_index(session.current_step),
+            len(RESUME_BUILDER_STEPS) - 1,
+        )
     progress_percent = int((completed_steps / len(RESUME_BUILDER_STEPS)) * 100)
     return {
         "session_id": session.session_id,
