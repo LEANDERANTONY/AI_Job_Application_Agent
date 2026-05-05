@@ -2945,6 +2945,15 @@ code {
   --radius-lg: 14px;
   --radius-xl: 20px;
 
+  /* Motion tokens — used by transitions + entrance animations.
+     `--ease-out` is a fast-start, slow-end curve that reads as
+     responsive (Linear-style). `--ease-spring` adds a tiny overshoot
+     for celebratory transitions (palette + status flips). */
+  --ease-out:    cubic-bezier(0.16, 1, 0.30, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-base: 240ms;
+
   /* Layout */
   display: grid;
   grid-template-rows: auto auto auto 1fr;
@@ -4915,11 +4924,11 @@ code {
   height: 54px;
   border-radius: 999px;
   border: 1px solid rgba(140, 175, 255, 0.45);
-  /* Layered gradient: highlight on the upper-left, deep accent on the
-     lower-right — gives the button a glassy, lit-from-above sheen
-     instead of a flat blue puck. */
+  /* Layered gradient with a CURSOR-FOLLOWING highlight (--rd-fab-x/y
+     CSS vars updated on mousemove). Defaults to a fixed upper-left
+     position when the cursor isn't over the button. */
   background:
-    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.22), transparent 55%),
+    radial-gradient(circle at var(--rd-fab-x, 30%) var(--rd-fab-y, 25%), rgba(255, 255, 255, 0.30), transparent 55%),
     linear-gradient(180deg, var(--accent-strong) 0%, #114be9 100%);
   color: white;
   display: grid;
@@ -5501,4 +5510,122 @@ code {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+/* =====================================================================
+   Motion + delight pass — small premium animations.
+   All animations are gated behind `prefers-reduced-motion: no-preference`
+   so users with motion-sensitivity get the static layout.
+   ===================================================================== */
+
+/* Custom selection colour — accent blue everywhere inside the shell. */
+.b-shell ::selection {
+  background: rgba(48, 100, 255, 0.34);
+  color: var(--fg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Page-boot cascade. Hero drops in from -8px, then b-canvas children
+     fade up with a 60ms stagger. Triggered on every workspace mount;
+     keeps the entrance feeling alive without being a re-runnable
+     interaction (animation: forwards, fill state stays). */
+  @keyframes b-boot-fade-down {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes b-boot-fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .b-shell .b-hero {
+    animation: b-boot-fade-down 360ms var(--ease-out) both;
+  }
+  .b-shell .b-canvas > * {
+    animation: b-boot-fade-up 420ms var(--ease-out) both;
+  }
+  .b-shell .b-canvas > *:nth-child(1) { animation-delay: 80ms; }
+  .b-shell .b-canvas > *:nth-child(2) { animation-delay: 140ms; }
+  .b-shell .b-canvas > *:nth-child(3) { animation-delay: 200ms; }
+  .b-shell .b-canvas > *:nth-child(4) { animation-delay: 260ms; }
+  .b-shell .b-canvas > *:nth-child(5) { animation-delay: 320ms; }
+  .b-shell .b-canvas > *:nth-child(n+6) { animation-delay: 360ms; }
+
+  /* Job card stagger — replaces the canvas-level animation for the
+     job grid since the cards are 1+ levels deep. The first 8 cards
+     stagger at 50ms each. */
+  .b-shell .b-job-grid > *:nth-child(1) { animation: b-boot-fade-up 360ms var(--ease-out) both 60ms; }
+  .b-shell .b-job-grid > *:nth-child(2) { animation: b-boot-fade-up 360ms var(--ease-out) both 110ms; }
+  .b-shell .b-job-grid > *:nth-child(3) { animation: b-boot-fade-up 360ms var(--ease-out) both 160ms; }
+  .b-shell .b-job-grid > *:nth-child(4) { animation: b-boot-fade-up 360ms var(--ease-out) both 210ms; }
+  .b-shell .b-job-grid > *:nth-child(5) { animation: b-boot-fade-up 360ms var(--ease-out) both 260ms; }
+  .b-shell .b-job-grid > *:nth-child(6) { animation: b-boot-fade-up 360ms var(--ease-out) both 310ms; }
+  .b-shell .b-job-grid > *:nth-child(7) { animation: b-boot-fade-up 360ms var(--ease-out) both 360ms; }
+  .b-shell .b-job-grid > *:nth-child(n+8) { animation: b-boot-fade-up 360ms var(--ease-out) both 410ms; }
+
+  /* Skill chip stagger — short cascade left-to-right when chips
+     first render after a parse. Subtle (only first 16 chips). */
+  @keyframes b-chip-pop {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .b-shell .b-skill-chip {
+    animation: b-chip-pop 280ms var(--ease-out) both;
+  }
+  .b-shell .b-skill-chip:nth-child(n+2)  { animation-delay: 30ms; }
+  .b-shell .b-skill-chip:nth-child(n+4)  { animation-delay: 60ms; }
+  .b-shell .b-skill-chip:nth-child(n+6)  { animation-delay: 90ms; }
+  .b-shell .b-skill-chip:nth-child(n+8)  { animation-delay: 120ms; }
+  .b-shell .b-skill-chip:nth-child(n+10) { animation-delay: 150ms; }
+  .b-shell .b-skill-chip:nth-child(n+12) { animation-delay: 180ms; }
+  .b-shell .b-skill-chip:nth-child(n+14) { animation-delay: 210ms; }
+  .b-shell .b-skill-chip:nth-child(n+16) { animation-delay: 240ms; }
+
+  /* Workspace + section notice slide-in — info/success/warning
+     panels glide in instead of just appearing. */
+  @keyframes b-notice-enter {
+    from { opacity: 0; transform: translateY(-6px) scale(0.99); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .b-shell .b-notice {
+    animation: b-notice-enter 240ms var(--ease-out) both;
+  }
+
+  /* Status pip ambient breath — the "live" / "ready" / "outputs ready"
+     dots get a slow opacity cycle so signed-in surfaces feel alive
+     without being distracting. */
+  @keyframes b-pip-breath {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.7; transform: scale(0.92); }
+  }
+  .b-shell .rd-pip-live::before,
+  .b-shell .rd-pip-ready::before {
+    animation: b-pip-breath 3.2s ease-in-out infinite;
+  }
+}
+
+/* Even when reduced-motion is on, smooth pipeline progress bars +
+   palette enter still benefit from a slightly snappier curve.
+   These transitions don't move pixels around, just colour/width, so
+   they're safe to keep. */
+.b-shell .b-pipeline-stage-bar > span {
+  transition: width 380ms var(--ease-out);
+}
+/* Brief flash when the bar reaches 100% — a quick brightness uptick
+   on the last frame of fill. */
+@keyframes b-stage-complete-flash {
+  0%   { box-shadow: 0 0 6px var(--accent-glow); }
+  60%  { box-shadow: 0 0 18px rgba(127, 224, 176, 0.55); }
+  100% { box-shadow: none; }
+}
+.b-pipeline-stage[data-state="done"] .b-pipeline-stage-bar > span {
+  animation: b-stage-complete-flash 600ms ease-out;
+}
+
+/* Refine cmd-K palette entrance — was b-cmd-pop. Add a hint of spring
+   so the panel "settles" instead of just popping. */
+@keyframes b-cmd-pop {
+  0%   { opacity: 0; transform: translateY(-12px) scale(0.97); }
+  60%  { opacity: 1; transform: translateY(2px) scale(1.005); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }

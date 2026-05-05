@@ -125,6 +125,22 @@ export function AssistantPanel({
         aria-label={open ? "Close assistant" : "Open assistant"}
         className="rd-fab"
         onClick={() => setOpen((current) => !current)}
+        onMouseLeave={(event) => {
+          // Reset the cursor-tracking highlight position when the
+          // pointer leaves so the gradient doesn't get stuck off-axis.
+          event.currentTarget.style.removeProperty("--rd-fab-x");
+          event.currentTarget.style.removeProperty("--rd-fab-y");
+        }}
+        onMouseMove={(event) => {
+          // Update CSS vars with the pointer's relative position so the
+          // inner highlight gradient follows the cursor — small but
+          // makes the FAB feel alive on hover.
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = ((event.clientX - rect.left) / rect.width) * 100;
+          const y = ((event.clientY - rect.top) / rect.height) * 100;
+          event.currentTarget.style.setProperty("--rd-fab-x", `${x}%`);
+          event.currentTarget.style.setProperty("--rd-fab-y", `${y}%`);
+        }}
         type="button"
       >
         <SparkleIcon />

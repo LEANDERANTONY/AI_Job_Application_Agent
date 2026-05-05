@@ -18,10 +18,73 @@
 //   4. b-resume-twoup — Hard skills + Soft skills
 //   5. b-jd-block list — one per parser-returned section
 
-import type { ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { UploadIcon } from "@/components/workspace/icons";
 import { CollapsibleSection } from "@/components/workspace/CollapsibleSection";
+
+// Count-up animation for the big JD metric numbers. Animates from 0
+// to the parsed integer over ~600ms using requestAnimationFrame, then
+// holds. Skips animation when the user prefers reduced motion. Falls
+// back to the literal value verbatim when it's not a clean integer
+// (e.g. "5+" → renders as-is).
+function useCountUp(target: string, durationMs = 600): string {
+  const numeric = Number.parseInt(target.replace(/[^\d]/g, ""), 10);
+  const isNumeric = Number.isFinite(numeric) && /^\d/.test(target);
+  const [value, setValue] = useState(isNumeric ? 0 : numeric);
+  const lastTarget = useRef<number>(numeric);
+
+  useEffect(() => {
+    if (!isNumeric) return;
+    const prefersReduced =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced) {
+      setValue(numeric);
+      lastTarget.current = numeric;
+      return;
+    }
+    if (lastTarget.current === numeric && value === numeric) return;
+    lastTarget.current = numeric;
+    let raf = 0;
+    const start = performance.now();
+    const startValue = 0;
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      const ratio = Math.min(elapsed / durationMs, 1);
+      // Ease-out-cubic for a snappy entry that decelerates.
+      const eased = 1 - Math.pow(1 - ratio, 3);
+      setValue(Math.round(startValue + (numeric - startValue) * eased));
+      if (ratio < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numeric, isNumeric, durationMs]);
+
+  if (!isNumeric) return target;
+  // Preserve any trailing characters (e.g. the "+" in "5+") once we've
+  // reached the target. While animating, just show the integer.
+  const trailing = target.replace(/^\d+/, "");
+  return value < numeric ? String(value) : `${numeric}${trailing}`;
+}
+
+// Small wrapper so the count-up hook fires per-metric inside the map.
+function JDMetricValue({
+  value,
+  unit,
+}: {
+  value: string;
+  unit: string;
+}) {
+  const display = useCountUp(value);
+  return (
+    <div className="b-jd-metric-value">
+      {display}
+      {unit ? <span className="b-jd-metric-unit">{unit}</span> : null}
+    </div>
+  );
+}
 import type {
   JobPosting,
   WorkspaceAnalysisResponse,
@@ -292,12 +355,7 @@ export function JDReview({
               {metrics.map((metric) => (
                 <div className="b-jd-metric" key={metric.label}>
                   <div className="b-jd-metric-label">{metric.label}</div>
-                  <div className="b-jd-metric-value">
-                    {metric.value}
-                    {metric.unit ? (
-                      <span className="b-jd-metric-unit">{metric.unit}</span>
-                    ) : null}
-                  </div>
+                  <JDMetricValue unit={metric.unit} value={metric.value} />
                 </div>
               ))}
             </div>
