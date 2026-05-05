@@ -374,19 +374,31 @@ export function JDReview({
         </div>
       ) : null}
 
-      {/* 5 — JD body sections (parser output, in order — each collapsible) */}
-      {bodySections.map((section) => {
-        const paragraphs = buildSectionParagraphs(section.items);
-        return (
-          <CollapsibleSection key={section.title} title={section.title}>
-            <div className="b-jd-block-body">
-              {paragraphs.map((paragraph) => (
-                <p key={paragraph}>{paragraph}</p>
-              ))}
-            </div>
-          </CollapsibleSection>
-        );
-      })}
+      {/* 5 — JD body sections rendered as a single editorial document.
+          Each parser-returned heading + its paragraphs flow inside one
+          card with hairline-divided sections instead of stacked
+          bordered cards (less dashboard-y). */}
+      {bodySections.length ? (
+        <div className="b-doc">
+          {bodySections.map((section, index) => {
+            const paragraphs = buildSectionParagraphs(section.items);
+            return (
+              <CollapsibleSection
+                index={String(index + 1).padStart(2, "0")}
+                key={section.title}
+                title={section.title}
+                variant="bare"
+              >
+                <div className="b-jd-block-body">
+                  {paragraphs.map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </div>
+              </CollapsibleSection>
+            );
+          })}
+        </div>
+      ) : null}
 
       {!review && !analysisState ? (
         <div className="b-empty-hint">

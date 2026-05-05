@@ -308,50 +308,58 @@ export function ResumeIntake({
               </p>
             ) : null}
 
-            {builderSession ? (
-              <div className="b-builder-steps">
-                {BUILDER_STEP_KEYS.map((key) => {
-                  const label = RESUME_BUILDER_STEP_LABELS[key];
-                  const isActive = builderSession.current_step === key;
-                  const isComplete =
-                    key !== "review" &&
-                    builderSession.completed_steps >
-                      BUILDER_STEP_KEYS.indexOf(key);
-                  return (
-                    <div
-                      className="b-builder-step"
-                      data-active={isActive || undefined}
-                      data-done={isComplete && !isActive ? true : undefined}
-                      key={key}
-                    >
-                      <span>{label}</span>
-                      <span className="b-builder-step-status">
-                        {isComplete && !isActive
-                          ? "DONE"
-                          : isActive
-                            ? "ACTIVE"
-                            : "—"}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
+            {builderSession ? (() => {
+              // Slim editorial breadcrumb that replaces the prior 6-row
+              // wizard list. Shows the current step name, a "N of 5"
+              // counter, and a slim progress bar — no nested
+              // ACTIVE/DONE/— column, no per-step bordered rows.
+              const currentIndex = Math.max(
+                0,
+                BUILDER_STEP_KEYS.indexOf(builderSession.current_step),
+              );
+              // The progress sub-list runs through the answer-able
+              // steps only (basics → skills); "review" is the
+              // landing-after state, surfaced as 5 of 5.
+              const answerableCount = BUILDER_STEP_KEYS.filter(
+                (key) => key !== "review",
+              ).length;
+              const completedCount = Math.min(
+                builderSession.completed_steps,
+                answerableCount,
+              );
+              const ratio =
+                builderSession.current_step === "review"
+                  ? 1
+                  : Math.min(currentIndex / answerableCount, 1);
+              return (
+                <div className="b-wizard-rail" aria-hidden="false">
+                  <div className="b-wizard-rail-meta">
+                    <span className="b-wizard-rail-eyebrow">
+                      Step {Math.min(currentIndex + 1, answerableCount)} of{" "}
+                      {answerableCount}
+                    </span>
+                    <span className="b-wizard-rail-title">
+                      {builderStepLabel}
+                    </span>
+                    <span className="b-wizard-rail-count">
+                      {completedCount} answered
+                    </span>
+                  </div>
+                  <div aria-hidden="true" className="b-wizard-rail-bar">
+                    <span style={{ width: `${ratio * 100}%` }} />
+                  </div>
+                </div>
+              );
+            })() : null}
 
             <div
               style={{
                 display: "flex",
                 gap: 8,
                 alignItems: "center",
-                justifyContent: "space-between",
+                justifyContent: "flex-end",
               }}
             >
-              <div
-                className="b-section-label"
-                style={{ textTransform: "uppercase" }}
-              >
-                {builderStepLabel}
-              </div>
               <button
                 className="rd-btn rd-btn-ghost rd-btn-sm"
                 onClick={onToggleBuilderCollapsed}
@@ -448,23 +456,18 @@ export function ResumeIntake({
             )}
 
             {builderSession ? (
-              <div
-                className="b-builder-preview-card"
-                style={{ marginTop: 0 }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "baseline",
-                    marginBottom: 12,
-                  }}
-                >
-                  <div className="b-twoup-title">Draft profile</div>
-                  <span className="b-twoup-sub">
-                    Progress · {builderSession.progress_percent}%
+              <div className="b-doc-frame">
+                <div className="b-doc-frame-head">
+                  <div>
+                    <span className="b-doc-frame-eyebrow">Draft profile</span>
+                    <h3 className="b-doc-frame-title">Your resume so far</h3>
+                  </div>
+                  <span className="b-doc-frame-progress">
+                    {builderSession.progress_percent}% complete
                   </span>
                 </div>
+                <div className="b-doc">
+
 
                 {/* Draft fields grouped into the same five sections the
                     wizard itself walks through, each independently
@@ -473,10 +476,10 @@ export function ResumeIntake({
                     a 70px scroll-stuck box. Defaults open. */}
                 {(() => {
                   const renderInput = (key: DraftFieldKey, label: string, placeholder?: string) => (
-                    <label className="b-builder-field" key={key}>
-                      <span className="b-builder-field-label">{label}</span>
+                    <label className="b-doc-field" key={key}>
+                      <span className="b-doc-field-label">{label}</span>
                       <input
-                        className="rd-input"
+                        className="b-doc-input"
                         onChange={(event) => setDraftField(key, event.target.value)}
                         placeholder={placeholder}
                         value={builderDraftForm[key]}
@@ -489,12 +492,12 @@ export function ResumeIntake({
                     placeholder?: string,
                   ) => (
                     <label
-                      className="b-builder-field b-builder-field-wide"
+                      className="b-doc-field b-doc-field-wide"
                       key={key}
                     >
-                      <span className="b-builder-field-label">{label}</span>
+                      <span className="b-doc-field-label">{label}</span>
                       <AutoTextarea
-                        className="rd-textarea b-builder-textarea-grow"
+                        className="b-doc-input b-doc-textarea"
                         onChange={(event) => setDraftField(key, event.target.value)}
                         placeholder={placeholder}
                         value={builderDraftForm[key]}
@@ -504,8 +507,13 @@ export function ResumeIntake({
 
                   return (
                     <>
-                      <CollapsibleSection sub="Name, location, contact lines" title="Basics">
-                        <div className="b-builder-form">
+                      <CollapsibleSection
+                        index="01"
+                        sub="Name, location, contact"
+                        title="Basics"
+                        variant="bare"
+                      >
+                        <div className="b-doc-form">
                           {renderInput("full_name", "Full name")}
                           {renderInput("location", "Location")}
                           {renderTextarea(
@@ -516,30 +524,47 @@ export function ResumeIntake({
                         </div>
                       </CollapsibleSection>
 
-                      <CollapsibleSection sub="What you're aiming at" title="Target role">
-                        <div className="b-builder-form">
+                      <CollapsibleSection
+                        index="02"
+                        sub="Target role"
+                        title="What you're aiming at"
+                        variant="bare"
+                      >
+                        <div className="b-doc-form">
                           {renderInput("target_role", "Target role")}
                           {renderTextarea("professional_summary", "Summary")}
                         </div>
                       </CollapsibleSection>
 
-                      <CollapsibleSection sub="Roles, impact, dates" title="Experience">
-                        <div className="b-builder-form">
+                      <CollapsibleSection
+                        index="03"
+                        sub="Roles, impact, dates"
+                        title="Experience"
+                        variant="bare"
+                      >
+                        <div className="b-doc-form">
                           {renderTextarea("experience_notes", "Experience notes")}
                         </div>
                       </CollapsibleSection>
 
-                      <CollapsibleSection sub="Degrees, programs" title="Education">
-                        <div className="b-builder-form">
+                      <CollapsibleSection
+                        index="04"
+                        sub="Degrees, programs"
+                        title="Education"
+                        variant="bare"
+                      >
+                        <div className="b-doc-form">
                           {renderTextarea("education_notes", "Education")}
                         </div>
                       </CollapsibleSection>
 
                       <CollapsibleSection
+                        index="05"
                         sub="Tools + certifications"
                         title="Skills"
+                        variant="bare"
                       >
-                        <div className="b-builder-form">
+                        <div className="b-doc-form">
                           {renderInput(
                             "skills",
                             "Skills",
@@ -555,8 +580,9 @@ export function ResumeIntake({
                     </>
                   );
                 })()}
+                </div>
 
-                <div style={{ marginTop: 12 }}>
+                <div className="b-doc-frame-actions">
                   <button
                     className="rd-btn rd-btn-ghost rd-btn-sm"
                     disabled={builderEditing}

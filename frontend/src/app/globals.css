@@ -3889,6 +3889,139 @@ code {
   padding: 8px 0;
 }
 
+/* Editorial outer container — holds a stack of .b-doc-section
+   children. One outer surface, hairline-divided inside. Used by the
+   resume Draft profile and the JD body sections. */
+.b-doc {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  padding: 8px 24px;
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 720px) {
+  .b-doc { padding: 8px 16px; }
+}
+
+/* Wrapper that hosts the editorial doc + a head + actions row.
+   Currently used only by the resume Draft profile, but generic
+   enough that other surfaces can reuse it. */
+.b-doc-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 10px;
+}
+.b-doc-frame-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.b-doc-frame-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.b-doc-frame-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  margin: 4px 0 0;
+}
+.b-doc-frame-progress {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+}
+.b-doc-frame-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* CollapsibleSection — editorial / "bare" variant.
+   Used inside containers that already provide a surface (Draft
+   profile, JD body sections). Renders as a numbered article-style
+   section: hairline above, mono index, heading, optional sub, and
+   a quiet chevron that rotates on open. No card chrome, so a stack
+   of these reads like a continuous document instead of five
+   bordered boxes. */
+.b-doc-section {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--hairline);
+}
+.b-doc-section:first-child { border-top: 0; }
+.b-doc-section-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: baseline;
+  column-gap: 14px;
+  width: 100%;
+  padding: 18px 4px 14px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background .12s ease;
+}
+.b-doc-section-head:hover { background: rgba(255, 255, 255, 0.015); }
+.b-doc-section-index {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--fg-4);
+  font-weight: 500;
+}
+.b-doc-section-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.b-doc-section-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.b-doc-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--fg-4);
+  opacity: 0.6;
+  transition: transform .15s ease, color .15s, opacity .15s;
+  transform: rotate(0deg);
+}
+.b-doc-section:not([data-collapsed="true"]) .b-doc-section-toggle {
+  transform: rotate(90deg);
+}
+.b-doc-section-head:hover .b-doc-section-toggle {
+  opacity: 1;
+  color: var(--fg-2);
+}
+.b-doc-section-body {
+  padding: 0 4px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 /* CollapsibleSection — the section head becomes a clickable button.
    Caret on the right rotates 90° when the section is open. The body
    wrapper is just a div; we use the `hidden` attribute to remove it
@@ -5029,6 +5162,56 @@ code {
   letter-spacing: 0;
 }
 
+/* Slim wizard breadcrumb — replaces the boxy 6-row b-builder-steps
+   list. Shows current step name + counter + a single hairline
+   progress bar. Reads as a quiet header line, not a nested table. */
+.b-wizard-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+.b-wizard-rail-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.b-wizard-rail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.b-wizard-rail-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.b-wizard-rail-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-4);
+}
+.b-wizard-rail-bar {
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.b-wizard-rail-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-strong), #114be9);
+  box-shadow: 0 0 8px var(--accent-glow);
+  transition: width .25s ease;
+}
+
 /* Builder steps list (inside the assistant intake mode) */
 .b-builder-steps {
   display: flex;
@@ -5089,6 +5272,62 @@ code {
   resize: none;
   overflow: hidden;
   min-height: 44px;
+}
+
+/* Editorial form fields — used inside .b-doc-section bodies (Draft
+   profile sub-sections). No card chrome around the input itself; just
+   a small mono label, a borderless field, and a bottom hairline that
+   lights to accent on focus. Reads more like a Stripe invoice form
+   than a stack of dashboard inputs. */
+.b-doc-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 24px;
+  row-gap: 18px;
+}
+@media (max-width: 720px) {
+  .b-doc-form { grid-template-columns: 1fr; }
+}
+.b-doc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.b-doc-field-wide { grid-column: span 2; }
+@media (max-width: 720px) {
+  .b-doc-field-wide { grid-column: 1; }
+}
+.b-doc-field-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.b-shell .b-doc-input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  padding: 6px 0;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 14.5px;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+.b-shell .b-doc-input:focus {
+  border-bottom-color: var(--accent-strong);
+}
+.b-shell .b-doc-input::placeholder { color: var(--fg-4); }
+.b-shell .b-doc-textarea {
+  resize: none;
+  overflow: hidden;
+  line-height: 1.6;
+  min-height: 28px;
+  padding: 6px 0;
 }
 .b-builder-preview {
   margin: 6px 0 0;
