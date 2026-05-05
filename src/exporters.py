@@ -642,52 +642,90 @@ def _build_resume_skills_inline_html(skills):
 
 
 def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
+    # Each subsection (Summary / Core Skills / Experience / Education /
+    # Certifications) only renders when it has real content. An empty
+    # section is dropped entirely rather than being shown with a
+    # "No X listed." placeholder — the placeholder reads worse than
+    # the absence on a tailored resume.
     name = html.escape(artifact.header.full_name or artifact.title or "Candidate")
     contact_values = []
     if artifact.header.location:
         contact_values.append(artifact.header.location)
     contact_values.extend(item for item in artifact.header.contact_lines if str(item or "").strip())
     contact_html = _build_resume_contact_inline_html(contact_values)
-    skills_html = _build_resume_skills_inline_html(artifact.highlighted_skills)
-    certifications_html = _build_resume_section_list(
-        artifact.certifications,
-        "No certifications listed.",
-        class_name="resume-plain-list",
-    )
+
+    sections: list[str] = []
+
+    summary_text = (artifact.professional_summary or "").strip()
+    if summary_text:
+        sections.append(
+            """
+    <section class="resume-classic-section resume-classic-section--plain-head">
+        <h2>Summary</h2>
+        <p class="resume-summary">{summary}</p>
+    </section>
+            """.format(summary=html.escape(summary_text))
+        )
+
+    skills = [item for item in artifact.highlighted_skills if str(item or "").strip()]
+    if skills:
+        sections.append(
+            """
+    <section class="resume-classic-section resume-classic-section--plain-head">
+        <h2>Core Skills</h2>
+        {skills}
+    </section>
+            """.format(skills=_build_resume_skills_inline_html(skills))
+        )
+
+    experience_entries = list(artifact.experience_entries or [])
+    if experience_entries:
+        sections.append(
+            """
+    <section class="resume-classic-section">
+        <h2>Experience</h2>
+        {experience}
+    </section>
+            """.format(experience=_build_resume_experience_html(experience_entries))
+        )
+
+    education_entries = list(artifact.education_entries or [])
+    if education_entries:
+        sections.append(
+            """
+    <section class="resume-classic-section">
+        <h2>Education</h2>
+        {education}
+    </section>
+            """.format(education=_build_resume_education_html(education_entries))
+        )
+
+    certifications = [item for item in artifact.certifications if str(item or "").strip()]
+    if certifications:
+        certifications_html = _build_resume_section_list(
+            certifications,
+            "",
+            class_name="resume-plain-list",
+        )
+        sections.append(
+            """
+    <section class="resume-classic-section">
+        <h2>Certifications</h2>
+        {certifications}
+    </section>
+            """.format(certifications=certifications_html)
+        )
 
     return """
     <section class="resume-classic-header">
         <h1>{name}</h1>
         {contact_block}
     </section>
-    <section class="resume-classic-section resume-classic-section--plain-head">
-        <h2>Summary</h2>
-        <p>{summary}</p>
-    </section>
-    <section class="resume-classic-section resume-classic-section--plain-head">
-        <h2>Core Skills</h2>
-        {skills}
-    </section>
-    <section class="resume-classic-section">
-        <h2>Experience</h2>
-        {experience}
-    </section>
-    <section class="resume-classic-section">
-        <h2>Education</h2>
-        {education}
-    </section>
-    <section class="resume-classic-section">
-        <h2>Certifications</h2>
-        {certifications}
-    </section>
+    {sections}
     """.format(
         name=name,
         contact_block=contact_html,
-        summary=html.escape(artifact.professional_summary or "No professional summary generated."),
-        skills=skills_html,
-        certifications=certifications_html,
-        experience=_build_resume_experience_html(artifact.experience_entries),
-        education=_build_resume_education_html(artifact.education_entries),
+        sections="".join(sections),
     )
 
 
@@ -715,7 +753,13 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         }}
         * {{ box-sizing: border-box; }}
         html, body {{ margin: 0; padding: 0; }}
-        body {{ font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: #fffdf9; font-size: 10pt; line-height: 1.42; }}
+        body {{ font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: #fffdf9; font-size: 10pt; line-height: 1.45; }}
+        /* Editorial pairing: sans-serif headers + meta (modern,
+           scannable) with a Georgia serif for the prose-y parts —
+           summary paragraph and experience bullets — so the resume
+           reads as a set with the cover letter while keeping the
+           classic ATS-resume scannability for everything else. */
+        .resume-summary, .resume-bullet-list li {{ font-family: Georgia, "Times New Roman", serif; line-height: 1.55; }}
         .resume-shell {{ position: relative; min-height: 297mm; background: #fffdfa; padding: 13mm 15mm 13mm; overflow: hidden; }}
         .resume-shell::before {{ content: none; }}
         .resume-shell::after {{ content: none; }}
