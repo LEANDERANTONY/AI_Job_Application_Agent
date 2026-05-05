@@ -563,8 +563,23 @@ export function ResumeIntake({
             <div>
               <span className="b-resume-hero-pill">Parsed profile</span>
               <h1 className="b-resume-hero-title">
-                {currentProfile.full_name || "Name not inferred"}
+                {currentProfile.full_name?.trim() ||
+                  "Profile in progress"}
               </h1>
+              {!currentProfile.full_name?.trim() ? (
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "var(--fg-3)",
+                    margin: "4px 0 0",
+                    lineHeight: 1.55,
+                  }}
+                >
+                  We couldn&apos;t infer a name from your inputs. Edit the
+                  Full name field on the draft profile so the rest of the
+                  workflow uses the right header.
+                </p>
+              ) : null}
               <div className="b-resume-hero-meta">
                 <span>
                   {currentProfile.experience?.[0]?.title || "Role pending"}
@@ -665,9 +680,13 @@ export function ResumeIntake({
         </CollapsibleSection>
       ) : null}
 
-      {/* 4 — Parser signals row (only after parse) */}
+      {/* 4 — "What we found" — user-friendlier name for the parser
+          signals row. Same data, friendlier label. */}
       {currentProfile && currentProfile.source_signals.length ? (
-        <CollapsibleSection sub="Live read of your CV" title="Parser signals">
+        <CollapsibleSection
+          sub="Quick read of your resume"
+          title="What we found"
+        >
           <ul className="b-signal-list">
             {currentProfile.source_signals.slice(0, 6).map((signal) => (
               <li className="b-signal-item" key={signal}>
@@ -687,8 +706,8 @@ export function ResumeIntake({
         <div className="b-empty-hint">
           <div className="b-empty-hint-eyebrow">Once parsed</div>
           <div className="b-empty-hint-body">
-            Your candidate profile, detected skills, experience timeline,
-            and parser signals will appear right here.
+            Your candidate profile, skills, experience timeline, and a
+            quick read of what we found will appear right here.
           </div>
         </div>
       ) : null}

@@ -471,7 +471,19 @@ export function WorkspaceShell() {
     return "No role loaded yet";
   }, [activeJob, analysisState, jobFileState]);
 
-  const heroResumeLine = currentProfile?.full_name || "Resume not uploaded";
+  // When a profile exists but the parser couldn't extract a name
+  // (common with the assistant builder when the user's basics answer
+  // didn't include a name in an obvious form), don't fall back all
+  // the way to "Resume not uploaded" — that reads like nothing
+  // happened. Use the profile's role + first experience entry as a
+  // fallback identifier.
+  const heroResumeLine = (() => {
+    if (!currentProfile) return "Resume not uploaded";
+    if (currentProfile.full_name?.trim()) return currentProfile.full_name;
+    const firstRole = currentProfile.experience?.[0]?.title;
+    if (firstRole) return `${firstRole} (name pending)`;
+    return "Profile loaded (name pending)";
+  })();
 
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const accountDisplayName =
@@ -891,10 +903,11 @@ export function WorkspaceShell() {
       );
       setResumeBuilderSession(response);
       setResumeBuilderAnswer("");
-      setResumeBuilderNotice({
-        level: "success",
-        message: response.assistant_message,
-      });
+      // The next step's `assistant_message` already renders as the
+      // intake-card body copy. Showing it again as a success notice
+      // duplicated the same sentence twice on every screen — clear
+      // the transient notice instead.
+      setResumeBuilderNotice(null);
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
@@ -1035,6 +1048,11 @@ export function WorkspaceShell() {
       setResumeBuilderSession(null);
       setResumeBuilderInitialized(false);
       setResumeBuilderAnswer("");
+      // Flip the intake mode back to "upload" so when the user later
+      // returns to the Resume tab they see the parsed-profile hero
+      // for their newly committed resume — not a fresh assistant
+      // session that auto-spins up because mode was still "assistant".
+      setResumeIntakeMode("upload");
       setMainTab("jobs");
     } catch (error) {
       setResumeBuilderNotice({
