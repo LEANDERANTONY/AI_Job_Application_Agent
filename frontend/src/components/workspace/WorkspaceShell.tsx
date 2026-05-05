@@ -1397,26 +1397,33 @@ export function WorkspaceShell() {
                       </div>
                     </div>
                   </div>
-                  <div className="b-account-pop-meta">
-                    <span className="rd-chip">
-                      Plan · {authSession?.app_user.plan_tier || "free"}
-                    </span>
-                    <span className="rd-chip">
-                      Runs left · {formatRemainingCalls(dailyQuota)}
-                    </span>
+                  <dl className="b-account-pop-stats">
+                    <div>
+                      <dt>Plan</dt>
+                      <dd>{authSession?.app_user.plan_tier || "free"}</dd>
+                    </div>
+                    <div>
+                      <dt>Runs left</dt>
+                      <dd>{formatRemainingCalls(dailyQuota)}</dd>
+                    </div>
                     {workspaceSaveMeta ? (
-                      <span className="rd-chip">
-                        Saved until{" "}
-                        {formatUtcTimestamp(workspaceSaveMeta.expires_at)} UTC
-                      </span>
+                      <div>
+                        <dt>Saved until</dt>
+                        <dd>
+                          {formatUtcTimestamp(workspaceSaveMeta.expires_at)}{" "}
+                          UTC
+                        </dd>
+                      </div>
                     ) : autoSaving ? (
-                      <span className="rd-chip">Saving latest…</span>
+                      <div>
+                        <dt>Status</dt>
+                        <dd>Saving latest…</dd>
+                      </div>
                     ) : null}
-                  </div>
+                  </dl>
                   {authError ? (
                     <div className="b-notice b-notice-warning">{authError}</div>
                   ) : null}
-                  <hr className="rd-hairline" />
                   <div className="b-account-pop-actions">
                     {authSession?.features.saved_workspace_enabled ? (
                       <button

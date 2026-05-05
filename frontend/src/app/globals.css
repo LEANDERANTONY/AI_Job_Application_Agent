@@ -3361,15 +3361,14 @@ code {
   background: linear-gradient(90deg, transparent, rgba(120, 155, 230, 0.32), transparent);
   pointer-events: none;
 }
-.b-account-popover > * { padding: 0 14px; }
-.b-account-popover > .b-account-pop-head { padding-top: 14px; }
-.b-account-popover > .b-account-pop-actions { padding-bottom: 14px; }
-.b-account-popover .rd-hairline { margin: 0; }
+/* Each popover section provides its own padding + hairline so the
+   dividers extend edge-to-edge for a clean Stripe-receipt feel. */
 .b-account-pop-head {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
 }
 .b-account-pop-name {
   font-family: var(--font-display);
@@ -3383,17 +3382,44 @@ code {
   color: var(--fg-3);
   margin-top: 2px;
 }
-.b-account-pop-meta {
+/* Account stats list — labelled key/value rows replacing the chip
+   pile. Reads as a deliberate profile sheet: mono uppercase eyebrow
+   on the left, value right-aligned in display ink. Lines feel like
+   a Stripe receipt or Linear settings panel. */
+.b-account-pop-stats {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 12px 0;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-account-pop-stats > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.b-account-pop-stats dt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  margin: 0;
+}
+.b-account-pop-stats dd {
+  margin: 0;
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: right;
 }
 .b-account-pop-actions {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-top: 12px;
+  padding-top: 14px;
 }
 
 /* Command palette trigger pill in topbar */
@@ -5562,14 +5588,20 @@ code {
    wasn't already responsive.
    ===================================================================== */
 @media (max-width: 540px) {
-  /* Topbar — brand text + cmd-K text + account name all collapse to
-     icons so the bar fits a 320px viewport. The cmd-K shortcut chip
-     also disappears (no physical kb on phones). */
+  /* Topbar — brand stays visible (just slightly smaller); the cmd-K
+     trigger collapses to its icon and the account chip hides the
+     name text. The kb shortcut "⌘K" hides too — there's no physical
+     kb on phones. */
   .b-topbar {
     padding: 10px 14px;
     gap: 10px;
   }
-  .b-shell .b-brand-name { display: none; }
+  .b-shell .b-brand-name {
+    font-size: 13.5px;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .b-shell .b-cmd-trigger {
     min-width: 0;
     padding: 0 10px;
@@ -5596,8 +5628,10 @@ code {
   /* Connector line is too short to be meaningful on mobile — hide. */
   .b-shell .b-rail::before { display: none; }
 
-  /* Hero — stack title + stats vertically. Stats become a horizontal
-     scroll strip so the row never wraps awkwardly. */
+  /* Hero — stack title + stats vertically. Stats wrap onto multiple
+     rows on mobile so long role titles ("Senior ML Engineer —
+     Inference Platform") don't get clipped by the parent's
+     overflow:hidden. */
   .b-shell .b-hero {
     flex-direction: column;
     align-items: stretch;
@@ -5608,18 +5642,18 @@ code {
   .b-shell .b-hero-sub { font-size: 12.5px; }
   .b-shell .b-hero-stats {
     justify-content: flex-start;
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    margin: 0 -16px;
-    padding: 0 16px 4px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    flex-wrap: wrap;
+    gap: 6px;
   }
-  .b-shell .b-hero-stats::-webkit-scrollbar { display: none; }
   .b-shell .b-hero-stat {
-    flex: 0 0 auto;
     font-size: 11.5px;
     padding: 4px 10px;
+    /* Allow chips to be full-width when the role title is long, but
+       cap their length so a single chip doesn't dominate the row. */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Canvas — tighter side padding, more breathing room at the bottom
