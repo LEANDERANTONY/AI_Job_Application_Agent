@@ -30,12 +30,21 @@ const SOCIAL_LINKS = [
 ] as const;
 
 type LandingAuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
+// Tracks WHICH auth action is in flight rather than a shared boolean.
+// Without this, clicking "Enter workspace" flipped a single
+// authActionLoading flag → the sibling "Sign out" button (which
+// switched its label on the same flag) would show "Signing out…" until
+// the workspace handoff redirect completed.
+type LandingPendingAction = "signin" | "signout" | "handoff" | null;
 
 export function LandingPage() {
   const [authStatus, setAuthStatus] = useState<LandingAuthStatus>("loading");
   const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
-  const [authActionLoading, setAuthActionLoading] = useState(false);
+  const [pendingAction, setPendingAction] =
+    useState<LandingPendingAction>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  const anyActionPending = pendingAction !== null;
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +127,7 @@ export function LandingPage() {
   }, []);
 
   async function handleGoogleSignIn() {
-    setAuthActionLoading(true);
+    setPendingAction("signin");
     setAuthError(null);
     try {
       const response = await startGoogleSignIn(buildAuthRedirectUrl("/"));
@@ -129,12 +138,12 @@ export function LandingPage() {
           ? error.message
           : "Google sign-in could not be started.",
       );
-      setAuthActionLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function handleSignOut() {
-    setAuthActionLoading(true);
+    setPendingAction("signout");
     setAuthError(null);
 
     try {
@@ -145,12 +154,12 @@ export function LandingPage() {
     } finally {
       setAuthSession(null);
       setAuthStatus("signed_out");
-      setAuthActionLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function handleEnterWorkspace() {
-    setAuthActionLoading(true);
+    setPendingAction("handoff");
     setAuthError(null);
     try {
       const response = await startWorkspaceHandoff(
@@ -163,7 +172,7 @@ export function LandingPage() {
           ? error.message
           : "Workspace handoff failed unexpectedly.",
       );
-      setAuthActionLoading(false);
+      setPendingAction(null);
     }
   }
 
@@ -193,23 +202,23 @@ export function LandingPage() {
                 <span className="status-chip status-chip-live">Signed in</span>
                 <button
                   className="secondary-button landing-nav-button landing-nav-signout"
-                  disabled={authActionLoading}
+                  disabled={anyActionPending}
                   onClick={() => void handleSignOut()}
                   type="button"
                 >
-                  {authActionLoading ? "Signing out..." : "Sign out"}
+                  {pendingAction === "signout" ? "Signing out..." : "Sign out"}
                 </button>
               </>
             ) : authStatus === "restoring" ? (
               <button
                 className="nav-link nav-link-active landing-nav-button"
-              disabled={authActionLoading || authStatus === "restoring"}
+              disabled={anyActionPending || authStatus === "restoring"}
               onClick={() => void handleGoogleSignIn()}
               type="button"
             >
               {authStatus === "restoring"
                 ? "Restoring session..."
-                : authActionLoading
+                : pendingAction === "signin"
                   ? "Redirecting..."
                   : "Sign in"}
             </button>
@@ -231,22 +240,24 @@ export function LandingPage() {
             {isSignedIn ? (
               <button
                 className="primary-button"
-                disabled={authActionLoading}
+                disabled={anyActionPending}
                 onClick={() => void handleEnterWorkspace()}
                 type="button"
               >
-                {authActionLoading ? "Opening workspace..." : "Enter workspace"}
+                {pendingAction === "handoff"
+                  ? "Opening workspace..."
+                  : "Enter workspace"}
               </button>
             ) : (
               <button
                 className="primary-button"
-                disabled={authActionLoading || authStatus === "restoring"}
+                disabled={anyActionPending || authStatus === "restoring"}
                 onClick={() => void handleGoogleSignIn()}
                 type="button"
               >
                 {authStatus === "restoring"
                   ? "Restoring session..."
-                  : authActionLoading
+                  : pendingAction === "signin"
                     ? "Redirecting..."
                     : "Sign in"}
               </button>
