@@ -5555,6 +5555,231 @@ code {
 }
 
 /* =====================================================================
+   Mobile responsive pass — everything below 540px collapses to a
+   single-column phone-friendly layout. The desktop @media queries on
+   individual components (.b-resume-twoup at 880px, .b-pipeline at
+   640/980px, etc.) still apply; this block tightens the chrome that
+   wasn't already responsive.
+   ===================================================================== */
+@media (max-width: 540px) {
+  /* Topbar — brand text + cmd-K text + account name all collapse to
+     icons so the bar fits a 320px viewport. The cmd-K shortcut chip
+     also disappears (no physical kb on phones). */
+  .b-topbar {
+    padding: 10px 14px;
+    gap: 10px;
+  }
+  .b-shell .b-brand-name { display: none; }
+  .b-shell .b-cmd-trigger {
+    min-width: 0;
+    padding: 0 10px;
+    gap: 0;
+  }
+  .b-shell .b-cmd-trigger-text,
+  .b-shell .b-cmd-trigger-keys { display: none; }
+  .b-shell .b-account-name { display: none; }
+
+  /* Step rail — shrink chip padding + label + chip number so the
+     four-step pill fits in ~340px. */
+  .b-rail-row { padding: 10px 12px; }
+  .b-shell .b-rail { gap: 2px; padding: 3px; }
+  .b-shell .b-rail-step {
+    padding: 6px 10px;
+    font-size: 12px;
+    gap: 6px;
+  }
+  .b-shell .b-rail-num {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+  /* Connector line is too short to be meaningful on mobile — hide. */
+  .b-shell .b-rail::before { display: none; }
+
+  /* Hero — stack title + stats vertically. Stats become a horizontal
+     scroll strip so the row never wraps awkwardly. */
+  .b-shell .b-hero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 18px 16px;
+  }
+  .b-shell .b-hero-title { font-size: 20px; }
+  .b-shell .b-hero-sub { font-size: 12.5px; }
+  .b-shell .b-hero-stats {
+    justify-content: flex-start;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    margin: 0 -16px;
+    padding: 0 16px 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .b-shell .b-hero-stats::-webkit-scrollbar { display: none; }
+  .b-shell .b-hero-stat {
+    flex: 0 0 auto;
+    font-size: 11.5px;
+    padding: 4px 10px;
+  }
+
+  /* Canvas — tighter side padding, more breathing room at the bottom
+     so the FAB doesn't overlap the last action button. */
+  .b-shell .b-canvas {
+    padding: 16px 14px 100px;
+    gap: 16px;
+  }
+
+  /* Region head — title + STEP tag stack. */
+  .b-shell .b-region-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding-bottom: 10px;
+  }
+  .b-shell .b-region-title { font-size: 16px; }
+  .b-shell .b-region-sub { font-size: 12.5px; }
+
+  /* Intake panel chrome shrinks; mode toggle pills stay clickable. */
+  .b-shell .b-intake-panel { padding: 14px 14px; }
+  .b-shell .b-intake-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .b-shell .b-intake-head-actions { justify-content: flex-start; }
+
+  /* Compact intake (post-parse) — stack meta + actions vertically. */
+  .b-shell .b-intake-compact { flex-direction: column; align-items: stretch; gap: 10px; padding: 6px 0; }
+  .b-shell .b-intake-compact-meta { width: 100%; }
+  .b-shell .b-intake-compact-actions { justify-content: flex-start; }
+
+  /* Job search bar — stack from a 5-col grid to vertical inputs. */
+  .b-shell .b-search-bar {
+    grid-template-columns: 1fr;
+    height: auto;
+    padding: 10px;
+    gap: 8px;
+    border-radius: 10px;
+  }
+  .b-shell .b-search-icon { display: none; }
+  .b-shell .b-search-divider { display: none; }
+  .b-shell .b-search-bar input {
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    height: 40px;
+  }
+  .b-shell .b-search-bar .rd-btn { width: 100%; }
+  .b-shell .b-search-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .b-shell .b-search-import {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .b-shell .b-search-import-input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
+  /* Run bar (Analysis) — info row + actions row stack. */
+  .b-shell .b-run-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 14px;
+  }
+  .b-shell .b-run-bar-info { flex-wrap: wrap; }
+  .b-shell .b-run-bar-actions { justify-content: flex-start; }
+
+  /* Parsed-profile hero — scaled-down typography + tighter padding. */
+  .b-shell .b-resume-hero { padding: 22px 18px 20px; border-radius: 12px; }
+  .b-shell .b-resume-hero-head { flex-direction: column; gap: 12px; align-items: stretch; }
+  .b-shell .b-resume-hero-title { font-size: 26px; }
+  .b-shell .b-resume-hero-meta { gap: 10px; font-size: 12px; }
+
+  /* JD metrics — 2-col on phone (auto-fit minmax 120 was producing
+     weird gaps). */
+  .b-shell .b-jd-metrics { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .b-shell .b-jd-metric-value { font-size: 22px; }
+
+  /* Two-up sections (already stack via earlier media queries) — just
+     tighten padding. */
+  .b-shell .b-twoup-section { padding: 14px 14px; }
+
+  /* Editorial doc — tighter side padding, smaller numbered index. */
+  .b-shell .b-doc { padding: 4px 14px; }
+  .b-shell .b-doc-section-head {
+    column-gap: 10px;
+    padding: 14px 0 10px;
+  }
+  .b-shell .b-doc-section-title { font-size: 15px; }
+
+  /* Wizard rail — title + meta wrap. */
+  .b-shell .b-wizard-rail-title { font-size: 15px; }
+
+  /* Notice panels — smaller. */
+  .b-shell .b-notice { padding: 9px 11px; font-size: 12px; }
+
+  /* Account popover — fill the screen with side margins. */
+  .b-shell .b-account-popover {
+    width: calc(100vw - 28px);
+    right: -8px;
+    max-width: 360px;
+  }
+
+  /* Cmd-K palette — fits the viewport with side margins. */
+  .b-shell .b-cmd-overlay {
+    padding-top: 8vh;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .b-cmd-panel { max-width: none; }
+  .b-cmd-input-wrap { padding: 14px 14px; }
+  .b-cmd-input { font-size: 14.5px; }
+  .b-cmd-footer {
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    font-size: 10.5px;
+  }
+
+  /* FAB pinned closer to the corner; assistant popover spans the
+     full width with 12px gutters so chats are readable. */
+  .b-shell .rd-fab {
+    bottom: 18px;
+    right: 18px;
+    width: 50px;
+    height: 50px;
+  }
+  .b-shell .rd-assistant {
+    bottom: 80px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100vh - 110px);
+  }
+
+  /* Pipeline — already 1-col at 640px; just trim padding. */
+  .b-shell .b-pipeline-stage { padding: 14px 14px; }
+
+  /* Artifact viewer — 1-col at 980px; tighten on phone. */
+  .b-shell .b-artifact-doc-frame { min-height: 360px; }
+  .b-shell .b-artifact-aside { padding: 14px 14px; }
+}
+
+/* Tablet refinements — between phone and desktop. */
+@media (min-width: 541px) and (max-width: 780px) {
+  .b-shell .b-canvas { padding: 20px 20px 80px; }
+  .b-shell .b-hero { padding: 20px 22px; }
+  .b-shell .b-jd-metrics { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* =====================================================================
    Motion + delight pass — small premium animations.
    All animations are gated behind `prefers-reduced-motion: no-preference`
    so users with motion-sensitivity get the static layout.
