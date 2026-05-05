@@ -16,13 +16,36 @@
 //   3. b-resume-twoup — Skills + Experience side-by-side
 //   4. b-twoup-section — Parser signals row
 
-import type { ChangeEvent, Dispatch, SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  type ChangeEvent,
+  type Dispatch,
+  type SetStateAction,
+  type TextareaHTMLAttributes,
+} from "react";
 
 import {
   CheckIcon,
   UploadIcon,
 } from "@/components/workspace/icons";
 import { CollapsibleSection } from "@/components/workspace/CollapsibleSection";
+
+// Auto-grow textarea — sizes itself to fit the current value so the
+// draft profile no longer crams long answers into a tiny scroll-stuck
+// box. Re-measures whenever the value changes.
+type AutoTextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>;
+
+function AutoTextarea({ value, ...rest }: AutoTextareaProps) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [value]);
+  return <textarea ref={ref} value={value} {...rest} />;
+}
 import type {
   CandidateProfile,
   ResumeBuilderSessionResponse,
@@ -60,52 +83,6 @@ const RESUME_BUILDER_STEP_LABELS: Record<string, string> = {
 const BUILDER_STEP_KEYS = Object.keys(RESUME_BUILDER_STEP_LABELS);
 
 type DraftFieldKey = keyof ResumeBuilderDraftForm;
-
-type DraftFieldConfig = {
-  key: DraftFieldKey;
-  label: string;
-  kind: "input" | "textarea";
-  wide?: boolean;
-  placeholder?: string;
-};
-
-const DRAFT_FIELDS: DraftFieldConfig[] = [
-  { key: "full_name", label: "Full name", kind: "input" },
-  { key: "location", label: "Location", kind: "input" },
-  { key: "target_role", label: "Target role", kind: "input" },
-  {
-    key: "contact_lines",
-    label: "Contact lines",
-    kind: "textarea",
-    wide: true,
-    placeholder: "One line per item: email, phone, LinkedIn, GitHub...",
-  },
-  {
-    key: "professional_summary",
-    label: "Summary",
-    kind: "textarea",
-    wide: true,
-  },
-  {
-    key: "experience_notes",
-    label: "Experience notes",
-    kind: "textarea",
-    wide: true,
-  },
-  { key: "education_notes", label: "Education", kind: "textarea", wide: true },
-  {
-    key: "skills",
-    label: "Skills",
-    kind: "input",
-    placeholder: "Python, FastAPI, Docker, SQL",
-  },
-  {
-    key: "certifications",
-    label: "Certifications",
-    kind: "input",
-    placeholder: "Optional",
-  },
-];
 
 function noticeClassName(level: ResumeIntakeNotice["level"]) {
   if (level === "success") return "b-notice b-notice-success";
@@ -489,42 +466,95 @@ export function ResumeIntake({
                   </span>
                 </div>
 
-                <div className="b-builder-form">
-                  {DRAFT_FIELDS.map((field) => (
-                    <label
-                      className={
-                        field.wide
-                          ? "b-builder-field b-builder-field-wide"
-                          : "b-builder-field"
-                      }
-                      key={field.key}
-                    >
-                      <span className="b-builder-field-label">
-                        {field.label}
-                      </span>
-                      {field.kind === "input" ? (
-                        <input
-                          className="rd-input"
-                          onChange={(event) =>
-                            setDraftField(field.key, event.target.value)
-                          }
-                          placeholder={field.placeholder}
-                          value={builderDraftForm[field.key]}
-                        />
-                      ) : (
-                        <textarea
-                          className="rd-textarea"
-                          onChange={(event) =>
-                            setDraftField(field.key, event.target.value)
-                          }
-                          placeholder={field.placeholder}
-                          style={{ minHeight: 70 }}
-                          value={builderDraftForm[field.key]}
-                        />
-                      )}
+                {/* Draft fields grouped into the same five sections the
+                    wizard itself walks through, each independently
+                    collapsible. Textareas auto-grow to fit content so a
+                    long experience or summary doesn't get crammed into
+                    a 70px scroll-stuck box. Defaults open. */}
+                {(() => {
+                  const renderInput = (key: DraftFieldKey, label: string, placeholder?: string) => (
+                    <label className="b-builder-field" key={key}>
+                      <span className="b-builder-field-label">{label}</span>
+                      <input
+                        className="rd-input"
+                        onChange={(event) => setDraftField(key, event.target.value)}
+                        placeholder={placeholder}
+                        value={builderDraftForm[key]}
+                      />
                     </label>
-                  ))}
-                </div>
+                  );
+                  const renderTextarea = (
+                    key: DraftFieldKey,
+                    label: string,
+                    placeholder?: string,
+                  ) => (
+                    <label
+                      className="b-builder-field b-builder-field-wide"
+                      key={key}
+                    >
+                      <span className="b-builder-field-label">{label}</span>
+                      <AutoTextarea
+                        className="rd-textarea b-builder-textarea-grow"
+                        onChange={(event) => setDraftField(key, event.target.value)}
+                        placeholder={placeholder}
+                        value={builderDraftForm[key]}
+                      />
+                    </label>
+                  );
+
+                  return (
+                    <>
+                      <CollapsibleSection sub="Name, location, contact lines" title="Basics">
+                        <div className="b-builder-form">
+                          {renderInput("full_name", "Full name")}
+                          {renderInput("location", "Location")}
+                          {renderTextarea(
+                            "contact_lines",
+                            "Contact lines",
+                            "One line per item: email, phone, LinkedIn, GitHub…",
+                          )}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection sub="What you're aiming at" title="Target role">
+                        <div className="b-builder-form">
+                          {renderInput("target_role", "Target role")}
+                          {renderTextarea("professional_summary", "Summary")}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection sub="Roles, impact, dates" title="Experience">
+                        <div className="b-builder-form">
+                          {renderTextarea("experience_notes", "Experience notes")}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection sub="Degrees, programs" title="Education">
+                        <div className="b-builder-form">
+                          {renderTextarea("education_notes", "Education")}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection
+                        sub="Tools + certifications"
+                        title="Skills"
+                      >
+                        <div className="b-builder-form">
+                          {renderInput(
+                            "skills",
+                            "Skills",
+                            "Python, FastAPI, Docker, SQL",
+                          )}
+                          {renderInput(
+                            "certifications",
+                            "Certifications",
+                            "Optional",
+                          )}
+                        </div>
+                      </CollapsibleSection>
+                    </>
+                  );
+                })()}
 
                 <div style={{ marginTop: 12 }}>
                   <button
