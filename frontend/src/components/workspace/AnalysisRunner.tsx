@@ -257,6 +257,23 @@ export function AnalysisRunner({
         ))}
       </div>
 
+      {/* Mobile-only: when every agent has finished, the 6 "All done"
+          cards add nothing — collapse them to a single confirmation
+          line. Hidden on desktop via CSS. The pipeline cards
+          themselves are also hidden on mobile in the idle / all-done
+          states (see globals.css mobile pass). */}
+      {analysisState ? (
+        <div className="b-pipeline-summary" role="status">
+          <span aria-hidden="true" className="b-pipeline-summary-pip">
+            ✓
+          </span>
+          <span>
+            All {PIPELINE_STAGES.length} agents finished — your tailored
+            documents are ready below.
+          </span>
+        </div>
+      ) : null}
+
       {!analysisState && !analysisLoading ? (
         <div className="b-empty-hint">
           <div className="b-empty-hint-eyebrow">Once the workflow runs</div>
