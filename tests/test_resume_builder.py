@@ -235,8 +235,8 @@ def test_compute_section_order_keeps_senior_industry_with_few_publications_on_pr
     order = compute_section_order(profile)
 
     # Senior with 3 talks (not 5+ academic-shape) stays on standard
-    # professional path: experience after summary + skills.
-    assert order[:3] == ["summary", "skills", "experience"]
+    # professional path: experience leads after summary, then skills.
+    assert order[:3] == ["summary", "experience", "skills"]
 
 
 def test_compute_section_order_routes_career_switcher_to_skills_and_projects_first():
@@ -258,7 +258,9 @@ def test_compute_section_order_default_professional_path_for_standard_resume():
 
     order = compute_section_order(profile)
 
-    assert order[:3] == ["summary", "skills", "experience"]
+    # Modern recruiter-readable resumes lead with Experience for
+    # candidates who have work history.
+    assert order[:3] == ["summary", "experience", "skills"]
 
 
 def test_normalize_section_name_handles_common_aliases():
@@ -271,8 +273,13 @@ def test_normalize_section_name_handles_common_aliases():
     assert _normalize_section_name("Random Unknown Section") is None
 
 
-def test_resolve_section_order_normalises_agent_output_and_appends_missing_sections():
-    profile = _profile(experience=[_exp(), _exp()])
+def test_resolve_section_order_ignores_agent_output_and_uses_helper():
+    """The agent's section_order field is ignored — we always use
+    compute_section_order(profile). In practice the LLM picked
+    'experience first' for every profile shape (including students
+    and career switchers), which is wrong; the deterministic helper
+    has all the structural signal it needs."""
+    profile = _profile(experience=[], projects=[_proj(), _proj()])
     agent_result = AgentWorkflowResult(
         mode="openai",
         model="test",
@@ -280,28 +287,21 @@ def test_resolve_section_order_normalises_agent_output_and_appends_missing_secti
         review=ReviewAgentOutput(approved=True),
         resume_generation=ResumeGenerationAgentOutput(
             professional_summary="x",
-            section_order=["Professional Summary", "Core Skills", "Professional Experience"],
+            # Agent emits 'experience first' (its default) — we should
+            # ignore this and pick the student path based on
+            # exp_count == 0.
+            section_order=["Professional Summary", "Professional Experience", "Core Skills"],
         ),
     )
 
     order = _resolve_section_order(profile, agent_result)
 
-    # Agent's three sections come first in canonical form, and the
-    # remaining canonical sections get appended so the renderer always
-    # has the full vocabulary.
-    assert order[:3] == ["summary", "skills", "experience"]
-    assert set(order) == {
-        "summary",
-        "skills",
-        "experience",
-        "projects",
-        "education",
-        "publications",
-        "certifications",
-    }
+    # Student path overrides the agent's experience-first preference
+    # because the candidate has no work history to lead with.
+    assert order[:3] == ["summary", "education", "projects"]
 
 
-def test_resolve_section_order_falls_back_to_compute_when_agent_skipped_it():
+def test_resolve_section_order_uses_compute_when_agent_skipped_it():
     profile = _profile(experience=[], projects=[_proj(), _proj()])
     agent_result = AgentWorkflowResult(
         mode="openai",
@@ -316,8 +316,6 @@ def test_resolve_section_order_falls_back_to_compute_when_agent_skipped_it():
 
     order = _resolve_section_order(profile, agent_result)
 
-    # Falls back to compute_section_order, which routes a 0-experience
-    # candidate to the student path.
     assert order[:2] == ["summary", "education"]
 
 

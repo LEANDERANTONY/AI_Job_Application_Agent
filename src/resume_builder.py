@@ -182,10 +182,14 @@ def compute_section_order(candidate_profile: CandidateProfile) -> list[str]:
             "certifications",
         ]
 
+    # Standard professional path: experience leads. Modern recruiter-
+    # readable resumes (Indeed, LinkedIn, The Muse, Career Karma) all
+    # converge on Experience as the primary signal once the candidate
+    # has work history; Skills as a keyword-dense band right after.
     return [
         "summary",
-        "skills",
         "experience",
+        "skills",
         "projects",
         "education",
         "publications",
@@ -197,26 +201,23 @@ def _resolve_section_order(
     candidate_profile: CandidateProfile,
     agent_result: Optional[AgentWorkflowResult],
 ) -> list[str]:
-    """Pick the section order from the agent's resume_generation
-    output if it provided one, normalised to canonical names; fall
-    back to compute_section_order(profile) when the agent skipped it
-    or emitted only unrecognised names.
+    """Pick the section order based on candidate-profile shape.
+
+    The deterministic helper compute_section_order(profile) is
+    authoritative because the decision is purely structural — it
+    depends on signals (work history count, projects count,
+    publications count) the LLM has no extra context for. In
+    practice the LLM agent picks 'experience first' for every
+    profile shape, which is wrong for students (no experience),
+    academics (publications belong up top), and career switchers
+    (skills + projects are the proof). So we ignore the agent's
+    section_order field and always use the deterministic helper.
+
+    The agent_result parameter stays in the signature so a future
+    agent step that DOES have extra signal (e.g. a JD-aware
+    reorder agent) can override it. None today.
     """
-    proposed: list[str] = []
-    if agent_result and agent_result.resume_generation:
-        for raw in agent_result.resume_generation.section_order or []:
-            canonical = _normalize_section_name(raw)
-            if canonical and canonical not in proposed:
-                proposed.append(canonical)
-    if not proposed:
-        return compute_section_order(candidate_profile)
-    # Append any canonical sections the agent didn't mention so the
-    # downstream renderer always has the full vocabulary to work
-    # with (it'll skip empties).
-    for section in CANONICAL_SECTIONS:
-        if section not in proposed:
-            proposed.append(section)
-    return proposed
+    return compute_section_order(candidate_profile)
 def _normalize_date_token(token) -> str:
     if isinstance(token, dict):
         year = token.get("year")

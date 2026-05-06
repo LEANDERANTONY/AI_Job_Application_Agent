@@ -5,10 +5,24 @@ from src.utils import dedupe_strings
 
 
 def _truncate_text(text: str, limit: int = 140) -> str:
+    """Truncate text to ``limit`` characters, ending on a word
+    boundary so we don't leave dangling fragments like 'auto-
+    extracted i...' (mid-word slice of 'intrusion'). Such fragments
+    not only read badly but also accidentally collide with the
+    resume self-reference regex ('\\bi\\b'), which then forces the
+    LLM-resume-generation post-check to fall back unnecessarily.
+    """
     normalized = " ".join(text.split())
     if len(normalized) <= limit:
         return normalized
-    return normalized[: limit - 3].rstrip() + "..."
+    truncated = normalized[: limit - 3]
+    last_space = truncated.rfind(" ")
+    if last_space > 0:
+        truncated = truncated[:last_space]
+    # Strip trailing punctuation so we don't render '..,...' or
+    # 'pipeline:...'
+    truncated = truncated.rstrip(" ,;:.-")
+    return truncated + "..."
 
 
 def _build_professional_summary(
