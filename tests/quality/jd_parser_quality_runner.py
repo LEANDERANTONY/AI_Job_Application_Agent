@@ -1,16 +1,17 @@
-"""Tier-1-style scorecard for the JD parser (deterministic-only path).
+"""Tier-1-style scorecard for the JD parser.
 
-Runs each sample JD in `sample_jds/` through `build_job_description_from_text`
-and scores the resulting `JobDescription` against the hand-authored expected
-JSON in `expected_jds/`. Mirrors the resume parser_quality_runner harness.
+Runs each sample JD in `sample_jds/` through three modes:
+  - deterministic: ``build_job_description_from_text``
+  - llm_only:      LLM payload converted directly into a JobDescription
+  - hybrid:        ``build_job_description_from_text_auto`` (production)
+
+and scores each resulting `JobDescription` against the hand-authored
+expected JSON in `expected_jds/`. Mirrors the resume parser_quality_runner.
 
 Usage:
-    python tests/quality/jd_parser_quality_runner.py
+    python tests/quality/jd_parser_quality_runner.py                   # deterministic only (free)
+    python tests/quality/jd_parser_quality_runner.py --include-llm     # all 3 modes (~$0.05)
     python tests/quality/jd_parser_quality_runner.py --json out.json
-
-There is no LLM JD parser today — this runner only measures the deterministic
-parser. If we later add an LLM JD parser, copy the parser_quality_runner
-pattern (--include-llm flag) onto this runner.
 """
 
 from __future__ import annotations
@@ -21,7 +22,11 @@ from pathlib import Path
 from typing import Any
 
 from src.schemas import JobDescription
-from src.services.job_service import build_job_description_from_text
+from src.services.job_service import (
+    _build_job_description_from_llm_payload,
+    build_job_description_from_text,
+    build_job_description_from_text_auto,
+)
 
 
 FIXTURES_DIR = Path(__file__).parent / "sample_jds"
@@ -199,46 +204,99 @@ def _format_score(value: float) -> str:
     return f"[FAIL] {value:.2f}"
 
 
-def _print_scorecard(fixture_name: str, result: dict):
-    print()
-    print(f"=== {fixture_name} ===")
-    sections = list(SECTION_WEIGHTS.keys())
-    print(f"{'Section':<18}{'Score':<14}")
-    print("-" * 32)
-    for section in sections:
-        score = result["sections"][section]["score"]
-        print(f"{section:<18}{_format_score(score):<14}")
-    print("-" * 32)
-    print(f"{'OVERALL':<18}{_format_score(result['overall']):<14}")
-    notes_present = False
-    for section, payload in result["sections"].items():
-        for note in payload["notes"]:
-            if not notes_present:
-                print()
-                print("  notes:")
-                notes_present = True
-            print(f"  - [{section}] {note}")
-
-
 def _print_summary(per_fixture: list[dict]):
     print()
-    print("=" * 60)
+    print("=" * 90)
     print("SUMMARY")
-    print("=" * 60)
-    print(f"{'Fixture':<48}{'Score':<14}")
-    print("-" * 60)
+    print("=" * 90)
+    modes = list(per_fixture[0]["modes"].keys()) if per_fixture else []
+    header = f"{'Fixture':<48}" + "".join(f"{m:<14}" for m in modes)
+    print(header)
+    print("-" * len(header))
     for entry in per_fixture:
-        print(f"{entry['fixture']:<48}{_format_score(entry['result']['overall']):<14}")
-    print("-" * 60)
-    if per_fixture:
-        avg = sum(e["result"]["overall"] for e in per_fixture) / len(per_fixture)
-        print(f"{'AVERAGE':<48}{_format_score(avg):<14}")
+        row = f"{entry['fixture']:<48}"
+        for mode in modes:
+            data = entry["modes"][mode]
+            if data is None:
+                row += f"{'(skipped)':<14}"
+            else:
+                row += f"{_format_score(data['overall']):<14}"
+        print(row)
+    print("-" * len(header))
+    avg_row = f"{'AVERAGE':<48}"
+    for mode in modes:
+        scores = [
+            entry["modes"][mode]["overall"]
+            for entry in per_fixture
+            if entry["modes"][mode] is not None
+        ]
+        if scores:
+            avg_row += f"{_format_score(sum(scores) / len(scores)):<14}"
+        else:
+            avg_row += f"{'(skipped)':<14}"
+    print(avg_row)
+
+
+def _run_deterministic(text: str) -> JobDescription:
+    return build_job_description_from_text(text)
+
+
+def _fetch_llm_payload(text: str, parser_service) -> dict | None:
+    """Single LLM call shared across llm_only and hybrid modes."""
+    if parser_service is None or not parser_service.is_available():
+        return None
+    try:
+        return parser_service.parse(text)
+    except Exception as exc:
+        print(f"  [llm] parse failed: {type(exc).__name__}: {str(exc)[:160]}")
+        return None
+
+
+def _run_llm_only(text: str, payload: dict | None) -> JobDescription | None:
+    if payload is None:
+        return None
+    deterministic_profile = build_job_description_from_text(text)
+    return _build_job_description_from_llm_payload(
+        raw_text=text,
+        deterministic_profile=deterministic_profile,
+        payload=payload,
+    )
+
+
+def _run_hybrid(text: str, payload: dict | None) -> JobDescription:
+    if payload is None:
+        return build_job_description_from_text(text)
+    deterministic_profile = build_job_description_from_text(text)
+    return _build_job_description_from_llm_payload(
+        raw_text=text,
+        deterministic_profile=deterministic_profile,
+        payload=payload,
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--include-llm",
+        action="store_true",
+        help="Also run the LLM-only and hybrid modes (costs API tokens).",
+    )
     parser.add_argument("--json", type=Path, default=None, help="Write full results to JSON.")
     args = parser.parse_args()
+
+    llm_parser_service = None
+    if args.include_llm:
+        try:
+            from src.openai_service import OpenAIService
+            from src.services.jd_llm_parser_service import JobDescriptionLLMParserService
+
+            llm_parser_service = JobDescriptionLLMParserService(OpenAIService())
+            if not llm_parser_service.is_available():
+                print("WARNING: --include-llm passed but OpenAI is not configured.")
+                llm_parser_service = None
+        except Exception as exc:
+            print(f"WARNING: failed to initialise LLM parser: {exc}")
+            llm_parser_service = None
 
     fixture_paths = sorted(FIXTURES_DIR.glob("*.txt"))
     per_fixture: list[dict] = []
@@ -251,13 +309,28 @@ def main():
         expected = json.loads(expected_path.read_text(encoding="utf-8"))
         text = fixture_path.read_text(encoding="utf-8")
         try:
-            jd = build_job_description_from_text(text)
+            deterministic_jd = _run_deterministic(text)
         except Exception as exc:
             print(f"PARSE-CRASH {fixture_path.name}: {type(exc).__name__}: {exc}")
             continue
-        result = score_jd(jd, expected)
-        _print_scorecard(fixture_path.name, result)
-        per_fixture.append({"fixture": fixture_path.name, "result": result})
+        deterministic_score = score_jd(deterministic_jd, expected)
+
+        llm_score = None
+        hybrid_score = None
+        if llm_parser_service is not None:
+            payload = _fetch_llm_payload(text, llm_parser_service)
+            llm_jd = _run_llm_only(text, payload)
+            if llm_jd is not None:
+                llm_score = score_jd(llm_jd, expected)
+            hybrid_jd = _run_hybrid(text, payload)
+            hybrid_score = score_jd(hybrid_jd, expected)
+
+        modes = {
+            "deterministic": deterministic_score,
+            "llm_only": llm_score,
+            "hybrid": hybrid_score,
+        }
+        per_fixture.append({"fixture": fixture_path.name, "modes": modes})
 
     _print_summary(per_fixture)
 

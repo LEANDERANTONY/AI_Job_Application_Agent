@@ -23,7 +23,10 @@ from src.resume_builder import build_tailored_resume_artifact
 from src.schemas import AssistantResponse, ResumeDocument
 from src.services.fit_service import build_fit_analysis
 from src.services.jd_summary_service import generate_job_summary_view
-from src.services.job_service import build_job_description_from_text
+from src.services.job_service import (
+    build_job_description_from_text,
+    build_job_description_from_text_auto,
+)
 from src.services.profile_service import (
     build_candidate_profile_from_resume_auto,
 )
@@ -114,7 +117,9 @@ def parse_job_description_upload(*, filename: str, mime_type: str, content_base6
         mime_type=mime_type,
     )
     job_description_text = parse_jd_text(uploaded_file)
-    job_description = build_job_description_from_text(job_description_text)
+    # Production parsing path: LLM source-of-truth with deterministic
+    # fallback. Same architecture we use for resume parsing.
+    job_description = build_job_description_from_text_auto(job_description_text)
     jd_summary_view = generate_job_summary_view(
         openai_service=OpenAIService(),
         job_description=job_description,
@@ -146,7 +151,7 @@ def run_workspace_analysis(
     )
     candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
     job_description = _enrich_job_description_from_imported_posting(
-        build_job_description_from_text(job_description_text),
+        build_job_description_from_text_auto(job_description_text),
         imported_job_posting,
     )
     fit_analysis = build_fit_analysis(candidate_profile, job_description)

@@ -1,10 +1,16 @@
+import logging
 import re
 from typing import Iterable, List
 
 from src.errors import InputValidationError
+from src.openai_service import OpenAIService
 from src.parsers.jd import clean_text, extract_job_details
 from src.schemas import JobDescription, JobRequirements
+from src.services.jd_llm_parser_service import JobDescriptionLLMParserService
 from src.utils import dedupe_strings
+
+
+logger = logging.getLogger(__name__)
 
 
 SECTION_ALIASES = {
@@ -135,6 +141,9 @@ def extract_job_summary_sections(cleaned_text: str, title: str = "") -> List[dic
 
 
 def build_job_description_from_text(raw_text: str) -> JobDescription:
+    """Deterministic JD parser. Used as the production fallback when the
+    LLM is unreachable; ``build_job_description_from_text_auto`` is the
+    main entry point in production."""
     if not isinstance(raw_text, str):
         raise TypeError("raw_text must be a string.")
 
@@ -166,3 +175,98 @@ def build_job_description_from_text(raw_text: str) -> JobDescription:
             nice_to_haves=nice_to_haves,
         ),
     )
+
+
+def _build_job_description_from_llm_payload(
+    *,
+    raw_text: str,
+    deterministic_profile: JobDescription,
+    payload: dict,
+) -> JobDescription:
+    """Build a JobDescription from a successful LLM payload. Pure-LLM
+    source-of-truth for every field; the deterministic profile is only
+    used when the LLM-call path failed entirely (handled upstream in
+    ``build_job_description_from_text_auto``)."""
+    return JobDescription(
+        title=str(payload.get("title") or "").strip() or "Unknown Role",
+        raw_text=raw_text,
+        cleaned_text=deterministic_profile.cleaned_text,
+        location=str(payload.get("location") or "").strip() or None,
+        salary=str(payload.get("salary") or "").strip() or None,
+        requirements=JobRequirements(
+            hard_skills=dedupe_strings(payload.get("hard_skills") or []),
+            soft_skills=dedupe_strings(payload.get("soft_skills") or []),
+            experience_requirement=str(
+                payload.get("experience_requirement") or ""
+            ).strip()
+            or None,
+            must_haves=dedupe_strings(payload.get("must_haves") or []),
+            nice_to_haves=dedupe_strings(payload.get("nice_to_haves") or []),
+        ),
+    )
+
+
+def build_job_description_from_text_auto(
+    raw_text: str,
+    parser_service: JobDescriptionLLMParserService | None = None,
+) -> JobDescription:
+    """Production JD-parsing entry point. Mirror of the resume hybrid
+    architecture: LLM source-of-truth with full deterministic fallback.
+
+    Flow:
+      1. Always parse deterministically (gives us cleaned_text + a
+         safe fallback if anything below fails).
+      2. If LLM parser unavailable → return deterministic.
+      3. If LLM call raises → log + return deterministic.
+      4. If LLM payload doesn't carry a title or any structured
+         signal → return deterministic.
+      5. Otherwise return the LLM-derived JobDescription.
+
+    Quality on the 15-fixture test set: deterministic 0.78, LLM-only
+    expected to lift especially on location + salary + niche skills.
+    """
+    deterministic_profile = build_job_description_from_text(raw_text)
+
+    llm_parser = parser_service or JobDescriptionLLMParserService(
+        openai_service=OpenAIService()
+    )
+    if not llm_parser.is_available():
+        logger.warning(
+            "JD parser fallback: LLM parser unavailable; returning deterministic profile."
+        )
+        return deterministic_profile
+
+    try:
+        payload = llm_parser.parse(raw_text)
+    except Exception as exc:
+        logger.exception(
+            "JD parser fallback: LLM parsing failed (error=%s); returning deterministic profile.",
+            exc,
+        )
+        return deterministic_profile
+
+    # Viability check: payload must have at least a title or one
+    # structured field populated. If everything came back empty,
+    # something went wrong upstream — fall back to deterministic.
+    if not _llm_jd_payload_viable(payload):
+        logger.warning(
+            "JD parser fallback: LLM payload not viable; returning deterministic profile."
+        )
+        return deterministic_profile
+
+    return _build_job_description_from_llm_payload(
+        raw_text=raw_text,
+        deterministic_profile=deterministic_profile,
+        payload=payload,
+    )
+
+
+def _llm_jd_payload_viable(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if str(payload.get("title") or "").strip():
+        return True
+    for key in ("hard_skills", "soft_skills", "must_haves", "nice_to_haves"):
+        if list(payload.get(key) or []):
+            return True
+    return False
