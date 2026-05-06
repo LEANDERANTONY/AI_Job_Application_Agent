@@ -1,0 +1,39 @@
+Job Posting · Posted 3 days ago · 47 applicants
+
+Apply now to join our growing team.
+
+Senior Data Scientist (Marketing Analytics)
+
+Remote · United States · Full-time · Mid-Senior
+
+About the role
+
+We are looking for a Senior Data Scientist to join the Marketing Analytics team. You'll
+partner with brand and growth teams to design experiments, build attribution models, and
+turn customer-behavior data into action.
+
+Responsibilities
+
+- Design and analyze A/B tests for paid acquisition, email, and onsite experiments.
+- Build and maintain marketing-mix models that inform budget allocation across channels.
+- Develop customer-segmentation models from first-party behavioral data.
+- Collaborate with engineering on telemetry instrumentation and data quality.
+- Translate analytical findings into clear narratives for non-technical stakeholders.
+
+Required qualifications
+
+- 5+ years of experience in analytics, data science, or applied statistics.
+- Advanced SQL skills and proficiency in Python (pandas, scikit-learn).
+- Hands-on experience with experimentation platforms (Statsig, Optimizely, or similar).
+- Familiarity with attribution modeling and causal-inference techniques.
+- Master's or PhD in Statistics, Economics, or related quantitative field.
+
+Preferred qualifications
+
+- Experience with Looker, Tableau, or other BI tools.
+- Background in consumer or e-commerce companies.
+- Comfort with cloud data warehouses (Snowflake, BigQuery, Redshift).
+
+Compensation
+
+The base salary range for this role is $145,000-$195,000 depending on level and location.

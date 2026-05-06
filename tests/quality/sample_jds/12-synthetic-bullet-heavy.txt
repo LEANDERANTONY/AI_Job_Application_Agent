@@ -1,0 +1,33 @@
+Site Reliability Engineer (Senior)
+Remote (US/Canada/UK only) · Full time
+
+What you'll do
+
+• Operate the production observability stack (Prometheus, Grafana, Loki) for a fleet of
+  ~3,500 Kubernetes pods across 7 regions.
+• Lead incident response as the on-call commander; participate in 1 week per 6-week
+  rotation.
+• Design and own SLOs and error budgets across the platform.
+• Build and maintain Terraform modules used by every product team.
+• Partner with security on vulnerability triage and remediation across base images.
+• Mentor junior SREs through their first on-call shifts.
+
+What we're looking for
+
+• 5+ years of SRE / DevOps / production-engineering experience.
+• Deep experience with Kubernetes, including control-plane internals.
+• Hands-on with Prometheus, Grafana, Loki, Tempo, or similar observability stacks.
+• Proficiency in Terraform, Ansible, or Pulumi.
+• Strong scripting skills in Python or Go.
+• Comfort with on-call rotations and incident response.
+
+Bonus points
+
+• Past experience with AWS, GCP, or multi-cloud setups.
+• Background in security, compliance (SOC 2, ISO 27001), or governance.
+• Open-source contributions to CNCF projects.
+
+Comp & benefits
+
+We offer competitive base salary ($170K-$210K USD), equity, a $4K annual learning
+budget, and remote stipend. Full medical/dental/vision coverage in supported regions.

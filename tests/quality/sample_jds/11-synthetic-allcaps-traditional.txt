@@ -1,0 +1,36 @@
+SOFTWARE DEVELOPMENT ENGINEER III, AWS LAMBDA
+
+LOCATION: SEATTLE, WA (US) OR VANCOUVER, BC (CANADA)
+
+JOB SUMMARY
+
+AWS Lambda is the world's most widely used serverless compute platform. We are
+looking for an SDE III to join the data-plane team, where you'll work on the systems
+that execute customer code in millions of containers per day.
+
+ESSENTIAL DUTIES AND RESPONSIBILITIES
+
+* Design, implement, and operate distributed systems written in Rust, Go, or C++.
+* Lead the technical execution of multi-quarter initiatives spanning 4-6 engineers.
+* Conduct code reviews and mentor junior engineers on best practices.
+* Own production incidents end-to-end including post-mortems and remediation.
+* Partner with product managers and architects to define technical roadmaps.
+
+BASIC QUALIFICATIONS
+
+* 6+ years of professional software-engineering experience.
+* Strong programming skills in C++, Rust, or Go.
+* Experience designing and operating distributed systems at scale.
+* Bachelor's degree in Computer Science or equivalent practical experience.
+
+PREFERRED QUALIFICATIONS
+
+* Master's or PhD in Computer Science.
+* Experience with Linux internals, container runtimes, or kernel programming.
+* Track record of delivering complex projects with broad organizational impact.
+* Experience with AWS or similar cloud platforms.
+
+COMPENSATION
+
+Base pay range: USD $185,300 - USD $360,300 / year. Compensation also includes equity
+and sign-on bonus.

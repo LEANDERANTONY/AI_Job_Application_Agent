@@ -1,0 +1,16 @@
+{
+  "title_must_include": "SOFTWARE DEVELOPMENT ENGINEER III",
+  "location_must_include": "Seattle",
+  "salary_must_include": "$185,300",
+  "experience_requirement_must_include": "6+ years",
+  "hard_skills_must_include": [
+    "Rust",
+    "Go",
+    "C++",
+    "Linux",
+    "AWS"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Synthetic JD — Amazon-style ALL-CAPS section headers ('JOB SUMMARY', 'ESSENTIAL DUTIES AND RESPONSIBILITIES', 'BASIC QUALIFICATIONS', 'PREFERRED QUALIFICATIONS'). Bullet markers are '*' not '•' or '-'. Tests case-insensitive section detection and asterisk bullets. Long location string with two cities + two countries."
+}

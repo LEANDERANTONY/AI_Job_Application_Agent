@@ -1,0 +1,80 @@
+Application Software Engineer -  Embedded Software C++
+Sunnyvale
+
+About us
+
+Founded in 2017, Wayve is the leading developer of Embodied AI technology.  Our advanced AI software and foundation models enable vehicles to perceive, understand, and navigate any complex environment, enhancing the usability and safety of automated driving systems.
+
+Our vision is to create autonomy that propels the world forward.  Our intelligent, mapless, and hardware-agnostic AI products are designed for automakers, accelerating the transition from assisted to automated driving.  In our fast-paced environment big problems ignite us—we embrace uncertainty, leaning into complex challenges to unlock groundbreaking solutions. We aim high and stay humble in our pursuit of excellence, constantly learning and evolving as we pave the way for a smarter, safer future.
+
+At Wayve, your contributions matter.  We value diversity, embrace new perspectives, and foster an inclusive work environment; we back each other to deliver impact.
+
+Make Wayve the experience that defines your career!
+
+The Role
+
+We’re seeking an exceptional Application SW Engineer to join our Application Engineering org, focused on localising and advancing Wayve’s autonomous driving technology for the US market. This is a unique opportunity to play a hands-on role in shaping our AV capabilities in the US from the ground up.
+
+In this role, you’ll be responsible for the bring-up and early validation of our AI software stack on customer hardware platforms, ensuring seamless performance across diverse SoCs and operating systems. You’ll collaborate closely with cross-functional teams across Verification, Release, and OEM partners to ensure smooth integration and reliable delivery.
+
+Responsibilities:
+
+- Execute software bring-up on customer hardware platforms (e.g. NVIDIA Drive, Qualcomm Ride).
+
+- Port and configure Linux-based systems, QNX, and Adaptive AUTOSAR environments.
+
+- Integrate and validate drivers, middleware, and boot-time configurations.
+
+- Collaborate with Verification & Release teams to integrate hardware into CI/CD, HIL, and test infrastructure.
+
+- Work with OEM and Tier 1 teams to resolve hardware-specific integration issues.
+
+- Implement system-level diagnostics, logging, and secure boot configuration.
+
+- Develop automation for setup, flashing, health checks, and test execution on target hardware.
+
+About you
+
+In order to set you up for success as an Application Software Engineer at Wayve, we’re looking for the following skills and experience.
+
+Essential
+
+- 8+ years of experience in embedded or automotive software development, ideally with hands-on platform bring-up experience.
+
+- Strong proficiency in C/C++, Bash, and Python.
+
+- Deep understanding of Linux-based embedded systems (Yocto, systemd, bootloaders, device trees).
+
+- Familiarity with QNX and Adaptive AUTOSAR environments and the ability to configure and debug them on target hardware.
+
+- Experience with bring-up on automotive-grade SoCs (e.g., NVIDIA Orin, Qualcomm SA8295/SA8650, Renesas, TI).
+
+- Comfortable working with hardware debuggers, flashing tools, serial consoles, and board support packages (BSPs).
+
+- Familiarity with communication protocols like CAN, Ethernet, PCIe, SPI, I2C.
+
+- Hands-on experience integrating embedded platforms into CI/CD pipelines and test automation frameworks.
+
+Desirable
+
+- Exposure to automotive verification environments (e.g., HIL systems, Vector toolchains, custom CI rigs).
+
+- Experience working in a safety-critical domain with an understanding of ISO 26262, boot-time determinism, and watchdogs.
+
+- Understanding of secure boot, OTA updates, and system-level cybersecurity topics.
+
+- Familiarity with Docker, Jenkins, Git, and artifact management tools like JFrog Artifactory.
+
+This role is a full-time role based in Sunnyvale or Detroit (hybrid) and the reasonably estimated salary for this role ranges from $209,700 to $298,200 plus a competitive equity package. Actual compensation is based on the candidate's skills, qualifications, and experience.
+
+At Wayve we want the best of all worlds so we operate a hybrid working policy that combines time together in our offices and workshops to fuel innovation, culture, relationships and learning, and time spent working from home. We operate core working hours so you can determine the schedule that works best for you and your team.
+Wayve is committed to creating an inclusive interview experience. If you require any accommodations or adjustments to participate fully in our interview process, please let us know.
+
+We understand that everyone has a unique set of skills and experiences and that not everyone will meet all of the requirements listed above. If you’re passionate about self-driving cars and think you have what it takes to make a positive impact on the world, we encourage you to apply.At Wayve we're committed to creating a diverse, fair and respectful culture that is inclusive of everyone based on their unique skills and perspectives, and regardless of sex, race, religion or belief, ethnic or national origin, disability, age, citizenship, marital, domestic or civil partnership status, sexual orientation, gender identity, veteran status, pregnancy or related condition  (including breastfeeding) or any other basis as protected by applicable law.
+
+For more information visit Careers at Wayve.
+
+To learn more about what drives us, visit Values at Wayve
+
+DISCLAIMER: We will not ask about marriage or pregnancy, care responsibilities or disabilities in any of our job adverts or interviews. However, we do look to capture information about care responsibilities, and disabilities among other diversity information as part of an optional DEI Monitoring form to help us identify areas of improvement in our hiring process and ensure that the process is inclusive and non-discriminatory.
+

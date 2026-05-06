@@ -1,0 +1,27 @@
+{
+  "title_must_include": "Senior Growth Marketer",
+  "location_must_include": "New York",
+  "salary_must_include": "$135K",
+  "experience_requirement_must_include": "5+ years",
+  "hard_skills_must_include": [
+    "SQL"
+  ],
+  "niche_skills_known_to_miss": [
+    "Mixpanel",
+    "Heap",
+    "Amplitude",
+    "Segment CDP",
+    "Snowplow",
+    "Klaviyo",
+    "Iterable",
+    "Customer.io",
+    "RudderStack",
+    "Looker Studio",
+    "Meta Ads",
+    "TikTok Ads",
+    "Google Ads"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Synthetic JD with niche martech / analytics skills that are NOT in our HARD_SKILL_KEYWORDS taxonomy. Tests the under-extraction problem: the parser will likely catch only 'SQL' and miss the 13 marketing-tech tools (Mixpanel, Snowplow, Segment CDP, etc.). 'niche_skills_known_to_miss' is a separate list documenting the known gap, scored separately so we measure HOW MUCH the parser misses on long-tail vocabulary."
+}

@@ -1,0 +1,20 @@
+{
+  "title_must_include": "Senior Software Engineer",
+  "location_must_include": "San Francisco",
+  "salary_must_include": "$180,000",
+  "experience_requirement_must_include": "5+ years",
+  "hard_skills_must_include": [
+    "Go",
+    "Python",
+    "PostgreSQL",
+    "Kafka",
+    "Kubernetes"
+  ],
+  "must_haves_must_include_substrings": [
+    "5+ years"
+  ],
+  "nice_to_haves_must_include_substrings": [
+    "Datadog"
+  ],
+  "notes": "Synthetic JD — clean canonical format. Standard 'Requirements' / 'Nice to haves' headings. Specific metrics ('4 billion API calls', '$180,000 - $240,000'). Should be the EASIEST fixture for the deterministic parser; if this fails the parser is broken."
+}

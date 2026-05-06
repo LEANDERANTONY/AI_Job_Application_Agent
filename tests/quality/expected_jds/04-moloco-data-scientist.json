@@ -1,0 +1,13 @@
+{
+  "title_must_include": "Data Scientist",
+  "location_must_include": "Menlo Park",
+  "salary_must_include": "",
+  "experience_requirement_must_include": "",
+  "hard_skills_must_include": [
+    "Python",
+    "SQL"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Live JD from Moloco — data scientist II in Growth Analytics. Multi-location string ('Menlo Park, California, United States; San Francisco, California, United States') tests location detection across semicolons. Skills section says 'experience in Python and SQL is required' — not in canonical 'Required:' bullet form."
+}

@@ -1,0 +1,10 @@
+{
+  "title_must_include": "Account Executive",
+  "location_must_include": "San Francisco",
+  "salary_must_include": "",
+  "experience_requirement_must_include": "",
+  "hard_skills_must_include": [],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Live JD from Figma — Enterprise Account Executive (sales). Tests JD parser on a NON-engineering role: most of the 'requirements' are soft/business skills like 'sales methodology', 'discovery and value-selling techniques', 'managing complex sales cycles' that won't match HARD_SKILL_KEYWORDS. Location uses bullet-separator ('San Francisco, CA • New York, NY • United States')."
+}

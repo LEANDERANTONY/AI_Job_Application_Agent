@@ -1,0 +1,37 @@
+Senior Software Engineer, Backend
+San Francisco, CA (Hybrid)
+
+Salary range: $180,000 - $240,000 + equity
+
+About Acme
+
+Acme is a Series-C SaaS company with 320 employees building the next generation of
+developer-productivity tools. We process 4 billion API calls per month for engineering
+teams at companies like Stripe, Notion, and Linear.
+
+What you'll do
+
+- Own the design and implementation of our event-streaming infrastructure (Kafka,
+  Debezium, ClickHouse).
+- Lead the migration of three legacy services from MongoDB onto PostgreSQL.
+- Mentor 2-3 junior engineers and drive the team's PR-review playbook.
+- Partner with Product and Design on quarterly roadmap planning.
+
+Requirements
+
+- 5+ years of experience building production backend services.
+- Strong proficiency in Go and Python.
+- Hands-on experience with PostgreSQL, Kafka, and Kubernetes.
+- Track record of leading projects from design through deployment.
+
+Nice to haves
+
+- Experience with Datadog or similar observability stacks.
+- Background in B2B SaaS or developer tools.
+- Open-source contributions.
+
+Benefits
+
+- Comprehensive health insurance.
+- 4 weeks paid vacation.
+- Annual learning budget of $2,000.

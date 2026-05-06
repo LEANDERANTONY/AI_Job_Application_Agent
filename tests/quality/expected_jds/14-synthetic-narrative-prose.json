@@ -1,0 +1,13 @@
+{
+  "title_must_include": "Director of Product",
+  "location_must_include": "San Francisco",
+  "salary_must_include": "$260K",
+  "experience_requirement_must_include": "seven years",
+  "hard_skills_must_include": [
+    "Kubernetes",
+    "Terraform"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Synthetic JD — narrative / conversational prose with NO bulleted requirements section. Tests the parser on long-form descriptive text. Experience requirement uses written form 'at least seven years' (NOT '7+ years'). Skills are mentioned conversationally ('Familiarity with Kubernetes, Terraform, or developer-experience products is a plus'). Designed to expose how brittle pure-regex parsing is on prose."
+}
