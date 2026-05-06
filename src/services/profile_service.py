@@ -1566,40 +1566,49 @@ def _build_candidate_profile_from_llm_payload(
     deterministic_profile: CandidateProfile,
     payload: dict,
 ) -> CandidateProfile:
+    """Build the candidate profile from a successful LLM payload.
+
+    Design (post-Tier-1 simplification): the LLM is the source of
+    truth for every content field. The previous implementation did a
+    per-field fallback to the deterministic parser when the LLM
+    returned empty for any individual field. The 15-fixture quality
+    run (LLM-only 0.99 vs hybrid 0.98) showed that hedge didn't pay
+    off — and the deterministic backfill occasionally promoted stray
+    text into phantom entries. So every content field below now pulls
+    cleanly from the LLM payload, with no per-field deterministic
+    safety net.
+
+    The deterministic parser still runs unconditionally upstream (in
+    ``build_candidate_profile_from_resume_auto``) and contributes its
+    ``source_signals`` notes here so the 'What we found' UI line still
+    summarises both what the LLM extracted and what the keyword scan
+    saw in the source text.
+
+    The deterministic profile is also the full fallback when the LLM
+    is unavailable or its payload fails the viability check — see
+    ``build_candidate_profile_from_resume_auto`` for that branch.
+    """
     experience_entries: list[WorkExperience] = []
     for entry in payload.get("experience") or []:
         experience = _build_experience_entry_from_llm_payload(entry)
         if experience:
             experience_entries.append(experience)
 
-    # Confidence-aware merge for projects/publications: if the LLM
-    # included the key in its response (even as an empty list), trust
-    # that signal rather than falling back to the deterministic
-    # parser's content. The LLM's empty-vs-populated decision is
-    # generally more reliable than the regex-based scans, and the
-    # fallback occasionally promoted stray text into phantom entries.
-    llm_projects_raw = payload.get("projects")
     project_entries: list[ProjectEntry] = []
-    if llm_projects_raw is not None:
-        for entry in llm_projects_raw or []:
-            if not isinstance(entry, dict):
-                continue
-            project = _build_project_entry_from_llm_payload(entry)
-            if project:
-                project_entries.append(project)
-    llm_projects_authoritative = llm_projects_raw is not None
+    for entry in payload.get("projects") or []:
+        if not isinstance(entry, dict):
+            continue
+        project = _build_project_entry_from_llm_payload(entry)
+        if project:
+            project_entries.append(project)
 
-    llm_publications_raw = payload.get("publications")
-    publication_entries: list[str] = []
-    if llm_publications_raw is not None:
-        publication_entries = [
-            _normalize_line(item)
-            for item in (llm_publications_raw or [])
-            if _normalize_line(item)
-        ]
-    llm_publications_authoritative = llm_publications_raw is not None
+    publication_entries = [
+        _normalize_line(item)
+        for item in (payload.get("publications") or [])
+        if _normalize_line(item)
+    ]
 
-    education_entries = []
+    education_entries: list[EducationEntry] = []
     for item in payload.get("education") or []:
         if not isinstance(item, dict):
             continue
@@ -1614,11 +1623,10 @@ def _build_candidate_profile_from_llm_payload(
         )
 
     llm_source_signals = dedupe_strings(payload.get("source_signals") or [])
-    project_count = len(project_entries)
-    if project_count:
+    if project_entries:
         llm_source_signals.append(
             "Structured {count} project entries with the LLM parser.".format(
-                count=project_count
+                count=len(project_entries)
             )
         )
     if publication_entries:
@@ -1630,30 +1638,22 @@ def _build_candidate_profile_from_llm_payload(
     llm_source_signals.append("Candidate profile structured with the LLM parser.")
 
     return CandidateProfile(
-        full_name=_normalize_line(payload.get("full_name")) or deterministic_profile.full_name,
-        location=_normalize_line(payload.get("location")) or deterministic_profile.location,
-        contact_lines=dedupe_strings(
-            payload.get("contact_lines") or deterministic_profile.contact_lines
-        ),
+        full_name=_normalize_line(payload.get("full_name")),
+        location=_normalize_line(payload.get("location")),
+        contact_lines=dedupe_strings(payload.get("contact_lines") or []),
         source=resume_document.source or "resume_upload",
         resume_text=resume_document.text,
-        skills=dedupe_strings(payload.get("skills") or deterministic_profile.skills),
-        experience=experience_entries or list(deterministic_profile.experience),
-        education=_prune_education_entries(education_entries)
-        or list(deterministic_profile.education),
-        certifications=dedupe_strings(
-            payload.get("certifications") or deterministic_profile.certifications
-        ),
-        projects=(
-            project_entries
-            if llm_projects_authoritative
-            else (project_entries or list(deterministic_profile.projects))
-        ),
-        publications=dedupe_strings(
-            publication_entries
-            if llm_publications_authoritative
-            else (publication_entries or deterministic_profile.publications)
-        ),
+        skills=dedupe_strings(payload.get("skills") or []),
+        experience=experience_entries,
+        education=_prune_education_entries(education_entries),
+        certifications=dedupe_strings(payload.get("certifications") or []),
+        projects=project_entries,
+        publications=dedupe_strings(publication_entries),
+        # Source signals are the one field still merged with
+        # deterministic — they're diagnostic notes ('What we found')
+        # rather than substantive content, and combining both lists
+        # gives the UI a richer summary without risk of polluting the
+        # extracted profile.
         source_signals=dedupe_strings(
             llm_source_signals + list(deterministic_profile.source_signals)
         ),
@@ -1664,16 +1664,31 @@ def build_candidate_profile_from_resume_auto(
     resume_document: ResumeDocument,
     parser_service: ResumeLLMParserService | None = None,
 ) -> CandidateProfile:
+    """Production resume-parsing entry point.
+
+    Architecture: pure-LLM source-of-truth with full deterministic
+    fallback. The deterministic parser runs on every request to gather
+    'source_signals' diagnostics (the 'What we found' UI line), but
+    the LLM payload alone populates every content field whenever the
+    LLM is reachable. The deterministic profile only takes over end-
+    to-end when one of the LLM-failure branches below trips:
+
+        1. LLM parser not configured (no API key)
+        2. LLM call raised (timeout / network / rate-limit / 5xx)
+        3. LLM payload didn't pass the viability check (no
+           structured content)
+
+    A previous design merged the two profiles per-field (LLM if
+    populated, deterministic otherwise). The 15-fixture quality run
+    showed the hedge didn't pay off — pure LLM scored 0.99, the
+    per-field hybrid scored 0.98. Simpler design, same or better
+    quality.
+    """
     if not isinstance(resume_document, ResumeDocument):
         raise TypeError("resume_document must be a ResumeDocument instance.")
 
     deterministic_profile = build_candidate_profile_from_resume(resume_document)
 
-    # Previously TXT uploads short-circuited to deterministic-only.
-    # Tier-1 parser-quality testing showed the deterministic parser
-    # averaged ~0.77 vs the LLM-hybrid path's ~0.99 across realistic
-    # resumes, so we now route every filetype through the LLM hybrid.
-    # Cost is ~$0.01 per upload — trivial vs the quality lift.
     llm_parser = parser_service or ResumeLLMParserService(
         openai_service=OpenAIService()
     )
