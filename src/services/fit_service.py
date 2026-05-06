@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from src.schemas import CandidateProfile, FitAnalysis, JobDescription
 from src.services.profile_service import build_candidate_context_text
+from src.taxonomy import canonicalize_skill
 from src.utils import dedupe_strings, match_keywords
 
 
@@ -93,18 +94,30 @@ def build_fit_analysis(
     candidate_text = build_candidate_context_text(candidate_profile)
     job_requirements = job_description.requirements
 
+    # Canonicalize skills on both sides so synonym variants ('Postgres'
+    # vs 'PostgreSQL', 'k8s' vs 'Kubernetes', 'JS' vs 'JavaScript')
+    # match cleanly. Without canonicalization, synonyms surface in
+    # `missing_hard_skills` and propagate into TailoringAgent's prompt
+    # as "add evidence for X" — even when the candidate already has X.
+    candidate_skill_canon = {canonicalize_skill(s) for s in candidate_profile.skills}
+
     matched_hard_skills = dedupe_strings(
         job_skill
         for job_skill in job_requirements.hard_skills
-        if job_skill.lower() in {skill.lower() for skill in candidate_profile.skills}
+        if canonicalize_skill(job_skill) in candidate_skill_canon
         or job_skill in match_keywords(candidate_text, [job_skill])
     )
     missing_hard_skills = [
         skill for skill in job_requirements.hard_skills if skill not in matched_hard_skills
     ]
 
-    matched_soft_skills = match_keywords(candidate_text, job_requirements.soft_skills)
-    matched_soft_skills = dedupe_strings(matched_soft_skills)
+    candidate_soft_canon = {canonicalize_skill(s) for s in candidate_profile.skills}
+    matched_soft_skills = dedupe_strings(
+        soft_skill
+        for soft_skill in job_requirements.soft_skills
+        if canonicalize_skill(soft_skill) in candidate_soft_canon
+        or soft_skill in match_keywords(candidate_text, [soft_skill])
+    )
     missing_soft_skills = [
         skill for skill in job_requirements.soft_skills if skill not in matched_soft_skills
     ]

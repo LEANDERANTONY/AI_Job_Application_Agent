@@ -95,6 +95,16 @@ def _build_resume_llm_parser_prompt(resume_document: ResumeDocument) -> dict[str
         "Keep project names exactly when possible. "
         "Do not place project links in contact_lines. "
         "Separate projects from work experience whenever the resume treats them as projects. "
+        # Canonicalization: parser output on the resume side is compared
+        # against parser output on the job-description side via string
+        # equality, so synonym variants ('Postgres' vs 'PostgreSQL',
+        # 'k8s' vs 'Kubernetes') would silently fall on opposite sides.
+        # Ask the LLM to emit the formal canonical name. A small
+        # alias map (src/taxonomy.py) catches the rest.
+        "For skills, prefer the formal canonical name: write 'PostgreSQL' "
+        "(not 'Postgres'), 'Kubernetes' (not 'k8s'), 'JavaScript' (not 'JS'), "
+        "'TypeScript' (not 'TS'), 'Node.js' (not 'NodeJS' / 'node js'), "
+        "'TensorFlow' (not 'TF'), 'scikit-learn' (not 'sklearn'). "
         "Return JSON only with exactly these top-level keys:\n"
         f"{contract_lines}"
     )

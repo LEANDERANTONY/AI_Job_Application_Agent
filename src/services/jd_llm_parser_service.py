@@ -79,6 +79,17 @@ def _build_jd_llm_parser_prompt(jd_text: str) -> dict[str, Any]:
         "surface every technical-tool reference, not just common languages. "
         "When the JD lists multiple locations separated by bullets / pipes / semicolons, "
         "return the first non-Remote one as the primary location. "
+        # Canonicalization: skill output is compared against the resume
+        # parser's skill output via string equality on the matching
+        # layer. Use the formal canonical name so synonym variants
+        # don't silently fall on opposite sides of the match.
+        "For skill names, prefer the formal canonical form: write "
+        "'PostgreSQL' (not 'Postgres'), 'Kubernetes' (not 'k8s'), "
+        "'JavaScript' (not 'JS'), 'TypeScript' (not 'TS'), 'Node.js' "
+        "(not 'NodeJS' / 'node js'), 'TensorFlow' (not 'TF'), 'scikit-learn' "
+        "(not 'sklearn'). When the JD itself uses a short form, you may keep "
+        "the short form if that's the official product name (e.g. 'AWS' is "
+        "fine — that's the canonical product name). "
         "Return JSON only with exactly these top-level keys:\n"
         f"{contract_lines}"
     )
