@@ -1,0 +1,53 @@
+Captain Jacqueline Reyes, USAF
+Norfolk, VA  |  jreyes88@protonmail.com  |  (757) 555-0290
+
+CAREER OBJECTIVE
+
+Cyber-warfare officer transitioning from active duty into civilian information-security
+leadership roles. TS/SCI clearance with CI poly (active through 2027). 10+ years in
+defensive cyber operations, red team coordination, and incident response.
+
+PROFESSIONAL EXPERIENCE
+
+United States Air Force, 16th Air Force (Cyber)
+Captain — Cyber Operations Officer
+Joint Base San Antonio - Lackland, TX  |  Jun 2020 - Present
+- Led a 22-person Cyber Protection Team responding to nation-state intrusions across
+  three Combatant Commands.
+- Authored the joint TTP for adversary-in-the-middle detection now adopted across USCYBERCOM.
+- Recipient of the 2023 Air Force Cyber Excellence Medal (highest unit honor).
+
+United States Air Force, 92nd Information Operations Squadron
+1st Lieutenant — Network Warfare Officer
+Joint Base San Antonio - Lackland, TX  |  Aug 2017 - May 2020
+- Planned and executed full-scope red-team engagements against DoD information systems.
+- Briefed General Officer leadership weekly on cyber threat posture (~50 briefings).
+
+United States Air Force, 67th Cyberspace Wing
+2nd Lieutenant — Cyber Operations Officer (Initial Skills)
+Goodfellow AFB, TX  |  May 2015 - Jul 2017
+- Completed 14-month Undergraduate Cyber Training pipeline (top 3% of class).
+
+EDUCATION
+
+Air Force Institute of Technology
+Master of Science in Cyber Operations  |  2017
+
+United States Air Force Academy
+Bachelor of Science in Computer Science  |  2011 - 2015
+Distinguished Graduate (top 10%)
+
+CERTIFICATIONS
+
+- GIAC Certified Incident Handler (GCIH), 2022
+- GIAC Certified Forensic Analyst (GCFA), 2021
+- Offensive Security Certified Professional (OSCP), 2019
+
+CLEARANCES
+
+- TS/SCI with CI Polygraph (active, expires 2027)
+
+TECHNICAL SKILLS
+
+Network forensics, malware analysis, threat hunting, MITRE ATT&CK, Splunk, ELK stack,
+Wireshark, Volatility, Python, PowerShell, Bash, Burp Suite, Metasploit, Cobalt Strike

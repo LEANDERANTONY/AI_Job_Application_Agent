@@ -1,0 +1,44 @@
+José Hernández García
+Madrid, España
+jose.hernandez@ejemplo.es | +34 611 22 33 44 | linkedin.com/in/josehg
+
+Resumen Profesional
+
+Ingeniero full-stack con 7 años de experiencia construyendo plataformas SaaS B2B en
+empresas de Madrid y Barcelona. Especializado en arquitecturas distribuidas y observabilidad.
+
+Habilidades Técnicas
+
+Lenguajes: TypeScript, Go, Python
+Frontend: React, Next.js, Tailwind CSS
+Backend: Node.js, NestJS, FastAPI
+Datos: PostgreSQL, MongoDB, Redis, ClickHouse
+Infraestructura: AWS, Docker, Kubernetes, Terraform, GitLab CI
+
+Experiencia Profesional
+
+Cabify · Madrid, España
+Senior Software Engineer · 03/2021 - Actualidad
+- Diseñé el sistema de pricing dinámico (5 ingenieros, 18 meses, 12% más ingresos por viaje).
+- Lideré la migración del monolito Rails a microservicios Go para el equipo de driver-app.
+- Implanté la cultura de post-mortems sin culpa adoptada por toda la empresa.
+
+Glovo · Barcelona, España
+Software Engineer · 06/2018 - 02/2021
+- Mantenedor principal del servicio de geolocalización en tiempo real (40M ubicaciones/día).
+- Construí el SDK de telemetría usado por las apps de partners en 25 países.
+
+Educación
+
+Universidad Politécnica de Madrid · Madrid, España
+Master in Software Engineering · 2016 - 2018
+
+Universidad de Granada · Granada, España
+Bachelor of Engineering in Computer Science · 2012 - 2016
+
+Certificaciones
+
+- AWS Certified Solutions Architect — Professional, 2022
+- Certified Kubernetes Administrator (CKA), 2021
+
+Idiomas: Español (nativo), Inglés (C1), Catalán (B2)

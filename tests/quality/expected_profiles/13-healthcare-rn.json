@@ -1,0 +1,41 @@
+{
+  "full_name": "Diana Okafor",
+  "location": "Chicago, IL",
+  "contact_lines": [
+    "diana.okafor@gmail.com",
+    "(312) 555-0162",
+    "linkedin.com/in/dianaokafor-rn"
+  ],
+  "skills_must_include": [],
+  "experience_count": 3,
+  "experience_titles": [
+    "Charge Nurse",
+    "Staff RN",
+    "Staff RN"
+  ],
+  "experience_organizations_must_include": [
+    "Northwestern Memorial Hospital",
+    "Rush University Medical Center",
+    "Loyola Medicine"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Rush University",
+      "degree_must_include": "Master of Science in Nursing"
+    },
+    {
+      "institution_must_include": "DePaul University",
+      "degree_must_include": "Bachelor of Science in Nursing"
+    }
+  ],
+  "certifications_must_include": [
+    "Critical Care Registered Nurse",
+    "Advanced Cardiac Life Support",
+    "Basic Life Support"
+  ],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "Healthcare resume. Name line includes credential suffixes ('MSN, RN, CCRN' — these are cert-like but follow the name and should be stripped, not used as the name itself). 'CLINICAL EXPERIENCE' section header (not in our aliases — should fall through). Specialty section 'LICENSURE & CERTIFICATIONS' contains a license number that should not become a separate cert entry. Roles use 'Title, RN' suffix pattern. The skills section is intentionally empty in the resume — tests that we don't fail when there's no Skills section."
+}

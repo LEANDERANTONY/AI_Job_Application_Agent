@@ -1,0 +1,42 @@
+{
+  "full_name": "Tomás Flores",
+  "location": "Brooklyn, NY",
+  "contact_lines": [
+    "hello@tomasflores.studio",
+    "tomasflores.studio"
+  ],
+  "skills_must_include": [
+    "Figma"
+  ],
+  "experience_count": 4,
+  "experience_titles": [
+    "Partner",
+    "Senior Product Designer",
+    "Product Designer",
+    "Junior Designer"
+  ],
+  "experience_organizations_must_include": [
+    "flores studio",
+    "airbnb",
+    "lyft",
+    "bbdo"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Rhode Island School of Design",
+      "degree_must_include": "BFA"
+    }
+  ],
+  "certifications_must_include": [],
+  "projects_count_min": 2,
+  "projects_names_must_include": [
+    "DNA",
+    "Vino Vino"
+  ],
+  "publications_count_min": 2,
+  "publications_must_include_substrings": [
+    "what i learned starting a studio",
+    "how to design a system"
+  ],
+  "notes": "Creative resume — entirely lowercase! Tests case sensitivity in name detection (should still find 'tomás flores' even though normal-case detector expects capitalized first letter on each word — accents add another wrinkle). Section headers are also lowercase ('what i do well', 'where i've worked', 'education'). Speaking talks are publications-like. Job titles use 'Title — Org · Loc · Date' em-dash format BUT with lowercase brand names like 'airbnb', 'lyft'. Tough fixture by design — likely deterministic will struggle."
+}

@@ -1,0 +1,46 @@
+Emma Roberts
+Pittsburgh, PA  ·  emma.roberts.cs@cmu.edu  ·  github.com/emmaroberts  ·  +1 (412) 555-0193
+
+Education
+Carnegie Mellon University, School of Computer Science
+B.S. in Computer Science (expected May 2025)
+GPA: 3.91 / 4.00
+
+Coursework: Distributed Systems, Database Systems, Machine Learning, Compilers, OS
+
+Skills
+Languages: Python, C++, Go, Rust, JavaScript, SQL
+Frameworks/Libraries: PyTorch, TensorFlow, React, FastAPI, gRPC
+Tools: Docker, Kubernetes, Git, AWS, Linux, GDB
+
+Experience
+
+Stripe — Software Engineering Intern
+San Francisco, CA  ·  Summer 2024
+- Shipped a webhook-retry-with-backoff feature used by 600k merchants.
+- Wrote integration tests covering 12 failure modes; caught 3 latent bugs in code review.
+- Presented work to the platform-foundations org-wide tech talk (~120 attendees).
+
+Two Sigma — Software Engineering Intern
+New York, NY  ·  Summer 2023
+- Built a real-time options-data feed parser in Rust handling 200k msg/sec.
+- Reduced GC pressure 60% by moving hot-path allocations to an arena allocator.
+
+Carnegie Mellon — Teaching Assistant, 15-440 Distributed Systems
+Pittsburgh, PA  ·  Spring 2024
+- Held weekly office hours, graded course projects, ran two recitation sections.
+
+Projects
+
+Pikv — Single-node persistent KV store in Go
+- Inspired by RocksDB; implemented LSM-tree storage with bloom filters and WAL.
+- Open-sourced; 50+ stars, contributions from 3 external developers.
+
+Compiler for Tiger language — coursework
+- LL(1) parser, type checker, and x86-64 codegen for the Tiger spec from Appel's book.
+- Final grade: A+ across all 5 milestones.
+
+Honors and Activities
+- Carnegie Mellon Dean's List (every semester).
+- Co-president, CMU Women in Computer Science chapter.
+- USACO Platinum Division qualifier (2021).

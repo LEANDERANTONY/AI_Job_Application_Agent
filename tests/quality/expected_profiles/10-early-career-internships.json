@@ -1,0 +1,40 @@
+{
+  "full_name": "Emma Roberts",
+  "location": "Pittsburgh, PA",
+  "contact_lines": [
+    "emma.roberts.cs@cmu.edu",
+    "github.com/emmaroberts",
+    "+1 (412) 555-0193"
+  ],
+  "skills_must_include": [
+    "Python", "C++", "Go", "Rust", "JavaScript", "SQL",
+    "PyTorch", "TensorFlow", "React", "FastAPI",
+    "Docker", "Kubernetes", "Git", "AWS"
+  ],
+  "experience_count": 3,
+  "experience_titles": [
+    "Software Engineering Intern",
+    "Software Engineering Intern",
+    "Teaching Assistant"
+  ],
+  "experience_organizations_must_include": [
+    "Stripe",
+    "Two Sigma",
+    "Carnegie Mellon"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Carnegie Mellon",
+      "degree_must_include": "B.S. in Computer Science"
+    }
+  ],
+  "certifications_must_include": [],
+  "projects_count_min": 2,
+  "projects_names_must_include": [
+    "Pikv",
+    "Compiler for Tiger"
+  ],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "Early-career CMU student. Three internships with the 'Org — Title' em-dash format AND a separate Carnegie Mellon TA role on the same campus as the school. Tests that we don't merge the school's 'Carnegie Mellon - Teaching Assistant' Experience entry with the Education section. Plus 'Honors and Activities' as a section name (not in our aliases — should be ignored, not mis-routed)."
+}

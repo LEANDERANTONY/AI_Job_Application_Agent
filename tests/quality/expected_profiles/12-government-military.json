@@ -1,0 +1,40 @@
+{
+  "full_name": "Jacqueline Reyes",
+  "location": "Norfolk, VA",
+  "contact_lines": [
+    "jreyes88@protonmail.com",
+    "(757) 555-0290"
+  ],
+  "skills_must_include": [
+    "Python", "PowerShell", "Bash", "Splunk"
+  ],
+  "experience_count": 3,
+  "experience_titles": [
+    "Cyber Operations Officer",
+    "Network Warfare Officer",
+    "Cyber Operations Officer"
+  ],
+  "experience_organizations_must_include": [
+    "United States Air Force"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Air Force Institute of Technology",
+      "degree_must_include": "Master of Science"
+    },
+    {
+      "institution_must_include": "United States Air Force Academy",
+      "degree_must_include": "Bachelor of Science"
+    }
+  ],
+  "certifications_must_include": [
+    "GCIH",
+    "GCFA",
+    "OSCP"
+  ],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "Active-duty military officer transitioning out. 'Captain' rank in the name line is NOT a name part (should be stripped along with 'USAF' suffix). Section headers include 'CAREER OBJECTIVE', 'CLEARANCES' (the clearance is sensitive but not a cert — should NOT be in certifications). Title pattern: 'Captain — Cyber Operations Officer' on line 1, 'Joint Base ... | Date' on line 2. Three roles all at the same employer (USAF) but different units."
+}

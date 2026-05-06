@@ -1,0 +1,45 @@
+{
+  "full_name": "Aditi Gupta",
+  "location": "New York, NY",
+  "contact_lines": [
+    "adi.gupta.fin@gmail.com",
+    "917-555-0438",
+    "linkedin.com/in/aditigupta-finance"
+  ],
+  "skills_must_include": [
+    "Python", "SQL", "Excel"
+  ],
+  "experience_count": 4,
+  "experience_titles": [
+    "Senior Associate",
+    "Summer Associate",
+    "Investment Banking Analyst",
+    "Summer Analyst"
+  ],
+  "experience_organizations_must_include": [
+    "General Catalyst",
+    "Insight Partners",
+    "Goldman Sachs",
+    "Morgan Stanley"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Wharton",
+      "degree_must_include": "Master of Business Administration"
+    },
+    {
+      "institution_must_include": "Indian Institute of Technology Bombay",
+      "degree_must_include": "Bachelor of Technology"
+    }
+  ],
+  "certifications_must_include": [
+    "Chartered Financial Analyst",
+    "Series 7",
+    "Series 63"
+  ],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "MBA + CFA finance candidate. Name line includes 'CFA' designation suffix (not part of name). 'Senior Associate, Growth Equity' uses comma in title (testing comma-in-title doesn't break org parsing). 4 experience entries including a 'during MBA' summer internship between two full-time roles. Section header 'DESIGNATIONS & CERTIFICATIONS' should map to certifications (NOT in our aliases yet — let's see if it does). Test fixture has 4 jobs with various format conventions."
+}

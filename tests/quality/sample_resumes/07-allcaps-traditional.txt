@@ -1,0 +1,43 @@
+DAVID PARK
+SOFTWARE ENGINEER
+Seattle, WA  •  david.park@protonmail.com  •  (206) 555-0287  •  davidpark.dev
+
+PROFESSIONAL SUMMARY
+
+Backend engineer with 6 years of experience building reliable Python services for high-throughput
+ecommerce platforms. Strong on system design, code review, and post-mortem culture.
+
+TECHNICAL SKILLS
+
+Languages         Python, Go, TypeScript, SQL
+Frameworks        Django, FastAPI, Flask, Celery
+Data              PostgreSQL, Redis, Kafka, Elasticsearch, Snowflake
+Infrastructure    AWS (ECS, RDS, S3, Lambda), Terraform, Docker, Kubernetes
+Practices         CI/CD, on-call rotation, incident response, code review
+
+WORK EXPERIENCE
+
+REI CO-OP                                                                    Seattle, WA
+Senior Software Engineer                                                  May 2022 - Present
+* Owned the order-fulfillment microservice handling 2M+ orders/month.
+* Cut p99 latency 35% by replacing N+1 queries with explicit pre-fetches.
+* Designed the migration plan that moved checkout off Heroku onto ECS.
+
+ZILLOW GROUP                                                                  Seattle, WA
+Software Engineer II                                                  Aug 2020 - Apr 2022
+* Built the listing-photo ingestion pipeline (S3 + Lambda + SQS, 14M images/day).
+* Authored the team's PR-review playbook adopted across the engineering org.
+
+PERFORMANT MEDIA                                                              Remote
+Backend Engineer                                                      Jun 2018 - Jul 2020
+* Maintained the affiliate-attribution service in Python + Postgres.
+
+EDUCATION
+
+UNIVERSITY OF WASHINGTON                                                      Seattle, WA
+B.S. Computer Science, 2018                                          Magna Cum Laude
+
+CERTIFICATIONS
+
+* AWS Certified Solutions Architect — Associate (2023)
+* HashiCorp Certified: Terraform Associate (2022)
