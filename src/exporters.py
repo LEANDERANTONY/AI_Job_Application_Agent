@@ -592,8 +592,13 @@ def _build_resume_experience_html(experience_entries):
             </article>
             """.format(
                 title=title,
+                # Each meta_part was already individually escaped above
+                # (organization, location). Joining and re-escaping
+                # would double-escape — '<acme>' becomes
+                # '&amp;lt;acme&amp;gt;' on the page. Keep the join
+                # plain.
                 meta=(
-                    '<p class="resume-role-meta">{meta}</p>'.format(meta=html.escape(" | ".join(meta_parts)))
+                    '<p class="resume-role-meta">{meta}</p>'.format(meta=" | ".join(meta_parts))
                     if meta_parts
                     else ""
                 ),
