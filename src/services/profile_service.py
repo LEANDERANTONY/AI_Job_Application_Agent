@@ -31,18 +31,33 @@ SECTION_HEADERS = {
 }
 
 SECTION_ALIASES = {
+    # Summary variants
     "professional summary": "summary",
     "summary": "summary",
     "about": "summary",
+    "about me": "summary",
     "profile": "profile",
+    "career objective": "summary",
+    "objective": "summary",
+    "executive summary": "summary",
     "research interests": "summary",
+    # Spanish (resumen) variants
+    "resumen": "summary",
+    "resumen profesional": "summary",
+    "perfil": "summary",
+    # Skills
     "technical skills": "skills",
     "core skills": "skills",
     "skills": "skills",
+    "what i do well": "skills",
+    "habilidades": "skills",
+    "habilidades técnicas": "skills",
+    # Projects
     "projects": "projects",
     "project": "projects",
     "selected projects": "projects",
     "personal projects": "projects",
+    # Experience — every realistic header we've seen on real resumes
     "professional experience": "experience",
     "experience": "experience",
     "work experience": "experience",
@@ -54,21 +69,53 @@ SECTION_ALIASES = {
     "research experience": "experience",
     "industry experience": "experience",
     "relevant experience": "experience",
+    "leadership experience": "experience",
+    "clinical experience": "experience",
+    "where i ve worked": "experience",
+    "where i have worked": "experience",
+    # Spanish experience variants
+    "experiencia": "experience",
+    "experiencia profesional": "experience",
+    "experiencia laboral": "experience",
+    # Education
     "education": "education",
     "academic background": "education",
     "academic qualifications": "education",
+    # Spanish education
+    "educación": "education",
+    "educacion": "education",
+    "formación": "education",
+    "formacion": "education",
+    # Certifications — including healthcare / finance variants
     "certifications": "certifications",
     "certification": "certifications",
     "licenses and certifications": "certifications",
+    "licenses certifications": "certifications",
+    "licensure and certifications": "certifications",
+    "licensure certifications": "certifications",
+    "designations and certifications": "certifications",
+    "designations certifications": "certifications",
+    "certificaciones": "certifications",
+    # Publications / talks
     "publications": "publications",
     "publication": "publications",
     "selected publications": "publications",
     "papers": "publications",
+    "publications and talks": "publications",
+    "publications talks": "publications",
+    "talks and publications": "publications",
+    "speaking": "publications",
+    "speaking engagements": "publications",
+    "talks": "publications",
+    "presentations": "publications",
+    # Achievements / awards
     "achievements": "achievements",
     "achievement": "achievements",
     "awards": "achievements",
     "awards and honors": "achievements",
     "honors": "achievements",
+    "honors and activities": "achievements",
+    "a few honors": "achievements",
 }
 
 DEGREE_KEYWORDS = (
@@ -444,12 +491,82 @@ _LOCATION_COUNTRIES = (
 )
 
 
+_DATE_RANGE_GLUE_PATTERNS = [
+    # 'Month YYYY — Month YYYY / Present'
+    re.compile(
+        r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4})"
+        r"\s+[—–]\s+"
+        r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}|present|current|ongoing|now|actualidad)",
+        re.IGNORECASE,
+    ),
+    # 'YYYY — YYYY / Present'
+    re.compile(
+        r"((?:19|20)\d{2})"
+        r"\s+[—–]\s+"
+        r"((?:19|20)\d{2}|present|current|ongoing|now|actualidad)",
+        re.IGNORECASE,
+    ),
+]
+
+
+_TRAILING_DATE_PATTERNS = [
+    re.compile(
+        r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}"
+        r"\s*-\s*"
+        r"(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}|present|current|ongoing|now|actualidad))"
+        r"\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"((?:19|20)\d{2}\s*-\s*(?:(?:19|20)\d{2}|present|current|ongoing|now|actualidad))\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4})\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"((?:19|20)\d{2})\s*$"),
+]
+
+
+def _peel_trailing_date(part: str) -> tuple[str, str]:
+    """If `part` ends with a month-year / year-range / bare year, peel
+    the trailing date off into a separate string. 'Growth Equity
+    August 2024-Present' → ('Growth Equity', 'August 2024-Present');
+    a pure date like 'August 2024' → ('', 'August 2024')."""
+    if not part:
+        return part, ""
+    for pattern in _TRAILING_DATE_PATTERNS:
+        match = pattern.search(part)
+        if match:
+            head = part[: match.start()].rstrip(" ,;:·—–-")
+            return head, match.group(1).strip()
+    return part, ""
+
+
+def _glue_date_range_dashes(text: str) -> str:
+    """Replace the em-dash / en-dash inside a date range with a non-
+    splitting hyphen so _split_header_parts doesn't break the range
+    in two. 'Aug 2020 — Present' → 'Aug 2020-Present'.
+
+    Without this, lines like 'Senior Associate · Aug 2020 — Present'
+    or 'Org — Title · Mar 2022 — Present' get split on the wrong
+    em-dash (the one inside the date), which in turn causes the
+    title and org to be mis-classified.
+    """
+    for pattern in _DATE_RANGE_GLUE_PATTERNS:
+        text = pattern.sub(r"\1-\2", text)
+    return text
+
+
 def _split_header_parts(line: str) -> List[str]:
     """Split a single header line by the most likely separator. Tries
     the unambiguous separators first (em-dash/en-dash/pipe/middle-dot/
     slash), then falls back to comma when it yields multiple sensible
     parts. Trailing parenthesised dates ('Acme Corp (2023 - Present)')
-    are peeled into a separate part so they classify independently."""
+    are peeled into a separate part so they classify independently.
+    Date ranges like 'Aug 2020 — Present' are glued first so the
+    em-dash inside them isn't treated as a structural separator."""
     normalized = _normalize_line(line)
     if not normalized:
         return []
@@ -458,6 +575,7 @@ def _split_header_parts(line: str) -> List[str]:
     # split below doesn't have to fight with parens.
     head, parens_date = _peel_parenthesised_date(normalized)
     base = head if parens_date else normalized
+    base = _glue_date_range_dashes(base)
 
     best: List[str] = []
     for sep in _HEADER_SEPARATORS:
@@ -471,6 +589,20 @@ def _split_header_parts(line: str) -> List[str]:
             best = parts
     if not best:
         best = [base]
+
+    # Peel trailing dates off each part so 'Growth Equity August 2024'
+    # splits into ('Growth Equity', 'August 2024') instead of being
+    # classified wholesale as a date and leaving the prose stuck on
+    # the start field.
+    expanded: List[str] = []
+    for part in best:
+        head, date = _peel_trailing_date(part)
+        if date and head:
+            expanded.append(head)
+            expanded.append(date)
+        else:
+            expanded.append(part)
+    best = expanded
 
     if parens_date:
         best = best + [parens_date]
@@ -619,11 +751,18 @@ def _match_experience_header(rows: List[dict], start: int) -> dict | None:
 
     # Quick rejection: header lines are short-ish noun phrases. Wrapped
     # bullet continuations ('by enterprise customers.') are sentence
-    # fragments — we reject anything that starts lowercase or ends with
-    # a sentence terminator on a single un-split line.
-    if text[:1].islower():
-        return None
+    # fragments — we reject single-part lines that look like prose
+    # (lowercase start AND sentence-terminator end). Multi-part lines
+    # are allowed even when lowercase because creative resumes use
+    # all-lowercase styling and still produce valid headers like
+    # 'partner & design lead — flores studio · mar 2022 — present'.
     parts1 = _split_header_parts(text)
+    if (
+        len(parts1) == 1
+        and text[:1].islower()
+        and text.endswith((".", "!", "?"))
+    ):
+        return None
     if len(parts1) == 1 and text.endswith((".", "!", "?")):
         return None
     classified1 = [(_classify_header_part(p), p) for p in parts1]
@@ -1048,12 +1187,45 @@ _INLINE_EDU_DEGREE_PATTERNS = (
 )
 
 
+def _split_institution_then_degree(text: str) -> tuple[str, str] | None:
+    """Given a chunk like 'Harvard Business School MBA' (institution
+    keyword appears earlier than a degree token, no comma between
+    them — typical of tabular two-column education layouts where
+    multi-space separation collapsed during line normalisation),
+    split into (institution, degree). Returns None if no clean split
+    exists.
+
+    Strategy: find the last word that's an institution keyword (e.g.
+    'University', 'School', 'Institute'). Everything up to and
+    including it is the institution; anything after is the degree.
+    """
+    words = text.split()
+    if len(words) < 2:
+        return None
+    inst_keywords = {kw.rstrip(".") for kw in INSTITUTION_KEYWORDS}
+    last_inst_idx = -1
+    for idx, word in enumerate(words):
+        token = word.lower().rstrip(".,;")
+        if token in inst_keywords:
+            last_inst_idx = idx
+    if last_inst_idx < 0 or last_inst_idx == len(words) - 1:
+        return None
+    institution = " ".join(words[: last_inst_idx + 1]).strip()
+    degree = " ".join(words[last_inst_idx + 1 :]).strip()
+    if not institution or not degree:
+        return None
+    if not re.search(_INLINE_EDU_DEGREE_PATTERNS, degree, re.IGNORECASE):
+        return None
+    return institution, degree
+
+
 def _parse_inline_education_line(line: str) -> EducationEntry | None:
     """Recognise compact one-line education records that the
     section-by-section parser misses, e.g.:
         'B.S. Computer Science, San Jose State University, 2023'
         'Ph.D. in Computer Science, MIT, 2020'
         'Bachelor of Arts in Economics, Cornell University, 2020'
+        'Harvard Business School    MBA, 2019'   (tabular layout)
     """
     normalized = _normalize_line(line)
     if not normalized:
@@ -1063,11 +1235,37 @@ def _parse_inline_education_line(line: str) -> EducationEntry | None:
     parts = [part.strip() for part in normalized.split(",") if part.strip()]
     if len(parts) < 2:
         return None
-    # First part should contain the degree keyword.
-    if not re.search(_INLINE_EDU_DEGREE_PATTERNS, parts[0], re.IGNORECASE):
+
+    # Tabular layout: the first comma-separated chunk contains BOTH
+    # the institution and the degree (the visual column separator
+    # collapsed into a single space). Detect by checking whether the
+    # first chunk has both an institution keyword and a degree token.
+    head = parts[0]
+    if (
+        _looks_like_institution(head)
+        and re.search(_INLINE_EDU_DEGREE_PATTERNS, head, re.IGNORECASE)
+    ):
+        split = _split_institution_then_degree(head)
+        if split is not None:
+            institution, degree = split
+            date_text = ""
+            for tail_part in parts[1:]:
+                if re.match(r"^\(?(?:19|20)\d{2}\b", tail_part):
+                    date_text = tail_part.strip(" ()")
+                    break
+                if MONTH_YEAR_PATTERN.search(tail_part):
+                    date_text = tail_part
+                    break
+            return EducationEntry(
+                institution=institution,
+                degree=degree,
+                start=date_text,
+            )
+
+    # Standard 'Degree, Institution, Year' layout: first part is the
+    # degree, subsequent parts are institution + year(s).
+    if not re.search(_INLINE_EDU_DEGREE_PATTERNS, head, re.IGNORECASE):
         return None
-    # Find the institution part: the first part containing a known
-    # institution keyword OR the second-to-last comma-separated chunk.
     institution = ""
     date_text = ""
     for part in parts[1:]:
@@ -1080,14 +1278,48 @@ def _parse_inline_education_line(line: str) -> EducationEntry | None:
         if _looks_like_institution(part) and not institution:
             institution = part
             continue
-        if not institution:
+        if not institution and _is_plausible_institution_candidate(part):
             institution = part
     if not institution:
         return None
     return EducationEntry(
         institution=institution,
-        degree=parts[0],
+        degree=head,
         start=date_text,
+    )
+
+
+_DEGREE_MODIFIER_KEYWORDS = (
+    "concentration", "specialization", "specialisation", "focus",
+    "minor", "major", "honors", "honours", "distinction", "magna",
+    "summa", "cum laude", "department",
+)
+
+
+def _is_plausible_institution_candidate(text: str) -> bool:
+    """A non-keyword institution candidate ('ETH Zurich', 'IISc') is
+    accepted only if it's a short, capitalised phrase without dates or
+    degree-modifier words. 'Finance Concentration 2022 - 2024' fails;
+    'ETH Zurich' passes.
+    """
+    if not text:
+        return False
+    if _looks_like_institution(text):
+        return True
+    if MONTH_YEAR_PATTERN.search(text) or re.search(r"(?:19|20)\d{2}", text):
+        return False
+    lowered = text.lower()
+    if any(modifier in lowered for modifier in _DEGREE_MODIFIER_KEYWORDS):
+        return False
+    if re.search(_INLINE_EDU_DEGREE_PATTERNS, text, re.IGNORECASE):
+        return False
+    words = text.split()
+    if len(words) > 4:
+        return False
+    return all(
+        word[:1].isupper() or word.isupper()
+        for word in words
+        if word[:1].isalpha()
     )
 
 
@@ -1305,37 +1537,115 @@ def _resume_header_lines(text: str) -> List[str]:
 
 
 _HONORIFIC_PREFIXES = (
+    # Civilian honorifics
     "dr.", "dr", "prof.", "prof", "professor", "mr.", "mr", "ms.", "ms",
     "mrs.", "mrs", "miss", "mx.", "mx",
+    # Military / uniformed-service ranks (commissioned + senior NCO).
+    # Strip-only — we don't try to preserve the rank in the parsed
+    # output. Full names like 'Captain Jacqueline Reyes, USAF' resolve
+    # to 'Jacqueline Reyes'.
+    "captain", "capt.", "capt",
+    "lieutenant", "lt.", "lt",
+    "major", "maj.", "maj",
+    "colonel", "col.", "col",
+    "general", "gen.", "gen",
+    "admiral", "adm.", "adm",
+    "commander", "cmdr.", "cmdr",
+    "sergeant", "sgt.", "sgt",
+    "corporal", "cpl.", "cpl",
+    "private", "pvt.", "pvt",
 )
+
+# Trailing suffix tokens that aren't part of the candidate's name —
+# professional designations and service branches we strip when they
+# appear after a comma. 'Diana Okafor, MSN, RN, CCRN' → 'Diana Okafor';
+# 'Aditi Gupta, CFA' → 'Aditi Gupta'; 'Captain Reyes, USAF' → 'Reyes'.
+_TRAILING_NAME_SUFFIXES = {
+    # Healthcare credentials
+    "rn", "lpn", "np", "msn", "bsn", "ccrn", "fnp", "dnp", "pa", "pa-c",
+    "md", "do", "mph", "phd", "dpt", "rrt", "rdh",
+    # Engineering / scientific designations
+    "pe", "p.e.", "p.eng", "peng", "phd",
+    # Finance / business designations
+    "cfa", "cpa", "cfp", "frm", "caia", "mba",
+    # Service branches
+    "usaf", "us army", "us navy", "usmc", "uscg", "usa", "usn",
+    # Bar / legal
+    "esq", "esq.", "j.d.", "jd",
+}
+
+
+def _strip_trailing_name_suffixes(name: str) -> str:
+    """Drop comma-separated trailing designations like 'CFA' / 'MSN, RN'
+    / 'USAF' from a detected name line. We only strip when the comma-
+    separated tail tokens are all in the known-suffix set; otherwise
+    we leave the line intact (so legitimate two-word names with commas
+    aren't mangled)."""
+    if not name or "," not in name:
+        return name
+    head, _, tail = name.partition(",")
+    head = head.strip()
+    tail_chunks = [chunk.strip(" .") for chunk in tail.split(",") if chunk.strip(" .")]
+    if not tail_chunks:
+        return head or name
+    if all(chunk.lower() in _TRAILING_NAME_SUFFIXES for chunk in tail_chunks):
+        return head
+    return name
 
 
 def _strip_honorifics(name: str) -> str:
-    """Drop a leading honorific (Dr./Prof./Mr./Ms./Mrs./Mx.) from a
-    detected name. The honorifics list is case-insensitive and matches
-    both 'Dr.' and 'Dr' forms. Names like 'Dr. Priya Venkataraman'
-    return 'Priya Venkataraman'."""
+    """Drop a leading honorific (Dr./Prof./Mr./Ms./Mrs./Mx./military
+    rank) AND any trailing credential suffix (CFA/MSN/USAF/...) from a
+    detected name. Names like 'Captain Jacqueline Reyes, USAF' return
+    'Jacqueline Reyes'."""
     if not name:
         return name
-    parts = name.split()
-    while parts and parts[0].lower().rstrip(".") in {p.rstrip(".") for p in _HONORIFIC_PREFIXES}:
+    cleaned = _strip_trailing_name_suffixes(name)
+    parts = cleaned.split()
+    honorific_set = {p.rstrip(".") for p in _HONORIFIC_PREFIXES}
+    while parts and parts[0].lower().rstrip(".") in honorific_set:
         parts = parts[1:]
     return " ".join(parts).strip() or name
 
 
+def _is_section_header_text(line: str) -> bool:
+    """True if a line is a recognised section header — used to guard
+    against picking 'PROFESSIONAL SUMMARY' or 'EDUCATION' as a name
+    when the actual name was rejected by the strict checks."""
+    if not line:
+        return True
+    if line.lower() in SECTION_HEADERS:
+        return True
+    return bool(_normalize_section_header(line))
+
+
 def _looks_like_name(line: str) -> bool:
-    if not line or line.lower() in SECTION_HEADERS:
+    if not line or _is_section_header_text(line):
         return False
     lowered = line.lower()
     if any(keyword in lowered for keyword in INSTITUTION_KEYWORDS):
         return False
     candidate = _strip_honorifics(line)
+    if not candidate or _is_section_header_text(candidate):
+        return False
     words = candidate.split()
-    if len(words) < 2 or len(words) > 4:
+    if len(words) < 2 or len(words) > 5:
         return False
     if any(char.isdigit() for char in candidate):
         return False
-    return all(word[:1].isupper() for word in words if word[:1].isalpha())
+    if "@" in candidate or any(token in lowered for token in ("http", "www.")):
+        return False
+    # Strict (capitalised) names always pass.
+    if all(word[:1].isupper() for word in words if word[:1].isalpha()):
+        return True
+    # Permissive lowercase fallback — accepted only when every word is
+    # alphabetic. This catches creative-resume name lines like
+    # 'tomás flores' without admitting random sentence fragments
+    # (which always contain at least a connector word like 'with' /
+    # 'and' / 'from' that's still alphabetic; the section-header
+    # guard above plus the 5-word cap constrain it enough that
+    # bullets and prose don't qualify).
+    return all(word.isalpha() or word[0].isalpha() for word in words)
 
 
 def _extract_name_from_resume(text: str) -> str:
@@ -1346,13 +1656,67 @@ def _extract_name_from_resume(text: str) -> str:
 
 
 def _extract_location_from_resume(text: str) -> str:
+    """Pull the candidate's location from the header block.
+
+    The naive 'first segment with a comma and ≤6 words' heuristic gets
+    fooled by:
+      - credentialed names ('Diana Okafor, MSN, RN, CCRN')
+      - job-title taglines ('VP of Engineering, Platform | SF Bay Area')
+      - service-branch suffixes ('Captain Reyes, USAF')
+    so we additionally require a positive location signal — a US state
+    code, a known city, or a known country — and reject segments that
+    look like role taglines (role keyword) or credential lists
+    (every comma-tail token is in _TRAILING_NAME_SUFFIXES).
+    """
+    role_keyword_set = {kw.rstrip(".") for kw in ROLE_KEYWORDS}
     for line in _resume_header_lines(text):
         segments = [segment.strip() for segment in re.split(r"[|•·]", line) if segment.strip()]
         for segment in segments or [line]:
+            lowered = segment.lower()
             if "@" in segment or any(char.isdigit() for char in segment):
                 continue
-            if "," in segment and len(segment.split()) <= 6:
+            if "," not in segment or len(segment.split()) > 6:
+                continue
+            # Reject job-title-style segments ('VP of Engineering').
+            if any(
+                re.search(r"\b" + re.escape(kw) + r"\b", lowered)
+                for kw in role_keyword_set
+            ):
+                continue
+            # Reject credential-suffix segments ('Diana Okafor, MSN, RN').
+            chunks = [c.strip(" .") for c in segment.split(",") if c.strip(" .")]
+            if len(chunks) >= 2 and all(
+                c.lower() in _TRAILING_NAME_SUFFIXES for c in chunks[1:]
+            ):
+                continue
+            # Require at least one positive location signal.
+            has_state_code = bool(re.search(r",\s*[A-Z]{2}\s*$", segment))
+            has_country = any(
+                re.search(r"\b" + re.escape(country) + r"\b", lowered)
+                for country in _LOCATION_COUNTRIES
+            )
+            has_known_city = any(
+                re.search(r"\b" + re.escape(city) + r"\b", lowered)
+                for city in _KNOWN_LOCATION_CITIES
+            )
+            if has_state_code or has_country or has_known_city:
                 return segment
+    # If the header lines didn't yield a confident location, scan the
+    # second header line for a 'Location | ... | ...' tail (some
+    # resumes put role/title on line 1 and location on line 2).
+    for line in _resume_header_lines(text)[:6]:
+        for segment in [s.strip() for s in re.split(r"[|•·]", line) if s.strip()]:
+            lowered = segment.lower()
+            if "@" in segment or any(ch.isdigit() for ch in segment):
+                continue
+            if any(
+                re.search(r"\b" + re.escape(city) + r"\b", lowered)
+                for city in _KNOWN_LOCATION_CITIES
+            ):
+                # Allow comma-less location matches when the city is a
+                # known one (handles 'San Francisco Bay Area').
+                if 1 < len(segment.split()) <= 6:
+                    return segment
     return ""
 
 
