@@ -4283,10 +4283,14 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 11px 13px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid var(--hairline);
+  padding: 10px 4px;
+  /* No per-row border or background — the parent CollapsibleSection
+     already provides the outer box, so each role is a flat row inside
+     that frame separated by a hairline divider. Avoids the
+     "box inside a box" look the previous treatment produced. */
+}
+.b-experience-card + .b-experience-card {
+  border-top: 1px solid var(--hairline);
 }
 .b-experience-title {
   font-size: 14.5px;

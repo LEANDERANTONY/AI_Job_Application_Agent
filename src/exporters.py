@@ -821,17 +821,23 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
     <title>{title}</title>
     <style>
         @page {{ size: A4; margin: 0; }}
+        /* Same warm-brown palette as the cover letter so the two
+           documents read as a single set of stationery. The previous
+           resume vars were a cool slate-blue (#4f678c muted, #2563eb
+           accent, #bfd6f7 line) that clashed with the brown rule and
+           brown section heads already on the page. */
         :root {{
             --ink: #221912;
-            --muted: #4f678c;
-            --accent: #2563eb;
-            --accent-soft: #dbeafe;
-            --line: #bfd6f7;
-            --surface: #ffffff;
+            --muted: #6b5648;
+            --accent: #8f6845;
+            --accent-soft: rgba(143, 104, 69, 0.10);
+            --line: #d7c2af;
+            --paper: #fffdf9;
+            --surface: #fffdfa;
         }}
         * {{ box-sizing: border-box; }}
         html, body {{ margin: 0; padding: 0; }}
-        body {{ font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: #fffdf9; font-size: 10pt; line-height: 1.45; }}
+        body {{ font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: var(--paper); font-size: 10.5pt; line-height: 1.5; }}
         /* Editorial pairing: sans-serif headers + meta (modern,
            scannable) with a Georgia serif for the prose-y parts —
            summary paragraph and experience bullets — so the resume
@@ -844,41 +850,45 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
            naturally when the resume runs long. overflow-x: hidden
            still prevents the negative-margin h2 trick from leaking
            past the page edge horizontally. */
-        .resume-shell {{ position: relative; min-height: 297mm; background: #fffdfa; padding: 13mm 15mm 13mm; overflow-x: hidden; }}
+        .resume-shell {{ position: relative; min-height: 297mm; background: var(--surface); padding: 13mm 15mm 13mm; overflow-x: hidden; }}
         /* Pagination guards: keep cards intact across page breaks and
            keep section headings with their first child. */
         .resume-experience-card, .resume-education-card, .resume-project-card {{ page-break-inside: avoid; break-inside: avoid; }}
         h2, h3 {{ page-break-after: avoid; break-after: avoid; }}
         .resume-shell::before {{ content: none; }}
         .resume-shell::after {{ content: none; }}
-        h1 {{ font-size: 17.5pt; margin: 0 0 5px; letter-spacing: 0.1em; color: #0f172a; text-transform: uppercase; }}
-        h2 {{ font-size: 10pt; margin: 0 -15mm 6px; text-transform: uppercase; letter-spacing: 0.18em; color: #9a7350; padding: 0 15mm 3px; border-bottom: 2px solid #d4beab; }}
-        h3 {{ font-size: 10.5pt; margin: 10px 0 4px; color: #5d4330; }}
+        /* The candidate's name is the resume's title and pairs with the
+           cover letter's title block — Georgia bold, mixed-case, light
+           tracking. Drops the previous Arial-uppercase-tracked treatment
+           which read more "ATS template" than "letterhead". */
+        h1 {{ font-family: Georgia, "Times New Roman", serif; font-size: 22pt; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.005em; color: var(--ink); text-transform: none; }}
+        h2 {{ font-size: 10pt; margin: 0 -15mm 6px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--accent); padding: 0 15mm 3px; border-bottom: 2px solid var(--line); }}
+        h3 {{ font-size: 10.5pt; margin: 10px 0 4px; color: var(--accent); }}
         p {{ margin: 0 0 6px; }}
         ul {{ margin: 0 0 8px 1rem; padding: 0; }}
         li {{ margin: 0 0 3px; }}
-        strong {{ color: #0f172a; }}
+        strong {{ color: var(--ink); }}
         em {{ color: var(--muted); }}
-        code {{ background: #eef5ff; border: 1px solid #d3e5ff; border-radius: 4px; padding: 0.08rem 0.28rem; }}
+        code {{ background: rgba(143, 104, 69, 0.10); border: 1px solid var(--line); border-radius: 4px; padding: 0.08rem 0.28rem; }}
         hr {{ border: 0; border-top: 1px solid var(--line); margin: 14px 0; }}
-        blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: #24497b; }}
-        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: 3px solid #8f6845; }}
-        .resume-classic-role {{ font-size: 10.2pt; color: #3d5a80; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; }}
-        .resume-contact-inline {{ color: #314760; font-size: 9.2pt; line-height: 1.5; max-width: 88%; }}
-        .resume-skill-inline {{ color: #0f172a; font-size: 9.5pt; line-height: 1.7; }}
+        blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: var(--muted); }}
+        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: 3px solid var(--accent); }}
+        .resume-classic-role {{ font-size: 10.2pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; }}
+        .resume-contact-inline {{ color: var(--muted); font-size: 9.6pt; line-height: 1.55; max-width: 88%; }}
+        .resume-skill-inline {{ color: var(--ink); font-size: 9.8pt; line-height: 1.7; }}
         .resume-classic-section {{ position: relative; z-index: 1; margin-top: 12px; }}
         .resume-classic-section--plain-head h2 {{ border-bottom: 0; padding-bottom: 0; }}
         .resume-experience-card, .resume-project-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
         .resume-education-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
         .resume-role-row {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
         .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 4px; }}
-        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: #6b5648; font-size: 9.2pt; }}
+        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.5pt; }}
         .resume-bullet-list, .resume-contact-list, .resume-plain-list {{ margin: 0; padding-left: 1rem; }}
-        .resume-empty {{ color: #6b5648; font-style: italic; }}
+        .resume-empty {{ color: var(--muted); font-style: italic; }}
         .resume-experience-card + .resume-experience-card,
         .resume-project-card + .resume-project-card {{ position: relative; margin-top: 10px; padding-top: 10px; }}
         .resume-experience-card + .resume-experience-card::before,
-        .resume-project-card + .resume-project-card::before {{ content: ""; position: absolute; top: 0; left: 12px; right: 12px; border-top: 1px solid #d4beab; }}
+        .resume-project-card + .resume-project-card::before {{ content: ""; position: absolute; top: 0; left: 12px; right: 12px; border-top: 1px solid var(--line); }}
         .resume-education-card + .resume-education-card {{ margin-top: 10px; }}
         @media all and (max-width: 720px) {{ .resume-classic-header {{ padding: 0 15mm 10px; margin: 0 -15mm; }} .resume-contact-inline {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
     </style>
