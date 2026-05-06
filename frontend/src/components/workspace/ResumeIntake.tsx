@@ -71,16 +71,31 @@ export type ResumeBuilderDraftForm = {
   certifications: string;
 };
 
-const RESUME_BUILDER_STEP_LABELS: Record<string, string> = {
-  basics: "Basics",
-  role: "Target role",
-  experience: "Experience",
-  education: "Education",
-  skills: "Skills",
-  review: "Review",
+export type ResumeBuilderChatTurn = {
+  role: "user" | "assistant";
+  content: string;
 };
 
-const BUILDER_STEP_KEYS = Object.keys(RESUME_BUILDER_STEP_LABELS);
+// Field-completeness checklist meta. Drives the "what's been
+// captured" UI block that replaces the old "Step N of 5" wizard rail.
+// The conversational LLM intake doesn't march through fixed steps any
+// more; the user sees what's filled and the assistant decides what to
+// ask next based on the gaps.
+const RESUME_BUILDER_FIELD_LABELS: Array<{
+  key: keyof ResumeBuilderDraftForm | "contact_lines" | "skills" | "certifications";
+  label: string;
+  required: boolean;
+}> = [
+  { key: "full_name", label: "Name", required: true },
+  { key: "location", label: "Location", required: true },
+  { key: "contact_lines", label: "Contact", required: true },
+  { key: "target_role", label: "Target role", required: true },
+  { key: "professional_summary", label: "Summary", required: true },
+  { key: "experience_notes", label: "Experience", required: true },
+  { key: "education_notes", label: "Education", required: true },
+  { key: "skills", label: "Skills", required: true },
+  { key: "certifications", label: "Certifications", required: false },
+];
 
 type DraftFieldKey = keyof ResumeBuilderDraftForm;
 
@@ -108,6 +123,7 @@ export type ResumeIntakeProps = {
   // Builder mode
   authSignedIn: boolean;
   builderSession: ResumeBuilderSessionResponse | null;
+  builderChatLog: ResumeBuilderChatTurn[];
   builderCollapsed: boolean;
   onToggleBuilderCollapsed: () => void;
   builderAnswer: string;
@@ -139,6 +155,7 @@ export function ResumeIntake({
   onClearUploadedResumeProfile,
   authSignedIn,
   builderSession,
+  builderChatLog,
   builderCollapsed,
   onToggleBuilderCollapsed,
   builderAnswer,
@@ -155,11 +172,6 @@ export function ResumeIntake({
   onBuilderCommit,
   onBuilderDraftSave,
 }: ResumeIntakeProps) {
-  const builderStepLabel = builderSession
-    ? RESUME_BUILDER_STEP_LABELS[builderSession.current_step] ??
-      "Resume builder"
-    : "Resume builder";
-
   function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     onSelectedResumeFileChange(file);
@@ -169,6 +181,21 @@ export function ResumeIntake({
 
   function setDraftField(key: DraftFieldKey, value: string) {
     setBuilderDraftForm((current) => ({ ...current, [key]: value }));
+  }
+
+  // Compute which checklist fields are filled. Backed by the live
+  // `draft_profile` from the latest /message response so the user
+  // sees the captured state update in real time as they chat.
+  function isBuilderFieldFilled(
+    fieldKey: (typeof RESUME_BUILDER_FIELD_LABELS)[number]["key"],
+  ): boolean {
+    if (!builderSession) return false;
+    const draft = builderSession.draft_profile;
+    if (fieldKey === "contact_lines") return draft.contact_lines.length > 0;
+    if (fieldKey === "skills") return draft.skills.length > 0;
+    if (fieldKey === "certifications") return draft.certifications.length > 0;
+    const value = draft[fieldKey as keyof typeof draft];
+    return typeof value === "string" ? value.trim().length > 0 : false;
   }
 
   const profileFileLabel =
@@ -309,44 +336,66 @@ export function ResumeIntake({
             ) : null}
 
             {builderSession ? (() => {
-              // Slim editorial breadcrumb that replaces the prior 6-row
-              // wizard list. Shows the current step name, a "N of 5"
-              // counter, and a slim progress bar — no nested
-              // ACTIVE/DONE/— column, no per-step bordered rows.
-              const currentIndex = Math.max(
-                0,
-                BUILDER_STEP_KEYS.indexOf(builderSession.current_step),
-              );
-              // The progress sub-list runs through the answer-able
-              // steps only (basics → skills); "review" is the
-              // landing-after state, surfaced as 5 of 5.
-              const answerableCount = BUILDER_STEP_KEYS.filter(
-                (key) => key !== "review",
+              // Field-completeness checklist. Replaces the prior
+              // "Step N of 5" wizard rail because the conversational
+              // intake doesn't march through a fixed step order — the
+              // assistant decides what to ask next based on which
+              // fields are still empty. The user sees the captured
+              // state directly instead of an opaque progress index.
+              const requiredCount = RESUME_BUILDER_FIELD_LABELS.filter(
+                (field) => field.required,
               ).length;
-              const completedCount = Math.min(
-                builderSession.completed_steps,
-                answerableCount,
-              );
-              const ratio =
-                builderSession.current_step === "review"
-                  ? 1
-                  : Math.min(currentIndex / answerableCount, 1);
+              const filledRequiredCount = RESUME_BUILDER_FIELD_LABELS.filter(
+                (field) => field.required && isBuilderFieldFilled(field.key),
+              ).length;
               return (
                 <div className="b-wizard-rail" aria-hidden="false">
                   <div className="b-wizard-rail-meta">
-                    <span className="b-wizard-rail-eyebrow">
-                      Step {Math.min(currentIndex + 1, answerableCount)} of{" "}
-                      {answerableCount}
-                    </span>
+                    <span className="b-wizard-rail-eyebrow">Captured</span>
                     <span className="b-wizard-rail-title">
-                      {builderStepLabel}
+                      {filledRequiredCount} of {requiredCount} required fields
                     </span>
                     <span className="b-wizard-rail-count">
-                      {completedCount} answered
+                      {builderSession.status === "ready"
+                        ? "ready to generate"
+                        : builderSession.status === "reviewing"
+                          ? "ready to review"
+                          : "still chatting"}
                     </span>
                   </div>
-                  <div aria-hidden="true" className="b-wizard-rail-bar">
-                    <span style={{ width: `${ratio * 100}%` }} />
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "6px 12px",
+                      marginTop: 8,
+                      fontSize: 12,
+                      color: "var(--fg-2)",
+                    }}
+                  >
+                    {RESUME_BUILDER_FIELD_LABELS.map((field) => {
+                      const filled = isBuilderFieldFilled(field.key);
+                      return (
+                        <span
+                          key={field.key}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            opacity: field.required ? 1 : 0.7,
+                            color: filled
+                              ? "var(--fg-1)"
+                              : "var(--fg-3)",
+                          }}
+                        >
+                          <span aria-hidden="true">
+                            {filled ? "✓" : field.required ? "○" : "·"}
+                          </span>
+                          {field.label}
+                          {!field.required && !filled ? " (optional)" : ""}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -371,16 +420,63 @@ export function ResumeIntake({
 
             {!builderCollapsed ? (
               <>
-                <p
-                  style={{
-                    fontSize: 13,
-                    color: "var(--fg-2)",
-                    lineHeight: 1.65,
-                  }}
-                >
-                  {builderSession?.assistant_message ||
-                    "The guided assistant will ask a few focused questions and turn your answers into a base resume."}
-                </p>
+                {builderChatLog.length > 0 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                      paddingBottom: 4,
+                    }}
+                  >
+                    {builderChatLog.map((turn, index) => (
+                      <div
+                        key={index}
+                        className={`workspace-chat-turn ${
+                          turn.role === "user"
+                            ? "workspace-chat-user"
+                            : "workspace-chat-assistant"
+                        }`}
+                      >
+                        <span
+                          style={{
+                            fontSize: 11,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                            color: "var(--fg-3)",
+                          }}
+                        >
+                          {turn.role === "user" ? "You" : "Assistant"}
+                        </span>
+                        <div
+                          className="workspace-chat-bubble"
+                          style={{
+                            fontSize: 13.5,
+                            lineHeight: 1.65,
+                            color:
+                              turn.role === "user"
+                                ? "var(--fg-1)"
+                                : "var(--fg-2)",
+                            whiteSpace: "pre-wrap",
+                          }}
+                        >
+                          {turn.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "var(--fg-2)",
+                      lineHeight: 1.65,
+                    }}
+                  >
+                    {builderSession?.assistant_message ||
+                      "Type a quick intro to get started — your name, where you're based, and the role you're targeting."}
+                  </p>
+                )}
 
                 {builderNotice ? (
                   <div className={noticeClassName(builderNotice.level)}>
@@ -401,7 +497,7 @@ export function ResumeIntake({
                       onChange={(event) =>
                         onBuilderAnswerChange(event.target.value)
                       }
-                      placeholder="Type your answer here. Keep it natural — the assistant will structure it for you."
+                      placeholder="Reply naturally — the assistant will pull the right pieces into your resume."
                       value={builderAnswer}
                     />
                     <div>

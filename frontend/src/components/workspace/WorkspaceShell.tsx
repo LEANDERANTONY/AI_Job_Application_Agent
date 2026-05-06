@@ -226,6 +226,15 @@ export function WorkspaceShell() {
     useState(false);
   const [resumeBuilderEditing, setResumeBuilderEditing] = useState(false);
   const [resumeBuilderCollapsed, setResumeBuilderCollapsed] = useState(false);
+  // Resume-builder conversation log. Appended on every /message
+  // response so the user sees the chat thread building up. Resets
+  // when the session is cleared (commit / restart). Lives in client
+  // state because the backend's `assistant_message` is per-turn — the
+  // server-side conversation_history is for LLM continuity, not for
+  // the UI to read back.
+  const [resumeBuilderChatLog, setResumeBuilderChatLog] = useState<
+    Array<{ role: "user" | "assistant"; content: string }>
+  >([]);
   const [resumeBuilderDraftForm, setResumeBuilderDraftForm] = useState({
     full_name: "",
     location: "",
@@ -794,6 +803,7 @@ export function WorkspaceShell() {
     setResumeIntakeMode("upload");
     setResumeBuilderSession(null);
     setResumeBuilderInitialized(false);
+    setResumeBuilderChatLog([]);
     setResumeBuilderAnswer("");
     setResumeBuilderNotice(null);
     setMainTab("analysis");
@@ -810,6 +820,11 @@ export function WorkspaceShell() {
       const response = await startResumeBuilderSession();
       setResumeBuilderSession(response);
       setResumeBuilderInitialized(true);
+      setResumeBuilderChatLog(
+        response.assistant_message
+          ? [{ role: "assistant", content: response.assistant_message }]
+          : [],
+      );
       setResumeBuilderNotice({
         level: "success",
         message:
@@ -844,6 +859,21 @@ export function WorkspaceShell() {
           const latest = await loadLatestResumeBuilderSession();
           if (latest.session) {
             setResumeBuilderSession(latest.session);
+            // Restoring a saved session: we don't have the full prior
+            // conversation locally, so the chat log starts with just
+            // the latest assistant turn. The user can continue
+            // chatting and the rest of the thread will accrue from
+            // here.
+            setResumeBuilderChatLog(
+              latest.session.assistant_message
+                ? [
+                    {
+                      role: "assistant",
+                      content: latest.session.assistant_message,
+                    },
+                  ]
+                : [],
+            );
             setResumeBuilderNotice({
               level: "success",
               message: "Your latest resume-builder draft is ready to continue.",
@@ -861,6 +891,11 @@ export function WorkspaceShell() {
 
       const response = await startResumeBuilderSession();
       setResumeBuilderSession(response);
+      setResumeBuilderChatLog(
+        response.assistant_message
+          ? [{ role: "assistant", content: response.assistant_message }]
+          : [],
+      );
       setResumeBuilderNotice({
         level: "success",
         message:
@@ -900,13 +935,29 @@ export function WorkspaceShell() {
       message: "Saving your answer and moving to the next step...",
     });
 
+    const userMessage = resumeBuilderAnswer.trim();
     try {
       const response = await sendResumeBuilderMessage(
         resumeBuilderSession.session_id,
-        resumeBuilderAnswer.trim(),
+        userMessage,
       );
       setResumeBuilderSession(response);
       setResumeBuilderAnswer("");
+      // Append the user's message + the assistant's reply to the
+      // chat log so the conversation reads as a real thread instead
+      // of a 1-line "current prompt".
+      setResumeBuilderChatLog((prior) => [
+        ...prior,
+        { role: "user", content: userMessage },
+        ...(response.assistant_message
+          ? [
+              {
+                role: "assistant" as const,
+                content: response.assistant_message,
+              },
+            ]
+          : []),
+      ]);
       // The next step's `assistant_message` already renders as the
       // intake-card body copy. Showing it again as a success notice
       // duplicated the same sentence twice on every screen — clear
@@ -1079,6 +1130,7 @@ export function WorkspaceShell() {
     resetSavedJobs();
     setResumeBuilderSession(null);
     setResumeBuilderInitialized(false);
+    setResumeBuilderChatLog([]);
     setResumeBuilderAnswer("");
     setResumeBuilderNotice(null);
   }
@@ -1576,6 +1628,7 @@ export function WorkspaceShell() {
           <ResumeIntake
             authSignedIn={authStatus === "signed_in"}
             builderAnswer={resumeBuilderAnswer}
+            builderChatLog={resumeBuilderChatLog}
             builderCollapsed={resumeBuilderCollapsed}
             builderCommitting={resumeBuilderCommitting}
             builderDraftForm={resumeBuilderDraftForm}

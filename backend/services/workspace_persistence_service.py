@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, is_dataclass
 from typing import Any
@@ -31,13 +32,20 @@ def _serialize(value: Any):
 
 
 def _workspace_signature(snapshot: dict[str, Any]):
+    """Stable 64-char sha256 of the canonical workspace payload.
+
+    Previously this stored the full `json.dumps(...)` (~50KB) on every
+    saved-workspace row. The signature is write-only — no consumer
+    parses it — so the hash is just as useful as a change-detection
+    fingerprint while keeping the row trivially small."""
     payload = {
         "candidate_profile": snapshot.get("candidate_profile") or {},
         "job_description": snapshot.get("job_description") or {},
         "fit_analysis": snapshot.get("fit_analysis") or {},
         "tailored_draft": snapshot.get("tailored_draft") or {},
     }
-    return json.dumps(payload, sort_keys=True, default=str)
+    canonical = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _validate_workspace_snapshot(snapshot: dict[str, Any] | None):

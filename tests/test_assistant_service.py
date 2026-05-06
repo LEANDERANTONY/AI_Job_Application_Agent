@@ -156,7 +156,6 @@ def test_assistant_fallback_explains_gaps():
         "What are my biggest gaps?",
         current_page="Manual JD Input",
         workflow_view_model=view_model,
-        report=None,
         artifact=SimpleNamespace(highlighted_skills=["Python", "SQL"], validation_notes=[]),
     )
 
@@ -172,7 +171,6 @@ def test_assistant_requires_context_when_inputs_missing():
         "Is this safe to submit?",
         current_page="Manual JD Input",
         workflow_view_model=empty_view_model,
-        report=None,
         artifact=None,
     )
 
@@ -187,7 +185,6 @@ def test_assistant_fallback_supports_broader_resume_coaching():
         "How can I show cross-functional collaboration without formal work experience?",
         current_page="Manual JD Input",
         workflow_view_model=view_model,
-        report=None,
         artifact=SimpleNamespace(highlighted_skills=["Python", "SQL"], validation_notes=[]),
     )
 
@@ -205,7 +202,6 @@ def test_assistant_fallback_handles_string_fit_analysis():
         "What are my biggest gaps?",
         current_page="Workspace",
         workflow_view_model=view_model,
-        report=None,
         artifact=SimpleNamespace(highlighted_skills=["Python", "FastAPI"], validation_notes=[]),
     )
 
@@ -298,7 +294,6 @@ def test_assistant_uses_single_assistant_task_for_package_questions():
         current_page="Manual JD Input",
         workflow_view_model=view_model,
         artifact=SimpleNamespace(highlighted_skills=["Python"], validation_notes=[]),
-        report=SimpleNamespace(summary="Application strategy summary"),
     )
 
     assert response.answer
@@ -376,7 +371,6 @@ def test_prepare_session_returns_last_response_id_from_openai_usage_snapshot():
 
 def test_application_qa_context_is_compact():
     view_model = _build_view_model()
-    report = SimpleNamespace(summary="Application report summary")
     artifact = SimpleNamespace(
         summary="Tailored resume summary",
         validation_notes=["Check AWS claim wording"],
@@ -398,7 +392,6 @@ def test_application_qa_context_is_compact():
 
     context = AssistantService._build_application_qa_context(
         view_model,
-        report=report,
         artifact=artifact,
     )
 
@@ -407,7 +400,6 @@ def test_application_qa_context_is_compact():
         "candidate",
         "fit",
         "tailored_resume",
-        "report_summary",
         "cover_letter_summary",
         "review",
     }
@@ -443,7 +435,6 @@ def test_build_application_qa_context_includes_review_and_skill_signals():
 
     context = AssistantService._build_application_qa_context(
         workflow_view_model,
-        report=SimpleNamespace(summary="Report summary"),
         artifact=artifact,
     )
 

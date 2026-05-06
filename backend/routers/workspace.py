@@ -3,8 +3,13 @@ from fastapi.responses import StreamingResponse
 
 from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
 from backend.request_auth import get_optional_auth_tokens
+from backend.services.auth_session_service import (
+    build_openai_service_for_context,
+    resolve_authenticated_context,
+)
 from backend.services.resume_builder_persistence_service import (
     clear_resume_builder_session,
+    hydrate_resume_builder_session_if_needed,
     load_latest_resume_builder_session,
     persist_resume_builder_session,
 )
@@ -34,6 +39,8 @@ from backend.services.workspace_service import (
     stream_workspace_question,
 )
 from backend.services.workspace_run_jobs import (
+    JOB_RETRY_AFTER_SECONDS,
+    WorkspaceRunJobCapacityError,
     get_workspace_analysis_job,
     start_workspace_analysis_job,
 )
@@ -59,6 +66,30 @@ router = APIRouter(prefix="/workspace", tags=["workspace"])
 
 def _raise_http_error(error: AppError):
     raise HTTPException(status_code=400, detail=error.user_message)
+
+
+def _resolve_openai_service(access_token: str, refresh_token: str):
+    """Best-effort OpenAIService for an authenticated request.
+
+    Returns None when tokens are missing OR the auth/openai construction
+    fails — caller (resume builder, etc.) treats None as "no LLM
+    available" and falls back to the deterministic path."""
+    if not (access_token and refresh_token):
+        return None
+    try:
+        auth_context = resolve_authenticated_context(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+    except Exception:
+        return None
+    if auth_context is None:
+        return None
+    try:
+        openai_service, _ = build_openai_service_for_context(auth_context)
+    except Exception:
+        return None
+    return openai_service
 
 
 @router.post("/resume/upload")
@@ -121,9 +152,19 @@ def answer_resume_builder_route(
 ):
     access_token, refresh_token = auth_tokens
     try:
+        hydrate_resume_builder_session_if_needed(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        openai_service = _resolve_openai_service(
+            access_token or "",
+            refresh_token or "",
+        )
         response = answer_resume_builder_message(
             session_id=payload.session_id,
             message=payload.message,
+            openai_service=openai_service,
         )
         persist_resume_builder_session(
             access_token=access_token or "",
@@ -144,6 +185,11 @@ def generate_resume_builder_route(
 ):
     access_token, refresh_token = auth_tokens
     try:
+        hydrate_resume_builder_session_if_needed(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
         response = generate_resume_builder_resume(session_id=payload.session_id)
         persist_resume_builder_session(
             access_token=access_token or "",
@@ -164,6 +210,11 @@ def update_resume_builder_route(
 ):
     access_token, refresh_token = auth_tokens
     try:
+        hydrate_resume_builder_session_if_needed(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
         response = update_resume_builder_session(
             session_id=payload.session_id,
             draft_updates=payload.draft_profile,
@@ -187,6 +238,11 @@ def commit_resume_builder_route(
 ):
     access_token, refresh_token = auth_tokens
     try:
+        hydrate_resume_builder_session_if_needed(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
         response = commit_resume_builder_session(session_id=payload.session_id)
         clear_resume_builder_session(
             access_token=access_token or "",
@@ -231,15 +287,25 @@ def start_workspace_analysis_job_route(
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
-    return start_workspace_analysis_job(
-        resume_text=payload.resume_text,
-        resume_filetype=payload.resume_filetype,
-        resume_source=payload.resume_source,
-        job_description_text=payload.job_description_text,
-        imported_job_posting=payload.imported_job_posting,
-        access_token=access_token or "",
-        refresh_token=refresh_token or "",
-    )
+    try:
+        return start_workspace_analysis_job(
+            resume_text=payload.resume_text,
+            resume_filetype=payload.resume_filetype,
+            resume_source=payload.resume_source,
+            job_description_text=payload.job_description_text,
+            imported_job_posting=payload.imported_job_posting,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
+    except WorkspaceRunJobCapacityError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "The workspace is busy running other agentic workflows right "
+                "now. Please try again in a few seconds."
+            ),
+            headers={"Retry-After": str(JOB_RETRY_AFTER_SECONDS)},
+        )
 
 
 @router.get(
@@ -249,7 +315,18 @@ def start_workspace_analysis_job_route(
 def get_workspace_analysis_job_route(job_id: str):
     payload = get_workspace_analysis_job(job_id)
     if payload is None:
-        raise HTTPException(status_code=404, detail="Analysis job not found.")
+        # `_JOBS` is process-local, so a container restart mid-run drops
+        # the job state permanently. The frontend polling hook surfaces
+        # `detail` directly to the user, so spell out the cause + the
+        # recovery action instead of a bare "not found".
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "This workflow run is no longer available — the server may "
+                "have restarted while it was running. Please run the workflow "
+                "again."
+            ),
+        )
     return payload
 
 

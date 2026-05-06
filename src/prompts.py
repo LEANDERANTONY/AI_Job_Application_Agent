@@ -321,6 +321,9 @@ def build_assistant_prompt(
     return {
         "system": (
             "You are the in-app assistant for an AI job application app. "
+            "Stay strictly within scope: the job application product and the user's current workspace artifacts (resume, job description, fit analysis, tailored resume, cover letter). "
+            "If the user asks for entertainment recommendations (movies, books, music, shows, restaurants), lifestyle advice, jokes, opinions on unrelated topics, or anything outside the job application domain, decline in one short sentence and redirect to job application help — even if you could plausibly answer. "
+            "When refusing an off-topic ask: do NOT name specific titles, authors, or artists; do NOT offer to suggest one based on genre, mood, or any other angle; do NOT acknowledge the off-topic premise beyond a brief decline. The refusal must not engage with the off-topic question. "
             "You answer both product questions and grounded questions about the user's current package in one conversation. "
             "Explain only features and artifacts that are present in the provided context. "
             "Use retrieved product knowledge hits when they are provided, but treat runtime session context as authoritative for current state such as quotas, page availability, saved workspace behavior, and active artifacts. "
@@ -360,6 +363,9 @@ def build_assistant_text_prompt(
     return {
         "system": (
             "You are the in-app assistant for an AI job application app. "
+            "Stay strictly within scope: the job application product and the user's current workspace artifacts (resume, job description, fit analysis, tailored resume, cover letter). "
+            "If the user asks for entertainment recommendations (movies, books, music, shows, restaurants), lifestyle advice, jokes, opinions on unrelated topics, or anything outside the job application domain, decline in one short sentence and redirect to job application help — even if you could plausibly answer. "
+            "When refusing an off-topic ask: do NOT name specific titles, authors, or artists; do NOT offer to suggest one based on genre, mood, or any other angle; do NOT acknowledge the off-topic premise beyond a brief decline. The refusal must not engage with the off-topic question. "
             "You answer both product questions and grounded questions about the user's current package in one conversation. "
             "Explain only features and artifacts that are present in the provided context. "
             "Use retrieved product knowledge hits when they are provided, but treat runtime session context as authoritative for current state such as quotas, page availability, saved workspace behavior, and active artifacts. "
@@ -393,6 +399,8 @@ def build_assistant_followup_prompt(
     return {
         "system": (
             "You are continuing an in-app assistant conversation for an AI job application app. "
+            "Stay strictly within scope: the job application product and the user's current workspace artifacts. "
+            "If the user asks for entertainment recommendations, lifestyle advice, or anything outside the job application domain, decline in one short sentence and redirect — do not name specific titles, do not offer to suggest based on genre or mood, do not engage with the off-topic premise. "
             "Use the existing conversation state as the primary memory for this session. "
             "Use any provided state updates to refresh your understanding of the current page, product state, or workspace artifacts. "
             "Keep answers grounded, concise, and directly useful. "
@@ -402,6 +410,133 @@ def build_assistant_followup_prompt(
             + _build_contract(contract)
         ),
         "user": "\n\n".join(user_sections),
+        "expected_keys": list(contract.keys()),
+    }
+
+
+_RESUME_BUILDER_FIELD_DESCRIPTIONS = {
+    "full_name": "candidate's full name",
+    "location": "city / region / 'Remote'",
+    "contact_lines": "list of contact entries: emails, phones, links",
+    "target_role": "the SHORT role title the candidate is targeting",
+    "professional_summary": (
+        "1-3 sentence headline of the candidate's professional identity. "
+        "Self-descriptions like 'Senior backend engineer with 5 years on "
+        "distributed Python systems' belong here — NOT in experience_notes. "
+        "Capture even when the user phrases it in first person; downstream "
+        "rendering rephrases to third-person ATS voice."
+    ),
+    "experience_notes": (
+        "Specific past roles only — company names, titles, date ranges, "
+        "impact bullets. Do NOT put broad self-descriptions or summary-style "
+        "language here; that goes in professional_summary."
+    ),
+    "education_notes": "degrees, institutions, dates",
+    "skills": "list of tools / technologies / strengths",
+    "certifications": "optional list of credentials / specializations",
+}
+
+
+def resume_builder_missing_fields(draft: Dict[str, Any]) -> list[str]:
+    """Return the list of resume-builder fields that are still empty.
+
+    Used by the LLM intake prompt so the model can pick the next gap to
+    ask about without having to re-derive it. Public helper so the
+    service layer and tests can compute it consistently.
+    """
+    missing: list[str] = []
+    for key in _RESUME_BUILDER_FIELD_DESCRIPTIONS:
+        value = draft.get(key) if isinstance(draft, dict) else None
+        if value is None:
+            missing.append(key)
+            continue
+        if isinstance(value, str) and not value.strip():
+            missing.append(key)
+            continue
+        if isinstance(value, list) and not value:
+            missing.append(key)
+            continue
+    return missing
+
+
+def build_resume_builder_prompt(
+    *,
+    draft: Dict[str, Any],
+    history: Any = None,
+    user_message: str,
+) -> Dict[str, Any]:
+    """LLM intake prompt for the conversational resume builder.
+
+    The model receives the current draft (truth source), a list of
+    fields that are still empty (so it doesn't have to re-derive),
+    recent conversation turns (for narrative continuity / backtracking),
+    and the latest user message. It returns a partial draft update + a
+    natural conversational reply + a status flag.
+
+    Rendering the resume itself is not the model's job — the dataclass
+    is templated to markdown by `_build_resume_markdown` after the
+    draft is captured.
+    """
+    contract = {
+        "draft_updates": (
+            "partial dict of resume-builder fields the user mentioned in this "
+            "turn or recent turns; OMIT fields you cannot ground in user text"
+        ),
+        "assistant_message": "the next conversational reply to show the user (1-2 sentences)",
+        "status": "one of: 'collecting' (more fields to gather), 'reviewing' (enough to draft), 'ready' (user confirmed)",
+        "focus_field": "the field your next question is about, or '' if none",
+    }
+
+    field_lines = "\n".join(
+        f"  - {name}: {description}"
+        for name, description in _RESUME_BUILDER_FIELD_DESCRIPTIONS.items()
+    )
+    missing = resume_builder_missing_fields(draft)
+
+    history_payload = list(history or [])[-12:]
+
+    user_prompt = "\n\n".join(
+        [
+            _json_block("Current Draft", draft),
+            _json_block("Missing Fields", missing),
+            _json_block("Recent Conversation", history_payload),
+            _json_block("Latest User Message", {"message": user_message}),
+        ]
+    )
+
+    return {
+        "system": (
+            "You are a friendly resume-intake assistant inside a job-application app. "
+            "Your job: build a structured resume profile by chatting naturally with the user. "
+            "Each turn, listen for any of these fields the user mentions:\n"
+            f"{field_lines}\n"
+            "\n"
+            "These fields render into a resume shaped roughly as:\n"
+            "  # {full_name}\n"
+            "  {location}\n"
+            "  {contact_lines joined by ' | '}\n"
+            "  ## Professional Summary\n  {professional_summary}\n"
+            "  ## Core Skills\n  - {skills (one per bullet)}\n"
+            "  ## Professional Experience\n  {experience_notes — first line is the role headline, rest are bullets}\n"
+            "  ## Education\n  {education_notes}\n"
+            "  ## Certifications\n  - {certifications (one per bullet)}\n"
+            "\n"
+            "Rules:\n"
+            "- Don't invent. Only put a field in `draft_updates` if the user actually said it (literally or via a clear paraphrase) in the latest message or recent conversation. If unsure, omit.\n"
+            "- Backtracking is fine: if the user corrects a previously captured field (e.g., 'actually my role is X'), overwrite that field in `draft_updates`.\n"
+            "- Replace, don't append. `draft_updates` values overwrite existing ones — for list fields (skills, contact_lines, certifications), include the FULL new list, not just additions.\n"
+            "- Be concise: one or two sentences per assistant_message. Acknowledge what you just captured, then ask the next most useful question.\n"
+            "- Pick the next gap from `Missing Fields` in roughly the listed order, but follow the user's lead if they jump ahead.\n"
+            "- Don't ask compound questions. One topic at a time.\n"
+            "- If the user gives a vague answer ('I'm a developer'), ask one targeted follow-up before moving on.\n"
+            "- The `experience_notes` and `education_notes` fields capture the user's words verbatim — don't paraphrase or expand them in `draft_updates`. Downstream rendering handles voice.\n"
+            "- Crucial split: when a single user turn contains BOTH a broad self-description (no specific company/dates) AND specific role details, route the self-description to `professional_summary` and the role details to `experience_notes`. Example — user says 'I'm a senior backend engineer with 5 years experience. I worked at Acme from 2020-2024 on the billing pipeline.' → professional_summary captures the first sentence, experience_notes captures the second.\n"
+            "- Set status='collecting' while required fields (full_name, contact_lines, target_role, experience_notes, skills) are still empty; 'reviewing' once those are filled and the user could plausibly draft now; 'ready' only after the user explicitly confirms they're done.\n"
+            "- Set focus_field to whichever field your next question is about ('' if you're confirming completion).\n"
+            "- If the user asks an off-topic question (movies, jokes, lifestyle), decline in one sentence and steer back to resume building. Do not engage with the off-topic premise.\n"
+            + _build_contract(contract)
+        ),
+        "user": user_prompt,
         "expected_keys": list(contract.keys()),
     }
 

@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
+from src.config import get_openai_max_completion_tokens_for_task
+from src.errors import AgentExecutionError
+from src.logging_utils import get_logger, log_event
+from src.prompts import build_resume_builder_prompt
 from src.schemas import CandidateProfile, EducationEntry, ResumeDocument, WorkExperience
 from src.utils import dedupe_strings, markdown_to_text
+
+
+LOGGER = get_logger(__name__)
 
 
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
@@ -59,6 +67,12 @@ class ResumeBuilderSession:
     draft: ResumeBuilderDraft = field(default_factory=ResumeBuilderDraft)
     generated_resume_markdown: str = ""
     generated_resume_plain_text: str = ""
+    # Conversational LLM intake stores user/assistant turn pairs here so
+    # subsequent turns have narrative continuity (backtracking, "as I
+    # said earlier" references, etc.). Each entry is
+    # `{"role": "user" | "assistant", "content": str}`. Empty list means
+    # the regex / step-machine flow is in use.
+    conversation_history: list[dict] = field(default_factory=list)
 
 
 _SESSIONS: dict[str, ResumeBuilderSession] = {}
@@ -112,7 +126,13 @@ _NAME_PREAMBLE_PATTERN = re.compile(
 
 
 def _looks_like_personal_name(value: str) -> bool:
-    """Heuristic: looks like a person's name (1-5 short words, mostly letters)."""
+    """Heuristic: looks like a person's name (1-5 short words, mostly letters).
+
+    Unicode-aware: accepts any letter the user's keyboard produces,
+    including accented Latin (François, Müller), Cyrillic, CJK, etc.
+    Rejects digits, underscores, and structural symbols (`@`, `/`, etc.)
+    so emails/urls/role labels can't be misclassified as names.
+    """
     cleaned = value.strip(" ,.;-").strip()
     if not cleaned or "@" in cleaned or "/" in cleaned or "http" in cleaned.lower():
         return False
@@ -120,9 +140,14 @@ def _looks_like_personal_name(value: str) -> bool:
     if not (1 <= len(words) <= 5):
         return False
     for word in words:
-        # Allow single initials like "A" but reject digit-heavy or symbolic tokens.
-        if not re.fullmatch(r"[A-Za-z][A-Za-z'\-\.]*", word):
+        if not word or not word[0].isalpha():
             return False
+        # Allow inner connectors (apostrophe, hyphen, period — for
+        # names like O'Brien, Smith-Jones, St. John) plus any letter
+        # in any script. Reject digits and underscores.
+        for ch in word[1:]:
+            if not (ch.isalpha() or ch in "'-."):
+                return False
     return True
 
 
@@ -227,16 +252,32 @@ def _apply_role(session: ResumeBuilderSession, message: str):
     which then renders as a cramped multi-line role title in the resume
     header. Now we split on the first sentence boundary, strip
     "Targeting / looking for" preambles, and cap the title length.
+
+    Newline-first: when the user answers with the title on line 1 and
+    background on line 2 (a very common pattern, even without
+    sentence-ending punctuation on line 1), prefer the newline split.
+    Fall through to sentence-boundary splitting only when the message
+    is single-line.
     """
     text = str(message or "").strip()
     if not text:
         return
 
-    # Split on the first sentence boundary so the role title is just
-    # the lead clause, and any background narrative becomes the summary.
-    sentence_split = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)
-    title_chunk = sentence_split[0].strip().rstrip(".!?,;: ")
-    summary_chunk = sentence_split[1].strip() if len(sentence_split) > 1 else ""
+    title_chunk: str = ""
+    summary_chunk: str = ""
+    if "\n" in text:
+        leading, _, remainder = text.partition("\n")
+        leading_clean = leading.strip().rstrip(".!?,;: ")
+        if leading_clean and len(leading_clean) <= 80:
+            title_chunk = leading_clean
+            summary_chunk = remainder.strip()
+    if not title_chunk:
+        # Single-line answer (or leading line was too long to be a
+        # title): fall back to sentence-boundary splitting so a
+        # paragraph-style answer still extracts the lead clause.
+        sentence_split = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)
+        title_chunk = sentence_split[0].strip().rstrip(".!?,;: ")
+        summary_chunk = sentence_split[1].strip() if len(sentence_split) > 1 else ""
 
     # Strip "Targeting" / "Looking for" / trailing "roles" so the stored
     # value is the role TITLE itself, not the user's framing of it.
@@ -528,6 +569,7 @@ def export_resume_builder_session_payload(*, session_id: str):
             "draft_profile": asdict(session.draft),
             "generated_resume_markdown": session.generated_resume_markdown,
             "generated_resume_plain_text": session.generated_resume_plain_text,
+            "conversation_history": list(session.conversation_history or []),
         },
         separators=(",", ":"),
     )
@@ -541,6 +583,18 @@ def restore_resume_builder_session_payload(payload_json: str):
     draft_payload = raw_payload.get("draft_profile") or {}
     if not isinstance(draft_payload, dict):
         raise ValueError("Resume builder session draft payload is invalid.")
+
+    history_payload = raw_payload.get("conversation_history") or []
+    if not isinstance(history_payload, list):
+        history_payload = []
+    sanitized_history = [
+        {
+            "role": str(item.get("role", "") or "").strip() or "user",
+            "content": str(item.get("content", "") or ""),
+        }
+        for item in history_payload
+        if isinstance(item, dict)
+    ]
 
     session = ResumeBuilderSession(
         session_id=str(raw_payload.get("session_id", "") or uuid4()),
@@ -575,9 +629,14 @@ def restore_resume_builder_session_payload(payload_json: str):
         generated_resume_plain_text=str(
             raw_payload.get("generated_resume_plain_text", "") or ""
         ),
+        conversation_history=sanitized_history,
     )
     _SESSIONS[session.session_id] = session
     return _serialize_session(session)
+
+
+def has_resume_builder_session(session_id: str) -> bool:
+    return str(session_id or "").strip() in _SESSIONS
 
 
 def start_resume_builder_session():
@@ -586,7 +645,160 @@ def start_resume_builder_session():
     return _serialize_session(session)
 
 
-def answer_resume_builder_message(*, session_id: str, message: str):
+_VALID_STATUSES = {"collecting", "reviewing", "ready"}
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item or "").strip()]
+
+
+def _apply_llm_draft_updates(session: ResumeBuilderSession, updates: dict):
+    """Merge a partial dict of resume-builder fields into the session's
+    draft. Mirrors the shape of `_apply_draft_updates` but only writes
+    keys present in `updates` (so the LLM can return a partial)."""
+    if not isinstance(updates, dict):
+        return
+    if "full_name" in updates:
+        session.draft.full_name = str(updates.get("full_name") or "").strip()
+    if "location" in updates:
+        session.draft.location = str(updates.get("location") or "").strip()
+    if "contact_lines" in updates:
+        session.draft.contact_lines = dedupe_strings(
+            _coerce_string_list(updates.get("contact_lines"))
+        )
+    if "target_role" in updates:
+        session.draft.target_role = str(updates.get("target_role") or "").strip()
+    if "professional_summary" in updates:
+        session.draft.professional_summary = str(
+            updates.get("professional_summary") or ""
+        ).strip()
+    if "experience_notes" in updates:
+        session.draft.experience_notes = str(
+            updates.get("experience_notes") or ""
+        ).strip()
+    if "education_notes" in updates:
+        session.draft.education_notes = str(
+            updates.get("education_notes") or ""
+        ).strip()
+    if "skills" in updates:
+        session.draft.skills = dedupe_strings(_coerce_string_list(updates.get("skills")))
+    if "certifications" in updates:
+        session.draft.certifications = dedupe_strings(
+            _coerce_string_list(updates.get("certifications"))
+        )
+
+
+def _run_llm_turn(
+    *,
+    session: ResumeBuilderSession,
+    user_message: str,
+    openai_service,
+):
+    """Drive one conversational turn through the LLM intake prompt.
+
+    Returns the assistant message text on success. Mutates the session
+    in place: applies `draft_updates`, updates `status` and
+    `current_step`, appends the user/assistant turn pair to
+    `conversation_history`. Raises `AgentExecutionError` on any failure
+    so the caller can swallow it and fall back to the regex flow.
+    """
+    if openai_service is None or not openai_service.is_available():
+        raise AgentExecutionError("OpenAI service is not available for resume builder intake.")
+
+    prompt = build_resume_builder_prompt(
+        draft=asdict(session.draft),
+        history=session.conversation_history,
+        user_message=user_message,
+    )
+    payload = openai_service.run_json_prompt(
+        prompt["system"],
+        prompt["user"],
+        expected_keys=prompt["expected_keys"],
+        temperature=None,
+        max_completion_tokens=get_openai_max_completion_tokens_for_task("resume_builder"),
+        task_name="resume_builder",
+        allow_output_budget_retry=False,
+    )
+
+    draft_updates = payload.get("draft_updates")
+    if isinstance(draft_updates, dict):
+        _apply_llm_draft_updates(session, draft_updates)
+
+    assistant_message = str(payload.get("assistant_message") or "").strip()
+    if not assistant_message:
+        raise AgentExecutionError("LLM returned an empty assistant_message.")
+
+    raw_status = str(payload.get("status") or "").strip().lower()
+    status = raw_status if raw_status in _VALID_STATUSES else "collecting"
+    session.status = status
+
+    focus_field = str(payload.get("focus_field") or "").strip()
+    if status == "ready":
+        session.current_step = "review"
+    elif status == "reviewing":
+        session.current_step = "review"
+    elif focus_field and any(focus_field == key for key, _ in RESUME_BUILDER_STEPS):
+        # Map LLM focus_field back to a step key for legacy
+        # `current_step` consumers (UI progress indicator, etc.).
+        session.current_step = focus_field
+    elif focus_field in {"full_name", "location", "contact_lines"}:
+        session.current_step = "basics"
+    elif focus_field in {"professional_summary", "target_role"}:
+        session.current_step = "role"
+    elif focus_field in {"experience_notes"}:
+        session.current_step = "experience"
+    elif focus_field in {"education_notes", "certifications"}:
+        session.current_step = "education"
+    elif focus_field in {"skills"}:
+        session.current_step = "skills"
+    # If the model returned no focus_field, leave current_step alone.
+
+    session.conversation_history.append(
+        {"role": "user", "content": user_message}
+    )
+    session.conversation_history.append(
+        {"role": "assistant", "content": assistant_message}
+    )
+    # Cap memory: keep only the last 24 turn pairs so a long session
+    # doesn't blow the prompt budget. The model still sees enough
+    # context for back-references; older turns are summarized by the
+    # current `draft` state itself.
+    if len(session.conversation_history) > 48:
+        session.conversation_history = session.conversation_history[-48:]
+
+    return assistant_message
+
+
+def _advance_step_after_regex_apply(session: ResumeBuilderSession, current_step: str):
+    """Tick the step machine forward after a deterministic _apply_*
+    call. Pulled out of `answer_resume_builder_message` so the regex
+    fallback path and the legacy regex-only path share the same
+    advancement logic."""
+    current_index = _step_index(current_step)
+    next_index = current_index + 1
+    next_step = (
+        RESUME_BUILDER_STEPS[next_index][0]
+        if next_index < len(RESUME_BUILDER_STEPS)
+        else None
+    )
+
+    if next_step:
+        session.current_step = next_step
+        session.status = "collecting"
+    else:
+        session.current_step = "review"
+        session.status = "reviewing"
+    return next_step
+
+
+def answer_resume_builder_message(
+    *,
+    session_id: str,
+    message: str,
+    openai_service=None,
+):
     session = _SESSIONS.get(str(session_id or "").strip())
     if session is None:
         raise ValueError("Resume builder session not found.")
@@ -594,6 +806,38 @@ def answer_resume_builder_message(*, session_id: str, message: str):
     normalized_message = str(message or "").strip()
     if not normalized_message:
         raise ValueError("Add an answer before continuing.")
+
+    # LLM-first path: when an OpenAIService is available, the model
+    # extracts fields, picks the next question, and produces the
+    # conversational reply. The regex / step-machine path below stays
+    # as the safety net so the feature still works without an API key,
+    # on JSON-decode failures, or on any other LLM error.
+    if openai_service is not None and openai_service.is_available():
+        try:
+            assistant_message = _run_llm_turn(
+                session=session,
+                user_message=normalized_message,
+                openai_service=openai_service,
+            )
+            return _serialize_session(
+                session,
+                assistant_message=assistant_message,
+            )
+        except AgentExecutionError as exc:
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                "resume_builder_llm_fallback",
+                "Resume-builder LLM turn failed; falling back to deterministic intake.",
+                session_id=session.session_id,
+                error_type=type(exc).__name__,
+                error_message=exc.user_message,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            LOGGER.exception(
+                "Resume-builder LLM turn raised unexpectedly.",
+                extra={"session_id": session.session_id},
+            )
 
     current_step = session.current_step
     if current_step == "basics":
@@ -607,16 +851,7 @@ def answer_resume_builder_message(*, session_id: str, message: str):
     elif current_step == "skills":
         _apply_skills(session, normalized_message)
 
-    current_index = _step_index(current_step)
-    next_index = current_index + 1
-    next_step = RESUME_BUILDER_STEPS[next_index][0] if next_index < len(RESUME_BUILDER_STEPS) else None
-
-    if next_step:
-        session.current_step = next_step
-        session.status = "collecting"
-    else:
-        session.current_step = "review"
-        session.status = "reviewing"
+    next_step = _advance_step_after_regex_apply(session, current_step)
 
     return _serialize_session(
         session,

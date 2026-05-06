@@ -27,7 +27,6 @@ class AssistantService:
         *,
         current_page,
         workflow_view_model=None,
-        report=None,
         artifact=None,
         history=None,
         app_context=None,
@@ -42,7 +41,6 @@ class AssistantService:
         }
         workflow_context = self._build_application_qa_context(
             workflow_view_model,
-            report=report,
             artifact=artifact,
         )
         assistant_context = {
@@ -78,7 +76,6 @@ class AssistantService:
             current_page=current_page,
             workflow_view_model=workflow_view_model,
             artifact=artifact,
-            report=report,
             app_context=product_context,
         )
 
@@ -88,7 +85,6 @@ class AssistantService:
         *,
         current_page,
         workflow_view_model=None,
-        report=None,
         artifact=None,
         history=None,
         app_context=None,
@@ -114,7 +110,6 @@ class AssistantService:
         }
         workflow_context = self._build_application_qa_context(
             workflow_view_model,
-            report=report,
             artifact=artifact,
         )
         assistant_context = {
@@ -163,7 +158,6 @@ class AssistantService:
             current_page=current_page,
             workflow_view_model=workflow_view_model,
             artifact=artifact,
-            report=report,
             app_context=product_context,
         )
         if fallback.answer:
@@ -178,12 +172,11 @@ class AssistantService:
             assistant_scope="product_help",
         )
 
-    def answer_application_qa(self, question, workflow_view_model, report=None, artifact=None, history=None):
+    def answer_application_qa(self, question, workflow_view_model, artifact=None, history=None):
         return self.answer(
             question,
             current_page="Manual JD Input",
             workflow_view_model=workflow_view_model,
-            report=report,
             artifact=artifact,
             history=history,
             assistant_scope="application_qa",
@@ -194,7 +187,6 @@ class AssistantService:
         *,
         current_page,
         workflow_view_model=None,
-        report=None,
         artifact=None,
         app_context=None,
     ):
@@ -204,7 +196,6 @@ class AssistantService:
         assistant_context = self.build_session_context(
             current_page=current_page,
             workflow_view_model=workflow_view_model,
-            report=report,
             artifact=artifact,
             app_context=app_context,
         )
@@ -233,7 +224,6 @@ class AssistantService:
         *,
         current_page,
         workflow_view_model=None,
-        report=None,
         artifact=None,
         app_context=None,
     ):
@@ -243,7 +233,6 @@ class AssistantService:
         if workflow_view_model and getattr(workflow_view_model, "job_description", None):
             workflow_context = cls._build_application_qa_context(
                 workflow_view_model,
-                report=report,
                 artifact=artifact,
             )
         return {
@@ -259,7 +248,7 @@ class AssistantService:
         return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def _build_workflow_context(workflow_view_model, report=None, artifact=None):
+    def _build_workflow_context(workflow_view_model, artifact=None):
         fit_analysis = getattr(workflow_view_model, "fit_analysis", None) if workflow_view_model else None
         agent_result = getattr(workflow_view_model, "agent_result", None) if workflow_view_model else None
         review = getattr(agent_result, "review", None) if agent_result else None
@@ -270,7 +259,6 @@ class AssistantService:
             "fit_analysis": AssistantService._to_context_payload(fit_analysis),
             "tailored_draft": AssistantService._to_context_payload(getattr(workflow_view_model, "tailored_draft", None) if workflow_view_model else None),
             "agent_result": AssistantService._to_context_payload(agent_result),
-            "report_summary": getattr(report, "summary", None),
             "tailored_resume_summary": getattr(artifact, "summary", None),
             "tailored_resume_validation_notes": getattr(artifact, "validation_notes", []),
             "cover_letter_summary": AssistantService._build_cover_letter_summary(cover_letter),
@@ -283,7 +271,7 @@ class AssistantService:
         }
 
     @staticmethod
-    def _build_application_qa_context(workflow_view_model, report=None, artifact=None):
+    def _build_application_qa_context(workflow_view_model, artifact=None):
         fit_analysis = getattr(workflow_view_model, "fit_analysis", None) if workflow_view_model else None
         agent_result = getattr(workflow_view_model, "agent_result", None) if workflow_view_model else None
         review = getattr(agent_result, "review", None) if agent_result else None
@@ -324,7 +312,6 @@ class AssistantService:
                 ) if artifact else list(getattr(tailored_draft, "highlighted_skills", [])[:6]) if tailored_draft else [],
                 "validation_notes": list(getattr(artifact, "validation_notes", [])[:4]) if artifact else [],
             },
-            "report_summary": getattr(report, "summary", None),
             "cover_letter_summary": AssistantService._build_cover_letter_summary(cover_letter),
             "review": {
                 "approved": bool(getattr(review, "approved", False)) if review else False,
@@ -420,7 +407,6 @@ class AssistantService:
         current_page,
         workflow_view_model=None,
         artifact=None,
-        report=None,
         app_context=None,
     ):
         normalized = str(question or "").lower()
@@ -515,7 +501,6 @@ class AssistantService:
             normalized,
             workflow_view_model,
             artifact,
-            report=report,
         )
         if contextual_response is not None:
             return contextual_response
@@ -541,7 +526,7 @@ class AssistantService:
         )
 
     @staticmethod
-    def _fallback_output_qa(normalized, workflow_view_model, artifact, report=None):
+    def _fallback_output_qa(normalized, workflow_view_model, artifact):
         if not workflow_view_model or not workflow_view_model.candidate_profile or not workflow_view_model.job_description:
             if any(keyword in normalized for keyword in ("resume", "cover letter", "fit", "submit", "gap", "bullet", "rewrite")):
                 return AssistantResponse(

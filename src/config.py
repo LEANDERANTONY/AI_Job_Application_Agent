@@ -44,6 +44,10 @@ OPENAI_MODEL_ROUTING = {
     "assistant": OPENAI_MODEL_ASSISTANT,
     "assistant_product_help": OPENAI_MODEL_PRODUCT_HELP,
     "assistant_application_qa": OPENAI_MODEL_APPLICATION_QA,
+    # Resume-builder intake: short conversational turns over a small
+    # JSON envelope. Mini-tier is fine; the work is interview-style
+    # parsing rather than long-form reasoning.
+    "resume_builder": os.getenv("OPENAI_MODEL_RESUME_BUILDER", OPENAI_MODEL_ASSISTANT),
 }
 OPENAI_REASONING_ROUTING = {
     "jd_summary": os.getenv("OPENAI_REASONING_JD_SUMMARY", "low").strip().lower(),
@@ -61,6 +65,7 @@ OPENAI_REASONING_ROUTING = {
     "assistant_application_qa": os.getenv(
         "OPENAI_REASONING_APPLICATION_QA", OPENAI_REASONING_HIGH_TRUST
     ).strip().lower(),
+    "resume_builder": os.getenv("OPENAI_REASONING_RESUME_BUILDER", "low").strip().lower(),
 }
 OPENAI_MODEL = OPENAI_MODEL_DEFAULT
 
@@ -108,6 +113,7 @@ OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
     ),
     "assistant_product_help": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PRODUCT_HELP", 700),
     "assistant_application_qa": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
+    "resume_builder": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER", 1200),
 }
 
 
