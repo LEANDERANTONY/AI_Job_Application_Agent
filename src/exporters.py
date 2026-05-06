@@ -826,9 +826,9 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
 
 
 _RESUME_THEME_PALETTES = {
-    # Default — warm cream paper + brown accents. Same family as the
-    # cover letter classic theme. Distinctive but design-forward; works
-    # for modern tech / startups / design-engineering.
+    # Default — warm cream paper + brown accents. Editorial pairing:
+    # Arial body for scannability + Georgia for the prose-y bits
+    # (summary, bullets) to harmonise with the cover letter.
     "classic_ats": {
         "ink": "#221912",
         "muted": "#6b5648",
@@ -837,15 +837,17 @@ _RESUME_THEME_PALETTES = {
         "line": "#d7c2af",
         "paper": "#fffdf9",
         "surface": "#fffdfa",
+        "body_font_family": "Arial, Helvetica, sans-serif",
         "h1_font_family": 'Georgia, "Times New Roman", serif',
         "prose_font_family": 'Georgia, "Times New Roman", serif',
         "prose_line_height": "1.55",
         "header_border_width": "3px",
         "code_bg": "rgba(143, 104, 69, 0.10)",
     },
-    # Conservative B&W — pure ATS-template look. For Big Tech recruiting
-    # at scale, banks, defense, or any reviewer who prefers the
-    # traditional black-on-white treatment.
+    # Conservative B&W — pure ATS-template look. Body uses Georgia so
+    # the resume reads as the same family as the cover letter (which
+    # is also Georgia in both themes); Arial felt cold and template-y
+    # at the small sizes this layout uses.
     "professional_neutral": {
         "ink": "#0a0a0a",
         "muted": "#555555",
@@ -854,9 +856,10 @@ _RESUME_THEME_PALETTES = {
         "line": "#bfbfbf",
         "paper": "#ffffff",
         "surface": "#ffffff",
-        "h1_font_family": "Arial, Helvetica, sans-serif",
-        "prose_font_family": "Arial, Helvetica, sans-serif",
-        "prose_line_height": "1.5",
+        "body_font_family": 'Georgia, "Times New Roman", serif',
+        "h1_font_family": 'Georgia, "Times New Roman", serif',
+        "prose_font_family": 'Georgia, "Times New Roman", serif',
+        "prose_line_height": "1.55",
         "header_border_width": "2px",
         "code_bg": "rgba(0, 0, 0, 0.04)",
     },
@@ -899,7 +902,7 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         }}
         * {{ box-sizing: border-box; }}
         html, body {{ margin: 0; padding: 0; }}
-        body {{ font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: var(--paper); font-size: 10.5pt; line-height: 1.5; }}
+        body {{ font-family: {body_font_family}; color: var(--ink); background: var(--paper); font-size: 10.5pt; line-height: 1.5; }}
         /* Editorial pairing: in classic_ats the prose-y parts (summary,
            bullets) shift to Georgia so the resume harmonizes with the
            cover letter; professional_neutral keeps Arial throughout. */
