@@ -42,6 +42,181 @@ def _resolve_resume_theme(theme: str, agent_result: Optional[AgentWorkflowResult
     if theme in RESUME_THEMES:
         return theme
     return "classic_ats"
+
+
+# Canonical section identifiers used in TailoredResumeArtifact.section_order.
+# The exporter renders sections in this order and the resume_builder
+# helpers honor the same vocabulary.
+CANONICAL_SECTIONS: tuple[str, ...] = (
+    "summary",
+    "skills",
+    "experience",
+    "projects",
+    "education",
+    "publications",
+    "certifications",
+)
+
+
+# Display-name -> canonical-name aliases. The LLM typically emits
+# display names like "Professional Experience" or "Core Skills"; this
+# lets us normalise them before honoring the order. Anything not in
+# this map is lowercased and stripped of leading qualifiers
+# ('professional', 'core', 'technical', 'selected') as a last-resort
+# fallback.
+_SECTION_NAME_ALIASES: dict[str, str] = {
+    "summary": "summary",
+    "professional summary": "summary",
+    "executive summary": "summary",
+    "objective": "summary",
+    "about": "summary",
+    "skills": "skills",
+    "core skills": "skills",
+    "technical skills": "skills",
+    "key skills": "skills",
+    "experience": "experience",
+    "professional experience": "experience",
+    "work experience": "experience",
+    "leadership experience": "experience",
+    "clinical experience": "experience",
+    "academic appointments": "experience",
+    "projects": "projects",
+    "selected projects": "projects",
+    "personal projects": "projects",
+    "education": "education",
+    "academic background": "education",
+    "publications": "publications",
+    "selected publications": "publications",
+    "papers": "publications",
+    "certifications": "certifications",
+    "licenses": "certifications",
+    "licensure & certifications": "certifications",
+    "certifications & licenses": "certifications",
+}
+
+
+def _normalize_section_name(name: str) -> Optional[str]:
+    """Map a display section name to its canonical id, or None if no
+    canonical match exists.
+
+    Tries the alias map first, then a permissive fallback that strips
+    common qualifier prefixes ('professional', 'core', 'selected')
+    and re-checks the alias map. Returns None on no match so callers
+    can decide whether to drop the entry or accept it as-is.
+    """
+    if not name:
+        return None
+    normalized = " ".join(str(name).lower().split())
+    if normalized in _SECTION_NAME_ALIASES:
+        return _SECTION_NAME_ALIASES[normalized]
+    # Strip a single leading qualifier and retry (handles 'core skills'
+    # -> 'skills' even if the alias map lookup missed for some reason).
+    for prefix in ("professional ", "core ", "technical ", "selected ", "key "):
+        if normalized.startswith(prefix):
+            stripped = normalized[len(prefix):]
+            if stripped in _SECTION_NAME_ALIASES:
+                return _SECTION_NAME_ALIASES[stripped]
+            if stripped in CANONICAL_SECTIONS:
+                return stripped
+    if normalized in CANONICAL_SECTIONS:
+        return normalized
+    return None
+
+
+def compute_section_order(candidate_profile: CandidateProfile) -> list[str]:
+    """Pick a canonical section order based on the candidate's profile
+    shape.
+
+    Heuristics (intentionally simple — the LLM agent can override
+    this when it has more context):
+
+    - 5+ publications -> academic CV path: education + publications high.
+      The threshold is deliberately high; senior industry engineers
+      often have 2-4 conference talks / blog posts that shouldn't flip
+      them onto the academic path.
+    - 0 work experience -> student / no-history path: education up,
+      projects up, experience after
+    - 2+ projects with at least 1 work entry -> career-switcher / proof-
+      heavy path: skills + projects up to lead with target-role evidence
+    - everything else -> standard professional: experience after summary
+      and skills
+
+    The 'summary' section always leads when present. Tail sections
+    (publications, certifications) appear at the end when not promoted
+    earlier so they render after the primary narrative.
+    """
+    exp_count = len(candidate_profile.experience or [])
+    proj_count = len(candidate_profile.projects or [])
+    pub_count = len(candidate_profile.publications or [])
+
+    if pub_count >= 5:
+        return [
+            "summary",
+            "education",
+            "publications",
+            "experience",
+            "skills",
+            "projects",
+            "certifications",
+        ]
+
+    if exp_count == 0:
+        return [
+            "summary",
+            "education",
+            "projects",
+            "skills",
+            "experience",
+            "publications",
+            "certifications",
+        ]
+
+    if proj_count >= 2:
+        return [
+            "summary",
+            "skills",
+            "projects",
+            "experience",
+            "education",
+            "publications",
+            "certifications",
+        ]
+
+    return [
+        "summary",
+        "skills",
+        "experience",
+        "projects",
+        "education",
+        "publications",
+        "certifications",
+    ]
+
+
+def _resolve_section_order(
+    candidate_profile: CandidateProfile,
+    agent_result: Optional[AgentWorkflowResult],
+) -> list[str]:
+    """Pick the section order from the agent's resume_generation
+    output if it provided one, normalised to canonical names; fall
+    back to compute_section_order(profile) when the agent skipped it
+    or emitted only unrecognised names.
+    """
+    proposed: list[str] = []
+    if agent_result and agent_result.resume_generation:
+        for raw in agent_result.resume_generation.section_order or []:
+            canonical = _normalize_section_name(raw)
+            if canonical and canonical not in proposed:
+                proposed.append(canonical)
+    if not proposed:
+        return compute_section_order(candidate_profile)
+    # Append any canonical sections the agent didn't mention so the
+    # downstream renderer always has the full vocabulary to work
+    # with (it'll skip empties).
+    for section in CANONICAL_SECTIONS:
+        if section not in proposed:
+            proposed.append(section)
+    return proposed
 def _normalize_date_token(token) -> str:
     if isinstance(token, dict):
         year = token.get("year")
@@ -205,6 +380,7 @@ def _build_resume_markdown(
     theme: str,
     project_entries: list[ProjectEntry] | None = None,
     publication_entries: list[str] | None = None,
+    section_order: list[str] | None = None,
 ) -> str:
     theme_config = RESUME_THEMES.get(theme, RESUME_THEMES["classic_ats"])
     header_block = ["# " + (header.full_name or "Candidate")]
@@ -257,29 +433,68 @@ def _build_resume_markdown(
             line += " ({dates})".format(dates=" - ".join(date_parts))
         education_lines.append(line)
 
-    # Summary / Core Skills / Education always render. Experience,
-    # Projects, Publications, and Certifications drop entirely when
-    # empty — students / early-career candidates may have any
-    # combination of these, and placeholder filler reads worse than
-    # the absence.
+    # Summary / Core Skills / Education always render even when the
+    # underlying data is sparse — Summary because the workflow always
+    # generates one (a placeholder there is a useful failure signal),
+    # Skills and Education because both are user-supplied content the
+    # resume requires. Experience, Projects, Publications, and
+    # Certifications drop entirely when empty — students / early-
+    # career candidates may have any combination of these, and a
+    # placeholder reads worse than the absence.
     cert_values = [item for item in certifications if str(item or "").strip()]
     pub_values = [item for item in (publication_entries or []) if str(item or "").strip()]
+
+    section_blocks: dict[str, str | None] = {
+        "summary": "## Professional Summary\n\n" + (professional_summary or "No professional summary generated."),
+        "skills": "## Core Skills\n\n" + render_markdown_list(highlighted_skills, "No highlighted skills generated."),
+        "experience": (
+            "## Professional Experience\n\n" + "\n\n".join(experience_blocks)
+            if experience_blocks
+            else None
+        ),
+        "projects": (
+            "## Projects\n\n" + "\n\n".join(project_blocks)
+            if project_blocks
+            else None
+        ),
+        "education": "## Education\n\n" + render_markdown_list(education_lines, "No education entries available."),
+        "publications": (
+            "## Publications\n\n" + render_markdown_list(pub_values, "")
+            if pub_values
+            else None
+        ),
+        "certifications": (
+            "## Certifications\n\n" + render_markdown_list(cert_values, "")
+            if cert_values
+            else None
+        ),
+    }
+
+    # Default to the standard professional order when the caller
+    # didn't supply one — keeps tests + legacy callers working.
+    order = list(section_order) if section_order else [
+        "summary",
+        "skills",
+        "experience",
+        "projects",
+        "education",
+        "publications",
+        "certifications",
+    ]
 
     sections: list[str] = [
         "\n".join(part for part in header_block if part),
         theme_config["tagline"],
-        "## Professional Summary\n\n" + (professional_summary or "No professional summary generated."),
-        "## Core Skills\n\n" + render_markdown_list(highlighted_skills, "No highlighted skills generated."),
     ]
-    if experience_blocks:
-        sections.append("## Professional Experience\n\n" + "\n\n".join(experience_blocks))
-    if project_blocks:
-        sections.append("## Projects\n\n" + "\n\n".join(project_blocks))
-    sections.append("## Education\n\n" + render_markdown_list(education_lines, "No education entries available."))
-    if pub_values:
-        sections.append("## Publications\n\n" + render_markdown_list(pub_values, ""))
-    if cert_values:
-        sections.append("## Certifications\n\n" + render_markdown_list(cert_values, ""))
+    seen: set[str] = set()
+    for name in order:
+        if name in seen:
+            continue
+        seen.add(name)
+        block = section_blocks.get(name)
+        if block:
+            sections.append(block)
+    # Always trail with Change Summary regardless of order.
     sections.append("## Change Summary\n\n" + render_markdown_list(change_log, "No change summary available."))
 
     return "\n\n".join(sections).strip()
@@ -313,6 +528,7 @@ def build_tailored_resume_artifact(
     publication_entries = _build_publication_entries(candidate_profile)
     change_log = _build_change_log(job_description, tailored_draft, agent_result, theme)
     validation_notes = _build_validation_notes(candidate_profile, fit_analysis, agent_result)
+    section_order = _resolve_section_order(candidate_profile, agent_result)
     title = "{name} - {role} Tailored Resume".format(
         name=candidate_profile.full_name or "Candidate",
         role=job_description.title or "Target Role",
@@ -337,6 +553,7 @@ def build_tailored_resume_artifact(
         theme,
         project_entries=project_entries,
         publication_entries=publication_entries,
+        section_order=section_order,
     )
     summary = "Tailored resume draft for {role}, ready to review and export.".format(
         role=job_description.title or "the target role",
@@ -357,6 +574,7 @@ def build_tailored_resume_artifact(
         certifications=list(candidate_profile.certifications),
         project_entries=project_entries,
         publication_entries=publication_entries,
+        section_order=section_order,
         change_log=change_log,
         validation_notes=validation_notes,
     )

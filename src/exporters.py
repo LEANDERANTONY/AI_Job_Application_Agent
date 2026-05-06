@@ -463,11 +463,22 @@ def _build_resume_skills_inline_html(skills):
     return '<p class="resume-skill-inline">{items}</p>'.format(items=" | ".join(values))
 
 
+_DEFAULT_RESUME_SECTION_ORDER = (
+    "summary",
+    "skills",
+    "experience",
+    "projects",
+    "education",
+    "publications",
+    "certifications",
+)
+
+
 def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
-    # Summary, Core Skills, Education always render — Summary because
-    # the workflow always generates one (placeholder surfaces a
-    # failure), Skills and Education because both are user-supplied
-    # content the resume requires.
+    # Summary, Core Skills, Education always render even when sparse —
+    # Summary because the workflow always generates one (placeholder
+    # surfaces a failure), Skills and Education because both are
+    # user-supplied content the resume requires.
     #
     # Experience, Projects, Publications, Certifications drop entirely
     # when empty: students / early-career candidates may legitimately
@@ -475,18 +486,39 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
     # awkward filler rather than as a useful diagnostic. Internships
     # are modelled as regular Experience entries (no separate
     # Internships section).
+    #
+    # Section order is honored from artifact.section_order when set
+    # (resume_builder picks it from the agent's resume_generation
+    # output or the deterministic per-profile heuristic). Falls back
+    # to the standard professional ordering for legacy callers that
+    # build artifacts directly without going through resume_builder.
     name = html.escape(artifact.header.full_name or artifact.title or "Candidate")
     contact_values = []
     if artifact.header.location:
         contact_values.append(artifact.header.location)
     contact_values.extend(item for item in artifact.header.contact_lines if str(item or "").strip())
     contact_html = _build_resume_contact_inline_html(contact_values)
-    skills_html = _build_resume_skills_inline_html(artifact.highlighted_skills)
+
+    summary_block = """
+    <section class="resume-classic-section resume-classic-section--plain-head">
+        <h2>Summary</h2>
+        <p class="resume-summary">{summary}</p>
+    </section>
+    """.format(
+        summary=html.escape(artifact.professional_summary or "No professional summary generated."),
+    )
+
+    skills_block = """
+    <section class="resume-classic-section resume-classic-section--plain-head">
+        <h2>Core Skills</h2>
+        {skills}
+    </section>
+    """.format(skills=_build_resume_skills_inline_html(artifact.highlighted_skills))
 
     experience_entries = list(artifact.experience_entries or [])
-    experience_section = ""
+    experience_block = ""
     if experience_entries:
-        experience_section = """
+        experience_block = """
     <section class="resume-classic-section">
         <h2>Experience</h2>
         {experience}
@@ -494,19 +526,26 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         """.format(experience=_build_resume_experience_html(experience_entries))
 
     project_entries = list(artifact.project_entries or [])
-    projects_section = ""
+    projects_block = ""
     if project_entries:
-        projects_section = """
+        projects_block = """
     <section class="resume-classic-section">
         <h2>Projects</h2>
         {projects}
     </section>
         """.format(projects=_build_resume_projects_html(project_entries))
 
+    education_block = """
+    <section class="resume-classic-section">
+        <h2>Education</h2>
+        {education}
+    </section>
+    """.format(education=_build_resume_education_html(artifact.education_entries))
+
     publication_entries = [item for item in (artifact.publication_entries or []) if str(item or "").strip()]
-    publications_section = ""
+    publications_block = ""
     if publication_entries:
-        publications_section = """
+        publications_block = """
     <section class="resume-classic-section">
         <h2>Publications</h2>
         {publications}
@@ -520,9 +559,9 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         )
 
     certifications = [item for item in artifact.certifications if str(item or "").strip()]
-    certifications_section = ""
+    certifications_block = ""
     if certifications:
-        certifications_section = """
+        certifications_block = """
     <section class="resume-classic-section">
         <h2>Certifications</h2>
         {certifications}
@@ -535,38 +574,43 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
             )
         )
 
-    return """
+    section_blocks = {
+        "summary": summary_block,
+        "skills": skills_block,
+        "experience": experience_block,
+        "projects": projects_block,
+        "education": education_block,
+        "publications": publications_block,
+        "certifications": certifications_block,
+    }
+
+    order = list(artifact.section_order) if artifact.section_order else list(_DEFAULT_RESUME_SECTION_ORDER)
+    seen: set[str] = set()
+    ordered_blocks: list[str] = []
+    for section_name in order:
+        if section_name in seen:
+            continue
+        seen.add(section_name)
+        block = section_blocks.get(section_name, "")
+        if block:
+            ordered_blocks.append(block)
+    # Append any sections the agent forgot to mention so we never lose
+    # rendered content when the agent emits a partial order.
+    for section_name in _DEFAULT_RESUME_SECTION_ORDER:
+        if section_name in seen:
+            continue
+        block = section_blocks.get(section_name, "")
+        if block:
+            ordered_blocks.append(block)
+
+    header_html = """
     <section class="resume-classic-header">
         <h1>{name}</h1>
         {contact_block}
     </section>
-    <section class="resume-classic-section resume-classic-section--plain-head">
-        <h2>Summary</h2>
-        <p class="resume-summary">{summary}</p>
-    </section>
-    <section class="resume-classic-section resume-classic-section--plain-head">
-        <h2>Core Skills</h2>
-        {skills}
-    </section>
-    {experience_section}
-    {projects_section}
-    <section class="resume-classic-section">
-        <h2>Education</h2>
-        {education}
-    </section>
-    {publications_section}
-    {certifications_section}
-    """.format(
-        name=name,
-        contact_block=contact_html,
-        summary=html.escape(artifact.professional_summary or "No professional summary generated."),
-        skills=skills_html,
-        experience_section=experience_section,
-        projects_section=projects_section,
-        education=_build_resume_education_html(artifact.education_entries),
-        publications_section=publications_section,
-        certifications_section=certifications_section,
-    )
+    """.format(name=name, contact_block=contact_html)
+
+    return header_html + "\n".join(ordered_blocks)
 
 
 _RESUME_THEME_PALETTES = {

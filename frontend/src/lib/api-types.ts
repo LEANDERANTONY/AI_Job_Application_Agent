@@ -259,6 +259,12 @@ export type TailoredResumeArtifact = {
   experience_entries: ResumeExperienceEntry[];
   education_entries: EducationEntry[];
   certifications: string[];
+  /** Canonical section ids in render order: 'summary', 'skills',
+   *  'experience', 'projects', 'education', 'publications',
+   *  'certifications'. Backend picks per-profile (students lead with
+   *  Education + Projects; academics with Publications; seniors with
+   *  Experience). Empty list = render with backend's default order. */
+  section_order: string[];
   change_log: string[];
   validation_notes: string[];
 };

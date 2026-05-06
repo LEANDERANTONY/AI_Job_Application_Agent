@@ -280,6 +280,12 @@ class TailoredResumeArtifact:
     certifications: List[str] = field(default_factory=list)
     project_entries: List[ProjectEntry] = field(default_factory=list)
     publication_entries: List[str] = field(default_factory=list)
+    # Canonical section identifiers ('summary', 'skills', 'experience',
+    # 'projects', 'education', 'publications', 'certifications') in the
+    # order they should render. Drives both HTML and markdown export so
+    # students lead with Education / Projects, academics lead with
+    # Publications, and seniors lead with Experience after Skills.
+    section_order: List[str] = field(default_factory=list)
     change_log: List[str] = field(default_factory=list)
     validation_notes: List[str] = field(default_factory=list)
 

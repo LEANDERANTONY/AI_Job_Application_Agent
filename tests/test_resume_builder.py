@@ -1,6 +1,14 @@
-from src.resume_builder import build_tailored_resume_artifact
+from src.resume_builder import (
+    _normalize_section_name,
+    _resolve_section_order,
+    build_tailored_resume_artifact,
+    compute_section_order,
+)
 from src.schemas import (
     AgentWorkflowResult,
+    CandidateProfile,
+    EducationEntry,
+    ProjectEntry,
     ResumeGenerationAgentOutput,
     ResumeDocument,
     ReviewAgentOutput,
@@ -169,3 +177,180 @@ def test_build_tailored_resume_artifact_always_uses_classic_theme():
 
     assert artifact.theme == "classic_ats"
     assert artifact.summary == "Tailored resume draft for Machine Learning Engineer, ready to review and export."
+
+
+# ---------------------------------------------------------------------------
+# section_order helpers
+# ---------------------------------------------------------------------------
+
+
+def _profile(*, experience=None, projects=None, publications=None) -> CandidateProfile:
+    return CandidateProfile(
+        full_name="Test Candidate",
+        experience=list(experience or []),
+        projects=list(projects or []),
+        publications=list(publications or []),
+        education=[EducationEntry(institution="Test U")],
+    )
+
+
+def _exp(title="Engineer", organization="Acme") -> WorkExperience:
+    return WorkExperience(title=title, organization=organization)
+
+
+def _proj(name="Project") -> ProjectEntry:
+    return ProjectEntry(name=name)
+
+
+def test_compute_section_order_routes_student_to_education_first():
+    profile = _profile(experience=[], projects=[_proj(), _proj(), _proj()])
+
+    order = compute_section_order(profile)
+
+    # Student / no-history path: education leads, projects follow,
+    # experience after.
+    assert order[:3] == ["summary", "education", "projects"]
+    assert order.index("experience") > order.index("projects")
+
+
+def test_compute_section_order_routes_academic_when_publications_high():
+    profile = _profile(
+        experience=[_exp("Postdoc"), _exp("Professor")],
+        publications=["P1", "P2", "P3", "P4", "P5"],
+    )
+
+    order = compute_section_order(profile)
+
+    # Academic path: education + publications high before experience.
+    assert order[:3] == ["summary", "education", "publications"]
+    assert order.index("experience") > order.index("publications")
+
+
+def test_compute_section_order_keeps_senior_industry_with_few_publications_on_professional_path():
+    profile = _profile(
+        experience=[_exp() for _ in range(5)],
+        publications=["Talk 1", "Talk 2", "Talk 3"],
+    )
+
+    order = compute_section_order(profile)
+
+    # Senior with 3 talks (not 5+ academic-shape) stays on standard
+    # professional path: experience after summary + skills.
+    assert order[:3] == ["summary", "skills", "experience"]
+
+
+def test_compute_section_order_routes_career_switcher_to_skills_and_projects_first():
+    profile = _profile(
+        experience=[_exp(title="Mechanical Engineer"), _exp(title="Engineer")],
+        projects=[_proj(), _proj(), _proj()],
+    )
+
+    order = compute_section_order(profile)
+
+    # Career switcher path: skills lead, then projects as proof, then
+    # experience.
+    assert order[:3] == ["summary", "skills", "projects"]
+    assert order.index("experience") > order.index("projects")
+
+
+def test_compute_section_order_default_professional_path_for_standard_resume():
+    profile = _profile(experience=[_exp(), _exp(), _exp()])
+
+    order = compute_section_order(profile)
+
+    assert order[:3] == ["summary", "skills", "experience"]
+
+
+def test_normalize_section_name_handles_common_aliases():
+    assert _normalize_section_name("Professional Summary") == "summary"
+    assert _normalize_section_name("Core Skills") == "skills"
+    assert _normalize_section_name("PROFESSIONAL EXPERIENCE") == "experience"
+    assert _normalize_section_name("Selected Publications") == "publications"
+    assert _normalize_section_name("Licensure & Certifications") == "certifications"
+    # Unknown sections return None so callers can decide policy.
+    assert _normalize_section_name("Random Unknown Section") is None
+
+
+def test_resolve_section_order_normalises_agent_output_and_appends_missing_sections():
+    profile = _profile(experience=[_exp(), _exp()])
+    agent_result = AgentWorkflowResult(
+        mode="openai",
+        model="test",
+        tailoring=TailoringAgentOutput(),
+        review=ReviewAgentOutput(approved=True),
+        resume_generation=ResumeGenerationAgentOutput(
+            professional_summary="x",
+            section_order=["Professional Summary", "Core Skills", "Professional Experience"],
+        ),
+    )
+
+    order = _resolve_section_order(profile, agent_result)
+
+    # Agent's three sections come first in canonical form, and the
+    # remaining canonical sections get appended so the renderer always
+    # has the full vocabulary.
+    assert order[:3] == ["summary", "skills", "experience"]
+    assert set(order) == {
+        "summary",
+        "skills",
+        "experience",
+        "projects",
+        "education",
+        "publications",
+        "certifications",
+    }
+
+
+def test_resolve_section_order_falls_back_to_compute_when_agent_skipped_it():
+    profile = _profile(experience=[], projects=[_proj(), _proj()])
+    agent_result = AgentWorkflowResult(
+        mode="openai",
+        model="test",
+        tailoring=TailoringAgentOutput(),
+        review=ReviewAgentOutput(approved=True),
+        resume_generation=ResumeGenerationAgentOutput(
+            professional_summary="x",
+            section_order=[],  # agent skipped it
+        ),
+    )
+
+    order = _resolve_section_order(profile, agent_result)
+
+    # Falls back to compute_section_order, which routes a 0-experience
+    # candidate to the student path.
+    assert order[:2] == ["summary", "education"]
+
+
+def test_build_tailored_resume_artifact_renders_markdown_in_section_order_for_student():
+    candidate_profile = CandidateProfile(
+        full_name="Aanya Sharma",
+        location="Bengaluru, India",
+        skills=["Python", "Go", "Docker"],
+        experience=[],  # student: no work history
+        education=[EducationEntry(institution="IIT Bombay", degree="B.Tech")],
+        projects=[
+            ProjectEntry(name="DistKV", bullets=["Built a Raft-based KV store"]),
+            ProjectEntry(name="Search Indexer", bullets=["Sub-1ms autocomplete"]),
+        ],
+    )
+    job_description = build_job_description_from_text(
+        "Software Engineer\nRequired: Python, Docker.\n"
+    )
+    fit_analysis = build_fit_analysis(candidate_profile, job_description)
+    tailored_draft = build_tailored_resume_draft(
+        candidate_profile, job_description, fit_analysis
+    )
+
+    artifact = build_tailored_resume_artifact(
+        candidate_profile,
+        job_description,
+        fit_analysis,
+        tailored_draft,
+    )
+
+    # Education must precede Projects must precede Core Skills in the
+    # rendered markdown for the student path.
+    md = artifact.markdown
+    assert md.index("## Education") < md.index("## Projects")
+    assert md.index("## Projects") < md.index("## Core Skills")
+    assert artifact.section_order[:3] == ["summary", "education", "projects"]
