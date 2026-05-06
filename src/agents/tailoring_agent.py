@@ -3,7 +3,6 @@ from src.prompts import build_tailoring_agent_prompt
 from src.schemas import (
     CandidateProfile,
     FitAnalysis,
-    FitAgentOutput,
     JobDescription,
     TailoredResumeDraft,
     TailoringAgentOutput,
@@ -22,7 +21,6 @@ class TailoringAgent:
         job_description: JobDescription,
         fit_analysis: FitAnalysis,
         tailored_draft: TailoredResumeDraft,
-        fit_output: FitAgentOutput,
     ) -> TailoringAgentOutput:
         if self._openai_service and self._openai_service.is_available():
             prompt = build_tailoring_agent_prompt(
@@ -30,7 +28,6 @@ class TailoringAgent:
                 job_description,
                 fit_analysis,
                 tailored_draft,
-                fit_output,
             )
             payload = self._openai_service.run_json_prompt(
                 prompt["system"],
@@ -50,23 +47,29 @@ class TailoringAgent:
                     payload.get("cover_letter_themes"), limit=4
                 ),
             )
-        return self._fallback(tailored_draft, fit_output)
+        return self._fallback(tailored_draft, fit_analysis)
 
     @staticmethod
     def _fallback(
         tailored_draft: TailoredResumeDraft,
-        fit_output: FitAgentOutput,
+        fit_analysis: FitAnalysis,
     ) -> TailoringAgentOutput:
+        """Deterministic fallback when the LLM is unavailable. Reads the
+        structured FitAnalysis directly — no FitAgent narration step
+        needed.  ``matched_hard_skills`` and ``gaps`` are the same
+        signals the previous fallback derived from FitAgentOutput."""
         base_summary = tailored_draft.professional_summary
         rewritten_bullets = unique_strings(tailored_draft.priority_bullets, limit=5)
         highlighted_skills = unique_strings(tailored_draft.highlighted_skills, limit=8)
 
-        cover_letter_themes = []
-        if fit_output.top_matches:
+        cover_letter_themes: list[str] = []
+        if fit_analysis.matched_hard_skills:
             cover_letter_themes.append(
-                "Lead with alignment on " + ", ".join(fit_output.top_matches[:2]) + "."
+                "Lead with alignment on "
+                + ", ".join(fit_analysis.matched_hard_skills[:2])
+                + "."
             )
-        if fit_output.key_gaps:
+        if fit_analysis.gaps:
             cover_letter_themes.append(
                 "Acknowledge growth areas while emphasizing grounded adjacent evidence."
             )

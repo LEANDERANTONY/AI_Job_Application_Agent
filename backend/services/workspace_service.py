@@ -18,7 +18,6 @@ from src.errors import InputValidationError
 from src.openai_service import OpenAIService
 from src.parsers.jd import parse_jd_text
 from src.parsers.resume import parse_resume_document
-from src.report_builder import build_application_report
 from src.resume_builder import build_tailored_resume_artifact
 from src.schemas import AssistantResponse, ResumeDocument
 from src.services.fit_service import build_fit_analysis
@@ -213,13 +212,6 @@ def run_workspace_analysis(
         tailored_draft,
         agent_result=agent_result,
     )
-    report = build_application_report(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-        tailored_draft,
-        agent_result=agent_result,
-    )
 
     review = getattr(agent_result, "review", None)
 
@@ -234,7 +226,6 @@ def run_workspace_analysis(
         "artifacts": {
             "tailored_resume": _serialize(tailored_resume_artifact),
             "cover_letter": _serialize(cover_letter_artifact),
-            "report": _serialize(report),
         },
         "workflow": {
             "mode": workflow_mode,
@@ -258,7 +249,6 @@ def answer_workspace_question(
 ):
     workflow_view_model = None
     artifact = None
-    report = None
     app_context = {
         "is_authenticated": False,
         "assistant_requires_login": False,
@@ -275,13 +265,11 @@ def answer_workspace_question(
         )
         artifacts = dict(workspace_snapshot.get("artifacts") or {})
         artifact = _namespace_value(artifacts.get("tailored_resume"))
-        report = _namespace_value(artifacts.get("report"))
         app_context.update(
             {
                 "has_resume": bool(workspace_snapshot.get("candidate_profile")),
                 "has_job_description": bool(workspace_snapshot.get("job_description")),
                 "has_tailored_resume": artifact is not None,
-                "has_report": report is not None,
                 "has_cover_letter": bool(artifacts.get("cover_letter")),
             }
         )
@@ -308,7 +296,6 @@ def answer_workspace_question(
         question,
         current_page=current_page,
         workflow_view_model=workflow_view_model,
-        report=report,
         artifact=artifact,
         history=compact_history,
         app_context=app_context,
@@ -362,8 +349,6 @@ def _compute_assistant_sources(
             sources.append("Tailored Resume Draft")
         if artifacts.get("cover_letter"):
             sources.append("Cover Letter")
-        if artifacts.get("report"):
-            sources.append("Application Package")
     seen: set[str] = set()
     deduped: list[str] = []
     for label in sources:
@@ -400,7 +385,6 @@ def stream_workspace_question(
     """
     workflow_view_model = None
     artifact = None
-    report = None
     app_context: dict[str, Any] = {
         "is_authenticated": False,
         "assistant_requires_login": False,
@@ -417,13 +401,11 @@ def stream_workspace_question(
         )
         artifacts = dict(workspace_snapshot.get("artifacts") or {})
         artifact = _namespace_value(artifacts.get("tailored_resume"))
-        report = _namespace_value(artifacts.get("report"))
         app_context.update(
             {
                 "has_resume": bool(workspace_snapshot.get("candidate_profile")),
                 "has_job_description": bool(workspace_snapshot.get("job_description")),
                 "has_tailored_resume": artifact is not None,
-                "has_report": report is not None,
                 "has_cover_letter": bool(artifacts.get("cover_letter")),
             }
         )
@@ -473,7 +455,6 @@ def stream_workspace_question(
             question,
             current_page=current_page,
             workflow_view_model=workflow_view_model,
-            report=report,
             artifact=artifact,
             history=compact_history,
             app_context=app_context,

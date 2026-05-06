@@ -186,12 +186,6 @@ export type JobAgentOutput = {
   messaging_guidance: string[];
 };
 
-export type FitAgentOutput = {
-  fit_summary: string;
-  top_matches: string[];
-  key_gaps: string[];
-};
-
 export type TailoringAgentOutput = {
   professional_summary: string;
   rewritten_bullets: string[];
@@ -218,7 +212,6 @@ export type ReviewAgentOutput = {
 export type AgentWorkflowResult = {
   mode: string;
   model: string;
-  fit: FitAgentOutput;
   tailoring: TailoringAgentOutput;
   review: ReviewAgentOutput;
   profile: ProfileAgentOutput;
@@ -227,14 +220,6 @@ export type AgentWorkflowResult = {
   attempted_assisted: boolean;
   fallback_reason: string;
   fallback_details: string;
-};
-
-export type ReportArtifact = {
-  title: string;
-  filename_stem: string;
-  summary: string;
-  markdown: string;
-  plain_text: string;
 };
 
 export type CoverLetterArtifact = {
@@ -342,7 +327,6 @@ export type WorkspaceWorkflow = {
 export type WorkspaceArtifacts = {
   tailored_resume: TailoredResumeArtifact;
   cover_letter: CoverLetterArtifact;
-  report: ReportArtifact;
 };
 
 export type WorkspaceAnalysisResponse = {
@@ -445,11 +429,9 @@ export type WorkspaceAssistantRequest = {
 
 export type WorkspaceArtifactKind =
   | "tailored_resume"
-  | "cover_letter"
-  | "report"
-  | "bundle";
+  | "cover_letter";
 
-export type WorkspaceArtifactExportFormat = "markdown" | "pdf" | "zip";
+export type WorkspaceArtifactExportFormat = "markdown" | "pdf";
 
 /** Each artifact has its own theme so the user can pick a different
  *  treatment for the resume vs the cover letter (e.g. classic_ats for
@@ -479,14 +461,14 @@ export type WorkspaceArtifactExportResponse = {
 
 export type WorkspaceArtifactPreviewRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;
-  artifact_kind: Exclude<WorkspaceArtifactKind, "bundle">;
+  artifact_kind: WorkspaceArtifactKind;
   resume_theme?: ArtifactTheme;
   cover_letter_theme?: ArtifactTheme;
 };
 
 export type WorkspaceArtifactPreviewResponse = {
   status: string;
-  artifact_kind: Exclude<WorkspaceArtifactKind, "bundle">;
+  artifact_kind: WorkspaceArtifactKind;
   resume_theme: string;
   cover_letter_theme: string;
   artifact_title: string;

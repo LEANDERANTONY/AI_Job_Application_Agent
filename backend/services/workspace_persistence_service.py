@@ -6,17 +6,14 @@ from typing import Any
 
 from backend.services.auth_session_service import resolve_authenticated_context
 from src.cover_letter_builder import build_cover_letter_artifact
-from src.report_builder import build_application_report
 from src.resume_builder import build_tailored_resume_artifact
 from src.saved_workspace_store import SavedWorkspaceStore
 from src.services.jd_summary_service import generate_job_summary_view
 from src.workflow_payloads import (
     WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER,
-    WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT,
     WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT,
     WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME,
     build_saved_cover_letter_from_payload,
-    build_saved_report_from_payload,
     build_saved_tailored_resume_from_payload,
     build_saved_workflow_snapshot_from_payload,
     versioned_payload,
@@ -98,10 +95,6 @@ def save_workspace_snapshot(
                     "imported_job_posting": snapshot.get("imported_job_posting"),
                 },
             ),
-            "report_payload_json": versioned_payload(
-                WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT,
-                artifacts.get("report") or {},
-            ),
             "cover_letter_payload_json": versioned_payload(
                 WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER,
                 artifacts.get("cover_letter") or {},
@@ -173,13 +166,6 @@ def load_saved_workspace_snapshot(*, access_token: str, refresh_token: str):
         saved_snapshot.tailored_draft,
         agent_result=saved_snapshot.agent_result,
     )
-    report = build_saved_report_from_payload(record.report_payload_json) or build_application_report(
-        saved_snapshot.candidate_profile,
-        saved_snapshot.job_description,
-        saved_snapshot.fit_analysis,
-        saved_snapshot.tailored_draft,
-        agent_result=saved_snapshot.agent_result,
-    )
 
     workspace_snapshot = {
         "resume_document": {
@@ -200,7 +186,6 @@ def load_saved_workspace_snapshot(*, access_token: str, refresh_token: str):
         "artifacts": {
             "tailored_resume": _serialize(tailored_resume_artifact),
             "cover_letter": _serialize(cover_letter_artifact),
-            "report": _serialize(report),
         },
         "workflow": {
             "mode": getattr(saved_snapshot.agent_result, "mode", "") or "saved_workspace",

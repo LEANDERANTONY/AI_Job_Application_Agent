@@ -1,8 +1,6 @@
-from src.report_builder import build_application_report
 from src.resume_builder import build_tailored_resume_artifact
 from src.schemas import (
     AgentWorkflowResult,
-    FitAgentOutput,
     ResumeGenerationAgentOutput,
     ResumeDocument,
     ReviewAgentOutput,
@@ -93,11 +91,6 @@ def test_build_tailored_resume_artifact_prefers_agent_output_when_available():
     agent_result = AgentWorkflowResult(
         mode="openai",
         model="gpt-test",
-        fit=FitAgentOutput(
-            fit_summary="Strong fit overall with one cloud gap.",
-            top_matches=["Python", "SQL", "Docker"],
-            key_gaps=["AWS"],
-        ),
         tailoring=TailoringAgentOutput(
             professional_summary="Agent-enhanced tailored summary.",
             rewritten_bullets=["Built production ML APIs using Python and Docker."],
@@ -143,11 +136,6 @@ def test_build_tailored_resume_artifact_always_uses_classic_theme():
     agent_result = AgentWorkflowResult(
         mode="openai",
         model="gpt-test",
-        fit=FitAgentOutput(
-            fit_summary="Strong fit overall with one cloud gap.",
-            top_matches=["Python", "SQL", "Docker"],
-            key_gaps=["AWS"],
-        ),
         tailoring=TailoringAgentOutput(
             professional_summary="Agent-enhanced tailored summary.",
             rewritten_bullets=["Built production ML APIs using Python and Docker."],

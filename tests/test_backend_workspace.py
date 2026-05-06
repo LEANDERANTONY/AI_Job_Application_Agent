@@ -250,7 +250,6 @@ def test_workspace_analyze_returns_fit_and_artifacts_without_assisted_run():
     assert payload["fit_analysis"]["overall_score"] >= 0
     assert payload["artifacts"]["tailored_resume"]["markdown"]
     assert payload["artifacts"]["cover_letter"]["markdown"]
-    assert payload["artifacts"]["report"]["markdown"]
 
 
 def test_workspace_analyze_job_start_returns_job_handle(monkeypatch):
@@ -453,7 +452,7 @@ def test_workspace_analyze_prefers_imported_job_title_when_parser_cannot_extract
     payload = response.json()
     assert payload["job_description"]["title"] == "Staff Software Engineer, Machine Learning"
     assert payload["job_description"]["location"] == "Bengaluru, Karnataka, India"
-    assert "Staff Software Engineer, Machine Learning" in payload["artifacts"]["report"]["title"]
+    assert "Staff Software Engineer, Machine Learning" in payload["artifacts"]["cover_letter"]["title"]
     assert "Staff Software Engineer, Machine Learning" in payload["artifacts"]["tailored_resume"]["title"]
 
 

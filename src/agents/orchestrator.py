@@ -15,7 +15,6 @@ from src.schemas import (
 from src.services.fit_service import build_fit_analysis
 from src.services.tailoring_service import build_tailored_resume_draft
 
-from .fit_agent import FitAgent
 from .cover_letter_agent import CoverLetterAgent
 from .resume_generation_agent import ResumeGenerationAgent
 from .review_agent import ReviewAgent
@@ -198,17 +197,14 @@ class ApplicationOrchestrator:
             )
             return result
 
+        # Matchmaker agent: the deterministic build_fit_analysis() above
+        # already computed matched/missing skills, score, and grounded
+        # gaps + recommendations. No LLM step needed here — TailoringAgent
+        # reads the structured FitAnalysis directly. Keep the stage label
+        # so the UI progress indicator still renders the matchmaker step.
         begin_stage(
             "Matchmaker agent",
             "Comparing both sides, scoring overlap, and flagging the real gaps.",
-        )
-        fit_output = run_agent_step(
-            "fit",
-            lambda: FitAgent(openai_service).run(
-                candidate_profile,
-                job_description,
-                fit_analysis,
-            ),
         )
 
         begin_stage(
@@ -222,7 +218,6 @@ class ApplicationOrchestrator:
                 job_description,
                 fit_analysis,
                 tailored_draft,
-                fit_output,
             ),
         )
         begin_stage(
@@ -298,7 +293,6 @@ class ApplicationOrchestrator:
         return AgentWorkflowResult(
             mode=mode,
             model=model_name,
-            fit=fit_output,
             tailoring=final_tailoring_output,
             review=review_output,
             profile=ProfileAgentOutput(),

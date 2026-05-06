@@ -34,18 +34,18 @@ PRODUCT_KNOWLEDGE_DOCUMENTS = [
         "topic": "exports",
         "title": "Export Downloads",
         "source": "Combined Export",
-        "keywords": ["download", "export", "pdf", "bundle", "markdown", "zip"],
+        "keywords": ["download", "export", "pdf", "markdown"],
         "content": (
-            "Markdown downloads are immediately available for the tailored resume, cover letter, and application package. PDF and ZIP bundle actions present as Download actions from the start, generate bytes on first click with spinner feedback, and then refresh into the browser download control."
+            "Markdown downloads are immediately available for the tailored resume and cover letter. PDF actions present as Download actions from the start, generate bytes on first click with spinner feedback, and then refresh into the browser download control."
         ),
     },
     {
         "topic": "cover_letter",
         "title": "Cover Letter Artifact",
         "source": "Cover Letter",
-        "keywords": ["cover letter", "letter", "application package", "resume preview"],
+        "keywords": ["cover letter", "letter", "resume preview"],
         "content": (
-            "The cover letter is a first-class artifact in the JD workflow. It is generated after review-approved workflow outputs exist, appears between Resume Preview and Application Package, and can be downloaded as Markdown or PDF."
+            "The cover letter is a first-class artifact in the JD workflow. It is generated after review-approved workflow outputs exist, appears alongside the Resume Preview, and can be downloaded as Markdown or PDF."
         ),
     },
     {

@@ -2,77 +2,25 @@ from io import BytesIO
 from unittest.mock import patch
 
 from src.errors import ExportError
-import zipfile
 
-from src.exporters import _build_report_html, _build_resume_html, build_cover_letter_preview_html, export_markdown_bytes, export_pdf_bytes, export_zip_bundle_bytes, generate_pdf
-from src.report_builder import build_application_report
+from src.exporters import _build_resume_html, build_cover_letter_preview_html, export_markdown_bytes, export_pdf_bytes, generate_pdf
 from src.schemas import CoverLetterArtifact, EducationEntry, ResumeDocument, ResumeExperienceEntry, ResumeHeader, TailoredResumeArtifact, WorkExperience
-from src.services.fit_service import build_fit_analysis
-from src.services.job_service import build_job_description_from_text
-from src.services.profile_service import build_candidate_profile_from_resume
-from src.services.tailoring_service import build_tailored_resume_draft
-
-
-def _build_report():
-    candidate_profile = build_candidate_profile_from_resume(
-        ResumeDocument(
-            text="Leander Antony\nChennai, India\nPython SQL Docker",
-            filetype="TXT",
-            source="uploaded",
-        )
-    )
-    candidate_profile.experience = [
-        WorkExperience(
-            title="AI Engineer",
-            organization="Example Labs",
-            description="Built ML applications.",
-            start={"year": 2023},
-            end={"year": 2025},
-        )
-    ]
-    job_description = build_job_description_from_text(
-        "Machine Learning Engineer\nRequired: Python, SQL, Docker.\n"
-    )
-    fit_analysis = build_fit_analysis(candidate_profile, job_description)
-    tailored_draft = build_tailored_resume_draft(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-    )
-    return build_application_report(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-        tailored_draft,
-    )
 
 
 def test_export_markdown_bytes_returns_utf8_bytes():
-    report = _build_report()
+    artifact = TailoredResumeArtifact(
+        title="Tailored Resume",
+        filename_stem="tailored-resume",
+        summary="Structured resume",
+        markdown="# Resume\n\nGrounded summary.",
+        plain_text="Resume\n\nGrounded summary.",
+        theme="classic_ats",
+    )
 
-    markdown_bytes = export_markdown_bytes(report)
+    markdown_bytes = export_markdown_bytes(artifact)
 
     assert isinstance(markdown_bytes, bytes)
     assert markdown_bytes.decode("utf-8").startswith("# ")
-
-
-def test_build_report_html_contains_structure():
-    report = _build_report()
-
-    html_output = _build_report_html(report.markdown, title=report.title)
-
-    assert "<h1>" in html_output
-    assert "Leander Antony" in html_output
-    assert 'class="report-intro-role"' in html_output
-    assert "Machine Learning Engineer" in html_output
-    assert "Application Package" not in html_output.split('class="report-intro"', 1)[1].split("</section>", 1)[0]
-    assert "<h2>" in html_output
-    assert "<ul>" in html_output or "<ol>" in html_output
-    assert "@page {" in html_output
-    assert "margin: 0;" in html_output
-    assert 'class="report-intro"' in html_output
-    assert "#0b1220" in html_output
-    assert "border-radius: 18px;" not in html_output
 
 
 def test_build_cover_letter_preview_html_contains_structure():
@@ -223,9 +171,15 @@ def test_export_pdf_bytes_treats_cover_letter_as_cover_letter_document():
 
 @patch("src.exporters._generate_pdf_with_weasyprint", side_effect=RuntimeError("renderer unavailable"))
 def test_export_pdf_bytes_falls_back_when_weasyprint_backend_fails(_mock_generate_pdf):
-    report = _build_report()
+    artifact = CoverLetterArtifact(
+        title="Candidate Cover Letter",
+        filename_stem="candidate-cover-letter",
+        summary="Grounded cover letter draft.",
+        markdown="# Candidate Cover Letter\n\nDear Hiring Team,\n\nI am excited to apply for the role.",
+        plain_text="Candidate Cover Letter\n\nDear Hiring Team,\n\nI am excited to apply for the role.",
+    )
 
-    pdf_bytes = export_pdf_bytes(report)
+    pdf_bytes = export_pdf_bytes(artifact)
 
     assert pdf_bytes.startswith(b"%PDF")
     assert len(pdf_bytes) > 500
@@ -237,10 +191,10 @@ def test_generate_pdf_falls_back_when_weasyprint_runtime_is_unavailable(
     _mock_weasyprint,
     mock_reportlab,
 ):
-    pdf_buffer = generate_pdf("# Report", title="Test Report")
+    pdf_buffer = generate_pdf("# Resume", title="Test Resume")
 
     assert pdf_buffer.getvalue() == b"%PDF-skip"
-    mock_reportlab.assert_called_once_with("# Report", "Test Report")
+    mock_reportlab.assert_called_once_with("# Resume", "Test Resume")
 
 
 @patch("src.exporters._generate_pdf_with_reportlab", side_effect=RuntimeError("reportlab failed"))
@@ -249,24 +203,16 @@ def test_export_pdf_bytes_raises_export_error_when_both_backends_fail(
     _mock_weasyprint,
     _mock_reportlab,
 ):
-    report = _build_report()
+    artifact = CoverLetterArtifact(
+        title="Candidate Cover Letter",
+        filename_stem="candidate-cover-letter",
+        summary="Grounded cover letter draft.",
+        markdown="# Candidate Cover Letter\n",
+        plain_text="Candidate Cover Letter\n",
+    )
 
     try:
-        export_pdf_bytes(report)
+        export_pdf_bytes(artifact)
         assert False, "Expected ExportError"
     except ExportError:
         assert True
-
-
-def test_export_zip_bundle_bytes_packages_all_files():
-    bundle_bytes = export_zip_bundle_bytes(
-        {
-            "resume.md": b"resume content",
-            "report.md": b"report content",
-        }
-    )
-
-    with zipfile.ZipFile(BytesIO(bundle_bytes), "r") as archive:
-        names = sorted(archive.namelist())
-        assert names == ["report.md", "resume.md"]
-        assert archive.read("resume.md") == b"resume content"

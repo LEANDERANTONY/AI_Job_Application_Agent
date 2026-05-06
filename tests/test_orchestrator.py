@@ -42,11 +42,6 @@ class FakeOpenAIService:
         self.model = "fake-model"
         self._responses = [
             {
-                "fit_summary": "Strong fit overall with one visible cloud gap.",
-                "top_matches": ["Python", "SQL", "Docker"],
-                "key_gaps": ["AWS"],
-            },
-            {
                 "professional_summary": "Grounded summary for the role.",
                 "rewritten_bullets": ["Built production applications using Python and Docker."],
                 "highlighted_skills": ["Python", "SQL", "Docker"],
@@ -110,11 +105,6 @@ class FakeCorrectionOpenAIService(FakeOpenAIService):
         self.model = "fake-model"
         self._responses = [
             {
-                "fit_summary": "Strong fit overall with one visible cloud gap.",
-                "top_matches": ["Python", "SQL", "Docker"],
-                "key_gaps": ["AWS"],
-            },
-            {
                 "professional_summary": "Initial summary with unsupported AWS emphasis.",
                 "rewritten_bullets": ["Led AWS-native production deployments for ML services."],
                 "highlighted_skills": ["Python", "SQL", "AWS"],
@@ -162,7 +152,6 @@ def test_orchestrator_runs_in_deterministic_fallback_mode():
     assert result.mode == "deterministic_fallback"
     assert result.model == "fallback"
     assert result.attempted_assisted is False
-    assert result.fit.fit_summary
     assert result.tailoring.professional_summary
     assert result.review_history == []
 

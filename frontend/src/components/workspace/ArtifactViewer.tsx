@@ -46,7 +46,7 @@ const TAB_ORDER: ArtifactTab[] = ["resume", "cover-letter"];
 
 function kindForTab(
   tab: ArtifactTab,
-): Exclude<WorkspaceArtifactKind, "bundle" | "report"> {
+): WorkspaceArtifactKind {
   return tab === "resume" ? "tailored_resume" : "cover_letter";
 }
 

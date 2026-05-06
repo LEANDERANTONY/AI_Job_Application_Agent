@@ -5,7 +5,6 @@ from typing import Any, Dict, Iterable
 from src.schemas import (
     CandidateProfile,
     FitAnalysis,
-    FitAgentOutput,
     JobDescription,
     ReviewAgentOutput,
     TailoredResumeDraft,
@@ -143,42 +142,21 @@ def _build_contract(contract: Dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def build_fit_agent_prompt(
-    candidate_profile: CandidateProfile,
-    job_description: JobDescription,
-    fit_analysis: FitAnalysis,
-) -> Dict[str, Any]:
-    contract = {
-        "fit_summary": "two concise sentences summarizing fit",
-        "top_matches": "array of 2-4 strongest grounded matches",
-        "key_gaps": "array of 2-4 grounded gaps or risks",
-    }
-    user_prompt, metadata = _build_budgeted_user_prompt(
-        [
-            ("Candidate Profile", candidate_profile, 2400),
-            ("Job Description", job_description, 2200),
-            ("Deterministic Fit Analysis", fit_analysis, 1800),
-        ]
-    )
-    return {
-        "system": (
-            "You are the Fit Analysis Agent. Use the deterministic fit analysis as the primary signal, "
-            "and compress it into a recruiter-readable grounded summary. Do not contradict explicit data or restate obvious parser output. "
-            + _build_contract(contract)
-        ),
-        "user": user_prompt,
-        "expected_keys": list(contract.keys()),
-        "metadata": metadata,
-    }
-
-
 def build_tailoring_agent_prompt(
     candidate_profile: CandidateProfile,
     job_description: JobDescription,
     fit_analysis: FitAnalysis,
     tailored_draft: TailoredResumeDraft,
-    fit_output: FitAgentOutput,
 ) -> Dict[str, Any]:
+    """Build the TailoringAgent prompt.
+
+    Note: a previous version of this prompt also included the
+    FitAgent's narrated 'top matches / key gaps' as an extra context
+    block. That agent has been removed — TailoringAgent now reads the
+    structured FitAnalysis directly (matched_hard_skills, gaps,
+    recommendations etc. are all there in structured form). One
+    fewer LLM call per workspace analysis with no quality regression.
+    """
     contract = {
         "professional_summary": "3-4 sentence tailored summary using only grounded claims",
         "rewritten_bullets": "array of 3-5 tailored bullet ideas",
@@ -190,7 +168,6 @@ def build_tailoring_agent_prompt(
         ("Job Description", job_description, 1800),
         ("Deterministic Fit Analysis", fit_analysis, 1600),
         ("Deterministic Tailored Draft", tailored_draft, 1800),
-        ("Fit Agent Output", fit_output, 1200),
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     return {
@@ -417,9 +394,9 @@ def build_assistant_followup_prompt(
         "system": (
             "You are continuing an in-app assistant conversation for an AI job application app. "
             "Use the existing conversation state as the primary memory for this session. "
-            "Use any provided state updates to refresh your understanding of the current page, product state, or application package. "
+            "Use any provided state updates to refresh your understanding of the current page, product state, or workspace artifacts. "
             "Keep answers grounded, concise, and directly useful. "
-            "If the question is about the current application package, stay tied to the current fit, tailored resume, cover letter, and report context already established in the session. "
+            "If the question is about the current workspace, stay tied to the current fit, tailored resume, and cover letter context already established in the session. "
             "If the question is product-help oriented, explain only features and behavior that match the current product. "
             "Current assistant scope: {scope}. ".format(scope=assistant_scope)
             + _build_contract(contract)

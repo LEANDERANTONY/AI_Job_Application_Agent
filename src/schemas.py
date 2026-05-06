@@ -184,13 +184,6 @@ class JobAgentOutput:
 
 
 @dataclass
-class FitAgentOutput:
-    fit_summary: str = ""
-    top_matches: List[str] = field(default_factory=list)
-    key_gaps: List[str] = field(default_factory=list)
-
-
-@dataclass
 class TailoringAgentOutput:
     professional_summary: str = ""
     rewritten_bullets: List[str] = field(default_factory=list)
@@ -247,7 +240,6 @@ class ReviewPassResult:
 class AgentWorkflowResult:
     mode: str
     model: str
-    fit: FitAgentOutput
     tailoring: TailoringAgentOutput
     review: ReviewAgentOutput
     profile: ProfileAgentOutput = field(default_factory=ProfileAgentOutput)
@@ -259,15 +251,6 @@ class AgentWorkflowResult:
     attempted_assisted: bool = False
     fallback_reason: str = ""
     fallback_details: str = ""
-
-
-@dataclass
-class ApplicationReport:
-    title: str
-    filename_stem: str
-    summary: str
-    markdown: str
-    plain_text: str
 
 
 @dataclass
@@ -374,7 +357,6 @@ class SavedWorkspaceRecord:
     job_title: str = ""
     workflow_signature: str = ""
     workflow_snapshot_json: str = ""
-    report_payload_json: str = ""
     cover_letter_payload_json: str = ""
     tailored_resume_payload_json: str = ""
     expires_at: str = ""

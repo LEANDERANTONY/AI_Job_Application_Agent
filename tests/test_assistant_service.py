@@ -53,17 +53,15 @@ def _build_view_model():
     )
 
 
-def test_assistant_fallback_explains_report_vs_resume():
+def test_assistant_fallback_explains_resume_and_cover_letter():
     service = AssistantService()
 
     response = service.answer(
-        "What is the difference between the report and the resume?",
+        "How does the cover letter fit alongside the tailored resume?",
         current_page="Manual JD Input",
         app_context={},
     )
 
-    assert "tailored resume" in response.answer.lower()
-    assert "report" in response.answer.lower()
     assert "cover letter" in response.answer.lower()
     assert response.sources
 
@@ -232,13 +230,13 @@ def test_assistant_falls_back_when_model_returns_blank_answer():
     service = AssistantService(openai_service=FakeOpenAIService())
 
     response = service.answer(
-        "How do I use the report?",
+        "How does the cover letter fit in?",
         current_page="Manual JD Input",
         app_context={},
     )
 
     assert response.answer
-    assert "report" in response.answer.lower()
+    assert "cover letter" in response.answer.lower()
 
 
 def test_assistant_uses_fast_fail_request_shape():
@@ -455,7 +453,7 @@ def test_build_application_qa_context_includes_review_and_skill_signals():
 
 
 def test_retrieve_product_knowledge_matches_export_questions():
-    matches = retrieve_product_knowledge("How do PDF and ZIP downloads work?", current_page="Manual JD Input")
+    matches = retrieve_product_knowledge("How do PDF and Markdown downloads work?", current_page="Manual JD Input")
 
     assert matches
     assert matches[0]["topic"] == "exports"

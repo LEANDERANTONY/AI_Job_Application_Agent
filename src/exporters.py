@@ -5,7 +5,6 @@ import os
 import re
 import sys
 import warnings
-import zipfile
 from io import BytesIO
 
 from markdown_it import MarkdownIt
@@ -13,7 +12,7 @@ from markdown_it.tree import SyntaxTreeNode
 
 from src.errors import ExportError
 from src.logging_utils import get_logger, log_event
-from src.schemas import ApplicationReport, CoverLetterArtifact, ProjectEntry, TailoredResumeArtifact
+from src.schemas import CoverLetterArtifact, ProjectEntry, TailoredResumeArtifact
 
 
 _MARKDOWN = MarkdownIt("commonmark", {"html": False})
@@ -51,23 +50,21 @@ def _configure_weasyprint_windows_runtime():
             continue
 
 
-def export_markdown_bytes(report: ApplicationReport | CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
+def export_markdown_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
     return report.markdown.encode("utf-8")
 
 
-def export_text_bytes(report: ApplicationReport | CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
+def export_text_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
     return report.plain_text.encode("utf-8")
 
 
-def export_pdf_bytes(report: ApplicationReport | CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
+def export_pdf_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
     try:
         theme = getattr(report, "theme", None)
         document_kind = (
             "tailored_resume"
             if isinstance(report, TailoredResumeArtifact)
             else "cover_letter"
-            if isinstance(report, CoverLetterArtifact)
-            else "report"
         )
         artifact = report if isinstance(report, TailoredResumeArtifact) else None
         return generate_pdf(
@@ -100,10 +97,6 @@ def build_resume_preview_html(artifact: TailoredResumeArtifact) -> str:
     )
 
 
-def build_report_preview_html(report: ApplicationReport) -> str:
-    return _build_report_html(report.markdown, title=report.title)
-
-
 def build_cover_letter_preview_html(artifact: CoverLetterArtifact) -> str:
     return _build_cover_letter_html(
         artifact.markdown,
@@ -112,60 +105,8 @@ def build_cover_letter_preview_html(artifact: CoverLetterArtifact) -> str:
     )
 
 
-def export_zip_bundle_bytes(file_map: dict[str, bytes]) -> bytes:
-    buffer = BytesIO()
-    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for filename, payload in file_map.items():
-            archive.writestr(filename, payload)
-    return buffer.getvalue()
-
-
 def _paragraph_text(text):
     return html.escape(text or "")
-
-
-def _style_report_intro_block(body_html: str) -> str:
-    match = re.match(
-        r"\s*(<h1>.*?</h1>)(\s*<p>.*?</p>)?",
-        body_html or "",
-        flags=re.DOTALL,
-    )
-    if not match:
-        return body_html
-
-    intro_html = "".join(part for part in match.groups() if part)
-    wrapped_intro = '<section class="report-intro">{content}</section>'.format(content=intro_html)
-    return (body_html or "").replace(match.group(0), wrapped_intro, 1)
-
-
-def _split_application_report_title(title: str) -> tuple[str, str]:
-    normalized_title = str(title or "AI Job Application Package").strip() or "AI Job Application Package"
-    if " - " in normalized_title and normalized_title.lower().endswith(" application package"):
-        name, role_with_suffix = normalized_title.split(" - ", 1)
-        role = role_with_suffix[: -len(" Application Package")].strip()
-        return name.strip() or normalized_title, role or ""
-    return normalized_title, ""
-
-
-def _style_report_intro_block_with_header(body_html: str, title: str) -> str:
-    match = re.match(
-        r"\s*(<h1>.*?</h1>)(\s*<p>.*?</p>)?",
-        body_html or "",
-        flags=re.DOTALL,
-    )
-    if not match:
-        return body_html
-
-    header_title, header_subtitle = _split_application_report_title(title)
-    intro_parts = ['<h1>{title}</h1>'.format(title=html.escape(header_title))]
-    if header_subtitle:
-        intro_parts.append(
-            '<p class="report-intro-role">{subtitle}</p>'.format(subtitle=html.escape(header_subtitle))
-        )
-    if match.group(2):
-        intro_parts.append(match.group(2).strip())
-    wrapped_intro = '<section class="report-intro">{content}</section>'.format(content="".join(intro_parts))
-    return (body_html or "").replace(match.group(0), wrapped_intro, 1)
 
 
 def _style_cover_letter_body(body_html: str) -> str:
@@ -342,208 +283,6 @@ def _build_cover_letter_html(text, title="Cover Letter", theme="classic_ats"):
         body=body_html,
         **palette,
     )
-
-
-def _build_report_html(text, title="AI Job Application Package"):
-    body_html = _MARKDOWN.render(text or "")
-    body_html = _style_report_intro_block_with_header(body_html, title)
-    safe_title = html.escape(title or "AI Job Application Package")
-
-    return """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>{title}</title>
-  <style>
-    :root {{
-      --ink: #142033;
-      --muted: #5b6b83;
-            --accent: #1b2a46;
-        --subsection-accent: #4f78b5;
-      --accent-strong: #2563eb;
-      --line: #d9e0e7;
-            --section-line: #1b2a46;
-            --paper: #ffffff;
-            --surface: #ffffff;
-      --surface-soft: #eef4ff;
-    }}
-
-    @page {{
-      size: A4;
-            margin: 0;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      margin: 0;
-      font-family: "Segoe UI", Arial, sans-serif;
-      color: var(--ink);
-            background: var(--paper);
-      line-height: 1.62;
-      font-size: 10.6pt;
-    }}
-
-    .report-shell {{
-            width: 100%;
-            min-height: 100vh;
-            background: var(--surface);
-            padding: 16mm 14mm 18mm;
-    }}
-
-        .report-intro {{
-            background: linear-gradient(180deg, #070a10 0%, #0b1220 100%);
-            border: 0;
-            border-bottom: 1px solid #1b2a46;
-            border-radius: 0;
-            padding: 16mm 14mm 12mm;
-            margin: -16mm -14mm 18px;
-        }}
-
-        .report-intro h1 {{
-            color: #e8eef8;
-            font-size: 17.5pt;
-            margin-bottom: 10px;
-        }}
-
-        .report-intro-role {{
-            margin: -2px 0 10px;
-            font-size: 10.8pt;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: #cfdced;
-        }}
-
-        .report-intro p {{
-            color: #cfdced;
-        }}
-
-        .report-intro p:last-child {{
-            margin-bottom: 0;
-        }}
-
-    .report-shell::before {{
-            content: none;
-    }}
-
-    h1, h2, h3 {{
-      color: var(--ink);
-      margin-top: 0;
-      break-after: avoid;
-      page-break-after: avoid;
-    }}
-
-    h1 {{
-      font-size: 24pt;
-      line-height: 1.15;
-      margin-bottom: 16px;
-      letter-spacing: -0.02em;
-    }}
-
-    h2 {{
-      font-size: 15pt;
-            color: var(--accent);
-      margin-top: 22px;
-      margin-bottom: 10px;
-            padding: 0 14mm 9px;
-            margin-left: -14mm;
-            margin-right: -14mm;
-            border-bottom: 2.5px solid var(--section-line);
-    }}
-
-    h3 {{
-      font-size: 11.8pt;
-      margin-top: 14px;
-      margin-bottom: 6px;
-            color: var(--subsection-accent);
-    }}
-
-    p {{
-      margin: 0 0 10px;
-    }}
-
-    ul, ol {{
-      margin: 0 0 12px 1.3rem;
-      padding: 0;
-    }}
-
-    li {{
-      margin: 0 0 6px;
-      break-inside: avoid;
-    }}
-
-    strong {{
-      color: #0f172a;
-    }}
-
-    blockquote {{
-      margin: 0 0 12px;
-      padding: 8px 12px;
-      border-left: 4px solid #93c5fd;
-      background: var(--surface-soft);
-      border-radius: 0 10px 10px 0;
-      color: var(--muted);
-    }}
-
-    code {{
-      font-family: Consolas, monospace;
-      font-size: 0.95em;
-      background: #f3f6fb;
-      border: 1px solid #dce5f0;
-      border-radius: 4px;
-      padding: 0.08rem 0.3rem;
-    }}
-
-    pre {{
-      background: #f3f6fb;
-      border: 1px solid #dce5f0;
-      border-radius: 10px;
-      padding: 12px 14px;
-      white-space: pre-wrap;
-            overflow-wrap: anywhere;
-      overflow: hidden;
-      margin: 0 0 12px;
-      font-family: Consolas, monospace;
-      font-size: 9.4pt;
-      line-height: 1.5;
-    }}
-
-    table {{
-      width: 100%;
-      border-collapse: collapse;
-      margin: 0 0 12px;
-      font-size: 10pt;
-    }}
-
-    th, td {{
-      border: 1px solid var(--line);
-      padding: 8px 9px;
-      text-align: left;
-      vertical-align: top;
-    }}
-
-    th {{
-      background: #f8fbff;
-      font-weight: 700;
-    }}
-
-    hr {{
-      border: 0;
-            border-top: 2.5px solid var(--section-line);
-      margin: 16px 0;
-    }}
-  </style>
-</head>
-<body>
-  <main class="report-shell">
-    {body}
-  </main>
-</body>
-</html>
-""".format(title=safe_title, body=body_html)
 
 
 def _build_resume_section_list(items, empty_state, ordered=False, class_name=""):
@@ -1209,7 +948,7 @@ def _generate_pdf_with_reportlab(text, title):
         leftMargin=44,
         topMargin=48,
         bottomMargin=42,
-        title=title or "AI Job Application Package",
+        title=title or "Tailored Resume",
     )
 
     flowables = []
@@ -1282,17 +1021,15 @@ def _generate_pdf_with_reportlab(text, title):
     return buffer
 
 
-def _build_pdf_html(text, title, theme=None, document_kind="report"):
+def _build_pdf_html(text, title, theme=None, document_kind="cover_letter"):
     return (
         _build_resume_html(text, title=title, theme=theme or "classic_ats")
         if document_kind == "tailored_resume"
         else _build_cover_letter_html(text, title=title, theme=theme or "classic_ats")
-        if document_kind == "cover_letter"
-        else _build_report_html(text, title=title)
     )
 
 
-def _generate_pdf_with_weasyprint(text, title, theme=None, document_kind="report", artifact: TailoredResumeArtifact | None = None):
+def _generate_pdf_with_weasyprint(text, title, theme=None, document_kind="cover_letter", artifact: TailoredResumeArtifact | None = None):
     _configure_weasyprint_windows_runtime()
     from weasyprint import HTML
 
@@ -1300,8 +1037,6 @@ def _generate_pdf_with_weasyprint(text, title, theme=None, document_kind="report
         _build_resume_html(text, title=title, theme=theme or "classic_ats", artifact=artifact)
         if document_kind == "tailored_resume"
         else _build_cover_letter_html(text, title=title, theme=theme or "classic_ats")
-        if document_kind == "cover_letter"
-        else _build_report_html(text, title=title)
     )
 
     return BytesIO(HTML(string=html_document).write_pdf())
@@ -1336,7 +1071,7 @@ def _generate_pdf_with_reportlab_fallback(text, title, renderer_error=None):
         ) from error
 
 
-def generate_pdf(text, title="AI Job Application Package", theme=None, document_kind="report", artifact: TailoredResumeArtifact | None = None):
+def generate_pdf(text, title="Tailored Resume", theme=None, document_kind="cover_letter", artifact: TailoredResumeArtifact | None = None):
     try:
         return _generate_pdf_with_weasyprint(text, title, theme=theme, document_kind=document_kind, artifact=artifact)
     except Exception as renderer_error:

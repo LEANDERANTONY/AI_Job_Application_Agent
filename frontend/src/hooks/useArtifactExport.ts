@@ -56,7 +56,7 @@ function downloadBase64File(
 
 function artifactKindFromTab(
   tab: ArtifactTab,
-): Exclude<WorkspaceArtifactKind, "bundle" | "report"> {
+): WorkspaceArtifactKind {
   return tab === "resume" ? "tailored_resume" : "cover_letter";
 }
 
@@ -77,7 +77,7 @@ export type UseArtifactExportReturn = {
   /** Memoized artifact metadata (title + summary) for the active tab. */
   currentArtifact: ArtifactViewerArtifact | null;
   /** Derived backend kind ("tailored_resume" | "cover_letter") for the active tab. */
-  currentArtifactKind: Exclude<WorkspaceArtifactKind, "bundle" | "report">;
+  currentArtifactKind: WorkspaceArtifactKind;
   /**
    * Theme selection per artifact. Each tab carries its own theme so the
    * resume can ship classic_ats while the cover letter ships
@@ -88,13 +88,11 @@ export type UseArtifactExportReturn = {
   setResumeTheme: (theme: ArtifactTheme) => void;
   setCoverLetterTheme: (theme: ArtifactTheme) => void;
   /**
-   * Trigger an export. Accepts the full `WorkspaceArtifactKind` set
-   * (including `bundle`) so callers outside of ArtifactViewer can also
-   * use it.
+   * Trigger an export for the resume or cover letter artifact.
    */
   exportArtifact: (
     kind: WorkspaceArtifactKind,
-    format: "markdown" | "pdf" | "zip",
+    format: "markdown" | "pdf",
   ) => Promise<void>;
   /** Reset transient artifact state (used by `clearWorkspaceRole`). */
   resetArtifacts: () => void;
@@ -201,7 +199,7 @@ export function useArtifactExport({
 
   async function exportArtifact(
     artifactKind: WorkspaceArtifactKind,
-    exportFormat: "markdown" | "pdf" | "zip",
+    exportFormat: "markdown" | "pdf",
   ) {
     if (!analysisState) {
       setNotice({
@@ -228,10 +226,7 @@ export function useArtifactExport({
       );
       setNotice({
         level: "success",
-        message:
-          artifactKind === "bundle"
-            ? `Prepared the full application package as ${response.file_name}.`
-            : `Prepared ${response.artifact_title} as ${response.file_name}.`,
+        message: `Prepared ${response.artifact_title} as ${response.file_name}.`,
       });
     } catch (error) {
       setNotice({

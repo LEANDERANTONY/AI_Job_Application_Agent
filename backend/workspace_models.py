@@ -78,8 +78,8 @@ class WorkspaceArtifactExportRequestModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workspace_snapshot: dict[str, Any]
-    artifact_kind: Literal["tailored_resume", "cover_letter", "report", "bundle"]
-    export_format: Literal["markdown", "pdf", "zip"]
+    artifact_kind: Literal["tailored_resume", "cover_letter"]
+    export_format: Literal["markdown", "pdf"]
     resume_theme: str = Field(default="classic_ats", max_length=80)
     cover_letter_theme: str = Field(default="classic_ats", max_length=80)
 
@@ -93,7 +93,7 @@ class WorkspaceArtifactPreviewRequestModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workspace_snapshot: dict[str, Any]
-    artifact_kind: Literal["tailored_resume", "cover_letter", "report"]
+    artifact_kind: Literal["tailored_resume", "cover_letter"]
     resume_theme: str = Field(default="classic_ats", max_length=80)
     cover_letter_theme: str = Field(default="classic_ats", max_length=80)
 
