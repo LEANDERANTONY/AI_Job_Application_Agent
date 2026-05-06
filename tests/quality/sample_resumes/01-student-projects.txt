@@ -1,0 +1,43 @@
+Aanya Sharma
+Bengaluru, India
+aanya.sharma@iitb.ac.in | +91 98765 43210 | linkedin.com/in/aanyasharma | github.com/aanya-s
+
+Professional Summary
+Final-year B.Tech student in Computer Science with hands-on experience in distributed
+systems, machine learning, and full-stack development through coursework, hackathons,
+and open-source contributions. Seeking software engineering roles where I can ship to
+production from day one.
+
+Technical Skills
+Python, Go, TypeScript, React, Next.js, FastAPI, PostgreSQL, Redis, Docker, Kubernetes,
+AWS (EC2, S3, Lambda), PyTorch, scikit-learn, Git, CI/CD
+
+Projects
+DistKV — Distributed key-value store
+- Built a Raft-based replicated KV store in Go with consistent-hash sharding across 5 nodes.
+- Achieved sub-3ms p99 latency under 50k QPS on a t3.medium fleet using gRPC streaming.
+- Wrote integration tests covering leader election, log replication, and split-brain recovery.
+
+Search-as-you-type indexer (Python, Trie, FastAPI)
+- Designed a memory-efficient compressed trie for prefix search over 10M product names.
+- Exposed a FastAPI endpoint with sub-1ms autocomplete on a single CPU.
+
+ResumeRanker — RAG-based resume scorer
+- Combined sentence-transformer embeddings with BM25 to rank resumes against JD requirements.
+- Open-sourced the demo on GitHub; 200+ stars, contributions from 4 external developers.
+
+Education
+Indian Institute of Technology Bombay
+B.Tech in Computer Science and Engineering (Aug 2021 - May 2025)
+GPA: 9.1/10
+
+Publications
+Sharma, A., Iyer, R. (2024). Lightweight neural rerankers for low-resource search.
+Workshop on Information Retrieval at ACL 2024.
+
+Sharma, A. (2023). On the cost of consistent hashing in geo-distributed key-value stores.
+Undergraduate Research Symposium, IIT Bombay.
+
+Certifications
+- AWS Certified Cloud Practitioner (Mar 2024)
+- Coursera: Deep Learning Specialization, Andrew Ng (Sep 2023)

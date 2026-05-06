@@ -1,0 +1,29 @@
+{
+  "full_name": "Sam Lee",
+  "location": "",
+  "contact_lines": [
+    "sam.lee.dev@protonmail.com"
+  ],
+  "skills_must_include": [
+    "Python", "Django", "PostgreSQL", "AWS"
+  ],
+  "experience_count": 1,
+  "experience_titles": [
+    "Backend Engineer"
+  ],
+  "experience_organizations_must_include": [
+    "Acme Corp"
+  ],
+  "education": [
+    {
+      "institution_must_include": "San Jose State University",
+      "degree_must_include": "B.S."
+    }
+  ],
+  "certifications_must_include": [],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "Minimum viable resume. No location, single contact line, single job, single degree. Edge case for low-density inputs — should NOT hallucinate fields where source has none."
+}

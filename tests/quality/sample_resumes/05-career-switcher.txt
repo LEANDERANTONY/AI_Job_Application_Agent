@@ -1,0 +1,53 @@
+Leander Antony A
+Chennai, India · antony.leander@gmail.com · +91 99887 76543
+
+PROFESSIONAL SUMMARY
+Mechanical engineer transitioning into AI/ML engineering after a Master's in AI/ML
+and 4 years in automotive R&D. Strong on first-principles thinking and bridging the
+domain gap between physical engineering and ML systems.
+
+TECHNICAL SKILLS
+Python, PyTorch, TensorFlow, scikit-learn, Pandas, NumPy, XGBoost, FastAPI, Docker,
+Git, MATLAB, ANSYS, SolidWorks, statistical modelling, A/B testing
+
+PROFESSIONAL EXPERIENCE
+
+Tata Motors Engineering Research Centre, Pune
+Senior Mechanical Engineer · Aug 2020 - Present
+- Owned crash-simulation pipeline for the EV platform; cut iteration time from 4 days to 8 hours.
+- Built a Python tool that auto-extracted intrusion metrics from LS-DYNA output; saved 15 hours/week.
+- Mentored 3 junior engineers through their first FMVSS 208 sign-off cycle.
+
+Mahindra Research Valley, Chennai
+Mechanical Engineer · Jul 2018 - Jul 2020
+- Designed Tier-1 supplier validation tests for HVAC and braking subsystems.
+- Co-authored an internal whitepaper on data-driven NVH analysis using Python.
+
+PROJECTS
+
+Multi-Modal Deep Learning for Early Pancreatic Cancer Detection (Capstone)
+- Designed a multi-modal AI pipeline integrating CECT imaging and serum biomarkers.
+- Trained a ResNet-50 + tabular fusion model on 1,200 patient records; AUROC 0.89 on hold-out set.
+
+Generative AI QA RAG System for Insurance Policy documents
+- Designed a retrieval-augmented generation system using LangChain and ChromaDB.
+- Reduced policy-question-answering latency from 12s to 2.3s with on-disk embedding caching.
+
+Credit Card Fraud Detection
+- Built a fraud classification system on a highly imbalanced dataset using XGBoost + SMOTE.
+- Achieved precision 0.91 / recall 0.84 on hold-out, beating logistic regression baseline.
+
+EDUCATION
+
+Master of Science in Artificial Intelligence and Machine Learning
+Liverpool John Moores University · Jan 2025 - Jan 2026 (Distance, Full-time)
+
+Executive PG Program in Machine Learning & Artificial Intelligence with specialization in
+Generative AI · IIIT Bangalore · Oct 2023 - Oct 2024
+
+Bachelor of Engineering in Mechanical Engineering
+Anna University, Chennai · Jul 2014 - May 2018 · First Class with Distinction
+
+CERTIFICATIONS
+- Data Science: R Basics, HarvardX (edX), Dec 2019
+- Python 3 Programming Specialization, University of Michigan (Coursera), Nov 2023

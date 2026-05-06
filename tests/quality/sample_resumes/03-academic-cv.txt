@@ -1,0 +1,47 @@
+Dr. Priya Venkataraman
+Assistant Professor of Computer Science
+Department of Computer Science, University of Toronto
+40 St. George Street, Toronto, ON M5S 2E4, Canada
+priya.venkat@cs.toronto.edu | +1 (416) 978-3456 | https://cs.toronto.edu/~priyav
+
+Research Interests
+Machine learning, distributed systems, privacy-preserving computation, federated learning.
+
+Education
+Ph.D. in Computer Science, Massachusetts Institute of Technology, 2020
+  Dissertation: "Differentially Private Federated Learning at Scale"
+  Advisors: Prof. Anantha Chandrakasan, Prof. Aleksander Madry
+
+M.Sc. in Computer Science, ETH Zurich, 2015
+
+B.Tech in Computer Science, Indian Institute of Science (IISc), Bangalore, 2013
+  University Gold Medalist; CGPA 9.8/10
+
+Academic Appointments
+Assistant Professor of Computer Science, University of Toronto, Jul 2022 - Present
+Postdoctoral Researcher, Google Brain, Mountain View, CA, Sep 2020 - Jun 2022
+  Mentor: Dr. Brendan McMahan
+
+Selected Publications
+Venkataraman, P., Chen, Y., McMahan, B. (2024). On-device personalization with bounded
+  privacy budgets. NeurIPS 2024.
+
+Venkataraman, P., Madry, A. (2023). Robust federated averaging under adversarial clients.
+  ICML 2023. Best Paper Award (Top 3).
+
+Chen, Y., Venkataraman, P. (2023). Communication-efficient differentially private SGD.
+  ICLR 2023.
+
+Venkataraman, P., et al. (2022). Practical secure aggregation for federated learning on
+  resource-constrained devices. USENIX Security 2022.
+
+Venkataraman, P., Chandrakasan, A. (2020). Differentially private federated learning at
+  scale. Ph.D. Dissertation, MIT.
+
+Awards and Honors
+- ICML Best Paper Award, 2023
+- Google PhD Fellowship in Privacy and Security, 2018-2020
+- MIT Presidential Fellowship, 2015-2017
+
+Skills
+Python, PyTorch, JAX, TensorFlow Federated, distributed training, MPI, CUDA, LaTeX

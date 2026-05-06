@@ -782,11 +782,14 @@ def test_workspace_saved_jobs_delete_endpoint_forwards_auth_headers(monkeypatch)
 def test_workspace_artifact_export_endpoint_forwards_snapshot(monkeypatch):
     captured = {}
 
-    def fake_export_workspace_artifact(*, workspace_snapshot, artifact_kind, export_format, resume_theme):
+    def fake_export_workspace_artifact(
+        *, workspace_snapshot, artifact_kind, export_format, resume_theme, cover_letter_theme
+    ):
         captured["workspace_snapshot"] = workspace_snapshot
         captured["artifact_kind"] = artifact_kind
         captured["export_format"] = export_format
         captured["resume_theme"] = resume_theme
+        captured["cover_letter_theme"] = cover_letter_theme
         return {
             "status": "ready",
             "artifact_kind": artifact_kind,
@@ -795,6 +798,7 @@ def test_workspace_artifact_export_endpoint_forwards_snapshot(monkeypatch):
             "mime_type": "application/pdf",
             "content_base64": "cGRm",
             "resume_theme": resume_theme,
+            "cover_letter_theme": cover_letter_theme,
             "artifact_title": "Leander Antony - Machine Learning Engineer Tailored Resume",
         }
 
@@ -829,14 +833,18 @@ def test_workspace_artifact_export_endpoint_forwards_snapshot(monkeypatch):
 def test_workspace_artifact_preview_endpoint_forwards_snapshot(monkeypatch):
     captured = {}
 
-    def fake_preview_workspace_artifact(*, workspace_snapshot, artifact_kind, resume_theme):
+    def fake_preview_workspace_artifact(
+        *, workspace_snapshot, artifact_kind, resume_theme, cover_letter_theme
+    ):
         captured["workspace_snapshot"] = workspace_snapshot
         captured["artifact_kind"] = artifact_kind
         captured["resume_theme"] = resume_theme
+        captured["cover_letter_theme"] = cover_letter_theme
         return {
             "status": "ready",
             "artifact_kind": artifact_kind,
             "resume_theme": resume_theme,
+            "cover_letter_theme": cover_letter_theme,
             "artifact_title": "Leander Antony - Machine Learning Engineer Tailored Resume",
             "html": "<html><body><h1>Preview</h1></body></html>",
         }

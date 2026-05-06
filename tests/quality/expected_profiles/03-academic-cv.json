@@ -1,0 +1,46 @@
+{
+  "full_name": "Priya Venkataraman",
+  "location": "Toronto, ON",
+  "contact_lines": [
+    "priya.venkat@cs.toronto.edu",
+    "+1 (416) 978-3456",
+    "https://cs.toronto.edu/~priyav"
+  ],
+  "skills_must_include": [
+    "Python", "PyTorch", "JAX", "CUDA", "LaTeX"
+  ],
+  "experience_count": 2,
+  "experience_titles": [
+    "Assistant Professor",
+    "Postdoctoral Researcher"
+  ],
+  "experience_organizations_must_include": [
+    "University of Toronto",
+    "Google Brain"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Massachusetts Institute of Technology",
+      "degree_must_include": "Ph.D"
+    },
+    {
+      "institution_must_include": "ETH Zurich",
+      "degree_must_include": "M.Sc"
+    },
+    {
+      "institution_must_include": "Indian Institute of Science",
+      "degree_must_include": "B.Tech"
+    }
+  ],
+  "certifications_must_include": [],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 4,
+  "publications_must_include_substrings": [
+    "On-device personalization with bounded privacy budgets",
+    "Robust federated averaging under adversarial clients",
+    "Communication-efficient differentially private SGD",
+    "Practical secure aggregation for federated learning"
+  ],
+  "notes": "Academic CV stress test. Three degrees, multi-line publications with author lists and venues, distinct 'Academic Appointments' section instead of 'Experience'. The 'Awards and Honors' section is intentionally not certifications and should NOT be picked up there. The 'Dr.' prefix on the name is a parsing trap."
+}

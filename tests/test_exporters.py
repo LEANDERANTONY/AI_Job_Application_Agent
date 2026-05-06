@@ -99,18 +99,22 @@ def test_build_resume_html_uses_classic_template_with_warm_neutral_palette():
     html_output = _build_resume_html("# Candidate\n\n## Experience", theme="classic_ats")
 
     assert "resume-shell--classic" in html_output
+    assert "@page {{ size: A4; margin: 0; }}" not in html_output
     assert "@page { size: A4; margin: 0; }" in html_output
-    assert "resume-classic-header" in html_output or "resume-shell--classic" in html_output
-    assert "#221912" in html_output
-    assert "background: #fffdf9;" in html_output
-    assert "background: #fffdfa;" in html_output
-    assert "font-size: 17.5pt;" in html_output
-    assert "border-bottom: 3px solid #8f6845;" in html_output
-    assert "color: #9a7350;" in html_output
+    # Warm-brown palette values must appear in the :root block; the
+    # rest of the CSS now references them via var(--*) so we no
+    # longer assert on the literal property declarations.
+    assert "#221912" in html_output  # --ink
+    assert "#fffdf9" in html_output  # --paper
+    assert "#fffdfa" in html_output  # --surface
+    assert "#8f6845" in html_output  # --accent (warm brown)
+    assert "#d7c2af" in html_output  # --line
     assert "margin: 0 -15mm 6px;" in html_output
-    assert "border-bottom: 2px solid #d4beab;" in html_output
-    assert ".resume-experience-card + .resume-experience-card::before" in html_output
-    assert ".resume-classic-section--plain-head h2 { border-bottom: 0; padding-bottom: 0; }" in html_output
+    # Structural classes are still here.
+    assert ".resume-experience-card + .resume-experience-card" in html_output
+    assert ".resume-classic-section--plain-head h2" in html_output
+    # Pagination guards added when we lifted the one-page clip.
+    assert "page-break-inside: avoid" in html_output
 
 
 def test_build_resume_html_omits_empty_contact_card():

@@ -44,6 +44,7 @@ def test_resume_llm_parser_service_normalizes_payload():
                     }
                   ],
                   "certifications": ["AWS Certified"],
+                  "publications": ["Antony, L. (2024). Sample paper. Sample Conf 2024."],
                   "source_signals": ["Projects section found"]
                 }
                 """.strip()

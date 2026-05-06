@@ -1,0 +1,12 @@
+Sam Lee
+sam.lee.dev@protonmail.com
+
+Skills
+Python, Django, PostgreSQL, AWS
+
+Experience
+Backend Engineer, Acme Corp (2023 - Present)
+Built and maintained internal billing service.
+
+Education
+B.S. Computer Science, San Jose State University, 2023
