@@ -27,8 +27,20 @@ RESUME_THEMES = {
         "label": "Standard Resume",
         "tagline": "Single-column, ATS-safe, recruiter-readable structure.",
     },
+    "professional_neutral": {
+        "label": "Professional Neutral",
+        "tagline": "Single-column, ATS-safe, recruiter-readable structure.",
+    },
 }
+
+
 def _resolve_resume_theme(theme: str, agent_result: Optional[AgentWorkflowResult]) -> str:
+    """Validate the requested theme and fall back to classic_ats if the
+    name is unknown. The agent_result hook stays in the signature so a
+    future agent can override the theme based on JD signals; for now
+    the user picks per-document on the frontend."""
+    if theme in RESUME_THEMES:
+        return theme
     return "classic_ats"
 def _normalize_date_token(token) -> str:
     if isinstance(token, dict):

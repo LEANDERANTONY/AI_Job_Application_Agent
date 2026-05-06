@@ -14,7 +14,7 @@
 //   - b-artifact-body — 2-col grid: doc body (iframe) + right-rail
 //   - b-artifact-aside — title, summary, download buttons, meta line
 
-import type { WorkspaceArtifactKind } from "@/lib/api-types";
+import type { ArtifactTheme, WorkspaceArtifactKind } from "@/lib/api-types";
 
 export type ArtifactTab = "resume" | "cover-letter";
 
@@ -23,6 +23,18 @@ export type ArtifactExportFormat = "markdown" | "pdf";
 export type ArtifactViewerArtifact = {
   title: string;
   summary: string;
+};
+
+const THEME_OPTIONS: { value: ArtifactTheme; label: string }[] = [
+  { value: "classic_ats", label: "Default" },
+  { value: "professional_neutral", label: "Neutral" },
+];
+
+const THEME_HINT: Record<ArtifactTheme, string> = {
+  classic_ats:
+    "Warm cream paper, brown accents — distinctive, design-forward. Good for startups, design-eng, modern tech.",
+  professional_neutral:
+    "Pure black on white, no color. Conservative; safer for Big Tech recruiting at scale, banks, defense, or B&W printing.",
 };
 
 const TAB_LABELS: Record<ArtifactTab, string> = {
@@ -54,6 +66,13 @@ export type ArtifactViewerProps = {
   previewHtml: string | null;
   previewTitle: string | null;
   previewLoading: boolean;
+  /**
+   * Theme of the currently-active artifact (resume theme when on the
+   * resume tab, cover-letter theme when on the cover letter tab). The
+   * picker writes back via onThemeChange.
+   */
+  activeTheme: ArtifactTheme;
+  onThemeChange: (theme: ArtifactTheme) => void;
   onExport: (kind: WorkspaceArtifactKind, format: ArtifactExportFormat) => void;
 };
 
@@ -66,6 +85,8 @@ export function ArtifactViewer({
   previewHtml,
   previewTitle,
   previewLoading,
+  activeTheme,
+  onThemeChange,
   onExport,
 }: ArtifactViewerProps) {
   const artifactKind = kindForTab(tab);
@@ -142,6 +163,28 @@ export function ArtifactViewer({
           {artifact?.summary ? (
             <p className="b-artifact-aside-text">{artifact.summary}</p>
           ) : null}
+          <hr className="rd-hairline" />
+          {/* Per-artifact theme picker. The user picks a treatment for
+              each document independently — e.g. classic_ats resume +
+              professional_neutral cover letter. The preview iframe and
+              the PDF download both pick up the change. */}
+          <div className="b-artifact-style-eyebrow">Style</div>
+          <div className="b-artifact-style-toggle" role="radiogroup">
+            {THEME_OPTIONS.map((option) => (
+              <button
+                aria-checked={activeTheme === option.value}
+                className="b-artifact-style-option"
+                data-active={activeTheme === option.value}
+                key={option.value}
+                onClick={() => onThemeChange(option.value)}
+                role="radio"
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <p className="b-artifact-style-hint">{THEME_HINT[activeTheme]}</p>
           <hr className="rd-hairline" />
           <div className="b-artifact-actions">
             <button

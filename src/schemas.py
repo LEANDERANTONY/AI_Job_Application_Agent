@@ -277,6 +277,7 @@ class CoverLetterArtifact:
     summary: str
     markdown: str
     plain_text: str
+    theme: str = "classic_ats"
 
 
 @dataclass

@@ -257,6 +257,10 @@ export function WorkspaceShell() {
     artifactPreviewTitle,
     artifactPreviewLoading,
     currentArtifact,
+    resumeTheme,
+    coverLetterTheme,
+    setResumeTheme,
+    setCoverLetterTheme,
     exportArtifact: handleArtifactExport,
     resetArtifacts,
   } = useArtifactExport({
@@ -1680,6 +1684,9 @@ export function WorkspaceShell() {
             />
 
             <ArtifactViewer
+              activeTheme={
+                artifactTab === "resume" ? resumeTheme : coverLetterTheme
+              }
               artifact={currentArtifact}
               exporting={artifactExporting}
               hasAnalysis={Boolean(analysisState)}
@@ -1687,6 +1694,11 @@ export function WorkspaceShell() {
                 void handleArtifactExport(kind, format)
               }
               onTabChange={setArtifactTab}
+              onThemeChange={
+                artifactTab === "resume"
+                  ? setResumeTheme
+                  : setCoverLetterTheme
+              }
               previewHtml={artifactPreviewHtml}
               previewLoading={artifactPreviewLoading}
               previewTitle={artifactPreviewTitle}

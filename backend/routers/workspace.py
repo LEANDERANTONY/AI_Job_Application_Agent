@@ -401,6 +401,7 @@ def export_workspace_artifact_route(request: Request, payload: WorkspaceArtifact
             artifact_kind=payload.artifact_kind,
             export_format=payload.export_format,
             resume_theme=payload.resume_theme,
+            cover_letter_theme=payload.cover_letter_theme,
         )
     except AppError as error:
         _raise_http_error(error)
@@ -414,6 +415,7 @@ def preview_workspace_artifact_route(request: Request, payload: WorkspaceArtifac
             workspace_snapshot=payload.workspace_snapshot,
             artifact_kind=payload.artifact_kind,
             resume_theme=payload.resume_theme,
+            cover_letter_theme=payload.cover_letter_theme,
         )
     except AppError as error:
         _raise_http_error(error)

@@ -81,10 +81,11 @@ class WorkspaceArtifactExportRequestModel(BaseModel):
     artifact_kind: Literal["tailored_resume", "cover_letter", "report", "bundle"]
     export_format: Literal["markdown", "pdf", "zip"]
     resume_theme: str = Field(default="classic_ats", max_length=80)
+    cover_letter_theme: str = Field(default="classic_ats", max_length=80)
 
-    @field_validator("resume_theme", mode="before")
+    @field_validator("resume_theme", "cover_letter_theme", mode="before")
     @classmethod
-    def _strip_resume_theme(cls, value):
+    def _strip_theme(cls, value):
         return str(value or "").strip()
 
 
@@ -94,10 +95,11 @@ class WorkspaceArtifactPreviewRequestModel(BaseModel):
     workspace_snapshot: dict[str, Any]
     artifact_kind: Literal["tailored_resume", "cover_letter", "report"]
     resume_theme: str = Field(default="classic_ats", max_length=80)
+    cover_letter_theme: str = Field(default="classic_ats", max_length=80)
 
-    @field_validator("resume_theme", mode="before")
+    @field_validator("resume_theme", "cover_letter_theme", mode="before")
     @classmethod
-    def _strip_preview_resume_theme(cls, value):
+    def _strip_preview_theme(cls, value):
         return str(value or "").strip()
 
 

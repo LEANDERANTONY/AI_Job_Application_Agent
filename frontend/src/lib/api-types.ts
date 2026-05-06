@@ -451,11 +451,18 @@ export type WorkspaceArtifactKind =
 
 export type WorkspaceArtifactExportFormat = "markdown" | "pdf" | "zip";
 
+/** Each artifact has its own theme so the user can pick a different
+ *  treatment for the resume vs the cover letter (e.g. classic_ats for
+ *  the resume on a startup application but professional_neutral for the
+ *  cover letter on a bank application). */
+export type ArtifactTheme = "classic_ats" | "professional_neutral";
+
 export type WorkspaceArtifactExportRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;
   artifact_kind: WorkspaceArtifactKind;
   export_format: WorkspaceArtifactExportFormat;
-  resume_theme?: string;
+  resume_theme?: ArtifactTheme;
+  cover_letter_theme?: ArtifactTheme;
 };
 
 export type WorkspaceArtifactExportResponse = {
@@ -466,19 +473,22 @@ export type WorkspaceArtifactExportResponse = {
   mime_type: string;
   content_base64: string;
   resume_theme: string;
+  cover_letter_theme: string;
   artifact_title: string;
 };
 
 export type WorkspaceArtifactPreviewRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;
   artifact_kind: Exclude<WorkspaceArtifactKind, "bundle">;
-  resume_theme?: string;
+  resume_theme?: ArtifactTheme;
+  cover_letter_theme?: ArtifactTheme;
 };
 
 export type WorkspaceArtifactPreviewResponse = {
   status: string;
   artifact_kind: Exclude<WorkspaceArtifactKind, "bundle">;
   resume_theme: string;
+  cover_letter_theme: string;
   artifact_title: string;
   html: string;
 };

@@ -17,6 +17,7 @@ import {
   previewWorkspaceArtifact,
 } from "@/lib/api";
 import type {
+  ArtifactTheme,
   WorkspaceAnalysisResponse,
   WorkspaceArtifactKind,
 } from "@/lib/api-types";
@@ -78,6 +79,15 @@ export type UseArtifactExportReturn = {
   /** Derived backend kind ("tailored_resume" | "cover_letter") for the active tab. */
   currentArtifactKind: Exclude<WorkspaceArtifactKind, "bundle" | "report">;
   /**
+   * Theme selection per artifact. Each tab carries its own theme so the
+   * resume can ship classic_ats while the cover letter ships
+   * professional_neutral (or vice versa) — the user picks per document.
+   */
+  resumeTheme: ArtifactTheme;
+  coverLetterTheme: ArtifactTheme;
+  setResumeTheme: (theme: ArtifactTheme) => void;
+  setCoverLetterTheme: (theme: ArtifactTheme) => void;
+  /**
    * Trigger an export. Accepts the full `WorkspaceArtifactKind` set
    * (including `bundle`) so callers outside of ArtifactViewer can also
    * use it.
@@ -105,6 +115,9 @@ export function useArtifactExport({
     string | null
   >(null);
   const [artifactPreviewLoading, setArtifactPreviewLoading] = useState(false);
+  const [resumeTheme, setResumeTheme] = useState<ArtifactTheme>("classic_ats");
+  const [coverLetterTheme, setCoverLetterTheme] =
+    useState<ArtifactTheme>("classic_ats");
 
   const currentArtifact = useMemo<ArtifactViewerArtifact | null>(() => {
     if (!analysisState) {
@@ -113,14 +126,17 @@ export function useArtifactExport({
     if (artifactTab === "resume") {
       return {
         ...analysisState.artifacts.tailored_resume,
-        theme: "classic_ats",
+        theme: resumeTheme,
         summary: `Tailored resume draft for ${
           analysisState.job_description.title || "the target role"
         }, ready to review and export.`,
       };
     }
-    return analysisState.artifacts.cover_letter;
-  }, [analysisState, artifactTab]);
+    return {
+      ...analysisState.artifacts.cover_letter,
+      theme: coverLetterTheme,
+    };
+  }, [analysisState, artifactTab, resumeTheme, coverLetterTheme]);
 
   const currentArtifactKind = artifactKindFromTab(artifactTab);
 
@@ -144,7 +160,8 @@ export function useArtifactExport({
         const response = await previewWorkspaceArtifact({
           workspace_snapshot: resolvedWorkspaceSnapshot,
           artifact_kind: currentArtifactKind,
-          resume_theme: "classic_ats",
+          resume_theme: resumeTheme,
+          cover_letter_theme: coverLetterTheme,
         });
         if (!cancelled) {
           setArtifactPreviewHtml(response.html);
@@ -174,7 +191,13 @@ export function useArtifactExport({
     return () => {
       cancelled = true;
     };
-  }, [analysisState, currentArtifactKind, setNotice]);
+  }, [
+    analysisState,
+    currentArtifactKind,
+    resumeTheme,
+    coverLetterTheme,
+    setNotice,
+  ]);
 
   async function exportArtifact(
     artifactKind: WorkspaceArtifactKind,
@@ -195,7 +218,8 @@ export function useArtifactExport({
         workspace_snapshot: analysisState,
         artifact_kind: artifactKind,
         export_format: exportFormat,
-        resume_theme: "classic_ats",
+        resume_theme: resumeTheme,
+        cover_letter_theme: coverLetterTheme,
       });
       downloadBase64File(
         response.file_name,
@@ -238,6 +262,10 @@ export function useArtifactExport({
     artifactPreviewLoading,
     currentArtifact,
     currentArtifactKind,
+    resumeTheme,
+    coverLetterTheme,
+    setResumeTheme,
+    setCoverLetterTheme,
     exportArtifact,
     resetArtifacts,
   };

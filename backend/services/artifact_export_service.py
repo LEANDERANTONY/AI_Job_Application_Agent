@@ -26,8 +26,16 @@ def _encode_bytes(payload: bytes):
     return base64.b64encode(payload).decode("ascii")
 
 
+_SUPPORTED_THEMES = {"classic_ats", "professional_neutral"}
+
+
+def _resolve_theme(theme_name: str | None):
+    return theme_name if theme_name in _SUPPORTED_THEMES else "classic_ats"
+
+
+# Back-compat alias — older callers may still import this name.
 def _resolve_resume_theme(theme_name: str):
-    return "classic_ats"
+    return _resolve_theme(theme_name)
 
 
 def _hydrate_snapshot(workspace_snapshot: dict):
@@ -39,7 +47,7 @@ def _hydrate_snapshot(workspace_snapshot: dict):
     return snapshot
 
 
-def _build_artifact_set(workspace_snapshot: dict, resume_theme: str):
+def _build_artifact_set(workspace_snapshot: dict, resume_theme: str, cover_letter_theme: str):
     snapshot = _hydrate_snapshot(workspace_snapshot)
     tailored_resume = build_tailored_resume_artifact(
         snapshot.candidate_profile,
@@ -55,6 +63,7 @@ def _build_artifact_set(workspace_snapshot: dict, resume_theme: str):
         snapshot.fit_analysis,
         snapshot.tailored_draft,
         agent_result=snapshot.agent_result,
+        theme=cover_letter_theme,
     )
     report = build_application_report(
         snapshot.candidate_profile,
@@ -83,9 +92,11 @@ def export_workspace_artifact(
     artifact_kind: ArtifactKind,
     export_format: ExportFormat,
     resume_theme: str = "classic_ats",
+    cover_letter_theme: str = "classic_ats",
 ):
-    theme_name = _resolve_resume_theme(resume_theme)
-    artifacts = _build_artifact_set(workspace_snapshot or {}, theme_name)
+    theme_name = _resolve_theme(resume_theme)
+    cover_theme_name = _resolve_theme(cover_letter_theme)
+    artifacts = _build_artifact_set(workspace_snapshot or {}, theme_name, cover_theme_name)
 
     if artifact_kind == "bundle":
         if export_format != "zip":
@@ -122,6 +133,7 @@ def export_workspace_artifact(
             "mime_type": "application/zip",
             "content_base64": _encode_bytes(bundle_bytes),
             "resume_theme": theme_name,
+            "cover_letter_theme": cover_theme_name,
             "artifact_title": "Application Package Bundle",
         }
 
@@ -153,6 +165,7 @@ def export_workspace_artifact(
         "mime_type": mime_type,
         "content_base64": _encode_bytes(payload),
         "resume_theme": theme_name,
+        "cover_letter_theme": cover_theme_name,
         "artifact_title": artifact.title,
     }
 
@@ -162,9 +175,11 @@ def preview_workspace_artifact(
     workspace_snapshot: dict | None,
     artifact_kind: Literal["tailored_resume", "cover_letter", "report"],
     resume_theme: str = "classic_ats",
+    cover_letter_theme: str = "classic_ats",
 ):
-    theme_name = _resolve_resume_theme(resume_theme)
-    artifacts = _build_artifact_set(workspace_snapshot or {}, theme_name)
+    theme_name = _resolve_theme(resume_theme)
+    cover_theme_name = _resolve_theme(cover_letter_theme)
+    artifacts = _build_artifact_set(workspace_snapshot or {}, theme_name, cover_theme_name)
     artifact = artifacts[artifact_kind]
 
     if artifact_kind == "tailored_resume":
@@ -178,6 +193,7 @@ def preview_workspace_artifact(
         "status": "ready",
         "artifact_kind": artifact_kind,
         "resume_theme": theme_name,
+        "cover_letter_theme": cover_theme_name,
         "artifact_title": artifact.title,
         "html": html,
     }

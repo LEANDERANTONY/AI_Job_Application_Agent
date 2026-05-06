@@ -4974,6 +4974,53 @@ code {
   color: var(--fg-3);
 }
 
+/* Per-artifact theme picker (Default vs Neutral). Lives above the
+   download buttons on the right rail. */
+.b-artifact-style-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  margin: 0 0 6px;
+}
+.b-artifact-style-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  width: 100%;
+}
+.b-artifact-style-option {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.b-artifact-style-option:hover { color: var(--fg-2); }
+.b-artifact-style-option[data-active="true"] {
+  background: rgba(48, 100, 255, 0.10);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px rgba(90, 134, 255, 0.25);
+}
+.b-artifact-style-hint {
+  margin: 8px 0 0;
+  font-size: 11.75px;
+  color: var(--fg-3);
+  line-height: 1.5;
+}
+
 .b-streaming-chip {
   display: inline-flex;
   align-items: center;

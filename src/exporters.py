@@ -105,7 +105,11 @@ def build_report_preview_html(report: ApplicationReport) -> str:
 
 
 def build_cover_letter_preview_html(artifact: CoverLetterArtifact) -> str:
-    return _build_cover_letter_html(artifact.markdown, title=artifact.title)
+    return _build_cover_letter_html(
+        artifact.markdown,
+        title=artifact.title,
+        theme=getattr(artifact, "theme", "classic_ats"),
+    )
 
 
 def export_zip_bundle_bytes(file_map: dict[str, bytes]) -> bytes:
@@ -200,10 +204,46 @@ def _split_cover_letter_title(title: str) -> tuple[str, str]:
     return normalized_title, ""
 
 
-def _build_cover_letter_html(text, title="Cover Letter"):
+_COVER_LETTER_THEME_PALETTES = {
+    # Default — warm cream paper + brown accents, matched to the resume
+    # classic theme so the two read as a single set of stationery.
+    "classic_ats": {
+        "ink": "#221912",
+        "muted": "#6b5648",
+        "accent": "#8f6845",
+        "line": "#d7c2af",
+        "paper": "#fffdf9",
+        "surface": "#fffdfa",
+        "strong_color": "#17100b",
+        "header_border_width": "3px",
+    },
+    # Conservative B&W — pure black ink on white paper. Body stays
+    # Georgia (serif still feels right for letter prose) but every
+    # accent collapses to grayscale.
+    "professional_neutral": {
+        "ink": "#0a0a0a",
+        "muted": "#555555",
+        "accent": "#0a0a0a",
+        "line": "#bfbfbf",
+        "paper": "#ffffff",
+        "surface": "#ffffff",
+        "strong_color": "#0a0a0a",
+        "header_border_width": "2px",
+    },
+}
+
+
+def _resolve_cover_letter_palette(theme: str | None) -> dict:
+    return _COVER_LETTER_THEME_PALETTES.get(
+        theme or "classic_ats", _COVER_LETTER_THEME_PALETTES["classic_ats"]
+    )
+
+
+def _build_cover_letter_html(text, title="Cover Letter", theme="classic_ats"):
     safe_title = html.escape(title or "Cover Letter")
     header_title, header_subtitle = _split_cover_letter_title(title)
     body_html = _style_cover_letter_body(_MARKDOWN.render(text or ""))
+    palette = _resolve_cover_letter_palette(theme)
 
     return """
 <!DOCTYPE html>
@@ -212,23 +252,22 @@ def _build_cover_letter_html(text, title="Cover Letter"):
     <meta charset="utf-8" />
     <title>{title}</title>
     <style>
+        /* Theme-keyed palette: classic_ats keeps the warm-brown letter
+           feel; professional_neutral drops to pure black/white/gray for
+           conservative recipients while keeping the same Georgia letter
+           prose. */
         :root {{
-            --ink: #221912;
-            --muted: #6b5648;
-            --accent: #8f6845;
-            --line: #d7c2af;
-            --paper: #fffdf9;
-            --surface: #fffdfa;
+            --ink: {ink};
+            --muted: {muted};
+            --accent: {accent};
+            --line: {line};
+            --paper: {paper};
+            --surface: {surface};
         }}
 
-        @page {{
-            size: A4;
-            margin: 0;
-        }}
+        @page {{ size: A4; margin: 0; }}
 
-        * {{
-            box-sizing: border-box;
-        }}
+        * {{ box-sizing: border-box; }}
 
         body {{
             margin: 0;
@@ -246,9 +285,7 @@ def _build_cover_letter_html(text, title="Cover Letter"):
             padding: 18mm 16mm 18mm;
         }}
 
-        .cover-letter-header {{
-            margin: 0 0 18px;
-        }}
+        .cover-letter-header {{ margin: 0 0 18px; }}
 
         .cover-letter-title {{
             margin: 0;
@@ -268,38 +305,18 @@ def _build_cover_letter_html(text, title="Cover Letter"):
 
         .cover-letter-greeting-break {{
             width: auto;
-            border-top: 3px solid var(--accent);
+            border-top: {header_border_width} solid var(--accent);
             margin: 8px -16mm 14px;
         }}
 
-        .cover-letter-signoff p {{
-            margin: 0 0 6px;
-        }}
+        .cover-letter-signoff p {{ margin: 0 0 6px; }}
+        .cover-letter-signoff p:last-child {{ margin-bottom: 0; }}
 
-        .cover-letter-signoff p:last-child {{
-            margin-bottom: 0;
-        }}
-
-        p {{
-            margin: 0 0 12px;
-        }}
-
-        strong {{
-            color: #17100b;
-        }}
-
-        em {{
-            color: var(--muted);
-        }}
-
-        ul, ol {{
-            margin: 0 0 12px 1.25rem;
-            padding: 0;
-        }}
-
-        li {{
-            margin: 0 0 6px;
-        }}
+        p {{ margin: 0 0 12px; }}
+        strong {{ color: {strong_color}; }}
+        em {{ color: var(--muted); }}
+        ul, ol {{ margin: 0 0 12px 1.25rem; padding: 0; }}
+        li {{ margin: 0 0 6px; }}
     </style>
 </head>
 <body>
@@ -313,17 +330,18 @@ def _build_cover_letter_html(text, title="Cover Letter"):
 </body>
 </html>
 """.format(
-                                title=safe_title,
-                                header_title=html.escape(header_title),
-                                header_subtitle=(
-                                                '<p class="cover-letter-role">{subtitle}</p>'.format(
-                                                                subtitle=html.escape(header_subtitle)
-                                                )
-                                                if header_subtitle
-                                                else ""
-                                ),
-                                body=body_html,
-                )
+        title=safe_title,
+        header_title=html.escape(header_title),
+        header_subtitle=(
+            '<p class="cover-letter-role">{subtitle}</p>'.format(
+                subtitle=html.escape(header_subtitle)
+            )
+            if header_subtitle
+            else ""
+        ),
+        body=body_html,
+        **palette,
+    )
 
 
 def _build_report_html(text, title="AI Job Application Package"):
@@ -807,11 +825,56 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
     )
 
 
+_RESUME_THEME_PALETTES = {
+    # Default — warm cream paper + brown accents. Same family as the
+    # cover letter classic theme. Distinctive but design-forward; works
+    # for modern tech / startups / design-engineering.
+    "classic_ats": {
+        "ink": "#221912",
+        "muted": "#6b5648",
+        "accent": "#8f6845",
+        "accent_soft": "rgba(143, 104, 69, 0.10)",
+        "line": "#d7c2af",
+        "paper": "#fffdf9",
+        "surface": "#fffdfa",
+        "h1_font_family": 'Georgia, "Times New Roman", serif',
+        "prose_font_family": 'Georgia, "Times New Roman", serif',
+        "prose_line_height": "1.55",
+        "header_border_width": "3px",
+        "code_bg": "rgba(143, 104, 69, 0.10)",
+    },
+    # Conservative B&W — pure ATS-template look. For Big Tech recruiting
+    # at scale, banks, defense, or any reviewer who prefers the
+    # traditional black-on-white treatment.
+    "professional_neutral": {
+        "ink": "#0a0a0a",
+        "muted": "#555555",
+        "accent": "#0a0a0a",
+        "accent_soft": "rgba(0, 0, 0, 0.04)",
+        "line": "#bfbfbf",
+        "paper": "#ffffff",
+        "surface": "#ffffff",
+        "h1_font_family": "Arial, Helvetica, sans-serif",
+        "prose_font_family": "Arial, Helvetica, sans-serif",
+        "prose_line_height": "1.5",
+        "header_border_width": "2px",
+        "code_bg": "rgba(0, 0, 0, 0.04)",
+    },
+}
+
+
+def _resolve_resume_palette(theme: str | None) -> dict:
+    return _RESUME_THEME_PALETTES.get(
+        theme or "classic_ats", _RESUME_THEME_PALETTES["classic_ats"]
+    )
+
+
 def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artifact: TailoredResumeArtifact | None = None):
     body_html = _MARKDOWN.render(text or "")
     if artifact is not None:
         body_html = _build_structured_resume_body_classic(artifact)
     safe_title = html.escape(title or "Tailored Resume")
+    palette = _resolve_resume_palette(theme)
 
     return """
 <!DOCTYPE html>
@@ -821,47 +884,38 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
     <title>{title}</title>
     <style>
         @page {{ size: A4; margin: 0; }}
-        /* Same warm-brown palette as the cover letter so the two
-           documents read as a single set of stationery. The previous
-           resume vars were a cool slate-blue (#4f678c muted, #2563eb
-           accent, #bfd6f7 line) that clashed with the brown rule and
-           brown section heads already on the page. */
+        /* Theme-keyed palette: classic_ats ships warm-brown + Georgia
+           prose so the resume reads as a set with the cover letter;
+           professional_neutral collapses to pure black/white/gray with
+           all-Arial body for conservative recruiters / B&W printing. */
         :root {{
-            --ink: #221912;
-            --muted: #6b5648;
-            --accent: #8f6845;
-            --accent-soft: rgba(143, 104, 69, 0.10);
-            --line: #d7c2af;
-            --paper: #fffdf9;
-            --surface: #fffdfa;
+            --ink: {ink};
+            --muted: {muted};
+            --accent: {accent};
+            --accent-soft: {accent_soft};
+            --line: {line};
+            --paper: {paper};
+            --surface: {surface};
         }}
         * {{ box-sizing: border-box; }}
         html, body {{ margin: 0; padding: 0; }}
         body {{ font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: var(--paper); font-size: 10.5pt; line-height: 1.5; }}
-        /* Editorial pairing: sans-serif headers + meta (modern,
-           scannable) with a Georgia serif for the prose-y parts —
-           summary paragraph and experience bullets — so the resume
-           reads as a set with the cover letter while keeping the
-           classic ATS-resume scannability for everything else. */
-        .resume-summary, .resume-bullet-list li {{ font-family: Georgia, "Times New Roman", serif; line-height: 1.55; }}
-        /* min-height keeps short resumes filling a single A4 page; we
-           deliberately drop `overflow: hidden` (which previously
-           clipped any content past page 1) so WeasyPrint paginates
-           naturally when the resume runs long. overflow-x: hidden
-           still prevents the negative-margin h2 trick from leaking
-           past the page edge horizontally. */
+        /* Editorial pairing: in classic_ats the prose-y parts (summary,
+           bullets) shift to Georgia so the resume harmonizes with the
+           cover letter; professional_neutral keeps Arial throughout. */
+        .resume-summary, .resume-bullet-list li {{ font-family: {prose_font_family}; line-height: {prose_line_height}; }}
+        /* min-height keeps short resumes filling a single A4 page;
+           overflow-x: hidden prevents the negative-margin h2 trick from
+           leaking past the page edge horizontally while letting
+           WeasyPrint paginate vertically when the resume runs long. */
         .resume-shell {{ position: relative; min-height: 297mm; background: var(--surface); padding: 13mm 15mm 13mm; overflow-x: hidden; }}
-        /* Pagination guards: keep cards intact across page breaks and
-           keep section headings with their first child. */
         .resume-experience-card, .resume-education-card, .resume-project-card {{ page-break-inside: avoid; break-inside: avoid; }}
         h2, h3 {{ page-break-after: avoid; break-after: avoid; }}
         .resume-shell::before {{ content: none; }}
         .resume-shell::after {{ content: none; }}
-        /* The candidate's name is the resume's title and pairs with the
-           cover letter's title block — Georgia bold, mixed-case, light
-           tracking. Drops the previous Arial-uppercase-tracked treatment
-           which read more "ATS template" than "letterhead". */
-        h1 {{ font-family: Georgia, "Times New Roman", serif; font-size: 22pt; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.005em; color: var(--ink); text-transform: none; }}
+        /* Name is the resume's title — bold, mixed-case, light tracking.
+           Font family is theme-keyed so neutral stays all-Arial. */
+        h1 {{ font-family: {h1_font_family}; font-size: 22pt; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.005em; color: var(--ink); text-transform: none; }}
         h2 {{ font-size: 10pt; margin: 0 -15mm 6px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--accent); padding: 0 15mm 3px; border-bottom: 2px solid var(--line); }}
         h3 {{ font-size: 10.5pt; margin: 10px 0 4px; color: var(--accent); }}
         p {{ margin: 0 0 6px; }}
@@ -869,10 +923,10 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         li {{ margin: 0 0 3px; }}
         strong {{ color: var(--ink); }}
         em {{ color: var(--muted); }}
-        code {{ background: rgba(143, 104, 69, 0.10); border: 1px solid var(--line); border-radius: 4px; padding: 0.08rem 0.28rem; }}
+        code {{ background: {code_bg}; border: 1px solid var(--line); border-radius: 4px; padding: 0.08rem 0.28rem; }}
         hr {{ border: 0; border-top: 1px solid var(--line); margin: 14px 0; }}
         blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: var(--muted); }}
-        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: 3px solid var(--accent); }}
+        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: {header_border_width} solid var(--accent); }}
         .resume-classic-role {{ font-size: 10.2pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; }}
         .resume-contact-inline {{ color: var(--muted); font-size: 9.6pt; line-height: 1.55; max-width: 88%; }}
         .resume-skill-inline {{ color: var(--ink); font-size: 9.8pt; line-height: 1.7; }}
@@ -897,7 +951,7 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
     <main class="resume-shell resume-shell--classic">{body}</main>
 </body>
 </html>
-""".format(title=safe_title, body=body_html)
+""".format(title=safe_title, body=body_html, **palette)
 
 
 def _inline_to_markup(inline_node):
@@ -1224,7 +1278,7 @@ def _build_pdf_html(text, title, theme=None, document_kind="report"):
     return (
         _build_resume_html(text, title=title, theme=theme or "classic_ats")
         if document_kind == "tailored_resume"
-        else _build_cover_letter_html(text, title=title)
+        else _build_cover_letter_html(text, title=title, theme=theme or "classic_ats")
         if document_kind == "cover_letter"
         else _build_report_html(text, title=title)
     )
@@ -1237,7 +1291,7 @@ def _generate_pdf_with_weasyprint(text, title, theme=None, document_kind="report
     html_document = (
         _build_resume_html(text, title=title, theme=theme or "classic_ats", artifact=artifact)
         if document_kind == "tailored_resume"
-        else _build_cover_letter_html(text, title=title)
+        else _build_cover_letter_html(text, title=title, theme=theme or "classic_ats")
         if document_kind == "cover_letter"
         else _build_report_html(text, title=title)
     )
