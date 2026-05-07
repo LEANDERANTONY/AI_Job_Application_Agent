@@ -541,6 +541,113 @@ def build_resume_builder_prompt(
     }
 
 
+def build_resume_builder_structuring_prompt(
+    *,
+    draft: Dict[str, Any],
+) -> Dict[str, Any]:
+    """LLM structuring pass for the resume builder draft.
+
+    The conversational intake captures `experience_notes` and
+    `education_notes` as free-form prose (verbatim user words). At
+    generate / export time we ask the model to convert those strings
+    into a list of structured role / degree objects so the resume
+    renderer can produce one card per role and one row per degree.
+
+    The model also gets license to LIGHTLY rewrite bullets into ATS
+    voice and infer obvious missing pieces (e.g., the second role's
+    title when the user wrote "prior at FinStart"). It must NOT
+    fabricate companies, schools, dates, or skills the user did not
+    mention. Voice rewrite only — facts stay the user's.
+
+    Returns are merged into a CandidateProfile downstream. On any
+    failure (LLM unavailable, JSON malformed, schema mismatch) the
+    caller falls back to the deterministic regex parsers, so this
+    prompt is best-effort enrichment, not a hard dependency.
+    """
+    contract = {
+        "experience": (
+            "list of role objects with keys: title (string), organization (string), "
+            "location (string, '' if unknown), start (string like '2020' or 'Jan 2023', "
+            "'' if unknown), end (string, 'Present' for current roles, '' if unknown), "
+            "bullets (list of 2-4 short impact-focused strings). Order most-recent first."
+        ),
+        "education": (
+            "list of education objects with keys: institution (string), degree (string), "
+            "field_of_study (string, '' if degree already includes it), start (string, "
+            "'' if unknown), end (string, '' if unknown). Order most-recent first."
+        ),
+    }
+
+    user_prompt = "\n\n".join(
+        [
+            _json_block(
+                "Draft Snapshot",
+                {
+                    "full_name": draft.get("full_name") or "",
+                    "target_role": draft.get("target_role") or "",
+                    "professional_summary": draft.get("professional_summary") or "",
+                    "skills": draft.get("skills") or [],
+                },
+            ),
+            _json_block(
+                "Experience Notes (user prose, verbatim)",
+                {"text": draft.get("experience_notes") or ""},
+            ),
+            _json_block(
+                "Education Notes (user prose, verbatim)",
+                {"text": draft.get("education_notes") or ""},
+            ),
+        ]
+    )
+
+    return {
+        "system": (
+            "You convert resume-builder intake notes into structured resume "
+            "entries. The user gave you their experience and education as "
+            "free-form prose. Your job is to split that prose into one entry "
+            "per role and one entry per degree, then return the structured "
+            "lists as JSON.\n"
+            "\n"
+            "Rules — read carefully:\n"
+            "- Split on role / degree boundaries: a new entry starts at every "
+            "company name (\"Senior X at Acme\") or transition word (\"prior\", "
+            "\"previously\", \"before that\", \"earlier\"). Multiple degrees on "
+            "one line (\"MS CS Stanford 2017, BTech IIT Madras 2015\") become "
+            "multiple education entries.\n"
+            "- Fact preservation is mandatory. Companies, schools, dates, and "
+            "skill names must come VERBATIM from the user's prose. Do not "
+            "invent employers, schools, dates, technologies, or impact "
+            "numbers the user did not mention.\n"
+            "- Bullet voice is yours. Convert the user's casual phrasing into "
+            "tight, ATS-style impact bullets ('Reduced p99 latency 30% by …', "
+            "'Owned ingestion pipeline for …'). Each bullet should start with "
+            "a strong verb and stay under ~22 words. If the user gave no "
+            "specifics for a role, return an EMPTY bullets list — do NOT "
+            "fabricate impact.\n"
+            "- Title inference is allowed only when context makes it "
+            "unambiguous. \"Senior Backend Engineer at TechCorp 2020-Present, "
+            "prior at FinStart 2017-2020\" → second role's title is "
+            "\"Backend Engineer\" (drop the seniority modifier). When in "
+            "doubt, copy the user's most recent explicit title or leave "
+            "title=\"Relevant Experience\".\n"
+            "- Dates: parse what the user wrote into start/end strings. "
+            "\"2020-Present\" → start='2020', end='Present'. \"(Jan 2023 - "
+            "Jan 2025)\" → start='Jan 2023', end='Jan 2025'. Single year → "
+            "start=year, end=''.\n"
+            "- Education degree vs field: \"BTech CS\" → degree='BTech', "
+            "field_of_study='CS'. \"MS Computer Science\" → degree='MS', "
+            "field_of_study='Computer Science'. Treat the abbreviation alone "
+            "as degree.\n"
+            "- Order most recent first in both lists.\n"
+            "- If the user's prose is empty for a section, return an empty "
+            "list for that section.\n"
+            + _build_contract(contract)
+        ),
+        "user": user_prompt,
+        "expected_keys": list(contract.keys()),
+    }
+
+
 def build_product_help_assistant_prompt(
     app_context: Dict[str, Any],
     question: str,

@@ -114,6 +114,13 @@ OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
     "assistant_product_help": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PRODUCT_HELP", 700),
     "assistant_application_qa": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
     "resume_builder": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER", 1200),
+    # Structuring pass — converts free-form experience_notes /
+    # education_notes into structured role + degree arrays. Larger
+    # ceiling than the conversational intake because the response is a
+    # full structured payload (multiple roles × multiple bullets).
+    "resume_builder_structuring": _load_int_env(
+        "OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER_STRUCTURING", 2400
+    ),
 }
 
 

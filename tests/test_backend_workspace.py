@@ -375,6 +375,501 @@ def test_resume_builder_export_rejects_unsupported_format():
     assert "export_format" in str(response.json())
 
 
+def test_resume_builder_experience_parser_splits_multi_role_single_line():
+    """Users often squash multiple roles onto one line ("X at A 2020-Present,
+    prior at B 2017-2020"). The parser used to collapse this into ONE
+    WorkExperience whose organization swallowed the entire suffix. Now
+    we split on transition markers and emit one entry per role."""
+    from backend.services.resume_builder_service import _build_experience_entries
+
+    notes = (
+        "Senior Backend Engineer at TechCorp from 2020-Present, "
+        "prior at FinStart 2017-2020"
+    )
+    entries = _build_experience_entries(notes)
+
+    assert len(entries) == 2
+    first, second = entries
+    assert first.title == "Senior Backend Engineer"
+    assert first.organization == "TechCorp"
+    assert first.start == "2020"
+    assert first.end == "Present"
+    # Second sub-headline starts with "at" — title falls back, org is set.
+    assert second.organization == "FinStart"
+    assert second.start == "2017"
+    assert second.end == "2020"
+    # Description must NOT regurgitate the headline — that was the source
+    # of the duplicate-meta-line bug (organization had the whole blob and
+    # description seeded an identical bullet downstream).
+    assert first.description == ""
+    assert second.description == ""
+
+
+def test_resume_builder_experience_parser_separates_headline_from_bullets():
+    """Single-line input where bullets follow the headline as sentences
+    ("AI Engineer at Example Labs (Jan 2023 - Present). Built ML APIs.
+    Reduced latency 30%.") should produce ONE entry with the dates
+    extracted to start/end, the organization clean of date noise, and
+    the bullet sentences in description (not the headline)."""
+    from backend.services.resume_builder_service import _build_experience_entries
+
+    notes = (
+        "AI Engineer at Example Labs (Jan 2023 - Present). "
+        "Built ML APIs. Reduced latency 30%."
+    )
+    entries = _build_experience_entries(notes)
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.title == "AI Engineer"
+    assert entry.organization == "Example Labs"
+    assert entry.start == "Jan 2023"
+    assert entry.end == "Present"
+    bullets = entry.description.splitlines()
+    # Trailing punctuation may be preserved ("Built ML APIs." vs "Built ML APIs"),
+    # so substring-match each expected bullet rather than checking equality.
+    assert any("Built ML APIs" in line for line in bullets)
+    assert any("Reduced latency" in line for line in bullets)
+    # The headline itself is NOT in description.
+    assert "AI Engineer at Example Labs" not in entry.description
+
+
+def test_resume_builder_experience_parser_groups_multiline_blocks():
+    """Multi-line input where each role starts a fresh headline line,
+    optionally followed by indented bullets, should produce one entry
+    per headline with the right bullets attached."""
+    from backend.services.resume_builder_service import _build_experience_entries
+
+    notes = (
+        "Senior Backend Engineer at TechCorp (2020-Present)\n"
+        "- Built distributed systems\n"
+        "- Led team of 5\n"
+        "Backend Engineer at FinStart (2017-2020)\n"
+        "- Optimized payment pipeline"
+    )
+    entries = _build_experience_entries(notes)
+
+    assert len(entries) == 2
+    first, second = entries
+    assert first.title == "Senior Backend Engineer"
+    assert first.organization == "TechCorp"
+    assert first.start == "2020"
+    assert first.end == "Present"
+    assert "Built distributed systems" in first.description
+    assert "Led team of 5" in first.description
+    assert second.title == "Backend Engineer"
+    assert second.organization == "FinStart"
+    assert second.start == "2017"
+    assert second.end == "2020"
+    assert "Optimized payment pipeline" in second.description
+
+
+def test_resume_builder_education_parser_splits_multi_degree_single_line():
+    """Users often pack two degrees onto one line ("MS Computer Science
+    Stanford 2017, BTech CS IIT Madras 2015"). Previously the whole line
+    became one EducationEntry; now we split on commas + degree patterns."""
+    from backend.services.resume_builder_service import _build_education_entries
+
+    notes = "MS Computer Science Stanford 2017, BTech CS IIT Madras 2015"
+    entries = _build_education_entries(notes)
+
+    assert len(entries) == 2
+    titles_by_year = {entry.start: entry for entry in entries}
+    assert "2017" in titles_by_year
+    assert "2015" in titles_by_year
+    ms_entry = titles_by_year["2017"]
+    btech_entry = titles_by_year["2015"]
+    assert "Stanford" in ms_entry.institution
+    # Degree should retain the abbreviation; field-of-study can land in
+    # either degree or institution depending on the parser, but at minimum
+    # the abbreviation has to come through.
+    assert ms_entry.degree.lower().startswith("ms")
+    assert "IIT Madras" in btech_entry.institution
+    assert btech_entry.degree.lower().startswith("btech") or btech_entry.degree.lower().startswith("b.tech")
+
+
+def test_resume_builder_export_renders_multi_role_content_in_docx():
+    """End-to-end check that the parser fix lands on the page.
+
+    Regression coverage for the "very sparse / not a real resume"
+    feedback: a single-line, multi-role experience and a single-line,
+    multi-degree education had collapsed to one entry each, so the
+    rendered DOCX showed only one company and one degree. We now drive
+    the same shape through the full pipeline and assert both
+    employers + both schools appear in the document text.
+    """
+    import base64
+    from io import BytesIO
+
+    from docx import Document
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    assert start_response.status_code == 200
+    session_id = start_response.json()["session_id"]
+
+    answers = [
+        "Priya Sharma, Bangalore. priya@gmail.com, +91 8000000000",
+        "Senior Backend Engineer. Distributed systems and payments background.",
+        # Two roles squashed onto one line via the "prior at" transition.
+        "Senior Backend Engineer at TechCorp from 2020-Present, prior at FinStart 2017-2020",
+        # Two degrees on one line.
+        "MS Computer Science Stanford 2017, BTech CS IIT Madras 2015",
+        "Python, PostgreSQL, Kafka, Docker",
+    ]
+    for answer in answers:
+        message_response = client.post(
+            "/api/workspace/resume-builder/message",
+            json={
+                "session_id": session_id,
+                "message": answer,
+                "input_mode": "text",
+            },
+        )
+        assert message_response.status_code == 200
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert generate_response.status_code == 200
+
+    export_response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={
+            "session_id": session_id,
+            "export_format": "docx",
+            "theme": "classic_ats",
+        },
+    )
+    assert export_response.status_code == 200
+    payload = export_response.json()
+    assert payload["status"] == "ready"
+
+    raw_bytes = base64.b64decode(payload["content_base64"])
+    document = Document(BytesIO(raw_bytes))
+    body = "\n".join(p.text for p in document.paragraphs)
+
+    # Both employers must show up — previously only one role survived.
+    assert "TechCorp" in body, "Missing first employer (TechCorp) — multi-role split regressed"
+    assert "FinStart" in body, "Missing second employer (FinStart) — multi-role split regressed"
+    # Dates land in their own start/end fields, not inside the org meta.
+    assert "2020" in body
+    assert "2017" in body
+    # Both schools must show up — previously the two degrees merged.
+    assert "Stanford" in body, "Missing first school (Stanford) — multi-degree split regressed"
+    assert "IIT Madras" in body, "Missing second school (IIT Madras) — multi-degree split regressed"
+
+
+def test_resume_builder_structuring_uses_llm_when_service_available(monkeypatch):
+    """LLM-first structuring: when an OpenAIService is plumbed through
+    the /generate route, the candidate_profile.experience and .education
+    arrays come from the model's structured payload, not the regex
+    parser. Bullets are LLM-rewritten into ATS voice — the regex path
+    can't produce them at all (the user gave bare role headlines)."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    captured_calls: list[str] = []
+
+    class _StubOpenAIService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            task = kwargs.get("task_name", "")
+            captured_calls.append(task)
+            if task == "resume_builder_structuring":
+                # The structured response the LLM would emit for the
+                # user's "Senior Backend Engineer at TechCorp..." prose.
+                return {
+                    "experience": [
+                        {
+                            "title": "Senior Backend Engineer",
+                            "organization": "TechCorp",
+                            "location": "",
+                            "start": "2020",
+                            "end": "Present",
+                            "bullets": [
+                                "Owned the distributed systems platform serving 5M users.",
+                                "Reduced p99 latency 30% through targeted query optimization.",
+                            ],
+                        },
+                        {
+                            "title": "Backend Engineer",
+                            "organization": "FinStart",
+                            "location": "",
+                            "start": "2017",
+                            "end": "2020",
+                            "bullets": [
+                                "Built the payments ingestion pipeline from scratch.",
+                            ],
+                        },
+                    ],
+                    "education": [
+                        {
+                            "institution": "Stanford",
+                            "degree": "MS",
+                            "field_of_study": "Computer Science",
+                            "start": "2015",
+                            "end": "2017",
+                        },
+                        {
+                            "institution": "IIT Madras",
+                            "degree": "BTech",
+                            "field_of_study": "CS",
+                            "start": "2011",
+                            "end": "2015",
+                        },
+                    ],
+                }
+            # The conversational intake returns the empty default —
+            # this test is about the structuring pass at /generate
+            # time, not the per-turn intake calls.
+            return {
+                "draft_updates": {},
+                "assistant_message": "Got it.",
+                "status": "collecting",
+                "focus_field": "",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _StubOpenAIService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    # Push the prose into the session via the update route — we don't
+    # need to drive the conversational intake for this test.
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya Sharma",
+                "target_role": "Senior Backend Engineer",
+                "experience_notes": (
+                    "Senior Backend Engineer at TechCorp 2020-Present, "
+                    "prior at FinStart 2017-2020"
+                ),
+                "education_notes": (
+                    "MS Computer Science Stanford 2015-2017, "
+                    "BTech CS IIT Madras 2011-2015"
+                ),
+                "skills": ["Python", "PostgreSQL"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert generate_response.status_code == 200
+    payload = generate_response.json()
+
+    assert "resume_builder_structuring" in captured_calls, (
+        "LLM structuring task was never invoked — service not plumbed through generate"
+    )
+
+    profile = payload["candidate_profile"]
+    assert len(profile["experience"]) == 2
+    titles = [entry["title"] for entry in profile["experience"]]
+    assert titles == ["Senior Backend Engineer", "Backend Engineer"]
+    # The LLM-rewritten bullet has to make it through the rendering
+    # pipeline — this is the "rich feel" the user wants from LLM output.
+    descriptions = "\n".join(entry["description"] for entry in profile["experience"])
+    assert "Reduced p99 latency 30%" in descriptions
+    assert len(profile["education"]) == 2
+    assert profile["education"][0]["institution"] == "Stanford"
+    assert profile["education"][1]["institution"] == "IIT Madras"
+
+    # Cleanup so subsequent tests don't see the fixture's session.
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_structuring_falls_back_to_regex_when_llm_unavailable(monkeypatch):
+    """No OpenAIService → regex parser fills the candidate profile.
+
+    Same shape of output, just less polished. This is the safety net
+    that keeps the resume builder working for unauthenticated users
+    and during transient LLM outages."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: None,
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya Sharma",
+                "experience_notes": (
+                    "Senior Backend Engineer at TechCorp 2020-Present, "
+                    "prior at FinStart 2017-2020"
+                ),
+                "education_notes": (
+                    "MS Computer Science Stanford 2017, BTech CS IIT Madras 2015"
+                ),
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert generate_response.status_code == 200
+    profile = generate_response.json()["candidate_profile"]
+    # Regex still produces the multi-role split (covered by the parser
+    # tests above) — both companies and both schools are present.
+    orgs = [entry["organization"] for entry in profile["experience"]]
+    assert "TechCorp" in orgs
+    assert "FinStart" in orgs
+    schools = [entry["institution"] for entry in profile["education"]]
+    assert "Stanford" in schools
+    assert "IIT Madras" in schools
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_structuring_falls_back_when_llm_raises(monkeypatch):
+    """Transient LLM error during structuring → regex fallback kicks in.
+
+    Pins the contract that the export / generate endpoints never bubble
+    up an LLM error to the user — there's always a deterministic
+    fallback that produces a usable resume."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _RaisingOpenAIService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                raise RuntimeError("OpenAI 503 — model overloaded")
+            return {
+                "draft_updates": {},
+                "assistant_message": "ok",
+                "status": "collecting",
+                "focus_field": "",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _RaisingOpenAIService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya Sharma",
+                "experience_notes": (
+                    "Senior Backend Engineer at TechCorp 2020-Present, "
+                    "prior at FinStart 2017-2020"
+                ),
+                "education_notes": "BTech CS IIT Madras 2015",
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert generate_response.status_code == 200, (
+        "LLM exception must NOT bubble up — fallback should produce a 200"
+    )
+    profile = generate_response.json()["candidate_profile"]
+    orgs = [entry["organization"] for entry in profile["experience"]]
+    assert "TechCorp" in orgs and "FinStart" in orgs
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_structuring_falls_back_per_section_on_partial_llm_output(monkeypatch):
+    """LLM returned a usable experience array but an empty education
+    array — we keep the LLM experience, fall back to regex for
+    education. This is the layered defense: every section gets the
+    best signal we can produce, independently."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _PartialOpenAIService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                return {
+                    "experience": [
+                        {
+                            "title": "Senior Backend Engineer",
+                            "organization": "TechCorp",
+                            "start": "2020",
+                            "end": "Present",
+                            "bullets": ["Built distributed systems."],
+                        },
+                    ],
+                    # Education came back empty — must fall back to regex.
+                    "education": [],
+                }
+            return {
+                "draft_updates": {},
+                "assistant_message": "ok",
+                "status": "collecting",
+                "focus_field": "",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _PartialOpenAIService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya Sharma",
+                "experience_notes": "Senior Backend Engineer at TechCorp 2020-Present",
+                "education_notes": "BTech CS IIT Madras 2015",
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert generate_response.status_code == 200
+    profile = generate_response.json()["candidate_profile"]
+    # Experience came from the LLM — bullet text is the giveaway.
+    descriptions = "\n".join(entry["description"] for entry in profile["experience"])
+    assert "Built distributed systems" in descriptions
+    # Education came from regex — no LLM rewrite, but the school is there.
+    schools = [entry["institution"] for entry in profile["education"]]
+    assert "IIT Madras" in schools
+
+    _SESSIONS.pop(session_id, None)
+
+
 def test_resume_builder_message_uses_llm_when_openai_service_available(monkeypatch):
     """LLM-first intake: when an OpenAIService is plumbed in, the
     model picks the next question and merges partial draft updates,

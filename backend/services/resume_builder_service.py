@@ -11,7 +11,7 @@ from src.config import get_openai_max_completion_tokens_for_task
 from src.errors import AgentExecutionError
 from src.exporters import export_docx_bytes, export_pdf_bytes
 from src.logging_utils import get_logger, log_event
-from src.prompts import build_resume_builder_prompt
+from src.prompts import build_resume_builder_prompt, build_resume_builder_structuring_prompt
 from src.resume_builder import build_tailored_resume_artifact
 from src.schemas import (
     CandidateProfile,
@@ -398,64 +398,598 @@ def _apply_draft_updates(session: ResumeBuilderSession, updates: dict):
         )
 
 
-def _build_experience_entries(notes: str) -> list[WorkExperience]:
-    normalized = _normalize_lines(notes)
+# Patterns shared by the experience/education parsers below. Defined at
+# module scope so they're compiled once.
+#
+# Date tokens we accept inside headlines: 4-digit years, "Present",
+# "Current", "Now", and month-name + year (Jan 2023, March 2024, etc.).
+_DATE_TOKEN_RE = (
+    r"(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+    r"[a-z]*\.?\s*\d{4}|\d{4}|Present|present|Current|current|Now|now)"
+)
+_DATE_RANGE_PATTERN = re.compile(
+    rf"\b({_DATE_TOKEN_RE})\s*[\-–—]\s*({_DATE_TOKEN_RE})\b"
+)
+_PARENTHETICAL_DATES_PATTERN = re.compile(
+    rf"\(\s*([^)]*{_DATE_TOKEN_RE}[^)]*?)\s*\)", re.IGNORECASE
+)
+_SINGLE_DATE_PATTERN = re.compile(rf"\b({_DATE_TOKEN_RE})\b")
+_LEADING_FROM_PATTERN = re.compile(r"^\s*(?:from|since|in)\s+", re.IGNORECASE)
+_TRAILING_FROM_PATTERN = re.compile(r"\s+(?:from|since|in)\s*$", re.IGNORECASE)
+# Role transition markers users say when squashing two roles onto one line:
+# "X at A 2020-Present, prior at B 2017-2020" / "Y at A then earlier at B"
+_ROLE_TRANSITION_PATTERN = re.compile(
+    r"\s*[,;\.]?\s*\b"
+    r"(?:prior(?:ly)?|previously|previous(?:\s+role|\s+job|\s+position)?"
+    r"|before(?:\s+that)?|earlier|formerly|then(?:\s+at)?)\b\s+",
+    re.IGNORECASE,
+)
+# Common degree abbreviations + a couple of common spellings, used to detect
+# multiple education entries on one line.
+_DEGREE_PATTERN = re.compile(
+    r"\b(?:B\.?S\.?c?|B\.?A\.?|B\.?Tech|B\.?E\.?|B\.?Eng|B\.?Sc"
+    r"|M\.?S\.?c?|M\.?A\.?|M\.?Tech|M\.?B\.?A\.?|M\.?E\.?|M\.?Eng"
+    r"|Ph\.?D|Doctorate|Diploma|Associate|Bachelor[s]?|Master[s]?)\b",
+    re.IGNORECASE,
+)
+# Institution markers — words that, when present, almost certainly mark
+# the institution part of an education chunk. Mirrors
+# `INSTITUTION_KEYWORDS` in `src/services/profile_service.py`.
+_INSTITUTION_KEYWORDS = (
+    "university",
+    "institute",
+    "college",
+    "school",
+    "academy",
+    "polytechnic",
+    "iiit",
+    "iit",
+    "nit",
+)
+
+
+def _split_date_range_parts(date_text: str) -> tuple[str, str]:
+    """Split "2020 - 2024" into ("2020", "2024"); single dates → (date, "")."""
+    normalized = (date_text or "").strip()
     if not normalized:
+        return "", ""
+    parts = re.split(r"\s*[\-–—]\s*", normalized, maxsplit=1)
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+    return normalized, ""
+
+
+def _split_into_sentences(text: str) -> list[str]:
+    """Split free-form prose on newlines AND sentence boundaries.
+
+    Users may type the whole experience block as one paragraph
+    ("Engineer at A 2020-Present. Built X. Reduced Y."). This expands
+    such input into the sentences we then group into role blocks.
+    """
+    if not text:
+        return []
+    raw = re.split(r"(?<=[\.!?])\s+|\n+", str(text))
+    return [chunk.strip(" \t-•") for chunk in raw if chunk.strip(" \t-•")]
+
+
+def _looks_like_role_headline(line: str) -> bool:
+    """Heuristic: does this sentence start a new role block?
+
+    A headline typically contains " at " (Engineer at Acme), a 4-digit
+    year (2024), a parenthetical date span, or pipe-separated columns.
+    """
+    if not line:
+        return False
+    stripped = line.strip()
+    if stripped.startswith(("- ", "* ", "• ", "→ ")):
+        return False
+    if re.search(r"\bat\b", stripped, re.IGNORECASE):
+        return True
+    if re.search(r"\b(19|20)\d{2}\b", stripped):
+        return True
+    if "|" in stripped:
+        return True
+    return False
+
+
+def _split_headline_on_transitions(headline: str) -> list[str]:
+    """Break "X at A 2020-Present, prior at B 2017-2020" into two headlines.
+
+    Returns the original headline (single-element list) if no transition
+    markers are present. Splitting happens BEFORE the transition word so
+    each fragment retains its own role context.
+    """
+    parts = _ROLE_TRANSITION_PATTERN.split(headline)
+    cleaned = [part.strip(" ,;.-") for part in parts if part.strip(" ,;.-")]
+    return cleaned or [headline]
+
+
+def _split_into_role_blocks(notes: str) -> list[list[str]]:
+    """Group sentences into role blocks of [headline, *bullets].
+
+    Walks the sentences once: a sentence that looks like a headline
+    starts a new block; non-headline sentences attach as bullets to the
+    current block (or seed the first block if no headline came before).
+    If the entire input collapsed to a single block, we try to detect
+    multiple roles within the headline itself.
+    """
+    sentences = _split_into_sentences(notes)
+    if not sentences:
         return []
 
-    headline = normalized[0]
-    title = headline
-    organization = ""
-    location = ""
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for sentence in sentences:
+        if _looks_like_role_headline(sentence):
+            if current:
+                blocks.append(current)
+            current = [sentence]
+        else:
+            if current:
+                current.append(sentence)
+            else:
+                # No headline yet — first sentence becomes the block's
+                # headline so we don't lose content.
+                current = [sentence]
+    if current:
+        blocks.append(current)
+
+    if len(blocks) == 1 and blocks[0]:
+        headline = blocks[0][0]
+        bullets = blocks[0][1:]
+        sub_headlines = _split_headline_on_transitions(headline)
+        if len(sub_headlines) > 1:
+            # First sub-role keeps the bullets that followed the original
+            # headline; subsequent sub-roles start with no bullets since
+            # we don't know which ones belonged to which role.
+            blocks = [[sub_headlines[0]] + bullets]
+            for sub in sub_headlines[1:]:
+                blocks.append([sub])
+
+    return blocks
+
+
+def _extract_headline_dates(headline: str) -> tuple[str, str, str]:
+    """Pull dates out of a role headline.
+
+    Returns (cleaned_headline_without_dates, start, end). Dates can be:
+    parenthetical ("(Jan 2023 - Present)"), an explicit range
+    ("2020-2024"), or a single year ("2024").
+    """
+    cleaned = headline
     start = ""
     end = ""
 
-    if " at " in headline.lower():
-        parts = re.split(r"\bat\b", headline, maxsplit=1, flags=re.IGNORECASE)
+    paren = _PARENTHETICAL_DATES_PATTERN.search(cleaned)
+    if paren:
+        start, end = _split_date_range_parts(paren.group(1).strip())
+        cleaned = (cleaned[: paren.start()] + cleaned[paren.end():]).strip()
+
+    if not start:
+        rng = _DATE_RANGE_PATTERN.search(cleaned)
+        if rng:
+            start = rng.group(1).strip()
+            end = rng.group(2).strip()
+            cleaned = (cleaned[: rng.start()] + cleaned[rng.end():]).strip()
+
+    if not start:
+        single = _SINGLE_DATE_PATTERN.search(cleaned)
+        if single:
+            start = single.group(1).strip()
+            cleaned = (cleaned[: single.start()] + cleaned[single.end():]).strip()
+
+    cleaned = _LEADING_FROM_PATTERN.sub("", cleaned).strip()
+    cleaned = _TRAILING_FROM_PATTERN.sub("", cleaned).strip()
+    # Date extraction can leave punctuation residue ("Example Labs ." after
+    # we lift "(Jan 2023 - Present)" out of "Example Labs (Jan 2023 - Present).").
+    # Collapse those leftovers + any double whitespace before returning.
+    cleaned = re.sub(r"\s+([,;.\-])", r"\1", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = cleaned.strip(" ,;.-")
+    return cleaned, start, end
+
+
+def _parse_experience_headline(headline: str) -> tuple[str, str, str, str]:
+    """Extract (title, organization, start, end) from a role headline."""
+    cleaned, start, end = _extract_headline_dates(headline)
+
+    title = cleaned
+    organization = ""
+
+    # Match " at " with required surrounding whitespace OR a leading "at "
+    # (e.g. transition-split sub-headlines like "at FinStart" — the leading
+    # "at" has no whitespace before it after we trimmed the chunk).
+    leading_at = re.match(r"^at\s+(.*)", cleaned, flags=re.IGNORECASE)
+    if leading_at:
+        title = ""
+        organization = leading_at.group(1).strip(" ,;-")
+    elif re.search(r"\s+at\s+", cleaned, re.IGNORECASE):
+        parts = re.split(r"\s+at\s+", cleaned, maxsplit=1, flags=re.IGNORECASE)
         if len(parts) == 2:
-            title = parts[0].strip(" ,-")
-            organization = parts[1].strip(" ,-")
-    elif "|" in headline:
-        parts = [part.strip() for part in headline.split("|") if part.strip()]
+            title = parts[0].strip(" ,;-")
+            organization = parts[1].strip(" ,;-")
+    elif "|" in cleaned:
+        parts = [part.strip() for part in cleaned.split("|") if part.strip()]
         if parts:
             title = parts[0]
         if len(parts) > 1:
             organization = parts[1]
-        if len(parts) > 2:
-            start = parts[2]
+        if len(parts) > 2 and not start:
+            start, end = _split_date_range_parts(parts[2])
 
-    bullets = normalized[1:] if len(normalized) > 1 else []
-    description = "\n".join(bullets).strip() if bullets else headline
-    return [
-        WorkExperience(
-            title=title or "Relevant Experience",
-            organization=organization,
-            location=location,
-            description=description,
-            start=start or None,
-            end=end or None,
+    if not title and organization:
+        # Headline was something like "at FinStart 2017-2020" — keep the
+        # org but flag a fallback title so the renderer doesn't drop the
+        # row.
+        title = "Relevant Experience"
+    return title or "Relevant Experience", organization, start, end
+
+
+def _build_experience_entries(notes: str) -> list[WorkExperience]:
+    blocks = _split_into_role_blocks(notes)
+    if not blocks:
+        return []
+
+    entries: list[WorkExperience] = []
+    for block in blocks:
+        if not block:
+            continue
+        headline = block[0]
+        bullets = [bullet for bullet in block[1:] if bullet]
+        title, organization, start, end = _parse_experience_headline(headline)
+        # description holds ONLY the explicit bullet sentences. Stuffing
+        # the headline back into description (the previous behaviour)
+        # caused it to render as both the meta line *and* a duplicated
+        # bullet row in the resume.
+        description = "\n".join(bullets).strip()
+        entries.append(
+            WorkExperience(
+                title=title,
+                organization=organization,
+                description=description,
+                start=start or None,
+                end=end or None,
+            )
         )
-    ]
+    return entries
+
+
+def _split_education_into_chunks(notes: str) -> list[str]:
+    """Split education notes so each chunk is one degree.
+
+    Newlines are the primary boundary. If a single line names multiple
+    degrees ("MS Computer Science Stanford 2017, BTech CS IIT Madras
+    2015"), we split on commas and keep the chunks that carry their own
+    degree pattern or year.
+    """
+    lines = _normalize_lines(notes)
+    if not lines:
+        return []
+
+    chunks: list[str] = []
+    for line in lines:
+        if len(_DEGREE_PATTERN.findall(line)) <= 1:
+            chunks.append(line)
+            continue
+        # Multi-degree line — split on commas / semicolons / sentence breaks.
+        parts = [
+            part.strip(" ,;.-")
+            for part in re.split(r"\s*[,;]\s*|\.\s+", line)
+            if part.strip(" ,;.-")
+        ]
+        for part in parts:
+            looks_like_entry = bool(
+                _DEGREE_PATTERN.search(part)
+                or re.search(r"\b(19|20)\d{2}\b", part)
+            )
+            if looks_like_entry:
+                chunks.append(part)
+            elif chunks:
+                # Continuation fragment ("Magna Cum Laude") – stick it onto
+                # the previous chunk so we don't drop user-typed context.
+                chunks[-1] = (chunks[-1] + ", " + part).strip(", ")
+            else:
+                chunks.append(part)
+    return chunks
+
+
+def _split_education_trailing_institution(text: str) -> tuple[str, str]:
+    """Split a "field-of-study + institution" trailing fragment.
+
+    Returns (field_of_study, institution). Tries three strategies in
+    order:
+      1. " from " connector — "Computer Science from Stanford".
+      2. Institution keyword (university, institute, iit, ...) — finds
+         the token that carries the keyword and keeps the proper-noun
+         run that surrounds it ("CS IIT Madras" → "IIT Madras").
+      3. Fallback: the LAST single word is treated as the institution
+         (handles bare names like "Stanford", "Harvard", "MIT").
+    """
+    cleaned = text.strip(" ,;-")
+    if not cleaned:
+        return "", ""
+
+    from_match = re.search(r"\s+from\s+", cleaned, flags=re.IGNORECASE)
+    if from_match:
+        field = cleaned[: from_match.start()].strip(" ,;-")
+        institution = cleaned[from_match.end():].strip(" ,;-")
+        return field, institution
+
+    lowered = cleaned.lower()
+    for keyword in _INSTITUTION_KEYWORDS:
+        # `\b` keeps "iit" from matching inside "circuit"; still picks up
+        # "IIT Madras" via the prefix variant.
+        match = re.search(rf"\b{re.escape(keyword)}\b", lowered)
+        if not match:
+            continue
+        keyword_start = match.start()
+        keyword_end = match.end()
+        # Walk backwards through capitalized words to find the institution's
+        # leading edge — but only ONE word back, to avoid swallowing
+        # multi-word fields of study ("Computer Science Stanford
+        # University" → institution must be "Stanford University", not
+        # "Computer Science Stanford University"). Short all-caps tokens
+        # (CS, MS, BS, BA) are degree-field abbreviations, never an
+        # institution prefix.
+        prefix = cleaned[:keyword_start].rstrip()
+        institution_start = keyword_start
+        if prefix:
+            tokens = prefix.split()
+            if tokens:
+                last = tokens[-1]
+                if (
+                    last
+                    and last[0].isupper()
+                    and not (last.isupper() and len(last) <= 3)
+                ):
+                    institution_start = cleaned.rfind(last, 0, keyword_start)
+                    if institution_start < 0:
+                        institution_start = keyword_start
+        # Walk forwards: institutions often have a trailing proper-noun
+        # qualifier ("IIT Madras", "University of Toronto", "Institute of
+        # Science").
+        suffix = cleaned[keyword_end:]
+        institution_end = keyword_end
+        if suffix:
+            stripped = suffix.lstrip()
+            offset = len(suffix) - len(stripped)
+            tokens = stripped.split()
+            extra: list[str] = []
+            connectors = {"of", "for", "and", "the"}
+            for token in tokens:
+                if token.lower() in connectors and extra:
+                    extra.append(token)
+                    continue
+                if token and (token[0].isupper() or token.lower() in connectors):
+                    extra.append(token)
+                else:
+                    break
+            if extra:
+                joined = " ".join(extra)
+                institution_end = (
+                    keyword_end + offset + suffix.lstrip().find(joined) + len(joined)
+                )
+        institution = cleaned[institution_start:institution_end].strip(" ,;-")
+        field = (
+            (cleaned[:institution_start] + " " + cleaned[institution_end:])
+            .strip(" ,;-")
+        )
+        return field, institution
+
+    # Fallback: bare institution name (no keyword, no "from"). Last token
+    # is almost always the institution ("MS Computer Science Stanford").
+    tokens = cleaned.split()
+    if len(tokens) >= 2:
+        return " ".join(tokens[:-1]), tokens[-1]
+    return "", cleaned
+
+
+def _parse_education_chunk(chunk: str) -> tuple[str, str, str, str]:
+    """Extract (institution, degree, start, end) from one education chunk."""
+    cleaned, start, end = _extract_headline_dates(chunk)
+
+    institution = cleaned
+    degree = ""
+    deg_match = _DEGREE_PATTERN.search(cleaned)
+    if deg_match:
+        # Strip ".," etc. on both sides — `\b` only matches at the END of
+        # "B.E." after the "E", so the closing period leaks into `after`
+        # ("B.E . Computer Science") unless we explicitly strip it here.
+        before = cleaned[: deg_match.start()].strip(" ,;.-")
+        after = cleaned[deg_match.end():].strip(" ,;.-")
+        deg_token = deg_match.group(0).strip()
+        if before:
+            # "Stanford MS Computer Science" → institution=Stanford,
+            # degree=MS Computer Science.
+            institution = before
+            degree = (deg_token + (" " + after if after else "")).strip()
+        elif after:
+            # Degree comes first, institution is the trailing fragment.
+            field, institution_chunk = _split_education_trailing_institution(after)
+            if institution_chunk:
+                institution = institution_chunk
+                degree = (deg_token + (" " + field if field else "")).strip()
+            else:
+                institution = after
+                degree = deg_token
+        else:
+            institution = ""
+            degree = deg_token
+    elif "|" in cleaned:
+        parts = [part.strip() for part in cleaned.split("|") if part.strip()]
+        institution = parts[0] if parts else ""
+        if len(parts) > 1:
+            degree = parts[1]
+
+    return institution.strip(), degree.strip(), start, end
 
 
 def _build_education_entries(notes: str) -> list[EducationEntry]:
-    normalized = _normalize_lines(notes)
-    if not normalized:
+    chunks = _split_education_into_chunks(notes)
+    if not chunks:
         return []
-    primary = normalized[0]
-    institution = primary
-    degree = ""
-    if "|" in primary:
-        parts = [part.strip() for part in primary.split("|") if part.strip()]
-        institution = parts[0]
-        if len(parts) > 1:
-            degree = parts[1]
-    return [
-        EducationEntry(
-            institution=institution,
-            degree=degree,
+
+    entries: list[EducationEntry] = []
+    for chunk in chunks:
+        institution, degree, start, end = _parse_education_chunk(chunk)
+        if not institution and not degree:
+            continue
+        entries.append(
+            EducationEntry(
+                institution=institution,
+                degree=degree,
+                start=start,
+                end=end,
+            )
         )
-    ]
+    return entries
+
+
+def _coerce_str_value(value) -> str:
+    """LLM payloads occasionally hand us None or numerics — normalize to str."""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _coerce_bullet_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    cleaned: list[str] = []
+    for item in value:
+        text = _coerce_str_value(item)
+        if text:
+            cleaned.append(text)
+    return cleaned
+
+
+def _build_experience_entry_from_llm(item: dict) -> WorkExperience | None:
+    """Convert one LLM-emitted role dict into a WorkExperience.
+
+    Returns None for entries that are too sparse to render (no title and
+    no organization). The structured renderer in `src/resume_builder.py`
+    later splits the description (newline-joined bullets) back into a
+    bullet list, mirroring the behaviour the regex parser produces.
+    """
+    if not isinstance(item, dict):
+        return None
+    title = _coerce_str_value(item.get("title"))
+    organization = _coerce_str_value(item.get("organization"))
+    if not title and not organization:
+        return None
+    bullets = _coerce_bullet_list(item.get("bullets"))
+    description = "\n".join(bullets).strip()
+    return WorkExperience(
+        title=title or "Relevant Experience",
+        organization=organization,
+        location=_coerce_str_value(item.get("location")),
+        description=description,
+        start=_coerce_str_value(item.get("start")) or None,
+        end=_coerce_str_value(item.get("end")) or None,
+    )
+
+
+def _build_education_entry_from_llm(item: dict) -> EducationEntry | None:
+    """Convert one LLM-emitted degree dict into an EducationEntry."""
+    if not isinstance(item, dict):
+        return None
+    institution = _coerce_str_value(item.get("institution"))
+    degree = _coerce_str_value(item.get("degree"))
+    if not institution and not degree:
+        return None
+    field = _coerce_str_value(item.get("field_of_study"))
+    return EducationEntry(
+        institution=institution,
+        degree=degree,
+        field_of_study=field,
+        start=_coerce_str_value(item.get("start")),
+        end=_coerce_str_value(item.get("end")),
+    )
+
+
+def _structure_via_llm(
+    session: ResumeBuilderSession,
+    *,
+    openai_service,
+) -> tuple[list[WorkExperience], list[EducationEntry]] | None:
+    """LLM-first conversion of free-form notes into structured entries.
+
+    Mirrors the rest of the agent pipeline: the conversational intake
+    captures user prose, then a structuring pass at generate / export
+    time turns that prose into the same shape the JD-driven path would
+    produce. Returns None on ANY failure (service unavailable, JSON
+    malformed, payload missing keys, no usable entries) so the caller
+    can fall back to the deterministic regex parsers.
+
+    The fallback is essential — users without OpenAI keys, rate-limited
+    requests, or transient model errors must still be able to render
+    their resume. The regex parsers handle those cases correctly even
+    if the output is less polished than the LLM rewrite.
+    """
+    if openai_service is None or not getattr(openai_service, "is_available", lambda: False)():
+        return None
+
+    has_experience = bool(session.draft.experience_notes.strip())
+    has_education = bool(session.draft.education_notes.strip())
+    if not has_experience and not has_education:
+        # Nothing to structure — short-circuit to avoid burning a token
+        # budget on an empty payload.
+        return [], []
+
+    prompt = build_resume_builder_structuring_prompt(draft=asdict(session.draft))
+    try:
+        payload = openai_service.run_json_prompt(
+            prompt["system"],
+            prompt["user"],
+            expected_keys=prompt["expected_keys"],
+            temperature=None,
+            max_completion_tokens=get_openai_max_completion_tokens_for_task(
+                "resume_builder_structuring"
+            ),
+            task_name="resume_builder_structuring",
+            allow_output_budget_retry=True,
+        )
+    except Exception as exc:  # noqa: BLE001 — any LLM error → fallback
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            "resume_builder_structuring_failed",
+            "Resume builder structuring LLM call failed; falling back to regex parser.",
+            session_id=session.session_id,
+            error=str(exc),
+        )
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    experience_items = payload.get("experience")
+    education_items = payload.get("education")
+
+    experience_entries: list[WorkExperience] = []
+    if isinstance(experience_items, list):
+        for item in experience_items:
+            entry = _build_experience_entry_from_llm(item)
+            if entry is not None:
+                experience_entries.append(entry)
+
+    education_entries: list[EducationEntry] = []
+    if isinstance(education_items, list):
+        for item in education_items:
+            entry = _build_education_entry_from_llm(item)
+            if entry is not None:
+                education_entries.append(entry)
+
+    # If the user typed prose for a section but the LLM returned nothing
+    # parseable, treat that as a failure for THAT section so the regex
+    # parser fills the gap. We don't fail the whole call — the LLM
+    # might handle one section well and the other badly.
+    if has_experience and not experience_entries:
+        experience_entries = _build_experience_entries(session.draft.experience_notes)
+    if has_education and not education_entries:
+        education_entries = _build_education_entries(session.draft.education_notes)
+
+    return experience_entries, education_entries
 
 
 def _build_resume_markdown(draft: ResumeBuilderDraft) -> str:
@@ -502,11 +1036,31 @@ def _build_resume_markdown(draft: ResumeBuilderDraft) -> str:
     return "\n".join(sections).strip()
 
 
-def _build_candidate_profile_and_resume(session: ResumeBuilderSession) -> tuple[ResumeDocument, CandidateProfile]:
+def _build_candidate_profile_and_resume(
+    session: ResumeBuilderSession,
+    *,
+    openai_service=None,
+) -> tuple[ResumeDocument, CandidateProfile]:
+    """Compose the rendered resume + structured CandidateProfile.
+
+    Tries the LLM structuring pass first when an `openai_service` is
+    provided; falls back to the deterministic regex parsers when the
+    service is unavailable or the structured output couldn't be
+    parsed. Either way the call returns the same `(ResumeDocument,
+    CandidateProfile)` shape, so route handlers don't need to know
+    which path produced the entries.
+    """
     markdown = _build_resume_markdown(session.draft)
     plain_text = markdown_to_text(markdown, strip_bold=True)
     session.generated_resume_markdown = markdown
     session.generated_resume_plain_text = plain_text
+
+    structured = _structure_via_llm(session, openai_service=openai_service)
+    if structured is not None:
+        experience_entries, education_entries = structured
+    else:
+        experience_entries = _build_experience_entries(session.draft.experience_notes)
+        education_entries = _build_education_entries(session.draft.education_notes)
 
     resume_document = ResumeDocument(
         text=plain_text,
@@ -520,8 +1074,8 @@ def _build_candidate_profile_and_resume(session: ResumeBuilderSession) -> tuple[
         source="assistant_builder",
         resume_text=plain_text,
         skills=session.draft.skills,
-        experience=_build_experience_entries(session.draft.experience_notes),
-        education=_build_education_entries(session.draft.education_notes),
+        experience=experience_entries,
+        education=education_entries,
         certifications=session.draft.certifications,
         source_signals=dedupe_strings(
             [
@@ -870,12 +1424,15 @@ def answer_resume_builder_message(
     )
 
 
-def generate_resume_builder_resume(*, session_id: str):
+def generate_resume_builder_resume(*, session_id: str, openai_service=None):
     session = _SESSIONS.get(str(session_id or "").strip())
     if session is None:
         raise ValueError("Resume builder session not found.")
 
-    resume_document, candidate_profile = _build_candidate_profile_and_resume(session)
+    resume_document, candidate_profile = _build_candidate_profile_and_resume(
+        session,
+        openai_service=openai_service,
+    )
     session.status = "ready"
 
     payload = _serialize_session(
@@ -901,12 +1458,15 @@ def update_resume_builder_session(*, session_id: str, draft_updates: dict):
     )
 
 
-def commit_resume_builder_session(*, session_id: str):
+def commit_resume_builder_session(*, session_id: str, openai_service=None):
     session = _SESSIONS.get(str(session_id or "").strip())
     if session is None:
         raise ValueError("Resume builder session not found.")
 
-    resume_document, candidate_profile = _build_candidate_profile_and_resume(session)
+    resume_document, candidate_profile = _build_candidate_profile_and_resume(
+        session,
+        openai_service=openai_service,
+    )
     session.status = "ready"
     return {
         "resume_document": asdict(resume_document),
@@ -926,6 +1486,7 @@ def _synthesize_resume_builder_artifact(
     session: ResumeBuilderSession,
     *,
     theme: str,
+    openai_service=None,
 ):
     """Build a TailoredResumeArtifact from a resume-builder session.
 
@@ -941,7 +1502,10 @@ def _synthesize_resume_builder_artifact(
     Resume" — that wording belongs to JD-driven exports, not the
     builder's exit point.
     """
-    _, candidate_profile = _build_candidate_profile_and_resume(session)
+    _, candidate_profile = _build_candidate_profile_and_resume(
+        session,
+        openai_service=openai_service,
+    )
 
     job_description = JobDescription(
         title=session.draft.target_role or "",
@@ -991,6 +1555,7 @@ def export_resume_builder_artifact(
     session_id: str,
     export_format: str,
     theme: str = "classic_ats",
+    openai_service=None,
 ):
     """Render the builder's generated resume as PDF or DOCX bytes.
 
@@ -1015,7 +1580,11 @@ def export_resume_builder_artifact(
     if normalized_theme not in {"classic_ats", "professional_neutral"}:
         normalized_theme = "classic_ats"
 
-    artifact = _synthesize_resume_builder_artifact(session, theme=normalized_theme)
+    artifact = _synthesize_resume_builder_artifact(
+        session,
+        theme=normalized_theme,
+        openai_service=openai_service,
+    )
 
     if normalized_format == "pdf":
         payload = export_pdf_bytes(artifact)

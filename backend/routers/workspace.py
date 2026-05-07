@@ -242,7 +242,16 @@ def generate_resume_builder_route(
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
-        response = generate_resume_builder_resume(session_id=payload.session_id)
+        # LLM-first structuring at generate time — falls back to regex
+        # parser inside the service when the service is None or errors.
+        openai_service = _resolve_openai_service(
+            access_token or "",
+            refresh_token or "",
+        )
+        response = generate_resume_builder_resume(
+            session_id=payload.session_id,
+            openai_service=openai_service,
+        )
         persist_result = persist_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
@@ -305,7 +314,14 @@ def commit_resume_builder_route(
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
-        response = commit_resume_builder_session(session_id=payload.session_id)
+        openai_service = _resolve_openai_service(
+            access_token or "",
+            refresh_token or "",
+        )
+        response = commit_resume_builder_session(
+            session_id=payload.session_id,
+            openai_service=openai_service,
+        )
         clear_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
@@ -337,10 +353,15 @@ def export_resume_builder_route(
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
+        openai_service = _resolve_openai_service(
+            access_token or "",
+            refresh_token or "",
+        )
         return export_resume_builder_artifact(
             session_id=payload.session_id,
             export_format=payload.export_format,
             theme=payload.theme,
+            openai_service=openai_service,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))

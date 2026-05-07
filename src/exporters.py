@@ -1280,7 +1280,11 @@ def _docx_add_resume_header(document, artifact: TailoredResumeArtifact, *, palet
 
     name_paragraph = document.add_paragraph()
     name_paragraph.paragraph_format.space_after = _docx_pt(2)
-    name_paragraph.alignment = _docx_alignment("center")
+    # Header alignment matches the HTML/PDF builder: left-aligned, same
+    # margin as every section heading. The earlier centred header was
+    # inconsistent with the body and with the PDF rendering of the same
+    # artifact — both readers should see the same layout.
+    name_paragraph.alignment = _docx_alignment("left")
     run = name_paragraph.add_run(name)
     _docx_apply_run_font(
         run,
@@ -1300,7 +1304,7 @@ def _docx_add_resume_header(document, artifact: TailoredResumeArtifact, *, palet
     )
     if contact_values:
         contact_paragraph = document.add_paragraph()
-        contact_paragraph.alignment = _docx_alignment("center")
+        contact_paragraph.alignment = _docx_alignment("left")
         contact_paragraph.paragraph_format.space_after = _docx_pt(6)
         contact_run = contact_paragraph.add_run(" | ".join(contact_values))
         _docx_apply_run_font(
