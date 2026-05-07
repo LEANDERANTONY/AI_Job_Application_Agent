@@ -415,7 +415,13 @@ def build_assistant_followup_prompt(
 
 
 _RESUME_BUILDER_FIELD_DESCRIPTIONS = {
-    "full_name": "candidate's full name",
+    "full_name": (
+        "candidate's full name as they typed it — capture EVERY name "
+        "token (first, middle, last, suffix). Don't drop a surname just "
+        "because the user packed location or contact info onto the same "
+        "line ('Priya Sharma, Bangalore. priya@gmail.com' → "
+        "full_name='Priya Sharma', NOT 'Priya')."
+    ),
     "location": "city / region / 'Remote'",
     "contact_lines": "list of contact entries: emails, phones, links",
     "target_role": "the SHORT role title the candidate is targeting",

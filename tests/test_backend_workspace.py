@@ -1161,6 +1161,146 @@ def test_resume_builder_structuring_cache_survives_session_persistence_round_tri
     _SESSIONS.pop(session_id, None)
 
 
+def test_resume_builder_intake_recovers_full_name_when_llm_truncates(monkeypatch):
+    """Safety net for the LLM dropping a surname.
+
+    Real-world scenario from QA: the user typed
+    'Priya Sharma, Bangalore. priya@gmail.com, +91 8000000000' but the
+    LLM only captured full_name='Priya'. After applying the LLM
+    updates, _augment_full_name_from_message looks at the literal
+    message and promotes the longer name when it (a) starts with what
+    the LLM captured and (b) is a valid name shape."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _TruncatingOpenAIService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            return {
+                "draft_updates": {
+                    # LLM dropped 'Sharma' even though the user typed it.
+                    "full_name": "Priya",
+                    "location": "Bangalore",
+                    "contact_lines": ["priya@gmail.com", "+91 8000000000"],
+                },
+                "assistant_message": "Got it Priya. What role are you targeting?",
+                "status": "collecting",
+                "focus_field": "target_role",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _TruncatingOpenAIService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    response = client.post(
+        "/api/workspace/resume-builder/message",
+        json={
+            "session_id": session_id,
+            "message": "Priya Sharma, Bangalore. priya@gmail.com, +91 8000000000",
+            "input_mode": "text",
+        },
+    )
+    assert response.status_code == 200
+    draft = response.json()["draft_profile"]
+    # Safety net should have promoted 'Priya' → 'Priya Sharma' from the
+    # literal message.
+    assert draft["full_name"] == "Priya Sharma", (
+        "Name safety net failed to recover surname from literal message"
+    )
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_intake_keeps_llm_name_when_user_typed_only_first_name(monkeypatch):
+    """Safety net only kicks in when the literal message has MORE
+    name. If the user only typed 'Priya', the LLM correctly captures
+    'Priya' and the safety net is a no-op (no surname to promote).
+    Pins the negative case."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _StubService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            return {
+                "draft_updates": {"full_name": "Priya"},
+                "assistant_message": "Got it Priya.",
+                "status": "collecting",
+                "focus_field": "location",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _StubService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    response = client.post(
+        "/api/workspace/resume-builder/message",
+        json={
+            "session_id": session_id,
+            "message": "Priya",
+            "input_mode": "text",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["draft_profile"]["full_name"] == "Priya"
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_intake_does_not_overwrite_llm_correction(monkeypatch):
+    """Safety net only fires on PREFIX matches. If the LLM disagrees
+    with the literal first chunk (e.g., extracted 'Maya' from 'Priya
+    typed it wrong, my name is Maya Sharma'), don't overwrite the
+    LLM's correction with 'Priya' from the literal first chunk."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _CorrectingService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            return {
+                # LLM extracted the corrected name, not the literal first chunk.
+                "draft_updates": {"full_name": "Maya Sharma"},
+                "assistant_message": "Got it Maya.",
+                "status": "collecting",
+                "focus_field": "location",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _CorrectingService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    response = client.post(
+        "/api/workspace/resume-builder/message",
+        json={
+            "session_id": session_id,
+            # Literal message starts with "Priya" — but the LLM
+            # correctly read further and pulled "Maya Sharma". Safety
+            # net must NOT overwrite Maya with Priya.
+            "message": "Priya — actually no, my name is Maya Sharma",
+            "input_mode": "text",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["draft_profile"]["full_name"] == "Maya Sharma", (
+        "Safety net incorrectly overrode the LLM's correction"
+    )
+
+    _SESSIONS.pop(session_id, None)
+
+
 def test_resume_builder_message_uses_llm_when_openai_service_available(monkeypatch):
     """LLM-first intake: when an OpenAIService is plumbed in, the
     model picks the next question and merges partial draft updates,

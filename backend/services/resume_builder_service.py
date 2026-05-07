@@ -1387,6 +1387,56 @@ def _coerce_string_list(value: Any) -> list[str]:
     return [str(item).strip() for item in value if str(item or "").strip()]
 
 
+def _augment_full_name_from_message(
+    session: ResumeBuilderSession, user_message: str
+) -> None:
+    """Safety net for LLM full_name truncation.
+
+    The LLM intake sometimes captures only the first token of a
+    multi-word name when the user squashes everything onto one line
+    ("Priya Sharma, Bangalore. priya@gmail.com" → 'Priya'). This helper
+    looks at the user's literal message; if its first chunk is a
+    longer, valid-looking name that starts with what the LLM captured,
+    we promote the longer version. Prefix-only check so we don't
+    overwrite an LLM correction (e.g., user later says "actually it's
+    Maya Sharma").
+    """
+    llm_name = (session.draft.full_name or "").strip()
+    if not llm_name:
+        return
+
+    text = str(user_message or "").strip()
+    if not text:
+        return
+
+    # First sentence-or-comma chunk of the user's literal message.
+    first_chunk = re.split(r"[\n,;|.!?]", text, maxsplit=1)[0].strip()
+    first_chunk = _NAME_PREAMBLE_PATTERN.sub("", first_chunk).strip()
+    if not first_chunk or first_chunk == llm_name:
+        return
+
+    # Only promote when the LLM's name is a strict prefix of the literal
+    # chunk AND the literal chunk passes our name-shape heuristic. The
+    # prefix gate prevents accidentally overwriting an LLM correction
+    # ("user typed 'Priya Sharma' but really meant 'Maya Sharma'") —
+    # if the literal chunk doesn't start with what the LLM captured,
+    # we trust the LLM's read.
+    lower_chunk = first_chunk.lower()
+    lower_llm = llm_name.lower()
+    if not lower_chunk.startswith(lower_llm):
+        return
+    # Require a whole-word match — guards against "Pri" vs "Priya Sharma".
+    boundary_index = len(llm_name)
+    if boundary_index < len(first_chunk):
+        next_char = first_chunk[boundary_index]
+        if next_char.isalnum():
+            return
+    if not _looks_like_personal_name(first_chunk):
+        return
+
+    session.draft.full_name = first_chunk
+
+
 def _apply_llm_draft_updates(session: ResumeBuilderSession, updates: dict):
     """Merge a partial dict of resume-builder fields into the session's
     draft. Mirrors the shape of `_apply_draft_updates` but only writes
@@ -1458,6 +1508,11 @@ def _run_llm_turn(
     draft_updates = payload.get("draft_updates")
     if isinstance(draft_updates, dict):
         _apply_llm_draft_updates(session, draft_updates)
+        # Safety net: if the LLM dropped a surname when the user clearly
+        # typed a full name, recover it from the literal message before
+        # downstream rendering bakes "Priya" into a resume header.
+        if "full_name" in draft_updates:
+            _augment_full_name_from_message(session, user_message)
 
     assistant_message = str(payload.get("assistant_message") or "").strip()
     if not assistant_message:
