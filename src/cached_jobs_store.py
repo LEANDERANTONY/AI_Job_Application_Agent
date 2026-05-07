@@ -347,6 +347,60 @@ class CachedJobsStore:
             ) from exc
         return self._extract_rows(response)
 
+    def get_listing_status_map(
+        self, keys: list[tuple[str, str]]
+    ) -> dict[tuple[str, str], bool]:
+        """Look up listing-active status for a batch of (source, job_id)
+        pairs.
+
+        Returns a dict {(source, job_id): is_active}. The is_active
+        bool reflects:
+          - True: row exists in cache AND removed_at IS NULL (or row
+            doesn't exist in cache at all — defaults to optimistic
+            for jobs from sources we don't track)
+          - False: row exists AND removed_at IS NOT NULL (the upstream
+            board stopped listing it; row was kept around because the
+            user has it bookmarked)
+
+        Used by the saved-jobs list endpoint to render an "Expired"
+        badge on bookmarks whose listings have gone away.
+        """
+        if not keys:
+            return {}
+        client = self._require_client()
+        # PostgREST doesn't support tuple-IN, so query in two phases:
+        # filter by sources first (one round trip), then look up
+        # job_ids per source. For our scale (typical user has < 50
+        # bookmarks across < 5 sources) this is fine.
+        sources = sorted({k[0] for k in keys if k[0]})
+        job_ids = sorted({k[1] for k in keys if k[1]})
+        if not sources or not job_ids:
+            return {}
+        try:
+            response = (
+                client.table(self._table)
+                .select("source,job_id,removed_at")
+                .in_("source", sources)
+                .in_("job_id", job_ids)
+                .execute()
+            )
+        except Exception:
+            # Cache lookup failure → return everything as active so the
+            # UI doesn't flag good listings as expired.
+            return {key: True for key in keys}
+
+        rows = self._extract_rows(response)
+        cache_map = {
+            (str(row.get("source", "") or ""), str(row.get("job_id", "") or "")): row.get(
+                "removed_at"
+            )
+            is None
+            for row in rows
+        }
+        # Default unknown keys to True (optimistic — don't flag jobs
+        # from sources we don't cache as expired).
+        return {key: cache_map.get(key, True) for key in keys}
+
     def count_active(self) -> int:
         """Total active rows. Useful for /admin/refresh-cache health
         checks and for the /api/health endpoint."""

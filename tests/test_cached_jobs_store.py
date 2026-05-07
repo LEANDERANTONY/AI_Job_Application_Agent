@@ -289,3 +289,57 @@ def test_search_uses_websearch_fts_with_filters(monkeypatch):
     assert any(c == ("eq", "remote", True) for c in calls)
     # removed_at IS NULL filter is applied early in the chain.
     assert any(c == ("is_", "removed_at", "null") for c in calls)
+
+
+def test_get_listing_status_map_flags_tombstoned_keys(monkeypatch):
+    """The lookup that powers the saved-jobs Expired badge: rows with
+    removed_at NOT NULL come back as is_active=False; rows with
+    removed_at NULL come back as True; keys we don't have in the
+    cache default to True (don't false-flag jobs we never tracked)."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    client = _FakeClient(
+        {
+            "cached_jobs": [
+                SimpleNamespace(
+                    data=[
+                        # Active row: removed_at None.
+                        {"source": "greenhouse", "job_id": "live-1", "removed_at": None},
+                        # Tombstoned row: removed_at set to a real timestamp.
+                        {"source": "greenhouse", "job_id": "dead-2", "removed_at": "2026-05-08T00:00:00Z"},
+                    ]
+                ),
+            ]
+        }
+    )
+    store = _make_store(client)
+    keys = [
+        ("greenhouse", "live-1"),
+        ("greenhouse", "dead-2"),
+        ("greenhouse", "untracked-3"),  # not in cache at all
+    ]
+    result = store.get_listing_status_map(keys)
+    assert result == {
+        ("greenhouse", "live-1"): True,
+        ("greenhouse", "dead-2"): False,
+        ("greenhouse", "untracked-3"): True,  # default optimistic
+    }
+
+
+def test_get_listing_status_map_returns_optimistic_on_cache_error(monkeypatch):
+    """Cache outage during the saved-jobs annotate pass → return all
+    keys as active so we don't flag good listings as expired in the
+    UI just because Supabase is having a moment."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+
+    class _ErroringClient:
+        def table(self, name):
+            raise RuntimeError("supabase 500")
+
+    store = _make_store(_ErroringClient())
+    keys = [("greenhouse", "x"), ("lever", "y")]
+    result = store.get_listing_status_map(keys)
+    assert result == {key: True for key in keys}

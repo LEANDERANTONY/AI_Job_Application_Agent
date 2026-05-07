@@ -132,6 +132,16 @@ function JobCard({
               <StarIcon /> Top match
             </span>
           ) : null}
+          {/* "Expired" surfaces when the upstream board has stopped
+              returning this listing (cached_jobs.removed_at is set).
+              Only rendered when explicitly false — undefined/true
+              means active or unknown, both of which we treat as
+              "still listed" so we don't false-flag legitimate jobs. */}
+          {job.is_listing_active === false ? (
+            <span className="b-saved-mark" data-expired="true">
+              Expired
+            </span>
+          ) : null}
           {savedAt ? (
             <span className="b-saved-mark">{formatSavedLabel(savedAt)}</span>
           ) : isSaved ? (

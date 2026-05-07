@@ -4625,6 +4625,15 @@ code {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+/* "Expired" variant — softer red so a tombstoned listing reads as
+   informational, not alarming. The user still has the bookmark — just
+   knowing the upstream board has dropped the role. */
+.b-saved-mark[data-expired="true"] {
+  color: var(--danger, #b6431f);
+  border: 1px solid color-mix(in oklab, var(--danger, #b6431f) 30%, transparent);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
 .b-job-card[data-top-match="true"] {
   background:
     linear-gradient(180deg, rgba(48, 100, 255, 0.06) 0%, rgba(48, 100, 255, 0) 30%),

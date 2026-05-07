@@ -40,6 +40,13 @@ export type JobPosting = {
   metadata: Record<string, unknown>;
   saved_at?: string;
   updated_at?: string;
+  /** True when the upstream board (Greenhouse / Lever) is still
+   *  returning this listing in its periodic refresh. False when the
+   *  listing was tombstoned by the cache-cleanup pass — the job is
+   *  no longer accepting applications. Optional + defaults to true
+   *  on the frontend so old responses (before this field landed) and
+   *  jobs from sources we don't cache stay rendered as active. */
+  is_listing_active?: boolean;
 };
 
 export type JobSearchResponse = {
