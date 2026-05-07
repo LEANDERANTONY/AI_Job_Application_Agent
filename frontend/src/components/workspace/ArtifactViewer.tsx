@@ -5,7 +5,7 @@
 //
 // Behavior preservation:
 //   - Tabs: Tailored Resume | Cover Letter (parent owns artifactTab)
-//   - Markdown / PDF download buttons → onExport(kind, format)
+//   - PDF / DOCX download buttons → onExport(kind, format)
 //   - Server-rendered preview iframe via previewHtml
 //   - Loading + missing-preview fallbacks retained
 //

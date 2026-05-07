@@ -385,7 +385,7 @@ export const stagedLanes: WorkspaceLane[] = [
     bullets: [
       "Artifact tabs and export actions",
       "Theme-aware resume rendering",
-      "Markdown and PDF download states",
+      "PDF and DOCX download states",
     ],
   },
   {
