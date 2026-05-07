@@ -48,6 +48,12 @@ OPENAI_MODEL_ROUTING = {
     # JSON envelope. Mini-tier is fine; the work is interview-style
     # parsing rather than long-form reasoning.
     "resume_builder": os.getenv("OPENAI_MODEL_RESUME_BUILDER", OPENAI_MODEL_ASSISTANT),
+    # Resume-builder structuring: bigger structured output (multiple
+    # arrays + categories + summary). Use the higher-trust tier so the
+    # JSON stays well-formed and fact preservation is reliable.
+    "resume_builder_structuring": os.getenv(
+        "OPENAI_MODEL_RESUME_BUILDER_STRUCTURING", OPENAI_MODEL_HIGH_TRUST
+    ),
 }
 OPENAI_REASONING_ROUTING = {
     "jd_summary": os.getenv("OPENAI_REASONING_JD_SUMMARY", "low").strip().lower(),
@@ -115,11 +121,15 @@ OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
     "assistant_application_qa": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
     "resume_builder": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER", 1200),
     # Structuring pass — converts free-form experience_notes /
-    # education_notes into structured role + degree arrays. Larger
-    # ceiling than the conversational intake because the response is a
-    # full structured payload (multiple roles × multiple bullets).
+    # education_notes / projects_notes into structured arrays AND
+    # optionally produces skill_categories + an expanded
+    # professional_summary. Bumped to 4000 once projects + skill
+    # categories + summary expansion landed; smaller budgets were
+    # truncating the model's JSON mid-output and triggering parse
+    # failures (manifesting as `_structure_via_llm` returning None and
+    # the regex fallback taking over for the entire payload).
     "resume_builder_structuring": _load_int_env(
-        "OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER_STRUCTURING", 2400
+        "OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER_STRUCTURING", 4000
     ),
 }
 

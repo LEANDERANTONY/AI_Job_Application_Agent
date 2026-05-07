@@ -1248,6 +1248,14 @@ def _structure_via_llm(
         return None
 
     if not isinstance(payload, dict):
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            "resume_builder_structuring_invalid_payload",
+            "Resume builder structuring returned non-dict payload; falling back to regex.",
+            session_id=session.session_id,
+            payload_type=type(payload).__name__,
+        )
         return None
 
     experience_items = payload.get("experience")
