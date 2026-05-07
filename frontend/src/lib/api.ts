@@ -1,4 +1,5 @@
 import type {
+  ArtifactTheme,
   AuthSessionResponse,
   BackendHealth,
   GoogleSignInStartResponse,
@@ -10,6 +11,7 @@ import type {
   LoadSavedWorkspaceResponse,
   RemoveSavedJobResponse,
   ResumeBuilderCommitResponse,
+  ResumeBuilderExportResponse,
   ResumeBuilderSessionResponse,
   SavedJobsResponse,
   SaveWorkspaceResponse,
@@ -19,6 +21,7 @@ import type {
   WorkspaceAnalysisJobCreatedResponse,
   WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
+  WorkspaceArtifactExportFormat,
   WorkspaceArtifactExportRequest,
   WorkspaceArtifactExportResponse,
   WorkspaceArtifactPreviewRequest,
@@ -275,6 +278,23 @@ export async function commitResumeBuilderResume(sessionId: string) {
       session_id: sessionId,
     }),
   });
+}
+
+export async function exportResumeBuilderArtifact(payload: {
+  session_id: string;
+  export_format: WorkspaceArtifactExportFormat;
+  theme: ArtifactTheme;
+}) {
+  return request<ResumeBuilderExportResponse>(
+    "/workspace/resume-builder/export",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function uploadJobDescriptionFile(file: File) {

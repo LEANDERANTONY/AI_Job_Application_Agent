@@ -166,3 +166,23 @@ class ResumeBuilderUpdateRequestModel(BaseModel):
     @classmethod
     def _strip_update_session_id(cls, value):
         return str(value or "").strip()
+
+
+class ResumeBuilderExportRequestModel(BaseModel):
+    """Phase 5: download the generated base resume as PDF or DOCX.
+
+    The resume builder is a separate intake surface (no JD context),
+    so the export bypasses the workspace_snapshot pipeline and
+    synthesizes a TailoredResumeArtifact straight from the session's
+    draft profile."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(min_length=1, max_length=120)
+    export_format: Literal["pdf", "docx"]
+    theme: Literal["classic_ats", "professional_neutral"] = "classic_ats"
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def _strip_export_session_id(cls, value):
+        return str(value or "").strip()

@@ -27,6 +27,7 @@ from backend.services.artifact_export_service import preview_workspace_artifact
 from backend.services.resume_builder_service import (
     answer_resume_builder_message,
     commit_resume_builder_session,
+    export_resume_builder_artifact,
     generate_resume_builder_resume,
     start_resume_builder_session,
     update_resume_builder_session,
@@ -45,6 +46,7 @@ from backend.services.workspace_run_jobs import (
     start_workspace_analysis_job,
 )
 from backend.workspace_models import (
+    ResumeBuilderExportRequestModel,
     ResumeBuilderMessageRequestModel,
     ResumeBuilderSessionRequestModel,
     ResumeBuilderUpdateRequestModel,
@@ -309,6 +311,37 @@ def commit_resume_builder_route(
             refresh_token=refresh_token or "",
         )
         return response
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.post("/resume-builder/export")
+@limiter.limit(LIMIT_HEAVY)
+def export_resume_builder_route(
+    request: Request,
+    payload: ResumeBuilderExportRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    """Phase 5: download the builder's generated base resume.
+
+    Auth-gated like the other resume-builder routes — same hydrate +
+    persistence story so a container restart between Generate and
+    Download doesn't leave the user staring at a 400. Reuses
+    `export_pdf_bytes` / `export_docx_bytes` via the service-layer
+    `export_resume_builder_artifact()` helper.
+    """
+    access_token, refresh_token = auth_tokens
+    try:
+        hydrate_resume_builder_session_if_needed(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        return export_resume_builder_artifact(
+            session_id=payload.session_id,
+            export_format=payload.export_format,
+            theme=payload.theme,
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 

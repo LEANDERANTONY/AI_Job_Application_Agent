@@ -9,10 +9,21 @@ from uuid import uuid4
 
 from src.config import get_openai_max_completion_tokens_for_task
 from src.errors import AgentExecutionError
+from src.exporters import export_docx_bytes, export_pdf_bytes
 from src.logging_utils import get_logger, log_event
 from src.prompts import build_resume_builder_prompt
-from src.schemas import CandidateProfile, EducationEntry, ResumeDocument, WorkExperience
-from src.utils import dedupe_strings, markdown_to_text
+from src.resume_builder import build_tailored_resume_artifact
+from src.schemas import (
+    CandidateProfile,
+    EducationEntry,
+    FitAnalysis,
+    JobDescription,
+    JobRequirements,
+    ResumeDocument,
+    TailoredResumeDraft,
+    WorkExperience,
+)
+from src.utils import dedupe_strings, markdown_to_text, slugify_text
 
 
 LOGGER = get_logger(__name__)
@@ -903,4 +914,124 @@ def commit_resume_builder_session(*, session_id: str):
         "generated_resume_markdown": session.generated_resume_markdown,
         "generated_resume_plain_text": session.generated_resume_plain_text,
         "builder_session_id": session.session_id,
+    }
+
+
+_DOCX_MIME_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
+
+
+def _synthesize_resume_builder_artifact(
+    session: ResumeBuilderSession,
+    *,
+    theme: str,
+):
+    """Build a TailoredResumeArtifact from a resume-builder session.
+
+    Phase 5 of the DOCX export plan. The resume-builder is a separate
+    intake surface (no JD context, no agent_result), so we synthesize
+    empty JobDescription / FitAnalysis / TailoredResumeDraft objects
+    and let `build_tailored_resume_artifact` do the structural work.
+    Section order falls out of `compute_section_order(candidate_profile)`
+    via `_resolve_section_order` in the artifact builder.
+
+    The artifact's title and filename_stem are then overridden so the
+    download reads as a generic base resume rather than a "Tailored
+    Resume" — that wording belongs to JD-driven exports, not the
+    builder's exit point.
+    """
+    _, candidate_profile = _build_candidate_profile_and_resume(session)
+
+    job_description = JobDescription(
+        title=session.draft.target_role or "",
+        raw_text="",
+        cleaned_text="",
+        requirements=JobRequirements(),
+    )
+    fit_analysis = FitAnalysis(
+        target_role=session.draft.target_role or "",
+        overall_score=0,
+        readiness_label="",
+        # Surfacing the user's confirmed skills as 'matched' lets the
+        # artifact builder's highlighted_skills merge logic still pick
+        # them up; without this, highlighted_skills could collapse to
+        # an empty list when the agent_result is absent.
+        matched_hard_skills=list(session.draft.skills or []),
+    )
+    tailored_draft = TailoredResumeDraft(
+        target_role=session.draft.target_role or "",
+        professional_summary=session.draft.professional_summary or "",
+        highlighted_skills=list(session.draft.skills or []),
+    )
+
+    artifact = build_tailored_resume_artifact(
+        candidate_profile,
+        job_description,
+        fit_analysis,
+        tailored_draft,
+        theme=theme,
+    )
+
+    name = (candidate_profile.full_name or "Candidate").strip() or "Candidate"
+    target_role = (session.draft.target_role or "").strip()
+    if target_role:
+        artifact.title = f"{name} - {target_role} Resume"
+        slug_source = f"{name}-{target_role}-resume"
+    else:
+        artifact.title = f"{name} Resume"
+        slug_source = f"{name}-resume"
+    artifact.filename_stem = slugify_text(slug_source, fallback="resume")
+
+    return artifact
+
+
+def export_resume_builder_artifact(
+    *,
+    session_id: str,
+    export_format: str,
+    theme: str = "classic_ats",
+):
+    """Render the builder's generated resume as PDF or DOCX bytes.
+
+    Returns a dict shaped the same as
+    `backend.services.artifact_export_service.export_workspace_artifact`
+    so the frontend's `downloadBase64File` helper handles both the
+    workspace and resume-builder downloads identically. Auth gating
+    + session hydration on a cache miss live in the route handler;
+    this function only depends on the in-memory session being present.
+    """
+    import base64
+
+    session = _SESSIONS.get(str(session_id or "").strip())
+    if session is None:
+        raise ValueError("Resume builder session not found.")
+
+    normalized_format = str(export_format or "").strip().lower()
+    if normalized_format not in {"pdf", "docx"}:
+        raise ValueError("Choose a supported export format.")
+
+    normalized_theme = str(theme or "").strip()
+    if normalized_theme not in {"classic_ats", "professional_neutral"}:
+        normalized_theme = "classic_ats"
+
+    artifact = _synthesize_resume_builder_artifact(session, theme=normalized_theme)
+
+    if normalized_format == "pdf":
+        payload = export_pdf_bytes(artifact)
+        mime_type = "application/pdf"
+        file_name = f"{artifact.filename_stem or 'resume'}.pdf"
+    else:
+        payload = export_docx_bytes(artifact)
+        mime_type = _DOCX_MIME_TYPE
+        file_name = f"{artifact.filename_stem or 'resume'}.docx"
+
+    return {
+        "status": "ready",
+        "export_format": normalized_format,
+        "file_name": file_name,
+        "mime_type": mime_type,
+        "content_base64": base64.b64encode(payload).decode("ascii"),
+        "theme": normalized_theme,
+        "artifact_title": artifact.title,
     }

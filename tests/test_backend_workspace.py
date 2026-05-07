@@ -219,6 +219,162 @@ def test_resume_builder_latest_endpoint_returns_saved_session(monkeypatch):
     assert payload["session"]["draft_profile"]["target_role"] == "Machine Learning Engineer"
 
 
+def test_resume_builder_export_round_trip_produces_docx_bytes():
+    """Phase 5: drive a session through start -> message x5 -> generate
+    -> /resume-builder/export and verify the response is base64-encoded
+    DOCX bytes that python-docx can re-parse."""
+    import base64
+    from io import BytesIO
+
+    from docx import Document
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    assert start_response.status_code == 200
+    session_id = start_response.json()["session_id"]
+
+    answers = [
+        "Leander Antony, Chennai India. leander@example.com, +91 9999999999",
+        "Senior ML Engineer. Built distributed Python systems for 5 years.",
+        (
+            "AI Engineer at Example Labs (Jan 2023 - Present). "
+            "Built ML APIs. Reduced latency 30%."
+        ),
+        "Anna University, B.E. Computer Science (2016-2020)",
+        "Python, FastAPI, AWS, Docker, SQL",
+    ]
+    for answer in answers:
+        message_response = client.post(
+            "/api/workspace/resume-builder/message",
+            json={
+                "session_id": session_id,
+                "message": answer,
+                "input_mode": "text",
+            },
+        )
+        assert message_response.status_code == 200
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert generate_response.status_code == 200
+
+    export_response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={
+            "session_id": session_id,
+            "export_format": "docx",
+            "theme": "classic_ats",
+        },
+    )
+
+    assert export_response.status_code == 200
+    payload = export_response.json()
+    assert payload["status"] == "ready"
+    assert payload["export_format"] == "docx"
+    assert payload["file_name"].endswith(".docx")
+    assert payload["mime_type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    assert payload["theme"] == "classic_ats"
+    # The artifact title flows from the synthesized job_description
+    # (which uses the user's target_role) through
+    # `_synthesize_resume_builder_artifact`'s rename step.
+    assert "Leander Antony" in payload["artifact_title"]
+    assert "Resume" in payload["artifact_title"]
+
+    # Bytes round-trip cleanly through python-docx — basic structural
+    # check that the file isn't truncated or wrong-format.
+    raw_bytes = base64.b64decode(payload["content_base64"])
+    assert len(raw_bytes) > 5_000
+    assert raw_bytes.startswith(b"PK")
+    document = Document(BytesIO(raw_bytes))
+    paragraph_texts = [p.text for p in document.paragraphs]
+    # Header carries the user-typed name + email.
+    assert any("Leander Antony" in text for text in paragraph_texts)
+    assert any("leander@example.com" in text for text in paragraph_texts)
+    # Required section headings render even on a sparse builder draft.
+    assert "SUMMARY" in paragraph_texts
+    assert "EDUCATION" in paragraph_texts
+
+
+def test_resume_builder_export_supports_pdf_format():
+    """The PDF branch should also work end-to-end. We don't try to
+    parse the PDF (Phase 1 already covers that path); just verify the
+    bytes are returned with the right mime + filename."""
+    import base64
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    for answer in [
+        "Mei Chen, Singapore. mei@example.sg",
+        "Senior Data Engineer. ETL platform background.",
+        "Data Engineer at Acme (2020-2023). Owned warehouse ingestion.",
+        "NUS, B.Comp",
+        "Python, Airflow, SQL",
+    ]:
+        client.post(
+            "/api/workspace/resume-builder/message",
+            json={"session_id": session_id, "message": answer, "input_mode": "text"},
+        )
+    client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+
+    export_response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={
+            "session_id": session_id,
+            "export_format": "pdf",
+            "theme": "professional_neutral",
+        },
+    )
+
+    assert export_response.status_code == 200
+    payload = export_response.json()
+    assert payload["export_format"] == "pdf"
+    assert payload["file_name"].endswith(".pdf")
+    assert payload["mime_type"] == "application/pdf"
+    assert payload["theme"] == "professional_neutral"
+    raw_bytes = base64.b64decode(payload["content_base64"])
+    assert len(raw_bytes) > 1_000
+    assert raw_bytes.startswith(b"%PDF")
+
+
+def test_resume_builder_export_returns_400_when_session_unknown():
+    """Old / wrong session_id → friendly 400, mirrors the other
+    resume-builder routes' error contract."""
+    response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={
+            "session_id": "session-that-never-existed",
+            "export_format": "docx",
+            "theme": "classic_ats",
+        },
+    )
+    assert response.status_code == 400
+    assert "Resume builder session" in response.json()["detail"]
+
+
+def test_resume_builder_export_rejects_unsupported_format():
+    """Pydantic Literal validates the format; markdown isn't a
+    supported export format anywhere now."""
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+
+    response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={
+            "session_id": session_id,
+            "export_format": "markdown",
+            "theme": "classic_ats",
+        },
+    )
+    assert response.status_code == 422
+    assert "export_format" in str(response.json())
+
+
 def test_resume_builder_message_uses_llm_when_openai_service_available(monkeypatch):
     """LLM-first intake: when an OpenAIService is plumbed in, the
     model picks the next question and merges partial draft updates,

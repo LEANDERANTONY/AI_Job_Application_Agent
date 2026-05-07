@@ -332,6 +332,20 @@ export type ResumeBuilderCommitResponse = {
   builder_session_id: string;
 };
 
+/** Phase 5 of the DOCX export plan: download the resume builder's
+ *  generated base resume as PDF or DOCX. Mirrors the shape of
+ *  `WorkspaceArtifactExportResponse` so the same `downloadBase64File`
+ *  helper handles both surfaces. */
+export type ResumeBuilderExportResponse = {
+  status: string;
+  export_format: WorkspaceArtifactExportFormat;
+  file_name: string;
+  mime_type: string;
+  content_base64: string;
+  theme: ArtifactTheme;
+  artifact_title: string;
+};
+
 export type WorkspaceJobDescriptionUploadResponse = {
   job_description_text: string;
   job_description: JobDescription;
