@@ -311,6 +311,9 @@ def test_search_calls_rpc_with_normalized_args(monkeypatch):
     assert len(client.rpc_calls) == 1
     rpc = client.rpc_calls[0]
     assert rpc.fn == "search_cached_jobs_ranked"
+    # Defaults for the dropdown args are None / 'relevance' so a caller
+    # that doesn't pass them gets the legacy behaviour. The RPC treats
+    # None as "no filter" for the array params.
     assert rpc.args == {
         "p_query": "machine learning",
         "p_location": "San Francisco",
@@ -318,6 +321,9 @@ def test_search_calls_rpc_with_normalized_args(monkeypatch):
         "p_remote_only": True,
         "p_posted_within_days": 14,
         "p_limit": 10,
+        "p_work_modes": None,
+        "p_employment_types": None,
+        "p_sort_by": "relevance",
     }
 
 
@@ -337,6 +343,108 @@ def test_search_passes_empty_query_to_rpc_for_browse_mode(monkeypatch):
     rpc = client.rpc_calls[0]
     assert rpc.args["p_query"] == ""
     assert rpc.args["p_sources"] is None  # not [] — RPC treats None as "any source"
+    # New dropdown args default to None / 'relevance' too.
+    assert rpc.args["p_work_modes"] is None
+    assert rpc.args["p_employment_types"] is None
+    assert rpc.args["p_sort_by"] == "relevance"
+
+
+def test_search_normalizes_dropdown_filters_and_sort(monkeypatch):
+    """Happy path for the new filters: work_modes / employment_types
+    are lower-cased + de-duped, and sort_by is forwarded as-is when
+    it's a known value. Asserts the exact RPC args so a typo in the
+    Python whitelist will surface here."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[])],
+    )
+    store = _make_store(client)
+    store.search(
+        query="data engineer",
+        work_modes=["Remote", "HYBRID"],
+        employment_types=["Internship"],
+        sort_by="newest",
+        limit=20,
+    )
+    rpc = client.rpc_calls[0]
+    assert rpc.args["p_work_modes"] == ["remote", "hybrid"]
+    assert rpc.args["p_employment_types"] == ["internship"]
+    assert rpc.args["p_sort_by"] == "newest"
+
+
+def test_search_drops_unknown_work_modes_and_employment_types(monkeypatch):
+    """Whitelisting: a UI param outside the allowed set gets silently
+    dropped before it hits the RPC. This protects the ranked search
+    from returning 0 rows just because the client sent 'WFH' instead
+    of 'remote'. Tests both args at once + the all-invalid case
+    coercing back to None."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[
+            SimpleNamespace(data=[]),
+            SimpleNamespace(data=[]),
+        ],
+    )
+    store = _make_store(client)
+
+    # Mixed valid + invalid: only the valid one survives.
+    store.search(
+        query="ml",
+        work_modes=["Remote", "WFH", "carrier-pigeon"],
+        employment_types=["INTERNSHIP", "fellowship"],
+    )
+    rpc = client.rpc_calls[0]
+    assert rpc.args["p_work_modes"] == ["remote"]
+    assert rpc.args["p_employment_types"] == ["internship"]
+
+    # All invalid: list collapses to [] → rpc receives an empty list
+    # (NOT None — the caller did supply a non-empty list, even if
+    # nothing in it was valid). The RPC treats [] as 'no filter' too,
+    # same behaviour as None.
+    store.search(
+        query="ml",
+        work_modes=["WFH"],
+        employment_types=["fellowship", "apprentice"],
+    )
+    rpc = client.rpc_calls[1]
+    assert rpc.args["p_work_modes"] == []
+    assert rpc.args["p_employment_types"] == []
+
+
+def test_search_coerces_unknown_sort_to_relevance(monkeypatch):
+    """Defensive fallback: an unknown sort_by (typo, attacker-supplied,
+    new value the FE hasn't shipped a backend update for) coerces to
+    'relevance' so the RPC always picks a known ORDER BY branch."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[
+            SimpleNamespace(data=[]),
+            SimpleNamespace(data=[]),
+            SimpleNamespace(data=[]),
+        ],
+    )
+    store = _make_store(client)
+
+    # Unknown value coerces.
+    store.search(query="x", sort_by="bogus")
+    assert client.rpc_calls[0].args["p_sort_by"] == "relevance"
+
+    # Empty / None coerces.
+    store.search(query="x", sort_by="")
+    assert client.rpc_calls[1].args["p_sort_by"] == "relevance"
+
+    # Whitespace-padded valid value normalises to its canonical form.
+    store.search(query="x", sort_by="  COMPANY_AZ  ")
+    assert client.rpc_calls[2].args["p_sort_by"] == "company_az"
 
 
 def test_get_listing_status_map_flags_tombstoned_keys(monkeypatch):

@@ -93,6 +93,84 @@ def test_job_search_endpoint_returns_placeholder_backend_response():
     assert payload["total_results"] >= 0
 
 
+def test_job_search_endpoint_forwards_dropdown_filters_and_sort_to_service():
+    """The new UI-driven filters (work_modes, employment_types, sort_by)
+    must reach the service as a JobSearchQuery with the right shape.
+    Verifies that the JobSearchRequestModel validators normalize input
+    (lowercases, strips empties) and to_domain() forwards every field
+    so the cache store sees what the user actually selected."""
+    captured: list = []
+
+    class FakeService:
+        def search_cached(self, query):
+            from src.schemas import JobSearchResult
+            captured.append(query)
+            return JobSearchResult(
+                query=query,
+                results=[],
+                total_results=0,
+                source_status={"backend": "ready"},
+            )
+
+    app.dependency_overrides[get_job_search_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/api/jobs/search",
+            json={
+                "query": "ml engineer",
+                "work_modes": ["Remote", "HYBRID", ""],  # case + empty
+                "employment_types": ["INTERNSHIP"],
+                "sort_by": "Newest",  # case-insensitive
+                "page_size": 20,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_job_search_service, None)
+
+    assert response.status_code == 200
+    # Service got a JobSearchQuery with the normalized fields.
+    assert len(captured) == 1
+    query = captured[0]
+    assert query.work_modes == ["remote", "hybrid"]
+    assert query.employment_types == ["internship"]
+    assert query.sort_by == "newest"
+    # Response echo includes the normalized query so the FE can re-render
+    # the filter chips from server state.
+    payload = response.json()
+    assert payload["query"]["work_modes"] == ["remote", "hybrid"]
+    assert payload["query"]["employment_types"] == ["internship"]
+    assert payload["query"]["sort_by"] == "newest"
+
+
+def test_job_search_endpoint_defaults_dropdown_filters_when_missing():
+    """Backwards-compat: an existing client that doesn't send the new
+    fields gets the legacy behaviour (empty filter lists, sort='relevance').
+    Pins this so we don't accidentally break the FE during a phased
+    rollout."""
+    captured: list = []
+
+    class FakeService:
+        def search_cached(self, query):
+            from src.schemas import JobSearchResult
+            captured.append(query)
+            return JobSearchResult(query=query, source_status={"backend": "ready"})
+
+    app.dependency_overrides[get_job_search_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/api/jobs/search",
+            json={"query": "anything"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_job_search_service, None)
+
+    assert response.status_code == 200
+    query = captured[0]
+    assert query.work_modes == []
+    assert query.employment_types == []
+    assert query.sort_by == "relevance"
+
+
 def test_job_search_endpoint_rejects_blank_query():
     response = client.post(
         "/api/jobs/search",

@@ -99,6 +99,15 @@ class JobSearchQuery:
     remote_only: bool = False
     posted_within_days: Optional[int] = None
     page_size: int = 20
+    # Multi-select filters driven by UI dropdowns. Empty list = no
+    # filter (all values pass). Whitelisting / lower-casing happens
+    # in CachedJobsStore.search() before the RPC sees the values.
+    work_modes: List[str] = field(default_factory=list)
+    employment_types: List[str] = field(default_factory=list)
+    # Single-select sort. 'relevance' (default) → ts_rank when there's
+    # a query, recency otherwise. Other values: 'newest', 'oldest',
+    # 'company_az'. Anything unknown gets coerced back to 'relevance'.
+    sort_by: str = "relevance"
 
 
 @dataclass

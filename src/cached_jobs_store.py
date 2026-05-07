@@ -284,6 +284,15 @@ class CachedJobsStore:
 
     # -- Reads ----------------------------------------------------------
 
+    # Allowed values for the dropdown-driven filters. Anything outside
+    # these whitelists silently drops so the RPC never sees a value
+    # that won't match a row anyway.
+    _ALLOWED_WORK_MODES = ("remote", "hybrid", "onsite")
+    _ALLOWED_EMPLOYMENT_TYPES = (
+        "fulltime", "parttime", "contract", "internship", "temporary",
+    )
+    _ALLOWED_SORT_BY = ("relevance", "newest", "oldest", "company_az")
+
     def search(
         self,
         *,
@@ -293,17 +302,29 @@ class CachedJobsStore:
         remote_only: bool = False,
         posted_within_days: int | None = None,
         limit: int = 20,
+        work_modes: list[str] | None = None,
+        employment_types: list[str] | None = None,
+        sort_by: str = "relevance",
     ) -> list[dict]:
         """Relevance-ranked Postgres full-text search against cached_jobs.
 
         Delegates to the search_cached_jobs_ranked RPC — see the
         migration of the same name. The RPC builds the tsquery once,
-        applies the FTS filter + facets, and ORDERs by ts_rank DESC,
-        posted_at DESC. We can't do the rank-ordering through
-        PostgREST's filter chain directly: text_search() returns a
-        terminating builder that doesn't chain into .order(), and
-        plain .order() can't reference a function call. Wrapping it
-        as an RPC keeps the round-trip count at one.
+        applies the FTS filter + facets, and ORDERs by the requested
+        sort key. We can't do the rank-ordering through PostgREST's
+        filter chain directly: text_search() returns a terminating
+        builder that doesn't chain into .order(), and plain .order()
+        can't reference a function call. Wrapping it as an RPC keeps
+        the round-trip count at one.
+
+        New since v2:
+          work_modes — optional list filter on the work_mode generated
+            column ('remote' / 'hybrid' / 'onsite'). UI dropdown.
+          employment_types — optional list filter on
+            employment_type_norm ('fulltime' / 'parttime' / 'contract'
+            / 'internship' / 'temporary'). UI dropdown.
+          sort_by — 'relevance' (default), 'newest', 'oldest',
+            'company_az'. Drives the RPC's ORDER BY branch.
 
         Empty `query` returns most-recent active jobs (the RPC
         short-circuits the FTS filter when the query is empty).
@@ -316,6 +337,31 @@ class CachedJobsStore:
             if sources
             else None
         )
+        # Whitelist the dropdown values so a malformed UI param can't
+        # generate a query that returns 0 rows just because of casing
+        # ('Remote' vs 'remote') or unknown enums.
+        normalized_work_modes = (
+            [
+                value.strip().lower()
+                for value in work_modes
+                if value and value.strip().lower() in self._ALLOWED_WORK_MODES
+            ]
+            if work_modes
+            else None
+        )
+        normalized_employment_types = (
+            [
+                value.strip().lower()
+                for value in employment_types
+                if value and value.strip().lower() in self._ALLOWED_EMPLOYMENT_TYPES
+            ]
+            if employment_types
+            else None
+        )
+        sort_normalized = (sort_by or "relevance").strip().lower()
+        if sort_normalized not in self._ALLOWED_SORT_BY:
+            sort_normalized = "relevance"
+
         rpc_args = {
             "p_query": normalized_query,
             "p_location": normalized_location,
@@ -325,6 +371,9 @@ class CachedJobsStore:
                 int(posted_within_days) if posted_within_days else None
             ),
             "p_limit": max(1, min(int(limit or 20), 50)),
+            "p_work_modes": normalized_work_modes,
+            "p_employment_types": normalized_employment_types,
+            "p_sort_by": sort_normalized,
         }
         try:
             response = client.rpc("search_cached_jobs_ranked", rpc_args).execute()
