@@ -106,6 +106,7 @@ class ResumeBuilderSession:
     structured_education_payload: list[dict] = field(default_factory=list)
     structured_projects_payload: list[dict] = field(default_factory=list)
     structured_skill_categories: dict = field(default_factory=dict)
+    structured_professional_summary: str = ""
 
 
 _SESSIONS: dict[str, ResumeBuilderSession] = {}
@@ -1253,6 +1254,7 @@ def _structure_via_llm(
     education_items = payload.get("education")
     projects_items = payload.get("projects")
     skill_categories_raw = payload.get("skill_categories")
+    expanded_summary_raw = payload.get("professional_summary")
 
     experience_entries: list[WorkExperience] = []
     if isinstance(experience_items, list):
@@ -1309,6 +1311,16 @@ def _structure_via_llm(
     session.structured_skill_categories = _sanitize_skill_categories(
         skill_categories_raw, session.draft.skills or []
     )
+    # Summary expansion is opt-in by the LLM — only stored when the
+    # model emits a non-empty replacement and it's actually longer than
+    # what the user typed (defends against the model summarising
+    # downward by accident).
+    expanded_summary = (str(expanded_summary_raw or "") or "").strip()
+    user_summary_len = len((session.draft.professional_summary or "").strip())
+    if expanded_summary and len(expanded_summary) > user_summary_len:
+        session.structured_professional_summary = expanded_summary
+    else:
+        session.structured_professional_summary = ""
     session.structuring_signature = current_signature
 
     return experience_entries, education_entries, project_entries
@@ -1522,6 +1534,9 @@ def export_resume_builder_session_payload(*, session_id: str):
             "structured_skill_categories": dict(
                 session.structured_skill_categories or {}
             ),
+            "structured_professional_summary": (
+                session.structured_professional_summary or ""
+            ),
         },
         separators=(",", ":"),
     )
@@ -1610,6 +1625,9 @@ def restore_resume_builder_session_payload(payload_json: str):
             raw_payload.get("structured_skill_categories") or {}
             if isinstance(raw_payload.get("structured_skill_categories"), dict)
             else {}
+        ),
+        structured_professional_summary=str(
+            raw_payload.get("structured_professional_summary", "") or ""
         ),
     )
     _SESSIONS[session.session_id] = session
@@ -2022,6 +2040,12 @@ def _synthesize_resume_builder_artifact(
     # over the flat highlighted_skills list when present.
     if session.structured_skill_categories:
         artifact.skill_categories = dict(session.structured_skill_categories)
+    # Same pattern for the expanded summary — only override when the
+    # structuring pass produced one (otherwise keep what the artifact
+    # builder set from the user's verbatim summary).
+    if session.structured_professional_summary:
+        artifact.professional_summary = session.structured_professional_summary
+        artifact.summary = session.structured_professional_summary
 
     name = (candidate_profile.full_name or "Candidate").strip() or "Candidate"
     target_role = (session.draft.target_role or "").strip()

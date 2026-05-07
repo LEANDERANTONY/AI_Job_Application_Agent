@@ -1385,6 +1385,146 @@ def test_resume_builder_export_renders_projects_in_docx(monkeypatch):
     _SESSIONS.pop(session_id, None)
 
 
+def test_resume_builder_structuring_expands_thin_summary(monkeypatch):
+    """When the user types a one-liner summary, the structuring pass
+    can replace it with a polished 2-3 sentence version (third-person
+    ATS voice, grounded in facts already in the draft)."""
+    import base64
+    from io import BytesIO
+
+    from docx import Document
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _ExpandsService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                return {
+                    "experience": [
+                        {
+                            "title": "Senior Backend Engineer",
+                            "organization": "Stripe",
+                            "start": "2022",
+                            "end": "Present",
+                            "bullets": ["Led the rate-limiter rewrite."],
+                        },
+                    ],
+                    "education": [],
+                    "projects": [],
+                    "professional_summary": (
+                        "Senior backend engineer with deep payments-platform "
+                        "experience. Specializes in low-latency rate-limiting and "
+                        "high-throughput data migrations on Stripe's billing "
+                        "infrastructure."
+                    ),
+                }
+            return {"draft_updates": {}, "assistant_message": "ok", "status": "collecting", "focus_field": ""}
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _ExpandsService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya",
+                # User typed a one-liner.
+                "professional_summary": "I have 6 years building payment systems.",
+                "experience_notes": "Senior Backend Engineer at Stripe 2022-Present, led rate-limiter rewrite",
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    export_response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={"session_id": session_id, "export_format": "docx", "theme": "classic_ats"},
+    )
+    assert export_response.status_code == 200
+    raw_bytes = base64.b64decode(export_response.json()["content_base64"])
+    doc = Document(BytesIO(raw_bytes))
+    body = "\n".join(p.text for p in doc.paragraphs)
+
+    # The expanded summary replaces the one-liner.
+    assert "Specializes in low-latency rate-limiting" in body
+    assert "I have 6 years" not in body  # original verbatim is gone
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_structuring_keeps_user_summary_when_already_long(monkeypatch):
+    """If the LLM returns an empty professional_summary or the user's
+    own summary is already substantial, we keep the user's verbatim
+    text in the rendered resume."""
+    import base64
+    from io import BytesIO
+
+    from docx import Document
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _NoExpansionService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                return {
+                    "experience": [{"title": "Engineer", "organization": "Acme", "bullets": []}],
+                    "education": [],
+                    "projects": [],
+                    "professional_summary": "",  # LLM declines to expand
+                }
+            return {"draft_updates": {}, "assistant_message": "ok", "status": "collecting", "focus_field": ""}
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _NoExpansionService(),
+    )
+
+    user_summary = (
+        "Senior backend engineer with 6+ years building distributed payment "
+        "systems. Led the rate-limiter rewrite at Stripe and shipped Vitess "
+        "migrations across 3.2B legacy charges."
+    )
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya",
+                "professional_summary": user_summary,
+                "experience_notes": "Engineer at Acme",
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    export_response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={"session_id": session_id, "export_format": "docx", "theme": "classic_ats"},
+    )
+    assert export_response.status_code == 200
+    raw_bytes = base64.b64decode(export_response.json()["content_base64"])
+    doc = Document(BytesIO(raw_bytes))
+    body = "\n".join(p.text for p in doc.paragraphs)
+
+    # User's own summary survived intact.
+    assert "Vitess migrations across 3.2B" in body
+
+    _SESSIONS.pop(session_id, None)
+
+
 def test_resume_builder_skill_categories_round_trip_into_artifact(monkeypatch):
     """LLM emits skill_categories in the structuring payload; the
     sanitizer keeps only categories whose skills appear in the user's

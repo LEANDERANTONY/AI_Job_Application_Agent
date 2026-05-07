@@ -631,6 +631,17 @@ def build_resume_builder_structuring_prompt(
             "Skip and return {} when skills are sparse, uniform, or don't cluster "
             "obviously — the renderer falls back to a flat list."
         ),
+        "professional_summary": (
+            "OPTIONAL expanded summary (string). Generate ONLY when the user's "
+            "input professional_summary is shorter than ~80 characters AND there "
+            "is enough context elsewhere in the draft (target_role, experience, "
+            "skills) to write a polished 2-3 sentence headline. Output third-"
+            "person ATS-style prose ('Senior backend engineer specializing in...' "
+            "not 'I have 6 years experience'). FACT PRESERVATION IS MANDATORY — "
+            "every claim must be grounded in something the user already typed. "
+            "Don't invent years of experience, technologies, or impact. Return "
+            "'' to keep the user's original summary unchanged."
+        ),
     }
 
     user_prompt = "\n\n".join(
@@ -709,6 +720,12 @@ def build_resume_builder_structuring_prompt(
             "also appear in the original skills list — don't invent new "
             "tech. Don't reorder the skill names within a bucket; preserve "
             "the user's casing ('TensorFlow' not 'tensorflow').\n"
+            "- Summary expansion: emit professional_summary ONLY when the "
+            "user gave you a thin headline (under ~80 chars). Stay third-"
+            "person ATS voice. Pull every concrete claim from the rest of "
+            "the draft (target_role, role titles, technologies the user "
+            "named, schools, dates) — invent NOTHING. If the user's "
+            "summary is already 2+ sentences, return '' to leave it alone.\n"
             "- If the user's prose is empty for a section, return an empty "
             "list for that section.\n"
             + _build_contract(contract)
