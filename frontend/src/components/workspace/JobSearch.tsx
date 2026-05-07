@@ -26,12 +26,110 @@ import {
   SearchIcon,
   StarIcon,
 } from "@/components/workspace/icons";
-import type { JobPosting, JobSearchResponse } from "@/lib/api-types";
+import type {
+  EmploymentType,
+  JobPosting,
+  JobSearchResponse,
+  JobSortBy,
+  WorkMode,
+} from "@/lib/api-types";
 import {
   buildJobResultBadges,
   formatSavedLabel,
   resultPreview,
 } from "@/lib/job-workspace";
+
+// Stable option lists — also drive the dropdown labels. Keeping these
+// as `as const` arrays gives us readable iteration without losing the
+// literal-union types (each opt.value stays narrowed to WorkMode etc).
+const WORK_MODE_OPTIONS: readonly { value: WorkMode; label: string }[] = [
+  { value: "remote", label: "Remote" },
+  { value: "hybrid", label: "Hybrid" },
+  { value: "onsite", label: "On-site" },
+] as const;
+
+const EMPLOYMENT_TYPE_OPTIONS: readonly {
+  value: EmploymentType;
+  label: string;
+}[] = [
+  { value: "fulltime", label: "Full-time" },
+  { value: "parttime", label: "Part-time" },
+  { value: "contract", label: "Contract" },
+  { value: "internship", label: "Internship" },
+  { value: "temporary", label: "Temporary" },
+] as const;
+
+const SOURCE_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: "greenhouse", label: "Greenhouse" },
+  { value: "lever", label: "Lever" },
+  { value: "ashby", label: "Ashby" },
+  { value: "workday", label: "Workday" },
+] as const;
+
+const SORT_OPTIONS: readonly { value: JobSortBy; label: string }[] = [
+  { value: "relevance", label: "Relevance" },
+  { value: "newest", label: "Most recent" },
+  { value: "oldest", label: "Oldest" },
+  { value: "company_az", label: "Company A → Z" },
+] as const;
+
+type MultiSelectFilterProps<T extends string> = {
+  label: string;
+  selected: readonly T[];
+  options: readonly { value: T; label: string }[];
+  onToggle: (value: T) => void;
+  /** "Any" label shown when nothing is picked (e.g. "Any source"). */
+  emptyLabel: string;
+};
+
+/** Multi-select filter rendered as a chip + popover.
+ *
+ * Uses native <details>/<summary> for the disclosure semantics so it's
+ * keyboard-accessible without managing open/close state by hand. The
+ * summary chip shows the current selection count; the popover holds
+ * checkboxes for each option. Clicking outside closes it (the
+ * onBlur/click-away is implicit via the native <details> element). */
+function MultiSelectFilter<T extends string>({
+  label,
+  selected,
+  options,
+  onToggle,
+  emptyLabel,
+}: MultiSelectFilterProps<T>) {
+  const summaryText =
+    selected.length === 0
+      ? emptyLabel
+      : selected.length === 1
+      ? options.find((opt) => opt.value === selected[0])?.label ?? selected[0]
+      : `${selected.length} selected`;
+
+  return (
+    <details className="b-filter-popover">
+      <summary>
+        <span className="b-filter-popover-label">{label}</span>
+        <span className="b-filter-popover-value">{summaryText}</span>
+        <span className="b-filter-popover-caret" aria-hidden>
+          ▾
+        </span>
+      </summary>
+      <div className="b-filter-popover-panel" role="group" aria-label={label}>
+        {options.map((opt) => {
+          const isChecked = selected.includes(opt.value);
+          return (
+            <label className="b-filter-popover-item" key={opt.value}>
+              <input
+                checked={isChecked}
+                onChange={() => onToggle(opt.value)}
+                type="checkbox"
+              />
+              <span>{opt.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
 
 export type JobSearchNotice = {
   level: "info" | "success" | "warning";
@@ -50,10 +148,18 @@ export type JobSearchProps = {
   onSearchQueryChange: (value: string) => void;
   searchLocation: string;
   onSearchLocationChange: (value: string) => void;
-  remoteOnly: boolean;
-  onRemoteOnlyChange: (value: boolean) => void;
   postedWithinDays: string;
   onPostedWithinDaysChange: (value: string) => void;
+  // Multi-select dropdown filters. Empty arrays = no filter applied.
+  sourceFilters: string[];
+  onSourceFiltersChange: (value: string[]) => void;
+  workModes: WorkMode[];
+  onWorkModesChange: (value: WorkMode[]) => void;
+  employmentTypes: EmploymentType[];
+  onEmploymentTypesChange: (value: EmploymentType[]) => void;
+  // Single-select sort dropdown.
+  sortBy: JobSortBy;
+  onSortByChange: (value: JobSortBy) => void;
   searching: boolean;
   onSearchSubmit: (event: FormEvent<HTMLFormElement>) => void;
 
@@ -210,10 +316,16 @@ export function JobSearch({
   onSearchQueryChange,
   searchLocation,
   onSearchLocationChange,
-  remoteOnly,
-  onRemoteOnlyChange,
   postedWithinDays,
   onPostedWithinDaysChange,
+  sourceFilters,
+  onSourceFiltersChange,
+  workModes,
+  onWorkModesChange,
+  employmentTypes,
+  onEmploymentTypesChange,
+  sortBy,
+  onSortByChange,
   searching,
   onSearchSubmit,
   jobUrl,
@@ -239,6 +351,17 @@ export function JobSearch({
   const results = searchResults?.results ?? [];
   // Saved-jobs drawer is closed by default; user toggles to expand.
   const [savedDrawerOpen, setSavedDrawerOpen] = useState(false);
+
+  // Generic toggle helper: append the value if missing, drop it if
+  // present. Reused by all four multi-select filter chips below.
+  function toggleInList<T extends string>(
+    current: readonly T[],
+    value: T,
+  ): T[] {
+    return current.includes(value)
+      ? current.filter((v) => v !== value)
+      : [...current, value];
+  }
 
   return (
     <div className="b-region">
@@ -278,14 +401,36 @@ export function JobSearch({
 
       <div className="b-search-row">
         <div className="b-search-filters">
-          <label className="b-search-toggle">
-            <input
-              checked={remoteOnly}
-              onChange={(event) => onRemoteOnlyChange(event.target.checked)}
-              type="checkbox"
-            />
-            Remote only
-          </label>
+          <MultiSelectFilter
+            emptyLabel="Any source"
+            label="Source"
+            onToggle={(value) =>
+              onSourceFiltersChange(toggleInList(sourceFilters, value))
+            }
+            options={SOURCE_OPTIONS}
+            selected={sourceFilters}
+          />
+          <MultiSelectFilter<WorkMode>
+            emptyLabel="Any mode"
+            label="Work mode"
+            onToggle={(value) =>
+              onWorkModesChange(toggleInList(workModes, value))
+            }
+            options={WORK_MODE_OPTIONS}
+            selected={workModes}
+          />
+          <MultiSelectFilter<EmploymentType>
+            emptyLabel="Any type"
+            label="Type"
+            onToggle={(value) =>
+              onEmploymentTypesChange(toggleInList(employmentTypes, value))
+            }
+            options={EMPLOYMENT_TYPE_OPTIONS}
+            selected={employmentTypes}
+          />
+          {/* "Posted within" stays a native single-select since it's
+              already a one-of-N control. The multi-select popover would
+              be heavier UX for the same effect. */}
           <label className="b-search-toggle">
             Posted within
             <select
@@ -304,6 +449,28 @@ export function JobSearch({
               <option value="7">Last 7 days</option>
               <option value="14">Last 14 days</option>
               <option value="30">Last 30 days</option>
+            </select>
+          </label>
+          <label className="b-search-toggle">
+            Sort
+            <select
+              className="rd-select"
+              onChange={(event) =>
+                onSortByChange(event.target.value as JobSortBy)
+              }
+              style={{
+                width: "auto",
+                padding: "3px 6px",
+                marginLeft: 4,
+                height: 26,
+              }}
+              value={sortBy}
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </label>
         </div>
@@ -411,7 +578,9 @@ export function JobSearch({
             {searchResults.total_results === 1 ? "" : "s"}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--fg-3)" }}>
-            Sorted by recency
+            Sorted by{" "}
+            {SORT_OPTIONS.find((opt) => opt.value === sortBy)?.label.toLowerCase() ??
+              "relevance"}
           </div>
         </div>
       ) : null}

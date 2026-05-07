@@ -4437,6 +4437,79 @@ code {
   color: var(--fg-3);
 }
 .b-search-toggle input { accent-color: var(--accent-strong); }
+
+/* Multi-select filter chip + popover.
+ * Uses native <details>/<summary> for the disclosure semantics so the
+ * keyboard story is correct (Enter / Space toggles, Esc closes) without
+ * managing open state in React. The popover panel is absolutely
+ * positioned below the chip so it overlays results without shifting
+ * the layout. */
+.b-filter-popover {
+  position: relative;
+  display: inline-block;
+}
+.b-filter-popover > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg-3);
+  font-size: 12.5px;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.b-filter-popover > summary::-webkit-details-marker { display: none; }
+.b-filter-popover > summary:hover { border-color: rgba(90, 134, 255, 0.45); }
+.b-filter-popover[open] > summary {
+  border-color: rgba(90, 134, 255, 0.55);
+  background: rgba(0, 0, 0, 0.5);
+}
+.b-filter-popover-label { color: var(--fg-3); }
+.b-filter-popover-value { color: var(--fg); font-weight: 500; }
+.b-filter-popover-caret {
+  margin-left: 2px;
+  font-size: 10px;
+  transition: transform 120ms ease;
+}
+.b-filter-popover[open] .b-filter-popover-caret { transform: rotate(180deg); }
+.b-filter-popover-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(20, 20, 24, 0.97);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.b-filter-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--fg);
+  font-size: 13px;
+  transition: background 120ms ease;
+}
+.b-filter-popover-item:hover { background: rgba(255, 255, 255, 0.04); }
+.b-filter-popover-item input {
+  accent-color: var(--accent-strong);
+  cursor: pointer;
+}
+
 .b-search-import {
   display: flex;
   align-items: center;

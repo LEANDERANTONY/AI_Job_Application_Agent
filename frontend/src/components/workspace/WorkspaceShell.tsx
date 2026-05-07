@@ -49,11 +49,14 @@ import type {
   ArtifactTheme,
   CandidateProfile,
   DailyQuotaStatus,
+  EmploymentType,
   JobPosting,
   JobResolveResponse,
   JobSearchResponse,
+  JobSortBy,
   LoadSavedWorkspaceResponse,
   ResumeBuilderSessionResponse,
+  WorkMode,
   WorkspaceAnalysisResponse,
   WorkspaceArtifactExportFormat,
   WorkspaceJobDescriptionUploadResponse,
@@ -228,7 +231,14 @@ export function WorkspaceShell() {
 
   const [searchQuery, setSearchQuery] = useState("machine learning engineer");
   const [searchLocation, setSearchLocation] = useState("");
-  const [remoteOnly, setRemoteOnly] = useState(false);
+  // Multi-select filter state. Empty arrays = no filter applied. The
+  // Source dropdown defaults to "Any source" (empty) so the cache RPC
+  // searches across every provider — picking specific ones narrows the
+  // results to just those tokens. Same model for work modes + types.
+  const [sourceFilters, setSourceFilters] = useState<string[]>([]);
+  const [workModes, setWorkModes] = useState<WorkMode[]>([]);
+  const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
+  const [sortBy, setSortBy] = useState<JobSortBy>("relevance");
   const [postedWithinDays, setPostedWithinDays] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<JobSearchResponse | null>(
@@ -652,10 +662,19 @@ export function WorkspaceShell() {
       const response = await searchJobs({
         query: searchQuery.trim(),
         location: searchLocation.trim(),
-        source_filters: ["greenhouse", "lever"],
-        remote_only: remoteOnly,
+        // Empty source_filters = "any provider" — let the cache RPC
+        // search across everything we've indexed. The user's explicit
+        // picks (if any) narrow it to that set.
+        source_filters: sourceFilters,
+        // remote_only kept as a derived signal for back-compat with the
+        // cache RPC's existing flag — it composes additively with the
+        // dropdown's `remote` pick (either route returns the same rows).
+        remote_only: workModes.length === 1 && workModes[0] === "remote",
         posted_within_days: postedWithinDays ? Number(postedWithinDays) : null,
         page_size: 12,
+        work_modes: workModes,
+        employment_types: employmentTypes,
+        sort_by: sortBy,
       });
       setSearchResults(response);
       setSearchNotice({
@@ -1787,14 +1806,15 @@ export function WorkspaceShell() {
           <JobSearch
             activeJob={activeJob}
             authSignedIn={authStatus === "signed_in"}
+            employmentTypes={employmentTypes}
             importing={importing}
             jobUrl={jobUrl}
             latestSavedJobAt={latestSavedJobAt}
+            onEmploymentTypesChange={setEmploymentTypes}
             onImportSubmit={handleResolveJob}
             onJobUrlChange={setJobUrl}
             onLoadSavedJob={handleLoadSavedJob}
             onPostedWithinDaysChange={setPostedWithinDays}
-            onRemoteOnlyChange={setRemoteOnly}
             onRemoveSavedJob={(job) => void handleRemoveSavedJob(job)}
             onReviewRole={(job) => {
               setActiveJob(job);
@@ -1804,8 +1824,10 @@ export function WorkspaceShell() {
             onSearchLocationChange={setSearchLocation}
             onSearchQueryChange={setSearchQuery}
             onSearchSubmit={handleSearch}
+            onSortByChange={setSortBy}
+            onSourceFiltersChange={setSourceFilters}
+            onWorkModesChange={setWorkModes}
             postedWithinDays={postedWithinDays}
-            remoteOnly={remoteOnly}
             savedJobActionId={savedJobActionId}
             savedJobIds={savedJobIds}
             savedJobs={savedJobs}
@@ -1817,6 +1839,9 @@ export function WorkspaceShell() {
             searchNotice={searchNotice}
             searchQuery={searchQuery}
             searchResults={searchResults}
+            sortBy={sortBy}
+            sourceFilters={sourceFilters}
+            workModes={workModes}
           />
         ) : null}
 

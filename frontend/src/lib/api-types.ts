@@ -16,6 +16,25 @@ export type BackendHealth = {
   };
 };
 
+/** Canonical work-mode values the backend accepts on the dropdown
+ *  filter. Anything outside this union gets dropped server-side, so
+ *  keep this in sync with `_ALLOWED_WORK_MODES` in cached_jobs_store.py. */
+export type WorkMode = "remote" | "hybrid" | "onsite";
+
+/** Canonical employment-type values. Mirrors `_ALLOWED_EMPLOYMENT_TYPES`
+ *  in cached_jobs_store.py — derived from the `employment_type_norm`
+ *  generated column on cached_jobs. */
+export type EmploymentType =
+  | "fulltime"
+  | "parttime"
+  | "contract"
+  | "internship"
+  | "temporary";
+
+/** Sort key sent to the search_cached_jobs_ranked RPC. Unknown values
+ *  coerce to "relevance" both client- and server-side. */
+export type JobSortBy = "relevance" | "newest" | "oldest" | "company_az";
+
 export type JobSearchRequest = {
   query: string;
   location?: string;
@@ -23,6 +42,12 @@ export type JobSearchRequest = {
   remote_only?: boolean;
   posted_within_days?: number | null;
   page_size?: number;
+  /** Multi-select dropdown. Empty / omitted = no filter applied. */
+  work_modes?: WorkMode[];
+  /** Multi-select dropdown. Empty / omitted = no filter applied. */
+  employment_types?: EmploymentType[];
+  /** Single-select sort. Defaults to "relevance" when omitted. */
+  sort_by?: JobSortBy;
 };
 
 export type JobPosting = {
