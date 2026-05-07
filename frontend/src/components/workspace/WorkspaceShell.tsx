@@ -32,6 +32,8 @@ import Image from "next/image";
 
 import {
   commitResumeBuilderResume,
+  downloadBase64File,
+  exportResumeBuilderArtifact,
   generateResumeBuilderResume,
   loadLatestResumeBuilderSession,
   resolveJobUrl,
@@ -44,6 +46,7 @@ import {
   uploadResumeFile,
 } from "@/lib/api";
 import type {
+  ArtifactTheme,
   CandidateProfile,
   DailyQuotaStatus,
   JobPosting,
@@ -52,6 +55,7 @@ import type {
   LoadSavedWorkspaceResponse,
   ResumeBuilderSessionResponse,
   WorkspaceAnalysisResponse,
+  WorkspaceArtifactExportFormat,
   WorkspaceJobDescriptionUploadResponse,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
@@ -265,6 +269,16 @@ export function WorkspaceShell() {
   const [resumeBuilderChatLog, setResumeBuilderChatLog] = useState<
     Array<{ role: "user" | "assistant"; content: string }>
   >([]);
+  // Phase 6 download row state. The user picks a theme + downloads
+  // their generated base resume as PDF or DOCX, after Generate
+  // finishes. `resumeBuilderExporting` holds the in-flight format
+  // string (e.g. "pdf" / "docx") so each button can show a per-button
+  // "Preparing…" label without locking out the other button.
+  const [resumeBuilderExportTheme, setResumeBuilderExportTheme] =
+    useState<ArtifactTheme>("classic_ats");
+  const [resumeBuilderExporting, setResumeBuilderExporting] = useState<
+    WorkspaceArtifactExportFormat | null
+  >(null);
   const [resumeBuilderDraftForm, setResumeBuilderDraftForm] = useState({
     full_name: "",
     location: "",
@@ -1152,6 +1166,60 @@ export function WorkspaceShell() {
     }
   }
 
+  async function handleResumeBuilderExport(
+    exportFormat: WorkspaceArtifactExportFormat,
+  ) {
+    if (!resumeBuilderSession) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          "Generate the base resume before downloading it.",
+      });
+      return;
+    }
+    if (!resumeBuilderSession.generated_resume_markdown) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          "Generate the base resume first — there's nothing to download yet.",
+      });
+      return;
+    }
+
+    setResumeBuilderExporting(exportFormat);
+    setResumeBuilderNotice({
+      level: "info",
+      message: `Preparing your ${exportFormat.toUpperCase()} download…`,
+    });
+
+    try {
+      const response = await exportResumeBuilderArtifact({
+        session_id: resumeBuilderSession.session_id,
+        export_format: exportFormat,
+        theme: resumeBuilderExportTheme,
+      });
+      downloadBase64File(
+        response.file_name,
+        response.content_base64,
+        response.mime_type,
+      );
+      setResumeBuilderNotice({
+        level: "success",
+        message: `Downloaded ${response.file_name}.`,
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The download could not be prepared.",
+      });
+    } finally {
+      setResumeBuilderExporting(null);
+    }
+  }
+
   // Sign-out wraps the hook's auth-only `signOutAuth` with cross-slice
   // resets (saved jobs, resume builder fields) that the hook can't
   // reach into.
@@ -1663,6 +1731,8 @@ export function WorkspaceShell() {
             builderCommitting={resumeBuilderCommitting}
             builderDraftForm={resumeBuilderDraftForm}
             builderEditing={resumeBuilderEditing}
+            builderExporting={resumeBuilderExporting}
+            builderExportTheme={resumeBuilderExportTheme}
             builderGenerating={resumeBuilderGenerating}
             builderLoading={resumeBuilderLoading}
             builderNotice={resumeBuilderNotice}
@@ -1673,6 +1743,10 @@ export function WorkspaceShell() {
             onBuilderAnswerSubmit={() => void handleResumeBuilderAnswer()}
             onBuilderCommit={() => void handleResumeBuilderCommit()}
             onBuilderDraftSave={() => void handleResumeBuilderDraftSave()}
+            onBuilderExport={(format) =>
+              void handleResumeBuilderExport(format)
+            }
+            onBuilderExportThemeChange={setResumeBuilderExportTheme}
             onBuilderGenerate={() => void handleResumeBuilderGenerate()}
             onClearUploadedResumeProfile={handleClearUploadedResumeProfile}
             onModeChange={setResumeIntakeMode}

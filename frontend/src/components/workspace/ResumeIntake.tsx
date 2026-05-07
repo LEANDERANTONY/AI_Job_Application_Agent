@@ -47,9 +47,11 @@ function AutoTextarea({ value, ...rest }: AutoTextareaProps) {
   return <textarea ref={ref} value={value} {...rest} />;
 }
 import type {
+  ArtifactTheme,
   CandidateProfile,
   ResumeBuilderPersistenceStatus,
   ResumeBuilderSessionResponse,
+  WorkspaceArtifactExportFormat,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
 
@@ -136,6 +138,13 @@ export type ResumeIntakeProps = {
   builderEditing: boolean;
   builderDraftForm: ResumeBuilderDraftForm;
   setBuilderDraftForm: Dispatch<SetStateAction<ResumeBuilderDraftForm>>;
+  // Phase 6 download row. Theme + per-format-loading flag are owned
+  // by the parent so the workspace's notice slot can react to the
+  // export's success / failure transitions.
+  builderExportTheme: ArtifactTheme;
+  builderExporting: WorkspaceArtifactExportFormat | null;
+  onBuilderExportThemeChange: (theme: ArtifactTheme) => void;
+  onBuilderExport: (format: WorkspaceArtifactExportFormat) => void;
   onBuilderAnswerSubmit: () => void;
   onBuilderGenerate: () => void;
   onBuilderCommit: () => void;
@@ -168,6 +177,10 @@ export function ResumeIntake({
   builderEditing,
   builderDraftForm,
   setBuilderDraftForm,
+  builderExportTheme,
+  builderExporting,
+  onBuilderExportThemeChange,
+  onBuilderExport,
   onBuilderAnswerSubmit,
   onBuilderGenerate,
   onBuilderCommit,
@@ -601,18 +614,100 @@ export function ResumeIntake({
                 ) : null}
 
                 {builderSession?.generated_resume_markdown ? (
-                  <div>
-                    <button
-                      className="rd-btn rd-btn-primary rd-btn-sm"
-                      disabled={builderCommitting}
-                      onClick={onBuilderCommit}
-                      type="button"
+                  <>
+                    {/* Phase 6 download row. The exit-point copy
+                        explicitly tells the user this IS the finish
+                        line — they can leave with a polished resume,
+                        or continue into the JD-tailoring flow via
+                        "Use this profile" below. Theme picker mirrors
+                        the workspace artifact viewer's pattern. */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                        padding: "12px 0",
+                        borderTop: "1px solid var(--bd-1)",
+                      }}
                     >
-                      {builderCommitting
-                        ? "Using profile…"
-                        : "Use this profile"}
-                    </button>
-                  </div>
+                      <p style={{ fontSize: 12.5, color: "var(--fg-3)", margin: 0 }}>
+                        Download your resume now, or continue to tailor it
+                        for a specific role below.
+                      </p>
+                      <div
+                        role="radiogroup"
+                        aria-label="Resume theme"
+                        style={{
+                          display: "flex",
+                          gap: 6,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {(
+                          [
+                            { value: "classic_ats", label: "Classic ATS" },
+                            {
+                              value: "professional_neutral",
+                              label: "Professional Neutral",
+                            },
+                          ] as const
+                        ).map((option) => (
+                          <button
+                            aria-checked={
+                              builderExportTheme === option.value
+                            }
+                            className="b-artifact-style-option"
+                            data-active={
+                              builderExportTheme === option.value
+                            }
+                            disabled={builderExporting !== null}
+                            key={option.value}
+                            onClick={() =>
+                              onBuilderExportThemeChange(option.value)
+                            }
+                            role="radio"
+                            type="button"
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className="rd-btn rd-btn-primary rd-btn-sm"
+                          disabled={builderExporting !== null}
+                          onClick={() => onBuilderExport("pdf")}
+                          type="button"
+                        >
+                          {builderExporting === "pdf"
+                            ? "Preparing…"
+                            : "Download PDF"}
+                        </button>
+                        <button
+                          className="rd-btn rd-btn-ghost rd-btn-sm"
+                          disabled={builderExporting !== null}
+                          onClick={() => onBuilderExport("docx")}
+                          type="button"
+                        >
+                          {builderExporting === "docx"
+                            ? "Preparing…"
+                            : "Download DOCX"}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <button
+                        className="rd-btn rd-btn-primary rd-btn-sm"
+                        disabled={builderCommitting}
+                        onClick={onBuilderCommit}
+                        type="button"
+                      >
+                        {builderCommitting
+                          ? "Using profile…"
+                          : "Use this profile"}
+                      </button>
+                    </div>
+                  </>
                 ) : null}
               </>
             ) : (
