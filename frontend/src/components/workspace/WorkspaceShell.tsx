@@ -29,6 +29,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 import {
   commitResumeBuilderResume,
@@ -191,6 +192,22 @@ export function WorkspaceShell() {
   } = useWorkspaceSession({ setNotice: setWorkspaceNotice });
   void _setAuthSession;
   void _setWorkspaceSaveMeta;
+
+  // Workspace is for signed-in users only. The session restore in
+  // `useWorkspaceSession` flips authStatus to "signed_out" once it's
+  // confirmed there are no valid auth cookies. We bounce to the
+  // landing page in that case — the landing page already owns the
+  // sign-in CTA + post-sign-in redirect into the workspace, so we
+  // don't need to thread a returnTo param. We DON'T redirect on
+  // "loading" or "restoring" because those are transient and the
+  // common case (already signed in) would cause an unnecessary
+  // landing-page flash.
+  const router = useRouter();
+  useEffect(() => {
+    if (authStatus === "signed_out") {
+      router.replace("/");
+    }
+  }, [authStatus, router]);
 
   const [searchQuery, setSearchQuery] = useState("machine learning engineer");
   const [searchLocation, setSearchLocation] = useState("");
