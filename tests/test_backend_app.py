@@ -27,6 +27,12 @@ def test_backend_health_endpoint_reports_service_status():
     assert "providers" in payload
     assert "greenhouse" in payload["providers"]
     assert "lever" in payload["providers"]
+    # Ashby was added as a third source-of-record alongside
+    # Greenhouse + Lever — covers the modern AI/dev-tools tier
+    # (Linear, Cursor, Cohere, Mistral, ...). Health surfaces it
+    # so monitoring can spot a misconfigured deploy.
+    assert "ashby" in payload["providers"]
+    assert "board_count" in payload["providers"]["ashby"]
 
 
 def test_job_search_endpoint_returns_placeholder_backend_response():

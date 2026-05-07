@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.cached_jobs_store import CachedJobsStore
+from src.job_sources.ashby import AshbyJobSourceAdapter
 from src.job_sources.greenhouse import GreenhouseJobSourceAdapter
 from src.job_sources.lever import LeverJobSourceAdapter
 from src.logging_utils import get_logger, log_event
@@ -47,6 +48,7 @@ def _adapters_with_fetch_all():
     """
     yield ("greenhouse", GreenhouseJobSourceAdapter())
     yield ("lever", LeverJobSourceAdapter())
+    yield ("ashby", AshbyJobSourceAdapter())
 
 
 def refresh_cached_jobs(
