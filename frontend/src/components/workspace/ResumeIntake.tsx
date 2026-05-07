@@ -451,13 +451,12 @@ export function ResumeIntake({
                         <div
                           className="workspace-chat-bubble"
                           style={{
-                            // Color is set by the role-specific class
-                            // (workspace-chat-user / workspace-chat-
-                            // assistant) so the bubble fill + text color
-                            // stay in sync. We keep only the size +
-                            // wrapping tuning here.
                             fontSize: 13.5,
                             lineHeight: 1.65,
+                            color:
+                              turn.role === "user"
+                                ? "var(--fg-1)"
+                                : "var(--fg-2)",
                             whiteSpace: "pre-wrap",
                           }}
                         >
