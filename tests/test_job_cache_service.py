@@ -117,6 +117,30 @@ def test_refresh_collects_postings_and_runs_cleanup():
     assert report["total_active_after"] == 100
 
 
+def test_refresh_marks_provider_status_error_when_all_boards_fail():
+    """Regression for the silent-success bug: an all-failed provider
+    used to land in the report as status='ok' because the status-
+    write path was guarded by `boards_succeeded > 0`. Pin the new
+    branch that sets status='error' when boards_failed > 0 and
+    boards_succeeded == 0."""
+    gh_adapter = _FakeAdapter(
+        fetches=[
+            ("stripe", "error", "DNS failure"),
+            ("anthropic", "error", "503"),
+        ]
+    )
+    store = _FakeStore()
+
+    report = refresh_cached_jobs(
+        store=store, adapters=[("greenhouse", gh_adapter)]
+    )
+
+    # All boards failed → status='error', not 'ok'.
+    assert report["providers"]["greenhouse"]["status"] == "error"
+    assert report["providers"]["greenhouse"]["boards_failed"] == 2
+    assert report["providers"]["greenhouse"]["boards_succeeded"] == 0
+
+
 def test_refresh_skips_cleanup_for_provider_with_all_boards_failed():
     """If EVERY board for a provider errors, that provider is excluded
     from cleanup — protects the cache during a short-term provider

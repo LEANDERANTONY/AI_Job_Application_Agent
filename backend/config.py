@@ -6,6 +6,7 @@ from src.config import (
     GREENHOUSE_BOARD_TOKENS,
     JOB_BACKEND_BASE_URL,
     LEVER_SITE_NAMES,
+    WORKDAY_BOARD_TOKENS,
 )
 
 
@@ -20,6 +21,7 @@ class BackendSettings:
     greenhouse_board_count: int
     lever_site_count: int
     ashby_board_count: int
+    workday_board_count: int
     # Auth cookie scoping. Empty domain means "host-only" (correct on
     # localhost, where landing+workspace share the same origin). In prod
     # set AUTH_COOKIE_DOMAIN=.job-application-copilot.xyz so the cookie is
@@ -78,6 +80,7 @@ def get_backend_settings() -> BackendSettings:
         greenhouse_board_count=len(GREENHOUSE_BOARD_TOKENS),
         lever_site_count=len(LEVER_SITE_NAMES),
         ashby_board_count=len(ASHBY_BOARD_TOKENS),
+        workday_board_count=len(WORKDAY_BOARD_TOKENS),
         auth_cookie_domain=auth_cookie_domain,
         auth_cookie_secure=auth_cookie_secure,
         auth_cookie_samesite=auth_cookie_samesite,

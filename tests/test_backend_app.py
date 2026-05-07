@@ -33,6 +33,11 @@ def test_backend_health_endpoint_reports_service_status():
     # so monitoring can spot a misconfigured deploy.
     assert "ashby" in payload["providers"]
     assert "board_count" in payload["providers"]["ashby"]
+    # Workday is the fourth source — covers Fortune 500 (NVIDIA,
+    # Adobe, Walmart, Citi, Disney, Boeing, ...). Each tenant runs
+    # its own Workday host; tokens are tenant:host:site triples.
+    assert "workday" in payload["providers"]
+    assert "board_count" in payload["providers"]["workday"]
 
 
 def test_job_search_endpoint_returns_placeholder_backend_response():

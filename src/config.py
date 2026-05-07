@@ -189,6 +189,15 @@ ASHBY_BOARD_TOKENS = tuple(
     for token in os.getenv("ASHBY_BOARD_TOKENS", "").split(",")
     if token.strip()
 )
+# Workday tokens are 3-tuples joined by ":"
+# (e.g. "nvidia:wd5:NVIDIAExternalCareerSite") because each company
+# runs its own tenant on a numbered host. See workday.py for the
+# parser.
+WORKDAY_BOARD_TOKENS = tuple(
+    token.strip()
+    for token in os.getenv("WORKDAY_BOARD_TOKENS", "").split(",")
+    if token.strip()
+)
 LEVER_SITE_NAMES = tuple(
     token.strip()
     for token in os.getenv("LEVER_SITE_NAMES", "").split(",")

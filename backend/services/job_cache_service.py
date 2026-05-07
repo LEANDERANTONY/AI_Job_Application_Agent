@@ -29,6 +29,7 @@ from src.cached_jobs_store import CachedJobsStore
 from src.job_sources.ashby import AshbyJobSourceAdapter
 from src.job_sources.greenhouse import GreenhouseJobSourceAdapter
 from src.job_sources.lever import LeverJobSourceAdapter
+from src.job_sources.workday import WorkdayJobSourceAdapter
 from src.logging_utils import get_logger, log_event
 
 
@@ -49,6 +50,7 @@ def _adapters_with_fetch_all():
     yield ("greenhouse", GreenhouseJobSourceAdapter())
     yield ("lever", LeverJobSourceAdapter())
     yield ("ashby", AshbyJobSourceAdapter())
+    yield ("workday", WorkdayJobSourceAdapter())
 
 
 def refresh_cached_jobs(
@@ -184,6 +186,13 @@ def refresh_cached_jobs(
             successfully_refreshed.append(source_name)
             if provider_report["boards_failed"] > 0:
                 provider_report["status"] = "partial"
+        elif provider_report["boards_failed"] > 0:
+            # Every board failed — surface as 'error' so monitoring
+            # catches a provider outage instead of misreading the
+            # default 'ok' status. (Earlier bug: the only paths that
+            # set status away from 'ok' assumed boards_succeeded > 0,
+            # so an all-failed provider silently looked healthy.)
+            provider_report["status"] = "error"
 
         providers_report[source_name] = provider_report
 
