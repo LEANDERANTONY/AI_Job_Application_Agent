@@ -104,3 +104,68 @@ def test_job_resolve_endpoint_rejects_blank_url():
     )
 
     assert response.status_code == 422
+
+
+def test_admin_refresh_cache_rejects_missing_bearer(monkeypatch):
+    """Without a bearer token in Authorization, the admin refresh
+    endpoint returns 401. Proves the gate works before any worker
+    code runs."""
+    monkeypatch.setattr(
+        "backend.routers.jobs.REFRESH_CACHE_SECRET", "test-secret"
+    )
+    response = client.post("/api/admin/refresh-cache")
+    assert response.status_code == 401
+
+
+def test_admin_refresh_cache_rejects_wrong_bearer(monkeypatch):
+    """Wrong bearer token → 401. Constant-time compare ensures
+    we don't leak the secret via timing."""
+    monkeypatch.setattr(
+        "backend.routers.jobs.REFRESH_CACHE_SECRET", "test-secret"
+    )
+    response = client.post(
+        "/api/admin/refresh-cache",
+        headers={"Authorization": "Bearer wrong-token"},
+    )
+    assert response.status_code == 401
+
+
+def test_admin_refresh_cache_returns_503_when_secret_unconfigured(monkeypatch):
+    """Server with no REFRESH_CACHE_SECRET fails closed (503) instead
+    of accepting any request. Defends the deploy-default state."""
+    monkeypatch.setattr("backend.routers.jobs.REFRESH_CACHE_SECRET", "")
+    response = client.post(
+        "/api/admin/refresh-cache",
+        headers={"Authorization": "Bearer anything"},
+    )
+    assert response.status_code == 503
+
+
+def test_admin_refresh_cache_accepts_correct_bearer_then_runs_worker(monkeypatch):
+    """Right secret + worker stub → endpoint returns the worker's
+    report. Pins that the auth → worker handoff actually works."""
+    monkeypatch.setattr(
+        "backend.routers.jobs.REFRESH_CACHE_SECRET", "test-secret"
+    )
+
+    def _fake_refresh():
+        return {
+            "started_at": "2026-05-07T18:00:00Z",
+            "finished_at": "2026-05-07T18:00:05Z",
+            "duration_seconds": 5.0,
+            "providers": {"greenhouse": {"status": "ok"}},
+            "total_active_after": 42,
+        }
+
+    monkeypatch.setattr(
+        "backend.routers.jobs.refresh_cached_jobs", _fake_refresh
+    )
+
+    response = client.post(
+        "/api/admin/refresh-cache",
+        headers={"Authorization": "Bearer test-secret"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_active_after"] == 42
+    assert payload["providers"]["greenhouse"]["status"] == "ok"

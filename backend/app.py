@@ -7,7 +7,7 @@ from backend.config import get_backend_settings
 from backend.rate_limit import limiter, rate_limit_exceeded_handler
 from backend.routers.auth import router as auth_router
 from backend.routers.health import router as health_router
-from backend.routers.jobs import router as jobs_router
+from backend.routers.jobs import admin_router as jobs_admin_router, router as jobs_router
 from backend.routers.workspace import router as workspace_router
 
 
@@ -41,5 +41,6 @@ def root():
 
 app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(jobs_router, prefix=settings.api_prefix)
+app.include_router(jobs_admin_router, prefix=settings.api_prefix)
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(workspace_router, prefix=settings.api_prefix)

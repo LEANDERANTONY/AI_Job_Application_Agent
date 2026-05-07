@@ -138,6 +138,12 @@ DAILY_QUOTA_CACHE_TTL_SECONDS = _load_int_env("DAILY_QUOTA_CACHE_TTL_SECONDS", 1
 APP_BASE_URL = os.getenv("APP_BASE_URL", "").strip()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
+# Service role key — bypasses RLS. Used ONLY by the cached_jobs writer
+# (the /admin/refresh-cache endpoint) and the cached_jobs reader (the
+# /jobs/search endpoint). Never sent to the frontend, never used for
+# user-scoped tables (saved_jobs, etc. — those keep using the anon
+# key + per-user JWT so RLS protects them).
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SUPABASE_AUTH_REDIRECT_URL = os.getenv(
     "SUPABASE_AUTH_REDIRECT_URL",
     APP_BASE_URL or "http://localhost:3000",
@@ -158,6 +164,15 @@ SUPABASE_SAVED_JOBS_TABLE = os.getenv(
 SUPABASE_RESUME_BUILDER_SESSIONS_TABLE = os.getenv(
     "SUPABASE_RESUME_BUILDER_SESSIONS_TABLE", "resume_builder_sessions"
 ).strip()
+SUPABASE_CACHED_JOBS_TABLE = os.getenv(
+    "SUPABASE_CACHED_JOBS_TABLE", "cached_jobs"
+).strip()
+# Shared secret guarding the /admin/refresh-cache endpoint. Set BOTH
+# in the backend env (so the endpoint can verify the bearer token)
+# AND in the Supabase pg_cron job's HTTP headers (so the cron can
+# include it). Anyone holding this secret can trigger a refresh —
+# rotate if leaked.
+REFRESH_CACHE_SECRET = os.getenv("REFRESH_CACHE_SECRET", "").strip()
 ENABLE_JOB_SEARCH_BACKEND = _load_bool_env("ENABLE_JOB_SEARCH_BACKEND", False)
 JOB_BACKEND_HOSTPORT = os.getenv("JOB_BACKEND_HOSTPORT", "").strip()
 JOB_BACKEND_BASE_URL = resolve_job_backend_base_url(

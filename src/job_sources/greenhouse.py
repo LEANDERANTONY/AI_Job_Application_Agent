@@ -312,6 +312,48 @@ class GreenhouseJobSourceAdapter(JobSourceAdapter):
         response.raise_for_status()
         return response.json()
 
+    def fetch_all_postings(self):
+        """Snapshot every job from every configured board, no filtering.
+
+        Used by the cache-refresh worker — `search()` is heavily
+        query-filtered (technical-title gate, role-family match, etc.)
+        which is the right call for user-facing search but the WRONG
+        call for the global cache. The cache wants the raw firehose so
+        the search query can do its own filtering against an indexed
+        Postgres column.
+
+        Yields (board_token, status, postings | error_message). Status
+        is one of 'ok', 'empty', 'error'. The caller decides what to do
+        with errored boards (we don't tombstone their existing rows
+        when a single refresh fails — see job_cache_service).
+        """
+        if not self._board_tokens:
+            return
+
+        max_workers = min(8, len(self._board_tokens)) or 1
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_board = {
+                executor.submit(self._fetch_board_payload, board_token): board_token
+                for board_token in self._board_tokens
+            }
+            for future in as_completed(future_to_board):
+                board_token = future_to_board[future]
+                try:
+                    payload = future.result()
+                except requests.RequestException as exc:
+                    yield (board_token, "error", str(exc))
+                    continue
+
+                jobs = payload.get("jobs") or []
+                if not jobs:
+                    yield (board_token, "empty", [])
+                    continue
+                postings = [
+                    self._to_job_posting(board_token, job_payload)
+                    for job_payload in jobs
+                ]
+                yield (board_token, "ok", postings)
+
     def can_resolve_url(self, url: str) -> bool:
         parsed = urlparse(str(url or "").strip())
         if parsed.netloc.lower() not in {"boards.greenhouse.io", "job-boards.greenhouse.io"}:
