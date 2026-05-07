@@ -29,7 +29,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 
 import {
   commitResumeBuilderResume,
@@ -195,19 +194,33 @@ export function WorkspaceShell() {
 
   // Workspace is for signed-in users only. The session restore in
   // `useWorkspaceSession` flips authStatus to "signed_out" once it's
-  // confirmed there are no valid auth cookies. We bounce to the
-  // landing page in that case — the landing page already owns the
-  // sign-in CTA + post-sign-in redirect into the workspace, so we
-  // don't need to thread a returnTo param. We DON'T redirect on
-  // "loading" or "restoring" because those are transient and the
-  // common case (already signed in) would cause an unnecessary
-  // landing-page flash.
-  const router = useRouter();
+  // confirmed there are no valid auth cookies. Bounce to the landing
+  // page — which lives on a DIFFERENT origin in production:
+  //   workspace: app.<domain>.xyz
+  //   landing:    <domain>.xyz
+  // (NEXT_PUBLIC_SITE_URL is the WORKSPACE URL per the existing repo
+  // convention, so we can't reuse it here without going in a circle.)
+  // We derive the landing host by stripping a leading `app.` from the
+  // current hostname — symmetric with the middleware's
+  // `hostname.startsWith("app.")` check. In localhost dev there's no
+  // `app.` prefix so we just navigate to "/" on the same origin.
+  // We DON'T redirect on "loading" or "restoring" because those are
+  // transient and would cause an unnecessary landing-page flash for
+  // the common case (already signed in).
   useEffect(() => {
-    if (authStatus === "signed_out") {
-      router.replace("/");
-    }
-  }, [authStatus, router]);
+    if (authStatus !== "signed_out") return;
+    if (typeof window === "undefined") return;
+    const { protocol, hostname, port } = window.location;
+    const landingHost = hostname.startsWith("app.")
+      ? hostname.slice("app.".length)
+      : hostname;
+    const portSuffix = port ? `:${port}` : "";
+    const landingUrl =
+      landingHost === hostname
+        ? "/"
+        : `${protocol}//${landingHost}${portSuffix}/`;
+    window.location.href = landingUrl;
+  }, [authStatus]);
 
   const [searchQuery, setSearchQuery] = useState("machine learning engineer");
   const [searchLocation, setSearchLocation] = useState("");
