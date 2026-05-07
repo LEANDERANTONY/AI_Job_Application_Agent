@@ -2189,26 +2189,54 @@ code {
 }
 
 .workspace-chat-bubble {
+  /* Real bubble shape: rounded radius + horizontal padding so the
+     fill shows around the text. The role-specific fill / border /
+     color come from `.workspace-chat-user .workspace-chat-bubble`
+     and `.workspace-chat-assistant .workspace-chat-bubble` below
+     so the eyebrow ('YOU' / 'ASSISTANT') stays outside the fill. */
   border-radius: 1.15rem;
-  padding: 0.2rem 0;
+  padding: 0.65rem 0.95rem;
   line-height: 1.7;
-  width: 100%;
   word-break: break-word;
+  border: 1px solid transparent;
 }
 
 .workspace-chat-user {
-  justify-self: end;
-  max-width: 100%;
-  border: 0;
-  background: transparent;
+  /* User turn: align the eyebrow + bubble to the right of the
+     grid cell. justify-items aligns ALL grid items in this
+     container; combined with `width: fit-content` on the bubble
+     below, this makes the bubble shrink to its text and hug the
+     right edge instead of stretching to fill the cell. */
+  justify-items: end;
+  text-align: right;
+}
+
+.workspace-chat-user .workspace-chat-bubble {
+  background: var(--accent-soft, rgba(48, 100, 255, 0.10));
+  border-color: rgba(90, 134, 255, 0.22);
   color: #bcd0ff;
   font-weight: 600;
+  /* Size to content with an upper cap. Without `width: fit-content`
+     the bubble fills the whole grid cell even when the text is
+     short; with it, the bubble hugs the text. */
+  width: fit-content;
+  max-width: 75%;
+  /* Bubble text still reads left-to-right inside the right-aligned
+     bubble. */
+  text-align: left;
 }
 
 .workspace-chat-assistant {
-  border: 0;
-  background: transparent;
+  /* Assistant turn: align eyebrow + bubble to the left of the cell. */
+  justify-items: start;
+}
+
+.workspace-chat-assistant .workspace-chat-bubble {
+  background: var(--bg-card-2, rgba(20, 26, 40, 0.70));
+  border-color: rgba(255, 255, 255, 0.06);
   color: #d7e3fb;
+  width: fit-content;
+  max-width: 85%;
 }
 
 /* Streaming-turn affordances — Item 3 (assistant streaming via SSE).
