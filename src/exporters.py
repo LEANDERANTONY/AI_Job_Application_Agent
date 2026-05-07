@@ -50,10 +50,6 @@ def _configure_weasyprint_windows_runtime():
             continue
 
 
-def export_markdown_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
-    return report.markdown.encode("utf-8")
-
-
 def export_text_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
     return report.plain_text.encode("utf-8")
 

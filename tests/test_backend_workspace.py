@@ -1358,6 +1358,86 @@ def test_workspace_artifact_export_endpoint_forwards_snapshot(monkeypatch):
     assert captured["resume_theme"] == "classic_ats"
 
 
+def test_workspace_artifact_export_endpoint_accepts_docx(monkeypatch):
+    """DOCX is the new download surface (Phase 2). Verify the route
+    accepts export_format='docx' end to end and surfaces the file_name
+    + mime_type the frontend expects."""
+    captured = {}
+
+    def fake_export_workspace_artifact(
+        *, workspace_snapshot, artifact_kind, export_format, resume_theme, cover_letter_theme
+    ):
+        captured["export_format"] = export_format
+        return {
+            "status": "ready",
+            "artifact_kind": artifact_kind,
+            "export_format": export_format,
+            "file_name": "leander-antony-machine-learning-engineer-tailored-resume.docx",
+            "mime_type": (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+            "content_base64": "UEsDBA==",
+            "resume_theme": resume_theme,
+            "cover_letter_theme": cover_letter_theme,
+            "artifact_title": "Leander Antony - Machine Learning Engineer Tailored Resume",
+        }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace.export_workspace_artifact",
+        fake_export_workspace_artifact,
+    )
+
+    response = client.post(
+        "/api/workspace/artifacts/export",
+        json={
+            "workspace_snapshot": {
+                "candidate_profile": {"full_name": "Leander Antony"},
+                "job_description": {"title": "Machine Learning Engineer"},
+                "fit_analysis": {"overall_score": 82},
+                "tailored_draft": {"target_role": "Machine Learning Engineer"},
+            },
+            "artifact_kind": "tailored_resume",
+            "export_format": "docx",
+            "resume_theme": "classic_ats",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert captured["export_format"] == "docx"
+    assert payload["file_name"].endswith(".docx")
+    assert payload["mime_type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+
+def test_workspace_artifact_export_endpoint_rejects_markdown_format():
+    """Markdown was removed as a download format in Phase 2. The
+    request validator must reject it with 422 so old clients see a
+    clear failure rather than silent fallthrough."""
+    response = client.post(
+        "/api/workspace/artifacts/export",
+        json={
+            "workspace_snapshot": {
+                "candidate_profile": {"full_name": "Leander Antony"},
+                "job_description": {"title": "Machine Learning Engineer"},
+                "fit_analysis": {"overall_score": 82},
+                "tailored_draft": {"target_role": "Machine Learning Engineer"},
+            },
+            "artifact_kind": "tailored_resume",
+            "export_format": "markdown",
+            "resume_theme": "classic_ats",
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    # The Pydantic validator points at the export_format field with a
+    # Literal mismatch — verify the error mentions either the field
+    # name or the literal options so a debugger can find it fast.
+    assert "export_format" in str(body)
+
+
 def test_workspace_artifact_preview_endpoint_forwards_snapshot(monkeypatch):
     captured = {}
 

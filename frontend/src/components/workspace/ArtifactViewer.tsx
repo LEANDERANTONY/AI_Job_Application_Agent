@@ -18,7 +18,10 @@ import type { ArtifactTheme, WorkspaceArtifactKind } from "@/lib/api-types";
 
 export type ArtifactTab = "resume" | "cover-letter";
 
-export type ArtifactExportFormat = "markdown" | "pdf";
+// DOCX replaces markdown export; markdown is no longer a download
+// option (the artifact's `markdown` content field is still used for
+// the in-app preview, but it is not surfaced as a download).
+export type ArtifactExportFormat = "pdf" | "docx";
 
 export type ArtifactViewerArtifact = {
   title: string;
@@ -200,12 +203,12 @@ export function ArtifactViewer({
             <button
               className="rd-btn rd-btn-ghost rd-btn-sm"
               disabled={exporting !== null}
-              onClick={() => onExport(artifactKind, "markdown")}
+              onClick={() => onExport(artifactKind, "docx")}
               type="button"
             >
-              {exporting === `${artifactKind}:markdown`
+              {exporting === `${artifactKind}:docx`
                 ? "Preparing…"
-                : "Download Markdown"}
+                : "Download DOCX"}
             </button>
           </div>
           {previewTitle ? (

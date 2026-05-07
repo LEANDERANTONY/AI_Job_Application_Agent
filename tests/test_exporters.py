@@ -7,7 +7,6 @@ from src.exporters import (
     _build_resume_html,
     build_cover_letter_preview_html,
     export_docx_bytes,
-    export_markdown_bytes,
     export_pdf_bytes,
     generate_pdf,
 )
@@ -21,22 +20,6 @@ from src.schemas import (
     TailoredResumeArtifact,
     WorkExperience,
 )
-
-
-def test_export_markdown_bytes_returns_utf8_bytes():
-    artifact = TailoredResumeArtifact(
-        title="Tailored Resume",
-        filename_stem="tailored-resume",
-        summary="Structured resume",
-        markdown="# Resume\n\nGrounded summary.",
-        plain_text="Resume\n\nGrounded summary.",
-        theme="classic_ats",
-    )
-
-    markdown_bytes = export_markdown_bytes(artifact)
-
-    assert isinstance(markdown_bytes, bytes)
-    assert markdown_bytes.decode("utf-8").startswith("# ")
 
 
 def test_build_cover_letter_preview_html_contains_structure():

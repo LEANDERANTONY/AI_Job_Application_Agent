@@ -8,7 +8,7 @@ from src.errors import InputValidationError
 from src.exporters import (
     build_cover_letter_preview_html,
     build_resume_preview_html,
-    export_markdown_bytes,
+    export_docx_bytes,
     export_pdf_bytes,
 )
 from src.resume_builder import build_tailored_resume_artifact
@@ -16,7 +16,13 @@ from src.workflow_payloads import build_saved_workflow_snapshot_from_data
 
 
 ArtifactKind = Literal["tailored_resume", "cover_letter"]
-ExportFormat = Literal["markdown", "pdf"]
+# DOCX is the new download surface; markdown export was removed in
+# Phase 2 of the DOCX export plan. PDF stays for printable copies.
+ExportFormat = Literal["pdf", "docx"]
+
+_DOCX_MIME_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
 
 
 def _encode_bytes(payload: bytes):
@@ -88,21 +94,21 @@ def export_workspace_artifact(
     artifacts = _build_artifact_set(workspace_snapshot or {}, theme_name, cover_theme_name)
 
     artifact = artifacts[artifact_kind]
-    if export_format == "markdown":
-        payload = export_markdown_bytes(artifact)
-        mime_type = "text/markdown"
-        file_name = (
-            _resume_export_file_name(artifact.filename_stem, theme_name, "md")
-            if artifact_kind == "tailored_resume"
-            else artifact.filename_stem + ".md"
-        )
-    elif export_format == "pdf":
+    if export_format == "pdf":
         payload = export_pdf_bytes(artifact)
         mime_type = "application/pdf"
         file_name = (
             _resume_export_file_name(artifact.filename_stem, theme_name, "pdf")
             if artifact_kind == "tailored_resume"
             else artifact.filename_stem + ".pdf"
+        )
+    elif export_format == "docx":
+        payload = export_docx_bytes(artifact)
+        mime_type = _DOCX_MIME_TYPE
+        file_name = (
+            _resume_export_file_name(artifact.filename_stem, theme_name, "docx")
+            if artifact_kind == "tailored_resume"
+            else artifact.filename_stem + ".docx"
         )
     else:
         raise InputValidationError("Choose a supported export format.")

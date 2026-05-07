@@ -19,6 +19,7 @@ import {
 import type {
   ArtifactTheme,
   WorkspaceAnalysisResponse,
+  WorkspaceArtifactExportFormat,
   WorkspaceArtifactKind,
 } from "@/lib/api-types";
 import type {
@@ -92,7 +93,7 @@ export type UseArtifactExportReturn = {
    */
   exportArtifact: (
     kind: WorkspaceArtifactKind,
-    format: "markdown" | "pdf",
+    format: WorkspaceArtifactExportFormat,
   ) => Promise<void>;
   /** Reset transient artifact state (used by `clearWorkspaceRole`). */
   resetArtifacts: () => void;
@@ -199,7 +200,7 @@ export function useArtifactExport({
 
   async function exportArtifact(
     artifactKind: WorkspaceArtifactKind,
-    exportFormat: "markdown" | "pdf",
+    exportFormat: WorkspaceArtifactExportFormat,
   ) {
     if (!analysisState) {
       setNotice({

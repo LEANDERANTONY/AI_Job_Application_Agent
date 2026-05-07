@@ -79,7 +79,10 @@ class WorkspaceArtifactExportRequestModel(BaseModel):
 
     workspace_snapshot: dict[str, Any]
     artifact_kind: Literal["tailored_resume", "cover_letter"]
-    export_format: Literal["markdown", "pdf"]
+    # DOCX replaced the markdown download in Phase 2 of the DOCX
+    # export plan; markdown lives only as the in-app preview content
+    # field, not as a download format.
+    export_format: Literal["pdf", "docx"]
     resume_theme: str = Field(default="classic_ats", max_length=80)
     cover_letter_theme: str = Field(default="classic_ats", max_length=80)
 

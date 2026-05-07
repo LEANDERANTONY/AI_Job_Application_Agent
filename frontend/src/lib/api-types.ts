@@ -453,7 +453,9 @@ export type WorkspaceArtifactKind =
   | "tailored_resume"
   | "cover_letter";
 
-export type WorkspaceArtifactExportFormat = "markdown" | "pdf";
+// DOCX replaced the markdown download in Phase 2 of the DOCX export
+// plan. PDF stays for printable copies.
+export type WorkspaceArtifactExportFormat = "pdf" | "docx";
 
 /** Each artifact has its own theme so the user can pick a different
  *  treatment for the resume vs the cover letter (e.g. classic_ats for
