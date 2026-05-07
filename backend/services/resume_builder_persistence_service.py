@@ -138,7 +138,7 @@ def persist_resume_builder_session(
         return {"status": "skipped"}
 
     try:
-        store.save_session(
+        record = store.save_session(
             access_token,
             refresh_token,
             {
@@ -150,7 +150,15 @@ def persist_resume_builder_session(
     except Exception:
         return {"status": "skipped"}
 
-    return {"status": "saved"}
+    return {
+        "status": "saved",
+        # ISO timestamp for the row's expiry. Used by
+        # _attach_persistence_status to surface a 'refreshes through X'
+        # hint in the resume-builder UI. None when the store can't
+        # read it back (older callers); the UI handles missing
+        # gracefully.
+        "expires_at": getattr(record, "expires_at", "") or "",
+    }
 
 
 def clear_resume_builder_session(*, access_token: str, refresh_token: str):

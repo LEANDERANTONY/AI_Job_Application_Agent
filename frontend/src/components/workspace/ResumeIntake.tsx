@@ -358,13 +358,31 @@ export function ResumeIntake({
               const persistenceStatus: ResumeBuilderPersistenceStatus =
                 builderSession.persistence_status
                   ?? (authSignedIn ? "saved" : "unauthenticated");
+              // Format the saved-draft expiry as "refreshes through Mon
+              // Nov 11" so a user seeing the indicator knows the draft
+              // isn't kept indefinitely. The TTL refreshes on every save
+              // so this value moves forward with active editing.
+              const expiresAt = builderSession.expires_at;
+              const expiresDateLabel = (() => {
+                if (persistenceStatus !== "saved" || !expiresAt) return "";
+                const parsed = new Date(expiresAt);
+                if (Number.isNaN(parsed.getTime())) return "";
+                return parsed.toLocaleDateString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                });
+              })();
+              const savedLabel = expiresDateLabel
+                ? `Saved · refreshes through ${expiresDateLabel}`
+                : "Saved to your account";
               const persistenceMeta: Record<
                 ResumeBuilderPersistenceStatus,
                 { dot: string; label: string; color: string }
               > = {
                 saved: {
                   dot: "●",
-                  label: "Saved to your account",
+                  label: savedLabel,
                   color: "#86efac",
                 },
                 skipped: {

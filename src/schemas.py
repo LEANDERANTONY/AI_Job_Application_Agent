@@ -396,3 +396,8 @@ class ResumeBuilderSessionRecord:
     current_step: str = ""
     session_payload_json: str = ""
     updated_at: str = ""
+    # ISO-8601 timestamp when the row will be GC'd by the
+    # `cleanup-expired-resume-builder-sessions` cron / hidden by
+    # RLS, whichever happens first. Refreshed to now+TTL on every
+    # save so an active user keeps their draft alive.
+    expires_at: str = ""

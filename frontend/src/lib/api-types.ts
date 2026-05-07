@@ -309,6 +309,12 @@ export type ResumeBuilderSessionResponse = {
    *  doesn't include it (a session loaded from latest is implicitly
    *  saved if it exists). */
   persistence_status?: ResumeBuilderPersistenceStatus;
+  /** ISO timestamp at which the persisted draft will be GC'd by the
+   *  Supabase cron (cleanup-expired-resume-builder-sessions) and
+   *  hidden by RLS. Only present when persistence_status === 'saved';
+   *  the TTL refreshes on every save so an active user keeps their
+   *  draft alive. */
+  expires_at?: string;
   resume_document?: ResumeDocument;
   candidate_profile?: CandidateProfile;
 };

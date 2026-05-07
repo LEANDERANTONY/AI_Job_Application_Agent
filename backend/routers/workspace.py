@@ -111,6 +111,11 @@ def _attach_persistence_status(
                            attempted. Surface a "sign in to save" prompt
                            in the UI instead of a generic skip.
 
+    Also forwards `expires_at` (ISO timestamp from the saved row) when
+    available so the UI can render a "refreshes through X" hint next
+    to the indicator. The TTL refreshes on every save, so the value
+    represents the latest write's expiry.
+
     `persist_result` is the dict returned by
     persist_resume_builder_session; treat None as a missing call.
     """
@@ -121,6 +126,9 @@ def _attach_persistence_status(
     response["persistence_status"] = (
         "saved" if raw_status == "saved" else "skipped"
     )
+    expires_at = (persist_result or {}).get("expires_at") or ""
+    if expires_at:
+        response["expires_at"] = expires_at
     return response
 
 

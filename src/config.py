@@ -158,6 +158,17 @@ LEVER_SITE_NAMES = tuple(
     if token.strip()
 )
 SAVED_WORKSPACE_TTL_HOURS = _load_int_env("SAVED_WORKSPACE_TTL_HOURS", 24)
+# Resume-builder drafts live longer than saved workspaces — a draft is
+# something the user actively iterates on across multiple sessions
+# (e.g. picking it up the next weekend), whereas a saved workspace is
+# a post-analysis snapshot. The Supabase column default + the cron
+# `cleanup-expired-resume-builder-sessions` use this same value via
+# the migration in docs/supabase-resume-builder-ttl.sql; if you change
+# the days here you also need to migrate the column default and update
+# `expires_at` on the row when writing.
+RESUME_BUILDER_SESSION_TTL_DAYS = _load_int_env(
+    "RESUME_BUILDER_SESSION_TTL_DAYS", 7
+)
 AUTH_DEFAULT_PLAN_TIER = os.getenv("AUTH_DEFAULT_PLAN_TIER", "free").strip()
 AUTH_DEFAULT_ACCOUNT_STATUS = os.getenv(
     "AUTH_DEFAULT_ACCOUNT_STATUS", "active"
