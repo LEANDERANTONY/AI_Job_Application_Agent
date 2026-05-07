@@ -1161,6 +1161,230 @@ def test_resume_builder_structuring_cache_survives_session_persistence_round_tri
     _SESSIONS.pop(session_id, None)
 
 
+def test_resume_builder_project_parser_splits_blocks():
+    """Regex fallback for projects splits blank-line-separated blocks
+    into one ProjectEntry per project, preserving the headline + bullet
+    structure and lifting any URL out of the headline into `link`."""
+    from backend.services.resume_builder_service import _build_project_entries
+
+    notes = (
+        "Grounded RAG Q&A System github.com/LEANDERANTONY/HelpmateAI_RAG_QA_System\n"
+        "- Designed production-grade RAG pipeline with hybrid retrieval.\n"
+        "- Improved supported answer rate from 0.803 to 0.882 on RAGAS.\n"
+        "\n"
+        "GitHub Portfolio Reviewer Agent portfolio-reviewer-agent.streamlit.app\n"
+        "- Combines deterministic repo analysis with LLM scoring.\n"
+        "- Caches LLM calls to reduce cost and latency."
+    )
+    entries = _build_project_entries(notes)
+    assert len(entries) == 2
+    first, second = entries
+    assert "Grounded RAG" in first.name
+    assert "github.com" in first.link
+    assert any("RAG pipeline" in b for b in first.bullets)
+    assert "Portfolio Reviewer" in second.name
+    assert "streamlit.app" in second.link
+
+
+def test_resume_builder_structuring_emits_projects_via_llm(monkeypatch):
+    """LLM structuring path produces ProjectEntry objects from
+    projects_notes prose. Pins that the new contract surface — projects
+    in the structuring response — flows through to the artifact."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _ProjectsAwareService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                return {
+                    "experience": [],
+                    "education": [],
+                    "projects": [
+                        {
+                            "name": "RAG Q&A System",
+                            "description": "",
+                            "bullets": [
+                                "Hybrid retrieval with cross-encoder reranking.",
+                                "Outperformed OpenAI File Search on faithfulness.",
+                            ],
+                            "technologies": ["FastAPI", "ChromaDB"],
+                            "start": "2024",
+                            "end": "Present",
+                            "link": "github.com/LEANDERANTONY/HelpmateAI_RAG_QA_System",
+                        },
+                    ],
+                }
+            return {
+                "draft_updates": {},
+                "assistant_message": "ok",
+                "status": "collecting",
+                "focus_field": "",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _ProjectsAwareService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya Sharma",
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+                "projects_notes": "RAG Q&A System github.com/LEANDERANTONY/HelpmateAI_RAG_QA_System - hybrid retrieval, beats OpenAI File Search on faithfulness",
+            },
+        },
+    )
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert generate_response.status_code == 200
+    profile = generate_response.json()["candidate_profile"]
+    assert len(profile["projects"]) == 1
+    project = profile["projects"][0]
+    assert project["name"] == "RAG Q&A System"
+    assert "github.com" in project["link"]
+    assert any("Hybrid retrieval" in b for b in project["bullets"])
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_publications_round_trip_into_artifact(monkeypatch):
+    """Publications are a list-of-strings field on the draft (like
+    certifications). They flow straight through to the artifact's
+    publication_entries — no LLM structuring needed for citations."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: None,  # regex path is fine for this test
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya Sharma",
+                "experience_notes": "ML Engineer at Acme 2020-Present",
+                "education_notes": "PhD AI Stanford 2020",
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+                "publications": [
+                    "Sharma, P. et al. — \"Multimodal Cancer Detection\" — Nature ML (2024).",
+                    "Sharma, P. — \"RAG Evaluation Framework\" — NeurIPS (2023).",
+                ],
+            },
+        },
+    )
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert generate_response.status_code == 200
+    profile = generate_response.json()["candidate_profile"]
+    assert len(profile["publications"]) == 2
+    joined = " ".join(profile["publications"])
+    assert "Multimodal Cancer Detection" in joined
+    assert "NeurIPS" in joined
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_export_renders_projects_in_docx(monkeypatch):
+    """End-to-end: a session with projects_notes flows through to the
+    rendered DOCX bytes. PROJECTS section appears with the project
+    names + bullets."""
+    import base64
+    from io import BytesIO
+
+    from docx import Document
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _ProjectsService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                return {
+                    "experience": [
+                        {
+                            "title": "AI Engineer",
+                            "organization": "Self-Directed",
+                            "start": "2022",
+                            "end": "Present",
+                            "bullets": ["Built RAG and agentic systems."],
+                        },
+                    ],
+                    "education": [
+                        {"institution": "Stanford", "degree": "MS", "field_of_study": "CS", "start": "2017"},
+                    ],
+                    "projects": [
+                        {
+                            "name": "Grounded RAG Q&A System",
+                            "bullets": ["Outperformed OpenAI File Search."],
+                            "technologies": ["FastAPI"],
+                            "link": "github.com/me/rag",
+                        },
+                    ],
+                }
+            return {"draft_updates": {}, "assistant_message": "ok", "status": "collecting", "focus_field": ""}
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _ProjectsService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya",
+                "experience_notes": "AI Engineer Self-Directed 2022-Present, built RAG systems",
+                "education_notes": "MS CS Stanford 2017",
+                "skills": ["Python", "FastAPI"],
+                "contact_lines": ["priya@example.com"],
+                "projects_notes": "Grounded RAG Q&A System github.com/me/rag - outperforms OpenAI File Search",
+                "publications": ["Sharma, P. — \"RAG Evaluation\" — Conf 2024."],
+            },
+        },
+    )
+    client.post("/api/workspace/resume-builder/generate", json={"session_id": session_id})
+
+    export_response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={"session_id": session_id, "export_format": "docx", "theme": "classic_ats"},
+    )
+    assert export_response.status_code == 200
+    raw_bytes = base64.b64decode(export_response.json()["content_base64"])
+    doc = Document(BytesIO(raw_bytes))
+    body = "\n".join(p.text for p in doc.paragraphs)
+
+    # Projects section landed.
+    assert "Grounded RAG Q&A System" in body
+    assert "OpenAI File Search" in body
+    # Publications section landed.
+    assert "RAG Evaluation" in body
+
+    _SESSIONS.pop(session_id, None)
+
+
 def test_resume_builder_intake_recovers_full_name_when_llm_truncates(monkeypatch):
     """Safety net for the LLM dropping a surname.
 

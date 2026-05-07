@@ -542,7 +542,9 @@ def _run_scenario(scenario: dict, *, mode: str, openai_service=None) -> dict:
                 error = "structuring returned None (LLM unavailable or failed)"
                 experience, education = [], []
             else:
-                experience, education = result
+                # _structure_via_llm returns (experience, education, projects).
+                # The runner doesn't score projects yet — drop them.
+                experience, education, _projects = result
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             experience, education = [], []

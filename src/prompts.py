@@ -440,18 +440,44 @@ _RESUME_BUILDER_FIELD_DESCRIPTIONS = {
     "education_notes": "degrees, institutions, dates",
     "skills": "list of tools / technologies / strengths",
     "certifications": "optional list of credentials / specializations",
+    "projects_notes": (
+        "OPTIONAL — side projects, open-source work, or portfolio pieces "
+        "the candidate wants on the resume. Capture verbatim user prose "
+        "(name, link, what it does, tech used, outcomes). Skip this field "
+        "for candidates without a tech-heavy background or no projects to "
+        "share — never push for one if they don't mention any."
+    ),
+    "publications": (
+        "OPTIONAL — academic publications, papers, or conference talks. "
+        "List of citation strings. Skip this field unless the candidate "
+        "explicitly mentions a paper / publication / talk."
+    ),
+}
+
+
+# Fields that DON'T block "ready" status when empty. The LLM intake
+# prompt knows to skip these unless the user volunteers them — pushing
+# every candidate to invent projects or publications would be annoying.
+_RESUME_BUILDER_OPTIONAL_FIELDS = {
+    "certifications",
+    "projects_notes",
+    "publications",
 }
 
 
 def resume_builder_missing_fields(draft: Dict[str, Any]) -> list[str]:
-    """Return the list of resume-builder fields that are still empty.
+    """Return the list of REQUIRED resume-builder fields that are still empty.
 
     Used by the LLM intake prompt so the model can pick the next gap to
     ask about without having to re-derive it. Public helper so the
-    service layer and tests can compute it consistently.
+    service layer and tests can compute it consistently. Optional
+    fields (certifications, projects, publications) are excluded —
+    they're only asked when the user volunteers them.
     """
     missing: list[str] = []
     for key in _RESUME_BUILDER_FIELD_DESCRIPTIONS:
+        if key in _RESUME_BUILDER_OPTIONAL_FIELDS:
+            continue
         value = draft.get(key) if isinstance(draft, dict) else None
         if value is None:
             missing.append(key)
@@ -524,7 +550,9 @@ def build_resume_builder_prompt(
             "  ## Professional Summary\n  {professional_summary}\n"
             "  ## Core Skills\n  - {skills (one per bullet)}\n"
             "  ## Professional Experience\n  {experience_notes — first line is the role headline, rest are bullets}\n"
+            "  ## Projects\n  {projects_notes — only when present}\n"
             "  ## Education\n  {education_notes}\n"
+            "  ## Publications\n  - {publications (one per bullet, only when present)}\n"
             "  ## Certifications\n  - {certifications (one per bullet)}\n"
             "\n"
             "Rules:\n"
@@ -535,7 +563,8 @@ def build_resume_builder_prompt(
             "- Pick the next gap from `Missing Fields` in roughly the listed order, but follow the user's lead if they jump ahead.\n"
             "- Don't ask compound questions. One topic at a time.\n"
             "- If the user gives a vague answer ('I'm a developer'), ask one targeted follow-up before moving on.\n"
-            "- The `experience_notes` and `education_notes` fields capture the user's words verbatim — don't paraphrase or expand them in `draft_updates`. Downstream rendering handles voice.\n"
+            "- The `experience_notes`, `education_notes`, and `projects_notes` fields capture the user's words verbatim — don't paraphrase or expand them in `draft_updates`. Downstream rendering handles voice.\n"
+            "- Projects + publications are OPTIONAL. Only ask about them when the user mentions a side project / open-source repo / paper / talk OR when their target_role is heavily technical (engineer, ML, data, research) AND they haven't already filled experience_notes with rich detail. Don't pressure for them — many candidates won't have any. After 'experience' is captured for a tech role, you may ask once: 'Do you want to include any side projects or papers?'. If they say no, move on.\n"
             "- Crucial split: when a single user turn contains BOTH a broad self-description (no specific company/dates) AND specific role details, route the self-description to `professional_summary` and the role details to `experience_notes`. Example — user says 'I'm a senior backend engineer with 5 years experience. I worked at Acme from 2020-2024 on the billing pipeline.' → professional_summary captures the first sentence, experience_notes captures the second.\n"
             "- Set status='collecting' while required fields (full_name, contact_lines, target_role, experience_notes, skills) are still empty; 'reviewing' once those are filled and the user could plausibly draft now; 'ready' only after the user explicitly confirms they're done.\n"
             "- Set focus_field to whichever field your next question is about ('' if you're confirming completion).\n"
@@ -582,6 +611,14 @@ def build_resume_builder_structuring_prompt(
             "field_of_study (string, '' if degree already includes it), start (string, "
             "'' if unknown), end (string, '' if unknown). Order most-recent first."
         ),
+        "projects": (
+            "list of project objects with keys: name (string — short title), "
+            "description (string, '' if bullets capture it), bullets (list of 1-3 "
+            "short impact-focused strings), technologies (list of tech / framework "
+            "names that appear in the user's prose, max 8), start (string, '' if "
+            "unknown), end (string, '' if unknown), link (URL string, '' if none). "
+            "Empty list when projects_notes is empty. Order most-recent first."
+        ),
     }
 
     user_prompt = "\n\n".join(
@@ -602,6 +639,10 @@ def build_resume_builder_structuring_prompt(
             _json_block(
                 "Education Notes (user prose, verbatim)",
                 {"text": draft.get("education_notes") or ""},
+            ),
+            _json_block(
+                "Projects Notes (user prose, verbatim)",
+                {"text": draft.get("projects_notes") or ""},
             ),
         ]
     )
@@ -644,7 +685,13 @@ def build_resume_builder_structuring_prompt(
             "field_of_study='CS'. \"MS Computer Science\" → degree='MS', "
             "field_of_study='Computer Science'. Treat the abbreviation alone "
             "as degree.\n"
-            "- Order most recent first in both lists.\n"
+            "- Order most recent first in all three lists.\n"
+            "- Projects: same fact-preservation contract as experience. "
+            "Extract project name, link (any URL the user typed), "
+            "technologies (tech names appearing in the prose), and bullets "
+            "(impact + outcome). Don't invent metrics, GitHub URLs, or "
+            "technologies that aren't in the prose. If projects_notes is "
+            "empty, return projects=[].\n"
             "- If the user's prose is empty for a section, return an empty "
             "list for that section.\n"
             + _build_contract(contract)

@@ -20,6 +20,7 @@ from src.schemas import (
     FitAnalysis,
     JobDescription,
     JobRequirements,
+    ProjectEntry,
     ResumeDocument,
     TailoredResumeDraft,
     WorkExperience,
@@ -69,6 +70,14 @@ class ResumeBuilderDraft:
     education_notes: str = ""
     skills: list[str] = field(default_factory=list)
     certifications: list[str] = field(default_factory=list)
+    # Projects: free-form prose like experience_notes (the LLM intake
+    # captures verbatim, the structuring pass turns it into ProjectEntry
+    # objects). Optional — only asked when the user has a tech-heavy
+    # background or mentions side projects.
+    projects_notes: str = ""
+    # Publications: list of citation strings, like certifications.
+    # Optional — only relevant for academics / researchers.
+    publications: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -95,6 +104,7 @@ class ResumeBuilderSession:
     structuring_signature: str = ""
     structured_experience_payload: list[dict] = field(default_factory=list)
     structured_education_payload: list[dict] = field(default_factory=list)
+    structured_projects_payload: list[dict] = field(default_factory=list)
 
 
 _SESSIONS: dict[str, ResumeBuilderSession] = {}
@@ -406,6 +416,15 @@ def _apply_draft_updates(session: ResumeBuilderSession, updates: dict):
             certifications = []
         session.draft.certifications = dedupe_strings(
             [str(item).strip() for item in certifications if str(item).strip()]
+        )
+    if "projects_notes" in updates:
+        session.draft.projects_notes = str(updates.get("projects_notes", "") or "").strip()
+    if "publications" in updates:
+        publications = updates.get("publications", [])
+        if not isinstance(publications, list):
+            publications = []
+        session.draft.publications = dedupe_strings(
+            [str(item).strip() for item in publications if str(item).strip()]
         )
 
 
@@ -918,6 +937,95 @@ def _build_education_entry_from_llm(item: dict) -> EducationEntry | None:
     )
 
 
+def _build_project_entry_from_llm(item: dict) -> ProjectEntry | None:
+    """Convert one LLM-emitted project dict into a ProjectEntry."""
+    if not isinstance(item, dict):
+        return None
+    name = _coerce_str_value(item.get("name"))
+    if not name:
+        return None
+    bullets = _coerce_bullet_list(item.get("bullets"))
+    technologies = _coerce_bullet_list(item.get("technologies"))
+    return ProjectEntry(
+        name=name,
+        description=_coerce_str_value(item.get("description")),
+        bullets=bullets,
+        technologies=technologies,
+        start=_coerce_str_value(item.get("start")),
+        end=_coerce_str_value(item.get("end")),
+        link=_coerce_str_value(item.get("link")),
+    )
+
+
+# URL detector for project links — covers github.com, vercel.app, .xyz, etc.
+_PROJECT_LINK_PATTERN = re.compile(
+    r"(?:https?://)?(?:[\w-]+\.)+[a-z]{2,}(?:/[^\s,;]*)?",
+    re.IGNORECASE,
+)
+
+
+def _build_project_entries(notes: str) -> list[ProjectEntry]:
+    """Regex fallback: split projects prose into one ProjectEntry per
+    project. The LLM does this much better, but if the LLM is
+    unavailable we still want SOME structure — at minimum one entry per
+    bullet block separated by blank lines or sentence boundaries.
+
+    Heuristic: each block becomes one project. The first line of a block
+    is the project name (with link extracted if present); remaining
+    lines become bullets.
+    """
+    if not notes or not notes.strip():
+        return []
+
+    # Split into blocks separated by double newlines or "Project: " markers.
+    # Falls back to splitting on single newlines if no double newlines.
+    blocks: list[str] = []
+    if "\n\n" in notes:
+        blocks = [b.strip() for b in notes.split("\n\n") if b.strip()]
+    else:
+        # Try one-line-per-project; if there's only one line, use it as one project.
+        lines = [line.strip() for line in notes.splitlines() if line.strip()]
+        # Group consecutive bullet lines (start with '-') under the prior name line.
+        current: list[str] = []
+        for line in lines:
+            if line.startswith(("- ", "* ", "• ")):
+                if current:
+                    current.append(line.lstrip("-*• ").strip())
+                else:
+                    current = [line.lstrip("-*• ").strip()]
+            else:
+                if current:
+                    blocks.append("\n".join(current))
+                current = [line]
+        if current:
+            blocks.append("\n".join(current))
+
+    entries: list[ProjectEntry] = []
+    for block in blocks:
+        block_lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if not block_lines:
+            continue
+        headline = block_lines[0]
+        bullets = block_lines[1:]
+        # Extract link from headline if present.
+        link = ""
+        link_match = _PROJECT_LINK_PATTERN.search(headline)
+        if link_match:
+            link = link_match.group(0)
+            headline = (
+                headline[: link_match.start()] + headline[link_match.end():]
+            ).strip(" -|,;")
+        name = headline or "Project"
+        entries.append(
+            ProjectEntry(
+                name=name,
+                bullets=[b.lstrip("-*• ").strip() for b in bullets if b.strip()],
+                link=link,
+            )
+        )
+    return entries
+
+
 def _structuring_signature(draft: ResumeBuilderDraft) -> str:
     """Stable hash of the inputs the structuring prompt sees.
 
@@ -934,6 +1042,8 @@ def _structuring_signature(draft: ResumeBuilderDraft) -> str:
         {
             "experience_notes": draft.experience_notes or "",
             "education_notes": draft.education_notes or "",
+            "projects_notes": draft.projects_notes or "",
+            "publications": list(draft.publications or []),
             "full_name": draft.full_name or "",
             "target_role": draft.target_role or "",
             "professional_summary": draft.professional_summary or "",
@@ -1004,11 +1114,42 @@ def _education_from_dict(payload: dict) -> EducationEntry | None:
     )
 
 
+def _project_to_dict(entry: ProjectEntry) -> dict:
+    return {
+        "name": entry.name or "",
+        "description": entry.description or "",
+        "bullets": list(entry.bullets or []),
+        "technologies": list(entry.technologies or []),
+        "start": entry.start or "",
+        "end": entry.end or "",
+        "link": entry.link or "",
+    }
+
+
+def _project_from_dict(payload: dict) -> ProjectEntry | None:
+    if not isinstance(payload, dict):
+        return None
+    name = str(payload.get("name", "") or "")
+    if not name:
+        return None
+    bullets_value = payload.get("bullets") or []
+    technologies_value = payload.get("technologies") or []
+    return ProjectEntry(
+        name=name,
+        description=str(payload.get("description", "") or ""),
+        bullets=[str(item) for item in bullets_value if str(item).strip()],
+        technologies=[str(item) for item in technologies_value if str(item).strip()],
+        start=str(payload.get("start", "") or ""),
+        end=str(payload.get("end", "") or ""),
+        link=str(payload.get("link", "") or ""),
+    )
+
+
 def _structure_via_llm(
     session: ResumeBuilderSession,
     *,
     openai_service,
-) -> tuple[list[WorkExperience], list[EducationEntry]] | None:
+) -> tuple[list[WorkExperience], list[EducationEntry], list[ProjectEntry]] | None:
     """LLM-first conversion of free-form notes into structured entries.
 
     Mirrors the rest of the agent pipeline: the conversational intake
@@ -1028,18 +1169,23 @@ def _structure_via_llm(
     switch, etc.) within the same session reuses the cached entries
     instead of re-calling the LLM and getting subtly different bullet
     wording.
+
+    Returns a 3-tuple `(experience, education, projects)` — projects
+    are part of the same structuring pass since they share the same
+    bullet-rewrite-and-fact-preservation contract.
     """
     if openai_service is None or not getattr(openai_service, "is_available", lambda: False)():
         return None
 
     has_experience = bool(session.draft.experience_notes.strip())
     has_education = bool(session.draft.education_notes.strip())
-    if not has_experience and not has_education:
+    has_projects = bool(session.draft.projects_notes.strip())
+    if not (has_experience or has_education or has_projects):
         # Nothing to structure — short-circuit to avoid burning a token
         # budget on an empty payload. Do NOT cache this state because a
         # subsequent edit might add prose; the next call will compute a
         # different signature and re-evaluate.
-        return [], []
+        return [], [], []
 
     current_signature = _structuring_signature(session.draft)
     if (
@@ -1065,7 +1211,15 @@ def _structure_via_llm(
             )
             if entry is not None
         ]
-        return cached_experience, cached_education
+        cached_projects = [
+            entry
+            for entry in (
+                _project_from_dict(item)
+                for item in session.structured_projects_payload
+            )
+            if entry is not None
+        ]
+        return cached_experience, cached_education, cached_projects
 
     prompt = build_resume_builder_structuring_prompt(draft=asdict(session.draft))
     try:
@@ -1096,6 +1250,7 @@ def _structure_via_llm(
 
     experience_items = payload.get("experience")
     education_items = payload.get("education")
+    projects_items = payload.get("projects")
 
     experience_entries: list[WorkExperience] = []
     if isinstance(experience_items, list):
@@ -1111,6 +1266,13 @@ def _structure_via_llm(
             if entry is not None:
                 education_entries.append(entry)
 
+    project_entries: list[ProjectEntry] = []
+    if isinstance(projects_items, list):
+        for item in projects_items:
+            entry = _build_project_entry_from_llm(item)
+            if entry is not None:
+                project_entries.append(entry)
+
     # If the user typed prose for a section but the LLM returned nothing
     # parseable, treat that as a failure for THAT section so the regex
     # parser fills the gap. We don't fail the whole call — the LLM
@@ -1119,6 +1281,8 @@ def _structure_via_llm(
         experience_entries = _build_experience_entries(session.draft.experience_notes)
     if has_education and not education_entries:
         education_entries = _build_education_entries(session.draft.education_notes)
+    if has_projects and not project_entries:
+        project_entries = _build_project_entries(session.draft.projects_notes)
 
     # Stash the structured result so re-downloads at a different theme
     # / format / page-load reuse identical bullets without re-calling
@@ -1131,9 +1295,12 @@ def _structure_via_llm(
     session.structured_education_payload = [
         _education_to_dict(entry) for entry in education_entries
     ]
+    session.structured_projects_payload = [
+        _project_to_dict(entry) for entry in project_entries
+    ]
     session.structuring_signature = current_signature
 
-    return experience_entries, education_entries
+    return experience_entries, education_entries, project_entries
 
 
 def _build_resume_markdown(draft: ResumeBuilderDraft) -> str:
@@ -1165,12 +1332,22 @@ def _build_resume_markdown(draft: ResumeBuilderDraft) -> str:
     else:
         sections.append("- Add your most relevant role, impact, and projects here.")
 
+    if draft.projects_notes:
+        sections.append("")
+        sections.append("## Projects")
+        sections.extend(_normalize_lines(draft.projects_notes))
+
     sections.append("")
     sections.append("## Education")
     if draft.education_notes:
         sections.extend(_normalize_lines(draft.education_notes))
     else:
         sections.append("- Add your education details here.")
+
+    if draft.publications:
+        sections.append("")
+        sections.append("## Publications")
+        sections.extend(f"- {publication}" for publication in draft.publications)
 
     if draft.certifications:
         sections.append("")
@@ -1201,10 +1378,11 @@ def _build_candidate_profile_and_resume(
 
     structured = _structure_via_llm(session, openai_service=openai_service)
     if structured is not None:
-        experience_entries, education_entries = structured
+        experience_entries, education_entries, project_entries = structured
     else:
         experience_entries = _build_experience_entries(session.draft.experience_notes)
         education_entries = _build_education_entries(session.draft.education_notes)
+        project_entries = _build_project_entries(session.draft.projects_notes)
 
     resume_document = ResumeDocument(
         text=plain_text,
@@ -1221,12 +1399,16 @@ def _build_candidate_profile_and_resume(
         experience=experience_entries,
         education=education_entries,
         certifications=session.draft.certifications,
+        projects=project_entries,
+        publications=list(session.draft.publications or []),
         source_signals=dedupe_strings(
             [
                 "Profile created with the resume builder assistant.",
                 f"Target role: {session.draft.target_role}" if session.draft.target_role else "",
                 "Experience notes captured through guided intake." if session.draft.experience_notes else "",
                 "Skills were confirmed by the user." if session.draft.skills else "",
+                "Projects captured through guided intake." if session.draft.projects_notes else "",
+                "Publications captured through guided intake." if session.draft.publications else "",
             ]
         ),
     )
@@ -1290,6 +1472,9 @@ def export_resume_builder_session_payload(*, session_id: str):
             "structured_education_payload": list(
                 session.structured_education_payload or []
             ),
+            "structured_projects_payload": list(
+                session.structured_projects_payload or []
+            ),
         },
         separators=(",", ":"),
     )
@@ -1342,6 +1527,12 @@ def restore_resume_builder_session_payload(payload_json: str):
                 for item in draft_payload.get("certifications", [])
                 if str(item).strip()
             ],
+            projects_notes=str(draft_payload.get("projects_notes", "") or ""),
+            publications=[
+                str(item).strip()
+                for item in draft_payload.get("publications", [])
+                if str(item).strip()
+            ],
         ),
         generated_resume_markdown=str(
             raw_payload.get("generated_resume_markdown", "") or ""
@@ -1361,6 +1552,11 @@ def restore_resume_builder_session_payload(payload_json: str):
         structured_education_payload=[
             item
             for item in (raw_payload.get("structured_education_payload") or [])
+            if isinstance(item, dict)
+        ],
+        structured_projects_payload=[
+            item
+            for item in (raw_payload.get("structured_projects_payload") or [])
             if isinstance(item, dict)
         ],
     )
@@ -1470,6 +1666,14 @@ def _apply_llm_draft_updates(session: ResumeBuilderSession, updates: dict):
     if "certifications" in updates:
         session.draft.certifications = dedupe_strings(
             _coerce_string_list(updates.get("certifications"))
+        )
+    if "projects_notes" in updates:
+        session.draft.projects_notes = str(
+            updates.get("projects_notes") or ""
+        ).strip()
+    if "publications" in updates:
+        session.draft.publications = dedupe_strings(
+            _coerce_string_list(updates.get("publications"))
         )
 
 
