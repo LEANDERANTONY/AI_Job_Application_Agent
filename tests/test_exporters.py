@@ -3,8 +3,24 @@ from unittest.mock import patch
 
 from src.errors import ExportError
 
-from src.exporters import _build_resume_html, build_cover_letter_preview_html, export_markdown_bytes, export_pdf_bytes, generate_pdf
-from src.schemas import CoverLetterArtifact, EducationEntry, ResumeDocument, ResumeExperienceEntry, ResumeHeader, TailoredResumeArtifact, WorkExperience
+from src.exporters import (
+    _build_resume_html,
+    build_cover_letter_preview_html,
+    export_docx_bytes,
+    export_markdown_bytes,
+    export_pdf_bytes,
+    generate_pdf,
+)
+from src.schemas import (
+    CoverLetterArtifact,
+    EducationEntry,
+    ProjectEntry,
+    ResumeDocument,
+    ResumeExperienceEntry,
+    ResumeHeader,
+    TailoredResumeArtifact,
+    WorkExperience,
+)
 
 
 def test_export_markdown_bytes_returns_utf8_bytes():
@@ -426,3 +442,345 @@ def test_cover_letter_html_preserves_unicode_signoff():
     assert "François Müller" in html_output
     assert "Sincerely" in html_output
     assert "François" in html_output
+
+
+# ---------------------------------------------------------------------------
+# DOCX export — Phase 1
+#
+# Tests parse the rendered DOCX bytes back through `python-docx` and
+# assert structural shape (heading text, bullet count, section
+# ordering). We don't try to assert on visual styling — that's the
+# manual QA loop in Phase 4.
+# ---------------------------------------------------------------------------
+
+
+def _parse_docx(data: bytes):
+    from docx import Document
+
+    return Document(BytesIO(data))
+
+
+def _docx_paragraph_pairs(doc):
+    """Return list of (style_name, text) for every paragraph."""
+    return [(p.style.name, p.text) for p in doc.paragraphs]
+
+
+def _make_full_resume_artifact() -> TailoredResumeArtifact:
+    return TailoredResumeArtifact(
+        title="Leander Antony - Senior ML Engineer Tailored Resume",
+        filename_stem="leander-tailored-resume",
+        summary="Tailored summary",
+        markdown="# Resume",
+        plain_text="Resume",
+        theme="classic_ats",
+        header=ResumeHeader(
+            full_name="Leander Antony",
+            location="Chennai, India",
+            contact_lines=["leander@example.com", "+91 99999 99999", "linkedin.com/in/leander"],
+        ),
+        target_role="Senior ML Engineer",
+        professional_summary=(
+            "Senior ML engineer with 5 years building distributed Python "
+            "systems on AWS and Postgres."
+        ),
+        highlighted_skills=["Python", "AWS", "Docker", "Postgres", "FastAPI"],
+        experience_entries=[
+            ResumeExperienceEntry(
+                title="AI Engineer",
+                organization="Example Labs",
+                location="Remote",
+                start="Jan 2023",
+                end="Present",
+                bullets=[
+                    "Built FastAPI services that ship LLM evaluation reports.",
+                    "Reduced inference latency 30% via batching and caching.",
+                    "Owned the on-call rotation for the model API.",
+                ],
+            ),
+            ResumeExperienceEntry(
+                title="ML Intern",
+                organization="Acme Co",
+                location="Bangalore",
+                start="2022",
+                end="2023",
+                bullets=["Wrote eval harnesses for 3 production models."],
+            ),
+        ],
+        project_entries=[
+            ProjectEntry(
+                name="Open-source resume parser",
+                description="LLM-backed resume parser used in ~5K downloads.",
+                bullets=["Added Unicode-aware name detection.", "PR-reviewed by 4 contributors."],
+                technologies=["Python", "FastAPI"],
+                link="github.com/leander/resume-parser",
+                start="2024",
+                end="Present",
+            ),
+        ],
+        education_entries=[
+            EducationEntry(
+                institution="Anna University",
+                degree="B.E.",
+                field_of_study="Computer Science",
+                start="2016",
+                end="2020",
+            ),
+        ],
+        certifications=["AWS Certified ML Specialty", "GCP Professional ML Engineer"],
+        publication_entries=["Distributed Eval at Scale (2024)"],
+        section_order=[
+            "summary",
+            "skills",
+            "experience",
+            "projects",
+            "education",
+            "publications",
+            "certifications",
+        ],
+    )
+
+
+def test_export_docx_bytes_renders_full_resume_with_all_sections():
+    artifact = _make_full_resume_artifact()
+
+    data = export_docx_bytes(artifact)
+
+    assert isinstance(data, bytes)
+    # Real .docx files start with the PK ZIP magic. Catches the case
+    # where we accidentally return a string or a buffer.
+    assert data.startswith(b"PK")
+    assert len(data) > 5_000
+
+    doc = _parse_docx(data)
+    pairs = _docx_paragraph_pairs(doc)
+
+    # Header: name + contact line.
+    paragraph_texts = [text for _, text in pairs]
+    assert "Leander Antony" in paragraph_texts[0]
+    assert "Chennai, India" in paragraph_texts[1]
+    assert "leander@example.com" in paragraph_texts[1]
+
+    # Section headings render as uppercase labels in the order asked
+    # for. Names match the artifact.section_order list 1:1.
+    heading_texts = [
+        text
+        for _, text in pairs
+        if text in {"SUMMARY", "CORE SKILLS", "EXPERIENCE", "PROJECTS", "EDUCATION", "PUBLICATIONS", "CERTIFICATIONS"}
+    ]
+    assert heading_texts == [
+        "SUMMARY",
+        "CORE SKILLS",
+        "EXPERIENCE",
+        "PROJECTS",
+        "EDUCATION",
+        "PUBLICATIONS",
+        "CERTIFICATIONS",
+    ]
+
+    # Bullets render with Word's built-in 'List Bullet' style so they
+    # open as a proper bullet list in Word and Google Docs.
+    bullet_texts = [text for style, text in pairs if style == "List Bullet"]
+    # 3 experience bullets + 1 intern bullet + 2 project bullets +
+    # 1 publication + 2 certifications = 9.
+    assert len(bullet_texts) == 9
+    assert "Built FastAPI services that ship LLM evaluation reports." in bullet_texts
+    assert "Distributed Eval at Scale (2024)" in bullet_texts
+    assert "AWS Certified ML Specialty" in bullet_texts
+
+
+def test_export_docx_bytes_drops_empty_optional_sections():
+    """Sparse profiles legitimately miss Experience / Projects /
+    Publications / Certifications. Those sections should drop entirely
+    rather than render an empty header — matches the HTML render's
+    behavior."""
+    artifact = TailoredResumeArtifact(
+        title="Sparse Candidate Resume",
+        filename_stem="sparse",
+        summary="",
+        markdown="",
+        plain_text="",
+        theme="classic_ats",
+        header=ResumeHeader(
+            full_name="Sparse Candidate",
+            location="Remote",
+            contact_lines=["sparse@example.com"],
+        ),
+        professional_summary="Recent graduate seeking entry-level ML roles.",
+        highlighted_skills=["Python"],
+        education_entries=[
+            EducationEntry(institution="Anna University", degree="B.E. CS"),
+        ],
+        section_order=["summary", "skills", "experience", "projects", "education", "publications", "certifications"],
+    )
+
+    data = export_docx_bytes(artifact)
+    doc = _parse_docx(data)
+
+    headings = [text for _, text in _docx_paragraph_pairs(doc)]
+    # Required sections render even when sparse.
+    assert "SUMMARY" in headings
+    assert "CORE SKILLS" in headings
+    assert "EDUCATION" in headings
+    # Optional / empty sections should NOT render their heading.
+    assert "EXPERIENCE" not in headings
+    assert "PROJECTS" not in headings
+    assert "PUBLICATIONS" not in headings
+    assert "CERTIFICATIONS" not in headings
+
+
+def test_export_docx_bytes_honors_custom_section_order():
+    """`section_order` drives the section sequence so students can lead
+    with Education, academics with Publications, seniors with
+    Experience after Skills. Verify a non-default order rounds through
+    to the rendered DOCX."""
+    artifact = _make_full_resume_artifact()
+    artifact.section_order = [
+        "summary",
+        "education",
+        "skills",
+        "experience",
+        "projects",
+        "certifications",
+        "publications",
+    ]
+
+    data = export_docx_bytes(artifact)
+    doc = _parse_docx(data)
+
+    headings_in_doc_order = [
+        text
+        for _, text in _docx_paragraph_pairs(doc)
+        if text in {"SUMMARY", "CORE SKILLS", "EXPERIENCE", "PROJECTS", "EDUCATION", "PUBLICATIONS", "CERTIFICATIONS"}
+    ]
+    assert headings_in_doc_order == [
+        "SUMMARY",
+        "EDUCATION",
+        "CORE SKILLS",
+        "EXPERIENCE",
+        "PROJECTS",
+        "CERTIFICATIONS",
+        "PUBLICATIONS",
+    ]
+
+
+def test_export_docx_bytes_appends_missing_sections_for_partial_orders():
+    """If an agent emits a partial section_order, the renderer should
+    append any missing sections at the end so we never silently drop
+    user-supplied content."""
+    artifact = _make_full_resume_artifact()
+    # Drop publications + certifications from the order to simulate a
+    # partial agent response.
+    artifact.section_order = ["summary", "skills", "experience", "projects", "education"]
+
+    data = export_docx_bytes(artifact)
+    doc = _parse_docx(data)
+
+    headings = [
+        text
+        for _, text in _docx_paragraph_pairs(doc)
+        if text in {"PUBLICATIONS", "CERTIFICATIONS"}
+    ]
+    # Both should still appear because they have content, even though
+    # the agent's order didn't list them.
+    assert headings == ["PUBLICATIONS", "CERTIFICATIONS"]
+
+
+def test_export_docx_bytes_preserves_unicode_in_header_and_bullets():
+    """Non-Latin names + accented strings must round-trip the DOCX
+    layer the same way they survive the HTML render."""
+    artifact = TailoredResumeArtifact(
+        title="François Müller Resume",
+        filename_stem="francois",
+        summary="",
+        markdown="",
+        plain_text="",
+        theme="classic_ats",
+        header=ResumeHeader(
+            full_name="François Müller",
+            location="Zürich, Schweiz",
+            contact_lines=["francois@example.ch"],
+        ),
+        professional_summary="Senior engineer based in Zürich.",
+        highlighted_skills=["Python", "Rust"],
+        experience_entries=[
+            ResumeExperienceEntry(
+                title="Engineer",
+                organization="Société Générale",
+                start="2020",
+                end="Present",
+                bullets=["Refactored the légère pipeline."],
+            ),
+        ],
+        education_entries=[EducationEntry(institution="ETH Zürich")],
+    )
+
+    data = export_docx_bytes(artifact)
+    doc = _parse_docx(data)
+
+    text_blob = "\n".join(p.text for p in doc.paragraphs)
+    assert "François Müller" in text_blob
+    assert "Zürich, Schweiz" in text_blob
+    assert "Société Générale" in text_blob
+    assert "Refactored the légère pipeline." in text_blob
+
+
+def test_export_docx_bytes_renders_cover_letter_with_paragraphs_and_bullets():
+    """The cover letter artifact only exposes flat markdown; verify the
+    DOCX path parses it into the right sequence of paragraphs and
+    bullet items."""
+    artifact = CoverLetterArtifact(
+        title="Leander Antony - Senior ML Engineer Cover Letter",
+        filename_stem="leander-cover-letter",
+        summary="",
+        markdown=(
+            "# Leander Antony - Senior ML Engineer Cover Letter\n"
+            "\n"
+            "Dear Hiring Team,\n"
+            "\n"
+            "I am writing to apply for the Senior ML Engineer role at Acme. "
+            "Three points stand out from my background:\n"
+            "\n"
+            "- Built distributed Python services on AWS\n"
+            "- Reduced p99 latency by 30%\n"
+            "- Mentored two junior engineers\n"
+            "\n"
+            "Sincerely,\n"
+            "\n"
+            "Leander Antony"
+        ),
+        plain_text="placeholder",
+        theme="classic_ats",
+    )
+
+    data = export_docx_bytes(artifact)
+    doc = _parse_docx(data)
+    pairs = _docx_paragraph_pairs(doc)
+    texts = [text for _, text in pairs]
+
+    # The H1 from the markdown is consumed as the header title; the
+    # role suffix becomes the eyebrow line.
+    assert "Leander Antony" in texts[0]
+    # Body paragraphs surface as plain text.
+    assert any("Dear Hiring Team," in t for t in texts)
+    assert any("Senior ML Engineer role at Acme" in t for t in texts)
+    # Three bullet items via the List Bullet style.
+    bullets = [text for style, text in pairs if style == "List Bullet"]
+    assert bullets == [
+        "Built distributed Python services on AWS",
+        "Reduced p99 latency by 30%",
+        "Mentored two junior engineers",
+    ]
+    # Signoff lines preserved.
+    assert any("Sincerely," in t for t in texts)
+    assert any(t == "Leander Antony" for t in texts[-3:])
+
+
+def test_export_docx_bytes_rejects_unsupported_artifact_type():
+    """Defensive behavior: passing a non-artifact object should raise
+    ExportError rather than blow up deep in python-docx."""
+    try:
+        export_docx_bytes("not an artifact")  # type: ignore[arg-type]
+        raise AssertionError("Expected ExportError for non-artifact input")
+    except ExportError as exc:
+        assert "Unsupported artifact type" in exc.user_message
+

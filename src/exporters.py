@@ -1120,3 +1120,621 @@ def generate_pdf(text, title="Tailored Resume", theme=None, document_kind="cover
         return _generate_pdf_with_weasyprint(text, title, theme=theme, document_kind=document_kind, artifact=artifact)
     except Exception as renderer_error:
         return _generate_pdf_with_reportlab_fallback(text, title, renderer_error=renderer_error)
+
+
+# ---------------------------------------------------------------------------
+# DOCX export
+#
+# Mirrors the structural decomposition used by
+# `_build_structured_resume_body_classic` (resume) and
+# `_build_cover_letter_html` (cover letter) so the DOCX reads as the
+# same document, not a different format. We pull from the structured
+# artifact fields (header, experience_entries, etc.) for the resume —
+# NOT from the markdown — because Phase 2 of the DOCX export plan
+# removes markdown export entirely.
+#
+# Phase 1 implements the `classic_ats` theme only; `professional_neutral`
+# lands in Phase 4.
+# ---------------------------------------------------------------------------
+
+
+_DOCX_CLASSIC_ATS_PALETTE = {
+    "ink": "221912",  # body text
+    "muted": "6B5648",  # meta lines (organization, dates)
+    "accent": "8F6845",  # section headings + header underline
+    "line": "D7C2AF",  # softer underline tone
+}
+
+# Default page margins (in inches). Matches the ~18mm @page margin the
+# WeasyPrint renderer uses for the classic_ats resume shell.
+_DOCX_PAGE_MARGIN_INCHES = 0.7
+
+
+def _docx_add_bottom_border(paragraph, *, color_hex: str, size_eighths_pt: int = 6):
+    """Add a bottom border to a paragraph by injecting raw OOXML.
+
+    python-docx doesn't expose paragraph borders directly. The widget
+    we want is `<w:pBdr><w:bottom w:val="single" w:sz="6"
+    w:color="8F6845"/></w:pBdr>` inside the paragraph properties.
+    `size_eighths_pt` is in eighths of a point, so 6 = 0.75pt, 8 = 1pt.
+    """
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    p_pr = paragraph._p.get_or_add_pPr()
+    # Remove any existing bottom border so re-runs don't stack.
+    for existing in p_pr.findall(qn("w:pBdr")):
+        p_pr.remove(existing)
+    bdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), str(size_eighths_pt))
+    bottom.set(qn("w:space"), "1")
+    bottom.set(qn("w:color"), color_hex)
+    bdr.append(bottom)
+    p_pr.append(bdr)
+
+
+def _docx_apply_run_font(run, *, family: str, size_pt: float, color_hex: str | None = None, bold: bool = False, italic: bool = False, small_caps: bool = False):
+    """Set the common font attrs on a run.
+
+    Called per-run so each piece of text picks up the right family /
+    size / color, since python-docx doesn't inherit cleanly from
+    style overrides when we add multiple runs to one paragraph.
+    """
+    from docx.shared import Pt, RGBColor
+
+    run.font.name = family
+    run.font.size = Pt(size_pt)
+    run.bold = bold
+    run.italic = italic
+    if color_hex:
+        run.font.color.rgb = RGBColor.from_string(color_hex)
+    if small_caps:
+        run.font.small_caps = True
+
+
+def _docx_set_page_margins(document, *, inches: float):
+    """Apply equal margins (top/bottom/left/right) on the active section."""
+    from docx.shared import Inches
+
+    for section in document.sections:
+        section.top_margin = Inches(inches)
+        section.bottom_margin = Inches(inches)
+        section.left_margin = Inches(inches)
+        section.right_margin = Inches(inches)
+
+
+def _docx_resume_section_heading(document, label: str, *, palette: dict):
+    """Add a section H2 with accent color + thin bottom border.
+
+    Matches the visual weight of the `.resume-classic-section h2` HTML
+    rule (small-caps letterspaced look, accent-colored underline)."""
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = _docx_pt(8)
+    paragraph.paragraph_format.space_after = _docx_pt(2)
+    run = paragraph.add_run(label.upper())
+    _docx_apply_run_font(
+        run,
+        family="Georgia",
+        size_pt=11.5,
+        color_hex=palette["accent"],
+        bold=True,
+        small_caps=False,
+    )
+    _docx_add_bottom_border(
+        paragraph,
+        color_hex=palette["line"],
+        size_eighths_pt=4,
+    )
+    return paragraph
+
+
+def _docx_pt(value: float):
+    """Pt(...) wrapper that imports lazily so module-level test discovery
+    doesn't need to bring in docx.shared just to enumerate names."""
+    from docx.shared import Pt
+
+    return Pt(value)
+
+
+def _docx_inches(value: float):
+    from docx.shared import Inches
+
+    return Inches(value)
+
+
+def _docx_add_resume_header(document, artifact: TailoredResumeArtifact, *, palette: dict):
+    name = (artifact.header.full_name or artifact.title or "Candidate").strip()
+
+    name_paragraph = document.add_paragraph()
+    name_paragraph.paragraph_format.space_after = _docx_pt(2)
+    name_paragraph.alignment = _docx_alignment("center")
+    run = name_paragraph.add_run(name)
+    _docx_apply_run_font(
+        run,
+        family="Georgia",
+        size_pt=20,
+        color_hex=palette["ink"],
+        bold=True,
+    )
+
+    contact_values = []
+    if artifact.header.location:
+        contact_values.append(artifact.header.location.strip())
+    contact_values.extend(
+        item.strip()
+        for item in (artifact.header.contact_lines or [])
+        if str(item or "").strip()
+    )
+    if contact_values:
+        contact_paragraph = document.add_paragraph()
+        contact_paragraph.alignment = _docx_alignment("center")
+        contact_paragraph.paragraph_format.space_after = _docx_pt(6)
+        contact_run = contact_paragraph.add_run(" | ".join(contact_values))
+        _docx_apply_run_font(
+            contact_run,
+            family="Arial",
+            size_pt=10,
+            color_hex=palette["muted"],
+        )
+    else:
+        # Still want the underline below the name even when contact is
+        # empty, so add it on the name paragraph itself.
+        contact_paragraph = name_paragraph
+
+    # Accent underline below the contact line (or name when contact is
+    # missing) gives the resume header its editorial identity.
+    _docx_add_bottom_border(
+        contact_paragraph,
+        color_hex=palette["accent"],
+        size_eighths_pt=8,
+    )
+
+
+def _docx_alignment(name: str):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    return {
+        "left": WD_ALIGN_PARAGRAPH.LEFT,
+        "center": WD_ALIGN_PARAGRAPH.CENTER,
+        "right": WD_ALIGN_PARAGRAPH.RIGHT,
+        "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+    }.get(name, WD_ALIGN_PARAGRAPH.LEFT)
+
+
+def _docx_add_role_row(document, *, title: str, dates: str, palette: dict):
+    """Title on the left, dates right-aligned via tab stop. Mirrors the
+    `.resume-role-row` flex layout."""
+    from docx.enum.text import WD_TAB_ALIGNMENT
+
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = _docx_pt(4)
+    paragraph.paragraph_format.space_after = _docx_pt(0)
+    paragraph.paragraph_format.tab_stops.add_tab_stop(
+        _docx_inches(7.1 - 2 * _DOCX_PAGE_MARGIN_INCHES),
+        WD_TAB_ALIGNMENT.RIGHT,
+    )
+
+    title_run = paragraph.add_run(title)
+    _docx_apply_run_font(
+        title_run,
+        family="Arial",
+        size_pt=11.5,
+        color_hex=palette["ink"],
+        bold=True,
+    )
+    if dates:
+        tab_run = paragraph.add_run("\t")
+        _docx_apply_run_font(tab_run, family="Arial", size_pt=11, color_hex=palette["muted"])
+        dates_run = paragraph.add_run(dates)
+        _docx_apply_run_font(
+            dates_run,
+            family="Arial",
+            size_pt=10.5,
+            color_hex=palette["muted"],
+        )
+
+
+def _docx_add_meta_line(document, text: str, *, palette: dict, italic: bool = True):
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = _docx_pt(2)
+    run = paragraph.add_run(text)
+    _docx_apply_run_font(
+        run,
+        family="Arial",
+        size_pt=10.5,
+        color_hex=palette["muted"],
+        italic=italic,
+    )
+
+
+def _docx_add_bullet(document, text: str, *, palette: dict):
+    """Bulleted list item using Word's built-in 'List Bullet' style so
+    the file opens with proper bullet formatting in Word + Google Docs.
+    The style is part of the default template; no extra wiring needed."""
+    paragraph = document.add_paragraph(style="List Bullet")
+    paragraph.paragraph_format.space_after = _docx_pt(2)
+    run = paragraph.add_run(text)
+    _docx_apply_run_font(
+        run,
+        family="Arial",
+        size_pt=10.5,
+        color_hex=palette["ink"],
+    )
+
+
+def _docx_add_paragraph_text(document, text: str, *, palette: dict, family: str = "Arial", size_pt: float = 11, italic: bool = False, color_key: str = "ink"):
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = _docx_pt(4)
+    run = paragraph.add_run(text)
+    _docx_apply_run_font(
+        run,
+        family=family,
+        size_pt=size_pt,
+        color_hex=palette[color_key],
+        italic=italic,
+    )
+    return paragraph
+
+
+def _docx_resume_summary_block(document, artifact: TailoredResumeArtifact, *, palette: dict):
+    _docx_resume_section_heading(document, "Summary", palette=palette)
+    _docx_add_paragraph_text(
+        document,
+        artifact.professional_summary or "No professional summary generated.",
+        palette=palette,
+        family="Georgia",
+        size_pt=11,
+        color_key="ink",
+    )
+
+
+def _docx_resume_skills_block(document, artifact: TailoredResumeArtifact, *, palette: dict):
+    _docx_resume_section_heading(document, "Core Skills", palette=palette)
+    skills = [str(s).strip() for s in (artifact.highlighted_skills or []) if str(s or "").strip()]
+    if skills:
+        _docx_add_paragraph_text(
+            document,
+            " | ".join(skills),
+            palette=palette,
+            family="Arial",
+            size_pt=11,
+            color_key="ink",
+        )
+    else:
+        _docx_add_paragraph_text(
+            document,
+            "No highlighted skills were generated.",
+            palette=palette,
+            family="Arial",
+            size_pt=10.5,
+            italic=True,
+            color_key="muted",
+        )
+
+
+def _docx_resume_experience_block(document, artifact: TailoredResumeArtifact, *, palette: dict) -> bool:
+    entries = list(artifact.experience_entries or [])
+    if not entries:
+        return False
+    _docx_resume_section_heading(document, "Experience", palette=palette)
+    for entry in entries:
+        title = (entry.title or "Relevant Experience").strip()
+        date_parts = [part for part in [entry.start, entry.end] if part]
+        dates = " - ".join(date_parts) if date_parts else ""
+        _docx_add_role_row(document, title=title, dates=dates, palette=palette)
+        meta_parts = [part for part in [entry.organization, entry.location] if part]
+        if meta_parts:
+            _docx_add_meta_line(document, " | ".join(meta_parts), palette=palette)
+        bullets = [str(b).strip() for b in (entry.bullets or []) if str(b or "").strip()]
+        if bullets:
+            for bullet in bullets:
+                _docx_add_bullet(document, bullet, palette=palette)
+        else:
+            _docx_add_paragraph_text(
+                document,
+                "No grounded bullet points were generated for this role.",
+                palette=palette,
+                family="Arial",
+                size_pt=10.5,
+                italic=True,
+                color_key="muted",
+            )
+    return True
+
+
+def _docx_resume_projects_block(document, artifact: TailoredResumeArtifact, *, palette: dict) -> bool:
+    projects = list(artifact.project_entries or [])
+    if not projects:
+        return False
+    _docx_resume_section_heading(document, "Projects", palette=palette)
+    for project in projects:
+        name = (project.name or "Project").strip()
+        date_parts = [part for part in [project.start, project.end] if part]
+        dates = " - ".join(date_parts) if date_parts else ""
+        _docx_add_role_row(document, title=name, dates=dates, palette=palette)
+        if project.description:
+            _docx_add_meta_line(document, project.description, palette=palette, italic=False)
+        bullets = [str(b).strip() for b in (project.bullets or []) if str(b or "").strip()]
+        for bullet in bullets:
+            _docx_add_bullet(document, bullet, palette=palette)
+        meta_parts = []
+        if project.technologies:
+            meta_parts.append("Tech: " + ", ".join(project.technologies))
+        if project.link:
+            meta_parts.append("Link: " + project.link)
+        if meta_parts:
+            _docx_add_meta_line(document, " | ".join(meta_parts), palette=palette, italic=True)
+    return True
+
+
+def _docx_resume_education_block(document, artifact: TailoredResumeArtifact, *, palette: dict):
+    _docx_resume_section_heading(document, "Education", palette=palette)
+    entries = list(artifact.education_entries or [])
+    if not entries:
+        _docx_add_paragraph_text(
+            document,
+            "No education entries were available.",
+            palette=palette,
+            family="Arial",
+            size_pt=10.5,
+            italic=True,
+            color_key="muted",
+        )
+        return
+    for entry in entries:
+        institution = (entry.institution or "Education").strip()
+        degree_parts = [part for part in [entry.degree, entry.field_of_study] if part]
+        date_parts = [part for part in [entry.start, entry.end] if part]
+        dates = " - ".join(date_parts) if date_parts else ""
+        _docx_add_role_row(document, title=institution, dates=dates, palette=palette)
+        if degree_parts:
+            _docx_add_meta_line(document, " - ".join(degree_parts), palette=palette, italic=False)
+
+
+def _docx_resume_publications_block(document, artifact: TailoredResumeArtifact, *, palette: dict) -> bool:
+    items = [str(item).strip() for item in (artifact.publication_entries or []) if str(item or "").strip()]
+    if not items:
+        return False
+    _docx_resume_section_heading(document, "Publications", palette=palette)
+    for item in items:
+        _docx_add_bullet(document, item, palette=palette)
+    return True
+
+
+def _docx_resume_certifications_block(document, artifact: TailoredResumeArtifact, *, palette: dict) -> bool:
+    items = [str(item).strip() for item in (artifact.certifications or []) if str(item or "").strip()]
+    if not items:
+        return False
+    _docx_resume_section_heading(document, "Certifications", palette=palette)
+    for item in items:
+        _docx_add_bullet(document, item, palette=palette)
+    return True
+
+
+def _build_resume_docx(artifact: TailoredResumeArtifact) -> bytes:
+    """Render a structured TailoredResumeArtifact to DOCX bytes.
+
+    Mirrors the section ordering / empty-section policy of
+    `_build_structured_resume_body_classic`: Summary, Skills, Education
+    always render even when sparse; Experience, Projects, Publications,
+    Certifications drop entirely when empty. Section order honors
+    `artifact.section_order` and falls back to
+    `_DEFAULT_RESUME_SECTION_ORDER` for legacy callers.
+
+    Phase 1: classic_ats theme only. Phase 4 will add a palette switch
+    for `professional_neutral`.
+    """
+    from docx import Document
+
+    palette = _DOCX_CLASSIC_ATS_PALETTE
+    document = Document()
+    _docx_set_page_margins(document, inches=_DOCX_PAGE_MARGIN_INCHES)
+
+    # Default style baseline so paragraphs without a per-run font fall
+    # back cleanly when opened in Word's Style pane.
+    normal_style = document.styles["Normal"]
+    normal_style.font.name = "Arial"
+    from docx.shared import Pt as _Pt
+
+    normal_style.font.size = _Pt(11)
+
+    _docx_add_resume_header(document, artifact, palette=palette)
+
+    section_renderers = {
+        "summary": lambda: (_docx_resume_summary_block(document, artifact, palette=palette), True)[1],
+        "skills": lambda: (_docx_resume_skills_block(document, artifact, palette=palette), True)[1],
+        "experience": lambda: _docx_resume_experience_block(document, artifact, palette=palette),
+        "projects": lambda: _docx_resume_projects_block(document, artifact, palette=palette),
+        "education": lambda: (_docx_resume_education_block(document, artifact, palette=palette), True)[1],
+        "publications": lambda: _docx_resume_publications_block(document, artifact, palette=palette),
+        "certifications": lambda: _docx_resume_certifications_block(document, artifact, palette=palette),
+    }
+
+    order = list(artifact.section_order) if artifact.section_order else list(_DEFAULT_RESUME_SECTION_ORDER)
+    seen: set[str] = set()
+    for section_name in order:
+        if section_name in seen:
+            continue
+        seen.add(section_name)
+        renderer = section_renderers.get(section_name)
+        if renderer is not None:
+            renderer()
+    # Append any sections the agent forgot to mention so we never lose
+    # rendered content when the agent emits a partial order.
+    for section_name in _DEFAULT_RESUME_SECTION_ORDER:
+        if section_name in seen:
+            continue
+        renderer = section_renderers.get(section_name)
+        if renderer is not None:
+            renderer()
+
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def _build_cover_letter_docx(artifact: CoverLetterArtifact) -> bytes:
+    """Render a CoverLetterArtifact to DOCX bytes.
+
+    The cover letter artifact only exposes a flat `markdown` field (the
+    structured paragraphs live upstream in `CoverLetterAgentOutput` and
+    aren't on the artifact). Parse the markdown into blocks via the
+    existing `_parse_markdown_blocks` helper and emit each block as a
+    matching DOCX paragraph / list. Title is split via
+    `_split_cover_letter_title` so the heading + role-eyebrow read the
+    same way as the HTML render.
+    """
+    from docx import Document
+
+    palette = _DOCX_CLASSIC_ATS_PALETTE
+    document = Document()
+    _docx_set_page_margins(document, inches=_DOCX_PAGE_MARGIN_INCHES)
+
+    normal_style = document.styles["Normal"]
+    normal_style.font.name = "Georgia"
+    from docx.shared import Pt as _Pt
+
+    normal_style.font.size = _Pt(11.4)
+
+    header_title, header_subtitle = _split_cover_letter_title(artifact.title or "Cover Letter")
+
+    title_paragraph = document.add_paragraph()
+    title_paragraph.paragraph_format.space_after = _docx_pt(2)
+    title_run = title_paragraph.add_run(header_title)
+    _docx_apply_run_font(
+        title_run,
+        family="Georgia",
+        size_pt=18,
+        color_hex=palette["ink"],
+        bold=True,
+    )
+    if header_subtitle:
+        sub_paragraph = document.add_paragraph()
+        sub_paragraph.paragraph_format.space_after = _docx_pt(8)
+        sub_run = sub_paragraph.add_run(header_subtitle.upper())
+        _docx_apply_run_font(
+            sub_run,
+            family="Arial",
+            size_pt=10,
+            color_hex=palette["muted"],
+        )
+    _docx_add_bottom_border(
+        title_paragraph if not header_subtitle else sub_paragraph,
+        color_hex=palette["accent"],
+        size_eighths_pt=8,
+    )
+
+    blocks = _parse_markdown_blocks(artifact.markdown or "")
+    # Drop the leading H1 (already rendered as the header) and any
+    # leading rule, mirroring the HTML render's title strip.
+    deferred_blocks = []
+    for index, (kind, payload) in enumerate(blocks):
+        if index == 0 and kind == "title":
+            continue
+        deferred_blocks.append((kind, payload))
+
+    for kind, payload in deferred_blocks:
+        if kind in {"heading", "subheading"}:
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.space_before = _docx_pt(8)
+            paragraph.paragraph_format.space_after = _docx_pt(2)
+            run = paragraph.add_run(_strip_inline_markup(str(payload or "")))
+            _docx_apply_run_font(
+                run,
+                family="Georgia",
+                size_pt=12.5,
+                color_hex=palette["ink"],
+                bold=True,
+            )
+            continue
+        if kind == "paragraph":
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.space_after = _docx_pt(8)
+            run = paragraph.add_run(_strip_inline_markup(str(payload or "")))
+            _docx_apply_run_font(
+                run,
+                family="Georgia",
+                size_pt=11.4,
+                color_hex=palette["ink"],
+            )
+            continue
+        if kind == "list":
+            for item in payload or []:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("kind") != "list_paragraph":
+                    continue
+                paragraph = document.add_paragraph(style="List Bullet")
+                paragraph.paragraph_format.space_after = _docx_pt(2)
+                run = paragraph.add_run(_strip_inline_markup(str(item.get("text", "") or "")))
+                _docx_apply_run_font(
+                    run,
+                    family="Georgia",
+                    size_pt=11.4,
+                    color_hex=palette["ink"],
+                )
+            continue
+        if kind == "rule":
+            divider = document.add_paragraph()
+            _docx_add_bottom_border(
+                divider,
+                color_hex=palette["line"],
+                size_eighths_pt=4,
+            )
+            continue
+        # Unhandled kind (code_block, etc.) — skip silently. The cover
+        # letter agent doesn't emit code blocks today, but if that
+        # changes we can extend this.
+
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+_INLINE_MARKUP_TAG = re.compile(r"<[^>]+>")
+
+
+def _strip_inline_markup(text: str) -> str:
+    """The markdown-it tree → block parser emits inline children with
+    HTML-style tags (`<b>...</b>`, `<i>...</i>`). DOCX runs don't take
+    raw HTML, so flatten the markup to plain text for now. Phase 1
+    accepts the loss of bold/italic styling inside paragraphs; if QA
+    flags it as a problem we can teach the parser to emit per-run
+    styling instead.
+    """
+    return _INLINE_MARKUP_TAG.sub("", text or "").strip()
+
+
+def export_docx_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
+    """Render an artifact to DOCX bytes.
+
+    Phase 1 implements the `classic_ats` theme only; the second theme
+    (`professional_neutral`) lands in Phase 4 with a palette switch.
+    """
+    try:
+        if isinstance(report, TailoredResumeArtifact):
+            return _build_resume_docx(report)
+        if isinstance(report, CoverLetterArtifact):
+            return _build_cover_letter_docx(report)
+        raise ExportError(
+            "Unsupported artifact type for DOCX export.",
+            details=type(report).__name__,
+        )
+    except ExportError:
+        raise
+    except Exception as error:
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            "docx_export_failed",
+            "DOCX export failed.",
+            report_title=getattr(report, "title", ""),
+            filename_stem=getattr(report, "filename_stem", ""),
+            error_type=type(error).__name__,
+        )
+        raise ExportError(
+            "DOCX export failed. Try the PDF download instead.",
+            details=str(error),
+        ) from error
