@@ -512,3 +512,100 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
 - Removed the strategy stage from the active agentic workflow.
 - Simplified resume export to one standard ATS-friendly format and removed the old modern resume theme path from the active backend and frontend.
 - Re-baselined the README and architecture docs so they reflect the shipped Vercel + FastAPI product rather than the earlier Streamlit stages.
+
+## Day 37: Workspace "Workbench" Redesign
+
+- Rebuilt the workspace UI as Direction B "Workbench":
+  - top bar with brand + ⌘K command-palette trigger + account popover
+  - four-step rail (Resume → Job Search → Job Detail → Analysis) with explicit gating and done/active visual states
+  - hero band with dynamic per-tab title, sub, and status pill
+  - vertical canvas of regions instead of the previous left-sidebar split
+  - floating assistant FAB replacing the side-mounted assistant column
+- Added a ⌘K command palette overlay for fast navigation between workspace surfaces.
+- Pulled all three resume-builder review steps into auto-growing textareas inside collapsible sections so editing long responses no longer scrolls inside a tiny box.
+- Reset the resume-builder intake mode on commit and added name-pending fallbacks so the first auto-summary doesn't crash when the LLM hasn't extracted a full name yet.
+- Lifted workspace base font sizes and chip / button metrics for readability on standard 1080p displays.
+- Capped canvas width and restructured the analysis pipeline grid so the workspace stays comfortable on wide screens; collapsed the resume intake card on parse so the next step gets the focus.
+- Tightened the assistant FAB surface (deeper black-blue background + full-width replies) so the chat panel stops fighting the underlying canvas.
+- Polished the "honest hero" copy, vertical skills/experience layout, friendlier pipeline labels, empty-state hints, and a next-step pulse.
+- Fixed two regressions caught during the redesign:
+  - workflow-completion notice no longer leaves the analysis card stuck on "Running"
+  - landing "Sign out" button no longer flips to "Signing out…" when the user clicks "Enter workspace"
+
+## Day 38: Atmospheric Polish, Mobile Responsive Pass, And Parser Quality Lift
+
+- De-boxified the editorial document treatment for the Draft profile + JD body: tighter type pairing, removed the per-section card chrome, treated the canvas like one document.
+- Atmospheric polish across the workspace — page grain texture, layered surfaces, richer hover and focus states.
+- Motion + delight pass: per-region entrance animations, subtle micro-interactions, count-up animations on quota and saved-job stats.
+- Replaced the four-button rail with a unified pill nav that ships a progress connector and per-step lock-reason tooltips.
+- Single 540px-breakpoint mobile responsive pass covering the topbar, hero, rail, regions, account popover, intake mode toggle, pipeline cards, and chip wrap. Brand text reflows correctly on narrow screens.
+- Resume rendering robustness:
+  - drop empty resume sections cleanly (Experience can drop for student / early-career profiles, only Certifications drops in the standard case)
+  - added Projects + Publications as first-class resume sections; un-clipped page-2 overflow on the PDF render
+  - matched the resume PDF + parsed-view typography to the cover-letter family
+  - added a switchable `professional_neutral` theme alongside `classic_ats` (Georgia body, neutral grays — pure black/white aesthetic for editorial-leaning profiles)
+- Resume parser quality lift:
+  - hardened the deterministic resume parser; routed TXT through the LLM hybrid
+  - expanded the parser-quality test set from 6 → 15 fixtures across unseen formats
+  - simplified the hybrid to a pure LLM source-of-truth with a full deterministic fallback when the LLM is unavailable or schema-fails
+  - deterministic polish lifted average from 0.81 → 0.92 across the 15 fixtures
+- Added a Tier-2 renderer-fidelity quality runner; fixed a double-escape on experience meta lines along the way.
+- JD parser quality lift:
+  - Tier-1 baseline: 15 fixtures, deterministic 0.78 average
+  - LLM JD parser: 0.78 → 0.99 across the same fixture set
+- Added skill canonicalization so Postgres / PostgreSQL synonyms collapse during fit matching — stops the false-negative skill gaps users were seeing.
+- Workflow narrowing:
+  - removed FitAgent, the application-package report, and the bundle endpoint from the active workflow
+  - TailoringAgent battle-test: 0.99 average across 6 (resume, JD) pairs
+  - ReviewAgent battle-test: 1.00 LLM, 0.69 deterministic across 6 scenarios
+- Per-profile resume section ordering: students lead with Education, academics with Publications, seniors with Experience after Skills. Drives both the HTML and the PDF templates.
+- Fixed a resume-builder review-progress bug where a re-uploaded basics block over-captured roles + dropped review progress.
+
+## Day 39: DOCX Export, Conversational Resume Builder, And Cached-Jobs Foundation
+
+- Workspace auth gate: signed-out visitors hitting `/workspace` are now redirected to the landing page; cross-origin host strip mirrors the existing app-subdomain middleware (no new env var).
+- Resume-builder durability:
+  - 7-day TTL on `resume_builder_sessions` with active-user refresh, mirroring the `saved_workspaces` TTL pattern; cron + RLS expires-at filter both wired
+  - tri-state persistence indicator (saved / skipped / unauthenticated) in the field-completeness rail so the user knows whether their progress will survive a reload
+- DOCX-first artifact export pipeline (six phases):
+  - Phase 1: `python-docx`-based exporter for the `classic_ats` theme; mirrors the existing structured PDF render (header, summary, skills, experience, projects, education, publications, certifications) and honours `artifact.section_order`
+  - Phase 2: artifact-export route now dispatches on `pdf | docx`; the markdown branch is removed from `backend/services/artifact_export_service.py`
+  - Phase 3: frontend cleanup sweep — removed every Markdown export button, hook, and type; download buttons now offer PDF and DOCX side-by-side
+  - Phase 4: `professional_neutral` DOCX theme with a shared palette resolver across PDF and DOCX so both themes read consistently in Word, Google Docs, and the PDF preview
+  - Phase 5: `POST /workspace/resume-builder/export` synthesizes a `TailoredResumeArtifact` from the builder session's draft profile (no JD, empty `target_role`, `section_order` from `compute_section_order(candidate_profile)`); auth-gated like the other resume-builder routes
+  - Phase 6: download row UI under "Generate base resume" — theme picker + Download PDF / Download DOCX
+- Conversational LLM resume builder:
+  - shipped the 14-item punch list (DB migrations, lazy-load, thread-bound state, all three battle tests, adversarial coverage, signature hash, dead-code cleanup)
+  - end-to-end LLM chat: 5/8 fields extracted in one turn, backtracking works, 100% completion on the smoke fixture; "Generate base resume" produces clean DOCX/PDF
+  - workspace chat-bubble experiment shipped + reverted; transcript style retained as the chosen direction
+- Resume-builder content quality:
+  - LLM-first structuring pass with a deterministic regex fallback, plus header alignment so the rendered name matches the structured schema
+  - skills are bucketed into named categories (`Languages & Tools`, `ML/DL Frameworks`, etc.) so the rendered resume groups skills by family instead of a flat pipe-separated list
+  - structuring output cached across exports + persistence so re-rendering doesn't re-run the LLM
+  - recovers a full name when the LLM intake drops a surname mid-conversation
+  - thin one-liner summaries get expanded to full paragraphs by the structuring pass; bumped the structuring model + token budget for the expanded contract
+  - Projects + Publications sections rendered through the same Draft profile / DOCX / PDF path as Experience
+  - Tier-3 quality runner for the resume-builder structuring pass
+- ResumeGenerationAgent battle-test: LLM 1.00, deterministic 0.94 across 6 (resume, JD) pairs.
+- CoverLetterAgent battle-test: LLM 0.97, deterministic 0.95 across 6 pairs.
+- Cached-jobs foundation (Phases 2 + 3 of the seven-phase plan):
+  - Phase 2: `cached_jobs` Supabase table + `refresh_cached_jobs` worker; `POST /admin/refresh-cache` endpoint protected by a constant-time bearer compare. Worker bulk-upserts every Greenhouse + Lever posting and runs the smart cleanup (tombstone if a user has saved the listing, hard-delete otherwise) per source — only sources whose refresh actually succeeded are eligible for cleanup.
+  - Phase 3: `/jobs/search` defaults to the cached path through `JobSearchService.search_cached(...)`; `?live=true` keeps a live-fan-out escape hatch for diagnostics. Surfaces `cache: ok | not_configured | error` in `source_status` so monitoring can see when the cache misses.
+
+## Day 40: Multi-ATS Coverage, Postgres-RPC Ranked Search, And Dropdown Filters
+
+- Phase 4: bumped the source pool to ~117 Greenhouse boards + 30 Lever sites and validated the slug list against the live APIs. First refresh after deploy hits the cache rather than every user paying the live fan-out cost.
+- Phase 5: enabled `pg_net` in the Supabase project + documented the cron schedule that POSTs to `/admin/refresh-cache` every ~30 min (committed under `docs/job_cache_cron_setup.sql`). Frontend gets an "Expired" badge on saved-job cards whose listings the cleanup pass has tombstoned.
+- Phase 5b: relevance-ranked cache search via a new Supabase RPC (`search_cached_jobs_ranked`):
+  - PostgREST's `text_search()` chain returns a terminating builder that doesn't compose with `.order()`, so a single round-trip ranked search needs a function. The RPC owns the FTS + filter + sort logic and `CachedJobsStore.search()` calls it with a stable kwarg dict.
+  - Warm cache: ~360 ms; cold: ~5.5 s; vs ~25 s for the live fan-out — the cache layer paid for itself on the first user query.
+  - Post-flight fixes for cleanup eligibility and the report shape.
+- Phase 6: re-validated and expanded the source list — final Greenhouse pool of 79 verified boards + Ashby adapter (36 boards). Composite job IDs (`source:tenant:job_id`) avoid cross-tenant collisions when one company runs multiple Ashby boards.
+- Phase 7: Workday adapter for 11 Fortune 500 tenants (NVIDIA, Adobe, Walmart, Disney, HP, HPE, Boeing, Citi, Micron, BlackRock, Workday itself). Per-board page delay + reduced concurrency to stay under the anti-bot threshold; production cadence (one refresh per ~30 min) sits well below the rate limit. Fixed a status-reporting bug along the way: an all-failed provider used to land in the report as `status: ok` because the only path that set status away from `ok` assumed `boards_succeeded > 0`.
+- Phase 8: dropdown filters + sort for job search:
+  - schema: `work_mode` and `employment_type_norm` GENERATED STORED columns on `cached_jobs` (with partial indexes on `removed_at IS NULL`); intern detection uses Postgres word-boundary regex (`\mintern(s|ship|ships)?\M`) so "Internal" / "International" don't false-match
+  - RPC v2: extends `search_cached_jobs_ranked` with `p_work_modes`, `p_employment_types`, `p_sort_by`; ORDER BY branches on the sort key (`relevance` → `ts_rank` when there's a query else recency, `newest` → `posted_at DESC`, `oldest` → `posted_at ASC`, `company_az` → `LOWER(company)`)
+  - Python plumbing: `JobSearchQuery` + `JobSearchRequestModel` + `CachedJobsStore.search()` extended with the new args; Pydantic validators normalize input + coerce unknown sort values to `relevance`
+  - Frontend: replaced the lone "Remote only" checkbox with five dropdowns — Source / Work mode / Type (multi-select), Posted within (single-select, retained), Sort (single-select, new). Multi-select chips built on native `<details>`/`<summary>` for keyboard accessibility plus an extra `mousedown` outside-click + `Escape` dismiss handler so the popover behaves like a native menu.
+  - Verified end-to-end against the live cache: filtering by Source = greenhouse + lever, Work mode = remote, Sort = company A → Z returned 12 alphabetically-sorted Pinterest-then-Affirm matches, all remote-friendly.
+- Total active cache after Day 40: ~11,877 jobs across four ATS providers.

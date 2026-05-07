@@ -1,5 +1,31 @@
 # Next steps: frontend split + assistant streaming
 
+> **STATUS (2026-05-08): BOTH ITEMS SHIPPED. This doc is kept as a
+> historical record of the design decisions that drove the split.**
+>
+> - **Item 2 (frontend split): shipped.** The 3,500-line
+>   `job-application-workspace.tsx` was split across
+>   `frontend/src/components/workspace/` into `WorkspaceShell.tsx`,
+>   `Sidebar.tsx`, `ResumeIntake.tsx`, `JobSearch.tsx`, `JDReview.tsx`,
+>   `AnalysisRunner.tsx`, `ArtifactViewer.tsx`, `AssistantPanel.tsx`,
+>   plus `CollapsibleSection.tsx`, `CommandPalette.tsx`, and `icons.tsx`.
+>   Hooks live under `frontend/src/hooks/`. The state strategy ended
+>   up using a per-feature hook + lifted-callback pattern from
+>   `WorkspaceShell.tsx` rather than the Zustand option discussed
+>   below.
+> - **Item 3 (assistant streaming): shipped.** `POST
+>   /workspace/assistant/answer/stream` is live in
+>   `backend/routers/workspace.py`; `streamWorkspaceAssistantAnswer`
+>   in `frontend/src/lib/api.ts` consumes it via `fetch` +
+>   `ReadableStream`. SSE events match the contract sketched below
+>   (`meta` → `delta` × N → `followups` → `done`, with `error` on
+>   failure). Caddy is configured with `flush_interval -1` for the
+>   reverse proxy.
+>
+> The original handoff content from 2026-04-25 follows for reference.
+
+---
+
 > **Purpose.** This document hands off two pending pieces of work
 > (Items 2 and 3 from a multi-session code review) to a fresh chat
 > session, so the next session can execute without re-deriving the

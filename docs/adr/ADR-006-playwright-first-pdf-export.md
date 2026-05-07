@@ -55,9 +55,14 @@ Rejected because it would couple export behavior too tightly to the UI runtime a
 
 ## Superseded By
 
-The active product now uses WeasyPrint as the primary HTML-to-PDF renderer and keeps ReportLab as the fallback backend.
+Initially superseded informally by a WeasyPrint-based pipeline once the local Windows runtime made Playwright subprocess startup unreliable. The current export pipeline is documented in [ADR-015: DOCX-first artifact export with theme palette](ADR-015-docx-first-artifact-export-with-theme-palette.md), which:
 
-Reason for the change:
+- keeps WeasyPrint as the primary HTML-to-PDF renderer
+- adds DOCX as a first-class artifact-export format alongside PDF
+- removes Markdown export entirely
+- ships a shared theme palette (`classic_ats`, `professional_neutral`) that resolves consistently across both PDF and DOCX
+
+Reason for the original Playwright → WeasyPrint move:
 
 - the local Windows runtime was unreliable for Playwright subprocess startup
 - WeasyPrint better matches the product goal of HTML/CSS-driven document templates without a browser dependency
