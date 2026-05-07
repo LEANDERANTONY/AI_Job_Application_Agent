@@ -72,6 +72,13 @@ export type ResumeBuilderDraftForm = {
   education_notes: string;
   skills: string;
   certifications: string;
+  // Multi-line free-form prose — same shape as experience_notes.
+  // The structuring LLM splits this into ProjectEntry objects at
+  // generate / export time.
+  projects_notes: string;
+  // One citation per line; serialised as a list[string] when sent
+  // to the backend, like contact_lines + skills + certifications.
+  publications: string;
 };
 
 export type ResumeBuilderChatTurn = {
@@ -85,7 +92,12 @@ export type ResumeBuilderChatTurn = {
 // more; the user sees what's filled and the assistant decides what to
 // ask next based on the gaps.
 const RESUME_BUILDER_FIELD_LABELS: Array<{
-  key: keyof ResumeBuilderDraftForm | "contact_lines" | "skills" | "certifications";
+  key:
+    | keyof ResumeBuilderDraftForm
+    | "contact_lines"
+    | "skills"
+    | "certifications"
+    | "publications";
   label: string;
   required: boolean;
 }> = [
@@ -97,6 +109,8 @@ const RESUME_BUILDER_FIELD_LABELS: Array<{
   { key: "experience_notes", label: "Experience", required: true },
   { key: "education_notes", label: "Education", required: true },
   { key: "skills", label: "Skills", required: true },
+  { key: "projects_notes", label: "Projects", required: false },
+  { key: "publications", label: "Publications", required: false },
   { key: "certifications", label: "Certifications", required: false },
 ];
 
@@ -208,6 +222,7 @@ export function ResumeIntake({
     if (fieldKey === "contact_lines") return draft.contact_lines.length > 0;
     if (fieldKey === "skills") return draft.skills.length > 0;
     if (fieldKey === "certifications") return draft.certifications.length > 0;
+    if (fieldKey === "publications") return draft.publications.length > 0;
     const value = draft[fieldKey as keyof typeof draft];
     return typeof value === "string" ? value.trim().length > 0 : false;
   }
@@ -811,6 +826,21 @@ export function ResumeIntake({
 
                       <CollapsibleSection
                         index="04"
+                        sub="Side projects, links, impact (optional)"
+                        title="Projects"
+                        variant="bare"
+                      >
+                        <div className="b-doc-form">
+                          {renderTextarea(
+                            "projects_notes",
+                            "Projects notes",
+                            "One project per blank-line block — name, link, what it does, tech, outcomes. Skip if you don't have any.",
+                          )}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection
+                        index="05"
                         sub="Degrees, programs"
                         title="Education"
                         variant="bare"
@@ -821,7 +851,22 @@ export function ResumeIntake({
                       </CollapsibleSection>
 
                       <CollapsibleSection
-                        index="05"
+                        index="06"
+                        sub="Papers, talks, citations (optional)"
+                        title="Publications"
+                        variant="bare"
+                      >
+                        <div className="b-doc-form">
+                          {renderTextarea(
+                            "publications",
+                            "Publications",
+                            "One citation per line. Skip if you don't have any.",
+                          )}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection
+                        index="07"
                         sub="Tools + certifications"
                         title="Skills"
                         variant="bare"

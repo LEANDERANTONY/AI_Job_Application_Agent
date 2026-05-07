@@ -289,6 +289,8 @@ export function WorkspaceShell() {
     education_notes: "",
     skills: "",
     certifications: "",
+    projects_notes: "",
+    publications: "",
   });
 
   const [selectedJobFile, setSelectedJobFile] = useState<File | null>(null);
@@ -596,6 +598,14 @@ export function WorkspaceShell() {
       skills: resumeBuilderSession.draft_profile.skills.join(", "),
       certifications:
         resumeBuilderSession.draft_profile.certifications.join(", "),
+      // Optional fields default to empty string when the backend
+      // omits them — keeps backwards compatibility with sessions
+      // saved before these slots existed.
+      projects_notes:
+        resumeBuilderSession.draft_profile.projects_notes || "",
+      publications: (
+        resumeBuilderSession.draft_profile.publications || []
+      ).join("\n"),
     });
   }, [resumeBuilderSession]);
 
@@ -1088,6 +1098,13 @@ export function WorkspaceShell() {
             .filter(Boolean),
           certifications: resumeBuilderDraftForm.certifications
             .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          // Optional fields — same shape contract as their required
+          // siblings (string for prose, list[string] for citations).
+          projects_notes: resumeBuilderDraftForm.projects_notes,
+          publications: resumeBuilderDraftForm.publications
+            .split("\n")
             .map((item) => item.trim())
             .filter(Boolean),
         },

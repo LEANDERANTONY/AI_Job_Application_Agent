@@ -284,6 +284,14 @@ export type ResumeBuilderDraftProfile = {
   education_notes: string;
   skills: string[];
   certifications: string[];
+  /** Optional — free-form prose describing side projects / portfolio
+   *  pieces. Captured verbatim by the LLM intake; the structuring
+   *  pass converts it into ProjectEntry objects on the artifact. */
+  projects_notes: string;
+  /** Optional — list of publication / paper / talk citation strings.
+   *  Like certifications: each item is a single line of citation
+   *  text, no further structuring. */
+  publications: string[];
 };
 
 export type ResumeBuilderPersistenceStatus =
