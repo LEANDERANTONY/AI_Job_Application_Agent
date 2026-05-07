@@ -17,7 +17,7 @@
 //   4. b-saved-section (collapsible drawer with saved-job cards)
 //   5. b-results-head + b-job-grid (top-match badge on the leader)
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import {
   ChevronRightIcon,
@@ -84,11 +84,16 @@ type MultiSelectFilterProps<T extends string> = {
 
 /** Multi-select filter rendered as a chip + popover.
  *
- * Uses native <details>/<summary> for the disclosure semantics so it's
- * keyboard-accessible without managing open/close state by hand. The
- * summary chip shows the current selection count; the popover holds
- * checkboxes for each option. Clicking outside closes it (the
- * onBlur/click-away is implicit via the native <details> element). */
+ * Uses native <details>/<summary> for the disclosure semantics so the
+ * keyboard story is correct (Enter / Space toggles via summary, focus
+ * management is the browser's job). On top of that we add two extra
+ * dismissals that the native element doesn't ship:
+ *   - mousedown anywhere outside the <details> closes it (otherwise
+ *     the popover lingers until the user clicks the chip again, which
+ *     felt broken next to typical menu patterns).
+ *   - Escape closes it from the keyboard.
+ * Imperatively flipping `details.open = false` is fine here — there's
+ * no React state tracking the open flag, so we don't risk a desync. */
 function MultiSelectFilter<T extends string>({
   label,
   selected,
@@ -96,6 +101,38 @@ function MultiSelectFilter<T extends string>({
   onToggle,
   emptyLabel,
 }: MultiSelectFilterProps<T>) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    function handleMouseDown(event: MouseEvent) {
+      const node = detailsRef.current;
+      if (!node || !node.open) return;
+      // Use mousedown (not click) so the close fires before any
+      // unrelated click handler on the page runs — feels snappier and
+      // matches how native menus behave.
+      const target = event.target;
+      if (target instanceof Node && !node.contains(target)) {
+        node.open = false;
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      const node = detailsRef.current;
+      if (!node || !node.open) return;
+      if (event.key === "Escape") {
+        node.open = false;
+        // Return focus to the summary so a tab-keyboard user knows
+        // where they are after dismissing.
+        node.querySelector("summary")?.focus();
+      }
+    }
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   const summaryText =
     selected.length === 0
       ? emptyLabel
@@ -104,7 +141,7 @@ function MultiSelectFilter<T extends string>({
       : `${selected.length} selected`;
 
   return (
-    <details className="b-filter-popover">
+    <details className="b-filter-popover" ref={detailsRef}>
       <summary>
         <span className="b-filter-popover-label">{label}</span>
         <span className="b-filter-popover-value">{summaryText}</span>
