@@ -92,6 +92,38 @@ def _resolve_openai_service(access_token: str, refresh_token: str):
     return openai_service
 
 
+def _attach_persistence_status(
+    response: dict,
+    persist_result: dict | None,
+    *,
+    access_token: str,
+    refresh_token: str,
+) -> dict:
+    """Tag a resume-builder route response with the persistence outcome.
+
+    Tri-state so the UI can communicate clearly:
+      - "saved":         signed in + Supabase upsert succeeded
+      - "skipped":       signed in but persistence failed (Supabase
+                         unreachable, RLS reject, payload export error).
+                         The user's draft is in-memory only and at risk
+                         from a container restart.
+      - "unauthenticated": no auth tokens; persistence was never
+                           attempted. Surface a "sign in to save" prompt
+                           in the UI instead of a generic skip.
+
+    `persist_result` is the dict returned by
+    persist_resume_builder_session; treat None as a missing call.
+    """
+    if not (access_token and refresh_token):
+        response["persistence_status"] = "unauthenticated"
+        return response
+    raw_status = (persist_result or {}).get("status", "skipped")
+    response["persistence_status"] = (
+        "saved" if raw_status == "saved" else "skipped"
+    )
+    return response
+
+
 @router.post("/resume/upload")
 @limiter.limit(LIMIT_PARSE)
 def upload_resume(request: Request, payload: UploadedFilePayloadModel):
@@ -124,12 +156,17 @@ def start_resume_builder_route(request: Request, auth_tokens=Depends(get_optiona
     access_token, refresh_token = auth_tokens
     try:
         payload = start_resume_builder_session()
-        persist_resume_builder_session(
+        persist_result = persist_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
             session_id=payload["session_id"],
         )
-        return payload
+        return _attach_persistence_status(
+            payload,
+            persist_result,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -166,12 +203,17 @@ def answer_resume_builder_route(
             message=payload.message,
             openai_service=openai_service,
         )
-        persist_resume_builder_session(
+        persist_result = persist_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
-        return response
+        return _attach_persistence_status(
+            response,
+            persist_result,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -191,12 +233,17 @@ def generate_resume_builder_route(
             session_id=payload.session_id,
         )
         response = generate_resume_builder_resume(session_id=payload.session_id)
-        persist_resume_builder_session(
+        persist_result = persist_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
-        return response
+        return _attach_persistence_status(
+            response,
+            persist_result,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -219,12 +266,17 @@ def update_resume_builder_route(
             session_id=payload.session_id,
             draft_updates=payload.draft_profile,
         )
-        persist_resume_builder_session(
+        persist_result = persist_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
-        return response
+        return _attach_persistence_status(
+            response,
+            persist_result,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 

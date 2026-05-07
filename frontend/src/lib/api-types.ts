@@ -286,6 +286,11 @@ export type ResumeBuilderDraftProfile = {
   certifications: string[];
 };
 
+export type ResumeBuilderPersistenceStatus =
+  | "saved"
+  | "skipped"
+  | "unauthenticated";
+
 export type ResumeBuilderSessionResponse = {
   session_id: string;
   status: string;
@@ -299,6 +304,11 @@ export type ResumeBuilderSessionResponse = {
   generated_resume_plain_text: string;
   ready_to_generate: boolean;
   ready_to_commit: boolean;
+  /** Outcome of the Supabase upsert that the route ran after the
+   *  service mutation. Optional because /resume-builder/latest
+   *  doesn't include it (a session loaded from latest is implicitly
+   *  saved if it exists). */
+  persistence_status?: ResumeBuilderPersistenceStatus;
   resume_document?: ResumeDocument;
   candidate_profile?: CandidateProfile;
 };

@@ -48,6 +48,7 @@ function AutoTextarea({ value, ...rest }: AutoTextareaProps) {
 }
 import type {
   CandidateProfile,
+  ResumeBuilderPersistenceStatus,
   ResumeBuilderSessionResponse,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
@@ -348,6 +349,36 @@ export function ResumeIntake({
               const filledRequiredCount = RESUME_BUILDER_FIELD_LABELS.filter(
                 (field) => field.required && isBuilderFieldFilled(field.key),
               ).length;
+              // Persistence indicator: surface whether the latest /message
+              // / /update / /generate response was actually upserted to
+              // Supabase. Tri-state from the backend; when missing (e.g.
+              // session restored from /latest), infer from auth state —
+              // /latest only returns a session that already exists in
+              // Supabase, so authSignedIn implies "saved".
+              const persistenceStatus: ResumeBuilderPersistenceStatus =
+                builderSession.persistence_status
+                  ?? (authSignedIn ? "saved" : "unauthenticated");
+              const persistenceMeta: Record<
+                ResumeBuilderPersistenceStatus,
+                { dot: string; label: string; color: string }
+              > = {
+                saved: {
+                  dot: "●",
+                  label: "Saved to your account",
+                  color: "#86efac",
+                },
+                skipped: {
+                  dot: "⚠",
+                  label: "Not saved — only in this session",
+                  color: "#fbbf24",
+                },
+                unauthenticated: {
+                  dot: "○",
+                  label: "Sign in to save your draft",
+                  color: "var(--fg-3)",
+                },
+              };
+              const persistence = persistenceMeta[persistenceStatus];
               return (
                 <div className="b-wizard-rail" aria-hidden="false">
                   <div className="b-wizard-rail-meta">
@@ -361,6 +392,28 @@ export function ResumeIntake({
                         : builderSession.status === "reviewing"
                           ? "ready to review"
                           : "still chatting"}
+                    </span>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginLeft: 12,
+                        fontSize: 11,
+                        color: persistence.color,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                      }}
+                      title={
+                        persistenceStatus === "skipped"
+                          ? "Sign-in tokens are present but Supabase persistence failed for this turn. Your edits live only in the current browser session — try again or refresh."
+                          : persistenceStatus === "unauthenticated"
+                            ? "Sign in to keep your draft safe across sessions."
+                            : "Your resume-builder draft is upserted to Supabase after every turn."
+                      }
+                    >
+                      <span aria-hidden="true">{persistence.dot}</span>
+                      {persistence.label}
                     </span>
                   </div>
                   <div
