@@ -1,7 +1,33 @@
 from datetime import datetime, timezone
 
+from src.cached_jobs_store import CachedJobsStore
 from src.job_sources.registry import build_default_job_sources
-from src.schemas import JobResolutionResult, JobSearchQuery, JobSearchResult
+from src.schemas import JobPosting, JobResolutionResult, JobSearchQuery, JobSearchResult
+
+
+def _row_to_job_posting(row: dict) -> JobPosting:
+    """Convert a cached_jobs row dict (as returned by Supabase) into a
+    JobPosting dataclass so the response model is unchanged.
+
+    Column-to-attr remap: cached_jobs.job_id → JobPosting.id,
+    cached_jobs.description → JobPosting.description_text. Everything
+    else passes through 1:1.
+    """
+    posted_at_value = row.get("posted_at") or ""
+    return JobPosting(
+        id=str(row.get("job_id", "") or ""),
+        source=str(row.get("source", "") or ""),
+        title=str(row.get("title", "") or ""),
+        company=str(row.get("company", "") or ""),
+        location=str(row.get("location", "") or ""),
+        employment_type=str(row.get("employment_type", "") or ""),
+        url=str(row.get("url", "") or ""),
+        summary=str(row.get("summary", "") or ""),
+        description_text=str(row.get("description", "") or ""),
+        posted_at=str(posted_at_value or ""),
+        scraped_at=str(row.get("last_seen_at", "") or ""),
+        metadata=row.get("metadata") if isinstance(row.get("metadata"), dict) else {},
+    )
 
 
 def _dedupe_key(posting) -> str:
@@ -44,8 +70,72 @@ def _posted_timestamp(value: str) -> float:
 class JobSearchService:
     """Initial backend boundary for provider-backed job search."""
 
-    def __init__(self, sources=None):
+    def __init__(self, sources=None, cache_store: CachedJobsStore | None = None):
         self._sources = list(sources or build_default_job_sources())
+        # Constructed lazily so unconfigured deployments (no service-role
+        # key) don't blow up at import time — only when search_cached
+        # is actually invoked. Tests can inject a fake store directly.
+        self._cache_store = cache_store
+
+    def _get_cache_store(self) -> CachedJobsStore:
+        if self._cache_store is None:
+            self._cache_store = CachedJobsStore()
+        return self._cache_store
+
+    def search_cached(self, query: JobSearchQuery) -> JobSearchResult:
+        """Cache-backed search. Default path for /jobs/search.
+
+        Hits the cached_jobs Supabase table via Postgres FTS instead of
+        fanning out to every Greenhouse / Lever board. ~30ms vs ~1-3s
+        for the live path. Stays compatible with the existing
+        JobSearchResult shape so the response model is unchanged.
+
+        Falls back to the live path automatically when the cache is
+        unconfigured (no SUPABASE_SERVICE_ROLE_KEY) — keeps local-dev
+        environments working without forcing every developer to wire
+        up the service role key.
+        """
+        normalized_query = JobSearchQuery(
+            query=str(query.query or "").strip(),
+            location=str(query.location or "").strip(),
+            source_filters=list(query.source_filters or []),
+            remote_only=bool(query.remote_only),
+            posted_within_days=query.posted_within_days,
+            page_size=max(1, min(int(query.page_size or 20), 50)),
+        )
+
+        store = self._get_cache_store()
+        if not store.is_configured():
+            # Graceful degradation — local dev or staging without the
+            # service-role key falls back to the live fan-out so the
+            # endpoint still returns results.
+            result = self.search(normalized_query)
+            result.source_status["cache"] = "not_configured"
+            return result
+
+        try:
+            rows = store.search(
+                query=normalized_query.query,
+                location=normalized_query.location,
+                sources=list(normalized_query.source_filters) or None,
+                remote_only=normalized_query.remote_only,
+                posted_within_days=normalized_query.posted_within_days,
+                limit=normalized_query.page_size,
+            )
+        except Exception as exc:  # noqa: BLE001 — cache outage shouldn't kill search
+            # Fall through to the live path. The cache is a perf
+            # optimisation, not a correctness boundary.
+            result = self.search(normalized_query)
+            result.source_status["cache"] = f"error: {type(exc).__name__}"
+            return result
+
+        postings = [_row_to_job_posting(row) for row in rows]
+        return JobSearchResult(
+            query=normalized_query,
+            results=postings,
+            total_results=len(postings),
+            source_status={"cache": "ok", "backend": "ready"},
+        )
 
     def search(self, query: JobSearchQuery) -> JobSearchResult:
         normalized_query = JobSearchQuery(

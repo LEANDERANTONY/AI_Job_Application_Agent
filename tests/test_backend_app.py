@@ -30,6 +30,9 @@ def test_backend_health_endpoint_reports_service_status():
 
 
 def test_job_search_endpoint_returns_placeholder_backend_response():
+    """End-to-end smoke for /jobs/search. Default routing (no live=true)
+    goes through search_cached(); the FakeService stubs both methods so
+    either dispatch path returns the same result."""
     class FakeService:
         def search(self, query):
             from src.schemas import JobPosting, JobSearchResult
@@ -48,6 +51,12 @@ def test_job_search_endpoint_returns_placeholder_backend_response():
                 total_results=1,
                 source_status={"backend": "ready", "demo": "ok"},
             )
+
+        # /jobs/search defaults to the cached path now — stub it too so
+        # this test pins the response-shape contract regardless of which
+        # branch the route picks.
+        def search_cached(self, query):
+            return self.search(query)
 
     app.dependency_overrides[get_job_search_service] = lambda: FakeService()
     try:
@@ -104,6 +113,45 @@ def test_job_resolve_endpoint_rejects_blank_url():
     )
 
     assert response.status_code == 422
+
+
+def test_job_search_endpoint_dispatches_cached_by_default_and_live_on_flag():
+    """Pin the routing contract: no query param → search_cached, with
+    `?live=true` → search. Ships the new escape-hatch behavior."""
+    calls = []
+
+    class FakeService:
+        def search(self, query):
+            from src.schemas import JobSearchResult
+            calls.append("live")
+            return JobSearchResult(query=query, source_status={"path": "live"})
+
+        def search_cached(self, query):
+            from src.schemas import JobSearchResult
+            calls.append("cached")
+            return JobSearchResult(query=query, source_status={"path": "cached"})
+
+    app.dependency_overrides[get_job_search_service] = lambda: FakeService()
+    try:
+        # Default → cached.
+        response = client.post(
+            "/api/jobs/search",
+            json={"query": "anything"},
+        )
+        assert response.status_code == 200
+        assert response.json()["source_status"] == {"path": "cached"}
+
+        # ?live=true → live fan-out.
+        response = client.post(
+            "/api/jobs/search?live=true",
+            json={"query": "anything"},
+        )
+        assert response.status_code == 200
+        assert response.json()["source_status"] == {"path": "live"}
+    finally:
+        app.dependency_overrides.pop(get_job_search_service, None)
+
+    assert calls == ["cached", "live"]
 
 
 def test_admin_refresh_cache_rejects_missing_bearer(monkeypatch):

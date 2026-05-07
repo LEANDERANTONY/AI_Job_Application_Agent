@@ -22,9 +22,23 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 def search_jobs(
     request: Request,
     payload: JobSearchRequestModel,
+    live: bool = False,
     service: JobSearchService = Depends(get_job_search_service),
 ):
-    result = service.search(payload.to_domain())
+    """Search the job pool.
+
+    Default path (`live=false`): query the cached_jobs Supabase table
+    via Postgres full-text — ~30ms, no upstream load. The cache is
+    refreshed every 30 min by /admin/refresh-cache.
+
+    Escape hatch (`?live=true`): bypass the cache and fan out to
+    every configured Greenhouse / Lever board live. Slower (1-3s) and
+    costs upstream rate-limit budget — kept for debugging
+    'why doesn't this job appear in the cache?' questions and as a
+    fallback if the cache misbehaves.
+    """
+    domain_query = payload.to_domain()
+    result = service.search(domain_query) if live else service.search_cached(domain_query)
     return JobSearchResponseModel.from_domain(result)
 
 

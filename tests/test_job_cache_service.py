@@ -204,3 +204,128 @@ def test_refresh_raises_when_store_unconfigured():
 
     with pytest.raises(RuntimeError, match="not configured"):
         refresh_cached_jobs(store=_UnconfiguredStore(), adapters=[])
+
+
+# ---------------------------------------------------------------------------
+# Cutover tests: JobSearchService.search_cached delegates to the store and
+# wraps rows back into JobPosting objects so the response model is unchanged.
+# ---------------------------------------------------------------------------
+
+
+def test_search_cached_returns_jobpostings_from_cache_rows():
+    """search_cached() reads rows from a fake CachedJobsStore and
+    converts them into JobPosting objects with the right column-to-attr
+    remapping (job_id → id, description → description_text)."""
+    from backend.services.job_search_service import JobSearchService
+    from src.schemas import JobSearchQuery
+
+    class _FakeCacheStore:
+        def __init__(self):
+            self.search_calls = []
+
+        def is_configured(self):
+            return True
+
+        def search(self, **kwargs):
+            self.search_calls.append(kwargs)
+            return [
+                {
+                    "job_id": "gh-123",
+                    "source": "greenhouse",
+                    "title": "Senior ML Engineer",
+                    "company": "Stripe",
+                    "location": "San Francisco",
+                    "url": "https://example.com/123",
+                    "summary": "",
+                    "description": "<p>Long HTML</p>",
+                    "posted_at": "2026-04-01T00:00:00+00:00",
+                    "last_seen_at": "2026-05-07T18:00:00+00:00",
+                    "metadata": {"departments": ["Engineering"]},
+                },
+            ]
+
+    store = _FakeCacheStore()
+    service = JobSearchService(sources=[], cache_store=store)
+    result = service.search_cached(
+        JobSearchQuery(query="machine learning", page_size=20)
+    )
+
+    # Forwarded the search kwargs through to the store.
+    assert len(store.search_calls) == 1
+    call = store.search_calls[0]
+    assert call["query"] == "machine learning"
+    # Result wrapped into JobPosting objects with the column remap.
+    assert result.total_results == 1
+    assert result.results[0].id == "gh-123"  # job_id → id
+    assert result.results[0].source == "greenhouse"
+    assert result.results[0].description_text == "<p>Long HTML</p>"  # description → description_text
+    assert result.source_status == {"cache": "ok", "backend": "ready"}
+
+
+def test_search_cached_falls_back_to_live_when_cache_unconfigured():
+    """No service-role key → search_cached() transparently falls back
+    to the live fan-out path so local-dev environments still work."""
+    from backend.services.job_search_service import JobSearchService
+    from src.schemas import JobPosting, JobSearchQuery, JobSourceSearchResponse
+
+    class _UnconfiguredCacheStore:
+        def is_configured(self):
+            return False
+
+    class _FakeSource:
+        source_name = "fake"
+
+        def search(self, query):
+            return JobSourceSearchResponse(
+                source="fake",
+                results=[
+                    JobPosting(id="x", source="fake", title="Live Job", company="Live Co"),
+                ],
+                status="ok",
+                source_details={},
+            )
+
+    service = JobSearchService(sources=[_FakeSource()], cache_store=_UnconfiguredCacheStore())
+    result = service.search_cached(JobSearchQuery(query="anything", page_size=20))
+
+    # Live path returned the result.
+    assert result.total_results == 1
+    assert result.results[0].title == "Live Job"
+    # Source status flags the cache miss explicitly.
+    assert result.source_status["cache"] == "not_configured"
+
+
+def test_search_cached_falls_back_to_live_when_cache_errors():
+    """Cache outage → fall back to live, surface 'cache: error: ...'
+    in source_status so the client / monitoring can see what happened
+    without losing the user-visible result."""
+    from backend.services.job_search_service import JobSearchService
+    from src.schemas import JobPosting, JobSearchQuery, JobSourceSearchResponse
+
+    class _ErroringCacheStore:
+        def is_configured(self):
+            return True
+
+        def search(self, **kwargs):
+            raise RuntimeError("supabase connection refused")
+
+    class _FakeSource:
+        source_name = "fake"
+
+        def search(self, query):
+            return JobSourceSearchResponse(
+                source="fake",
+                results=[JobPosting(id="x", source="fake", title="Live Fallback", company="Co")],
+                status="ok",
+                source_details={},
+            )
+
+    service = JobSearchService(
+        sources=[_FakeSource()],
+        cache_store=_ErroringCacheStore(),
+    )
+    result = service.search_cached(JobSearchQuery(query="anything", page_size=20))
+
+    assert result.total_results == 1
+    assert result.results[0].title == "Live Fallback"
+    assert result.source_status["cache"].startswith("error: RuntimeError")
