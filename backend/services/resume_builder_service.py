@@ -105,6 +105,7 @@ class ResumeBuilderSession:
     structured_experience_payload: list[dict] = field(default_factory=list)
     structured_education_payload: list[dict] = field(default_factory=list)
     structured_projects_payload: list[dict] = field(default_factory=list)
+    structured_skill_categories: dict = field(default_factory=dict)
 
 
 _SESSIONS: dict[str, ResumeBuilderSession] = {}
@@ -1251,6 +1252,7 @@ def _structure_via_llm(
     experience_items = payload.get("experience")
     education_items = payload.get("education")
     projects_items = payload.get("projects")
+    skill_categories_raw = payload.get("skill_categories")
 
     experience_entries: list[WorkExperience] = []
     if isinstance(experience_items, list):
@@ -1298,9 +1300,51 @@ def _structure_via_llm(
     session.structured_projects_payload = [
         _project_to_dict(entry) for entry in project_entries
     ]
+    # Skill categories are stored on the session (not returned in the
+    # tuple) — _synthesize_resume_builder_artifact reads them after
+    # build_tailored_resume_artifact and assigns to artifact.skill_categories.
+    # Validate shape before caching: dict[str, list[str]], every skill
+    # in the buckets must appear in the user's flat skills list (defends
+    # against the LLM inventing categories with new tech).
+    session.structured_skill_categories = _sanitize_skill_categories(
+        skill_categories_raw, session.draft.skills or []
+    )
     session.structuring_signature = current_signature
 
     return experience_entries, education_entries, project_entries
+
+
+def _sanitize_skill_categories(
+    raw, allowed_skills: list[str]
+) -> dict[str, list[str]]:
+    """Validate the LLM's skill_categories payload against the user's
+    flat skill list. Drops any skill the LLM invented; drops empty
+    buckets; preserves user casing where possible.
+
+    Returns {} on any structural problem so the renderer falls back to
+    the flat list cleanly.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    # Build a case-insensitive lookup of allowed skills, mapping lowercase
+    # back to the user's original casing.
+    canon = {str(s).lower().strip(): str(s).strip() for s in allowed_skills if str(s).strip()}
+    if not canon:
+        return {}
+    cleaned: dict[str, list[str]] = {}
+    for label, items in raw.items():
+        if not isinstance(label, str) or not label.strip():
+            continue
+        if not isinstance(items, list):
+            continue
+        bucket: list[str] = []
+        for item in items:
+            key = str(item or "").lower().strip()
+            if key in canon:
+                bucket.append(canon[key])
+        if bucket:
+            cleaned[label.strip()] = bucket
+    return cleaned
 
 
 def _build_resume_markdown(draft: ResumeBuilderDraft) -> str:
@@ -1475,6 +1519,9 @@ def export_resume_builder_session_payload(*, session_id: str):
             "structured_projects_payload": list(
                 session.structured_projects_payload or []
             ),
+            "structured_skill_categories": dict(
+                session.structured_skill_categories or {}
+            ),
         },
         separators=(",", ":"),
     )
@@ -1559,6 +1606,11 @@ def restore_resume_builder_session_payload(payload_json: str):
             for item in (raw_payload.get("structured_projects_payload") or [])
             if isinstance(item, dict)
         ],
+        structured_skill_categories=(
+            raw_payload.get("structured_skill_categories") or {}
+            if isinstance(raw_payload.get("structured_skill_categories"), dict)
+            else {}
+        ),
     )
     _SESSIONS[session.session_id] = session
     return _serialize_session(session)
@@ -1963,6 +2015,13 @@ def _synthesize_resume_builder_artifact(
         tailored_draft,
         theme=theme,
     )
+
+    # Skill categories are produced by _structure_via_llm and cached on
+    # the session. The artifact builder doesn't know about them, so we
+    # paint them on after the fact. The renderer prefers categories
+    # over the flat highlighted_skills list when present.
+    if session.structured_skill_categories:
+        artifact.skill_categories = dict(session.structured_skill_categories)
 
     name = (candidate_profile.full_name or "Candidate").strip() or "Candidate"
     target_role = (session.draft.target_role or "").strip()

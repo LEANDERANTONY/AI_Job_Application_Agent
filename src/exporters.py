@@ -452,7 +452,35 @@ def _build_resume_contact_inline_html(contact_lines):
     return '<p class="resume-contact-inline">{items}</p>'.format(items=" | ".join(values))
 
 
-def _build_resume_skills_inline_html(skills):
+def _build_resume_skills_inline_html(skills, skill_categories=None):
+    """Render skills either as a flat pipe-list or, when categories are
+    present, as one row per category ('Languages & Tools: Python, SQL').
+
+    Categories take precedence — they're emitted only when the
+    structuring pass found 8+ skills clustering naturally, so when
+    they're present the flat list would be redundant. Falls back to
+    flat for sparse skill sets, the JD-driven path, and any artifact
+    built before this field existed.
+    """
+    if skill_categories:
+        rows: list[str] = []
+        for label, items in skill_categories.items():
+            label_clean = str(label or "").strip()
+            cleaned = [
+                html.escape(str(item or "").strip())
+                for item in items
+                if str(item or "").strip()
+            ]
+            if not label_clean or not cleaned:
+                continue
+            rows.append(
+                '<p class="resume-skill-category">'
+                '<strong>{label}:</strong> {items}'
+                '</p>'.format(label=html.escape(label_clean), items=", ".join(cleaned))
+            )
+        if rows:
+            return "".join(rows)
+
     values = [html.escape(str(item or "").strip()) for item in skills if str(item or "").strip()]
     if not values:
         return '<p class="resume-empty">No highlighted skills were generated.</p>'
@@ -509,7 +537,12 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         <h2>Core Skills</h2>
         {skills}
     </section>
-    """.format(skills=_build_resume_skills_inline_html(artifact.highlighted_skills))
+    """.format(
+        skills=_build_resume_skills_inline_html(
+            artifact.highlighted_skills,
+            skill_categories=getattr(artifact, "skill_categories", None) or None,
+        )
+    )
 
     experience_entries = list(artifact.experience_entries or [])
     experience_block = ""
@@ -717,6 +750,8 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         .resume-classic-role {{ font-size: 10.2pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; }}
         .resume-contact-inline {{ color: var(--muted); font-size: 9.6pt; line-height: 1.55; max-width: 88%; }}
         .resume-skill-inline {{ color: var(--ink); font-size: 9.8pt; line-height: 1.7; }}
+        .resume-skill-category {{ color: var(--ink); font-size: 9.8pt; line-height: 1.7; margin: 0 0 2px; }}
+        .resume-skill-category strong {{ color: var(--accent); font-weight: 700; }}
         .resume-classic-section {{ position: relative; z-index: 1; margin-top: 12px; }}
         .resume-classic-section--plain-head h2 {{ border-bottom: 0; padding-bottom: 0; }}
         .resume-experience-card, .resume-project-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
@@ -1435,6 +1470,36 @@ def _docx_resume_summary_block(document, artifact: TailoredResumeArtifact, *, pa
 
 def _docx_resume_skills_block(document, artifact: TailoredResumeArtifact, *, palette: dict):
     _docx_resume_section_heading(document, "Core Skills", palette=palette)
+    categories = getattr(artifact, "skill_categories", None) or {}
+    if categories:
+        # One paragraph per category, with a bold accent-colored label
+        # ("Languages & Tools: Python, SQL, ..."). Mirrors the HTML's
+        # .resume-skill-category styling.
+        for label, items in categories.items():
+            label_clean = str(label or "").strip()
+            cleaned = [str(item or "").strip() for item in items if str(item or "").strip()]
+            if not label_clean or not cleaned:
+                continue
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.space_before = _docx_pt(0)
+            paragraph.paragraph_format.space_after = _docx_pt(2)
+            label_run = paragraph.add_run(f"{label_clean}: ")
+            _docx_apply_run_font(
+                label_run,
+                family=palette["body_font"],
+                size_pt=11,
+                color_hex=palette["accent"],
+                bold=True,
+            )
+            value_run = paragraph.add_run(", ".join(cleaned))
+            _docx_apply_run_font(
+                value_run,
+                family=palette["body_font"],
+                size_pt=11,
+                color_hex=palette["ink"],
+            )
+        return
+
     skills = [str(s).strip() for s in (artifact.highlighted_skills or []) if str(s or "").strip()]
     if skills:
         _docx_add_paragraph_text(

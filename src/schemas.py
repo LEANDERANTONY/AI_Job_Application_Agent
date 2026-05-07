@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -275,6 +275,12 @@ class TailoredResumeArtifact:
     target_role: str = ""
     professional_summary: str = ""
     highlighted_skills: List[str] = field(default_factory=list)
+    # Optional grouped view of skills, keyed by category label
+    # ('Languages & Tools', 'ML/DL Frameworks', etc.). When non-empty
+    # the renderer displays one row per category instead of a flat
+    # pipe-separated list. Falls back to highlighted_skills when this
+    # is empty so legacy JD-driven exports keep their current layout.
+    skill_categories: Dict[str, List[str]] = field(default_factory=dict)
     experience_entries: List[ResumeExperienceEntry] = field(default_factory=list)
     education_entries: List[EducationEntry] = field(default_factory=list)
     certifications: List[str] = field(default_factory=list)

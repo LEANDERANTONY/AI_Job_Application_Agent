@@ -1385,6 +1385,157 @@ def test_resume_builder_export_renders_projects_in_docx(monkeypatch):
     _SESSIONS.pop(session_id, None)
 
 
+def test_resume_builder_skill_categories_round_trip_into_artifact(monkeypatch):
+    """LLM emits skill_categories in the structuring payload; the
+    sanitizer keeps only categories whose skills appear in the user's
+    flat list; the artifact's skill_categories field gets populated;
+    the rendered DOCX shows category-labelled rows instead of a single
+    pipe-separated line."""
+    import base64
+    from io import BytesIO
+
+    from docx import Document
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _CategoriesService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                return {
+                    "experience": [
+                        {
+                            "title": "AI Engineer",
+                            "organization": "Self-Directed",
+                            "start": "2022",
+                            "end": "Present",
+                            "bullets": ["Built RAG and agentic systems."],
+                        },
+                    ],
+                    "education": [
+                        {"institution": "Stanford", "degree": "MS", "field_of_study": "CS"},
+                    ],
+                    "projects": [],
+                    "skill_categories": {
+                        "Languages & Tools": ["Python", "SQL"],
+                        "ML / DL Frameworks": ["PyTorch", "Scikit-learn"],
+                        "GenAI & LLMs": ["LangChain", "OpenAI API"],
+                        # Sanitizer must drop "Rust" — the user never typed it.
+                        "Bogus": ["Rust"],
+                    },
+                }
+            return {"draft_updates": {}, "assistant_message": "ok", "status": "collecting", "focus_field": ""}
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _CategoriesService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya",
+                "experience_notes": "AI Engineer 2022-Present",
+                "education_notes": "MS CS Stanford",
+                "skills": [
+                    "Python", "SQL", "PyTorch", "Scikit-learn",
+                    "LangChain", "OpenAI API", "Docker", "FastAPI",
+                ],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    export_response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={"session_id": session_id, "export_format": "docx", "theme": "classic_ats"},
+    )
+    assert export_response.status_code == 200
+    raw_bytes = base64.b64decode(export_response.json()["content_base64"])
+    doc = Document(BytesIO(raw_bytes))
+    body = "\n".join(p.text for p in doc.paragraphs)
+
+    # Category labels rendered (not just a flat pipe list).
+    assert "Languages & Tools:" in body
+    assert "ML / DL Frameworks:" in body
+    assert "GenAI & LLMs:" in body
+    # The bogus 'Rust' category contained a skill the user didn't type
+    # — sanitizer drops it before it can confuse the reader.
+    assert "Rust" not in body
+    assert "Bogus" not in body
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_skill_categories_falls_back_to_flat_when_llm_omits(monkeypatch):
+    """When the LLM doesn't emit categories (or returns {}), the
+    renderer falls back to the existing flat pipe-separated layout.
+    Pins backwards compatibility for sparse skill sets."""
+    import base64
+    from io import BytesIO
+
+    from docx import Document
+    from backend.services.resume_builder_service import _SESSIONS
+
+    class _NoCategoriesService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                return {
+                    "experience": [
+                        {"title": "Engineer", "organization": "Acme", "bullets": []},
+                    ],
+                    "education": [],
+                    "projects": [],
+                    # No skill_categories key — sparse skill set, flat list is fine.
+                }
+            return {"draft_updates": {}, "assistant_message": "ok", "status": "collecting", "focus_field": ""}
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _NoCategoriesService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya",
+                "experience_notes": "Engineer at Acme",
+                "skills": ["Python", "SQL"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    export_response = client.post(
+        "/api/workspace/resume-builder/export",
+        json={"session_id": session_id, "export_format": "docx", "theme": "classic_ats"},
+    )
+    assert export_response.status_code == 200
+    raw_bytes = base64.b64decode(export_response.json()["content_base64"])
+    doc = Document(BytesIO(raw_bytes))
+    body = "\n".join(p.text for p in doc.paragraphs)
+
+    # Skills present, but as a flat pipe list (no category labels).
+    assert "Python" in body
+    assert "SQL" in body
+    assert "|" in body  # flat pipe separator visible
+    assert ":" not in body or "Languages & Tools:" not in body  # no category labels
+
+    _SESSIONS.pop(session_id, None)
+
+
 def test_resume_builder_intake_recovers_full_name_when_llm_truncates(monkeypatch):
     """Safety net for the LLM dropping a surname.
 

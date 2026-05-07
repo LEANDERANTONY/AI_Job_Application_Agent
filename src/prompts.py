@@ -619,6 +619,18 @@ def build_resume_builder_structuring_prompt(
             "unknown), end (string, '' if unknown), link (URL string, '' if none). "
             "Empty list when projects_notes is empty. Order most-recent first."
         ),
+        "skill_categories": (
+            "OPTIONAL dict mapping category labels to skill name lists, e.g. "
+            "{'Languages & Tools': ['Python', 'SQL'], 'ML / DL Frameworks': "
+            "['PyTorch', 'Scikit-learn'], 'GenAI & LLMs': ['LangChain', 'OpenAI API']}. "
+            "Generate this ONLY when the candidate has 8+ skills that obviously "
+            "cluster by category. Pick category labels that fit the candidate's "
+            "domain (common labels: 'Languages & Tools', 'ML / DL Frameworks', "
+            "'GenAI & LLMs', 'Vector Databases', 'Systems & Deployment', "
+            "'Data & Analysis', 'Cloud & Infrastructure', 'Frontend', 'Mobile'). "
+            "Skip and return {} when skills are sparse, uniform, or don't cluster "
+            "obviously — the renderer falls back to a flat list."
+        ),
     }
 
     user_prompt = "\n\n".join(
@@ -692,6 +704,11 @@ def build_resume_builder_structuring_prompt(
             "(impact + outcome). Don't invent metrics, GitHub URLs, or "
             "technologies that aren't in the prose. If projects_notes is "
             "empty, return projects=[].\n"
+            "- Skill categories: only emit when 8+ skills cluster naturally "
+            "by domain. Every skill that appears in skill_categories MUST "
+            "also appear in the original skills list — don't invent new "
+            "tech. Don't reorder the skill names within a bucket; preserve "
+            "the user's casing ('TensorFlow' not 'tensorflow').\n"
             "- If the user's prose is empty for a section, return an empty "
             "list for that section.\n"
             + _build_contract(contract)
