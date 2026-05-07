@@ -767,3 +767,145 @@ def test_export_docx_bytes_rejects_unsupported_artifact_type():
     except ExportError as exc:
         assert "Unsupported artifact type" in exc.user_message
 
+
+# ---------------------------------------------------------------------------
+# Phase 4: theme switch (classic_ats vs professional_neutral)
+# ---------------------------------------------------------------------------
+
+
+def _docx_run_color_hexes(doc) -> set[str]:
+    """Collect every hex color string used by any run in the document.
+
+    python-docx exposes per-run colors via `run.font.color.rgb`
+    (RGBColor or None when the run inherits). For our themed renderer
+    every visible run gets an explicit color, so the union of these
+    values is a fingerprint we can compare across themes."""
+    colors: set[str] = set()
+    for paragraph in doc.paragraphs:
+        for run in paragraph.runs:
+            rgb = run.font.color.rgb
+            if rgb is not None:
+                colors.add(str(rgb))
+    return colors
+
+
+def _docx_run_font_names(doc) -> set[str]:
+    """Same idea for font families. Returns the set of distinct font
+    names used across all runs."""
+    names: set[str] = set()
+    for paragraph in doc.paragraphs:
+        for run in paragraph.runs:
+            if run.font.name:
+                names.add(run.font.name)
+    return names
+
+
+def test_export_docx_bytes_classic_ats_uses_warm_brown_palette():
+    artifact = _make_full_resume_artifact()
+    artifact.theme = "classic_ats"
+
+    data = export_docx_bytes(artifact)
+    doc = _parse_docx(data)
+
+    colors = _docx_run_color_hexes(doc)
+    # Warm-brown classic_ats palette: ink=221912, muted=6B5648,
+    # accent=8F6845. At least the section-heading accent should land
+    # in the rendered file.
+    assert "8F6845" in colors, f"missing classic_ats accent in {colors}"
+    assert "221912" in colors, f"missing classic_ats ink in {colors}"
+
+    fonts = _docx_run_font_names(doc)
+    # classic_ats uses Arial for body + Georgia for prose summary +
+    # headings. Both should be present.
+    assert "Arial" in fonts
+    assert "Georgia" in fonts
+
+
+def test_export_docx_bytes_professional_neutral_uses_black_palette():
+    artifact = _make_full_resume_artifact()
+    artifact.theme = "professional_neutral"
+
+    data = export_docx_bytes(artifact)
+    doc = _parse_docx(data)
+
+    colors = _docx_run_color_hexes(doc)
+    # Conservative palette: ink=0A0A0A, muted=555555, accent=0A0A0A
+    # (collapses to ink — no warm tone), line=BFBFBF (used for
+    # underline shapes, not run text, so it may or may not surface in
+    # the run-color set).
+    assert "0A0A0A" in colors, f"missing neutral ink in {colors}"
+    assert "555555" in colors, f"missing neutral muted in {colors}"
+    # The warm-brown accent must NOT appear in this theme.
+    assert "8F6845" not in colors, f"classic_ats accent leaked: {colors}"
+
+    fonts = _docx_run_font_names(doc)
+    # professional_neutral runs Georgia throughout (body + headings +
+    # prose). Arial should not appear in run-level fonts.
+    assert "Georgia" in fonts
+    assert "Arial" not in fonts, f"Arial leaked into neutral theme: {fonts}"
+
+
+def test_export_docx_bytes_themes_produce_different_outputs():
+    """Sanity check: render the same artifact under both themes and
+    verify the bytes differ. This is a coarse but cheap regression
+    against accidentally short-circuiting the palette switch."""
+    artifact = _make_full_resume_artifact()
+
+    artifact.theme = "classic_ats"
+    classic_bytes = export_docx_bytes(artifact)
+
+    artifact.theme = "professional_neutral"
+    neutral_bytes = export_docx_bytes(artifact)
+
+    assert classic_bytes != neutral_bytes
+
+
+def test_export_docx_bytes_unknown_theme_falls_back_to_classic_ats():
+    """Unknown theme strings should resolve to classic_ats so the
+    renderer never crashes on an unexpected artifact.theme value."""
+    artifact = _make_full_resume_artifact()
+    artifact.theme = "some_made_up_theme_we_have_not_built"
+
+    fallback_bytes = export_docx_bytes(artifact)
+
+    artifact.theme = "classic_ats"
+    classic_bytes = export_docx_bytes(artifact)
+
+    # The unknown-theme render should be identical to classic_ats —
+    # same palette, same fonts, same content.
+    assert fallback_bytes == classic_bytes
+
+
+def test_export_docx_bytes_cover_letter_respects_theme():
+    """Cover letter only varies by color in Phase 4 (both themes use
+    Georgia for prose), but the color set should still differ."""
+    classic = CoverLetterArtifact(
+        title="Leander - Cover Letter",
+        filename_stem="leander",
+        summary="",
+        markdown=(
+            "# Leander - Cover Letter\n\n"
+            "Dear Hiring Team,\n\n"
+            "Body paragraph here.\n"
+        ),
+        plain_text="placeholder",
+        theme="classic_ats",
+    )
+    classic_data = export_docx_bytes(classic)
+    classic_colors = _docx_run_color_hexes(_parse_docx(classic_data))
+    assert "221912" in classic_colors  # classic_ats ink
+
+    neutral = CoverLetterArtifact(
+        title=classic.title,
+        filename_stem=classic.filename_stem,
+        summary=classic.summary,
+        markdown=classic.markdown,
+        plain_text=classic.plain_text,
+        theme="professional_neutral",
+    )
+    neutral_data = export_docx_bytes(neutral)
+    neutral_colors = _docx_run_color_hexes(_parse_docx(neutral_data))
+    assert "0A0A0A" in neutral_colors  # neutral ink
+    # Warm-brown classic ink must not leak into the neutral cover letter.
+    assert "221912" not in neutral_colors
+

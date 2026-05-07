@@ -1134,12 +1134,47 @@ def generate_pdf(text, title="Tailored Resume", theme=None, document_kind="cover
 # ---------------------------------------------------------------------------
 
 
-_DOCX_CLASSIC_ATS_PALETTE = {
-    "ink": "221912",  # body text
-    "muted": "6B5648",  # meta lines (organization, dates)
-    "accent": "8F6845",  # section headings + header underline
-    "line": "D7C2AF",  # softer underline tone
+# Per-theme DOCX palettes — kept structurally parallel with
+# `_RESUME_THEME_PALETTES` in this file but using OOXML-safe hex
+# strings (no '#' prefix) and only the keys the DOCX renderer reads.
+#
+# - classic_ats: warm-cream paper / brown accents. Arial body for
+#   scannability, Georgia for the prose summary + headings.
+# - professional_neutral: pure black / gray / white. Georgia
+#   throughout because Arial felt cold + template-y at the small body
+#   sizes a conservative resume uses, and the cover letter is also
+#   Georgia in both themes.
+_DOCX_THEME_PALETTES: dict[str, dict[str, str]] = {
+    "classic_ats": {
+        "ink": "221912",  # body text
+        "muted": "6B5648",  # meta lines (organization, dates)
+        "accent": "8F6845",  # section headings + header underline
+        "line": "D7C2AF",  # softer underline tone
+        "body_font": "Arial",
+        "heading_font": "Georgia",
+        "prose_font": "Georgia",
+    },
+    "professional_neutral": {
+        "ink": "0A0A0A",
+        "muted": "555555",
+        "accent": "0A0A0A",  # accent collapses to ink — no warm tone
+        "line": "BFBFBF",
+        "body_font": "Georgia",
+        "heading_font": "Georgia",
+        "prose_font": "Georgia",
+    },
 }
+
+
+def _resolve_docx_palette(theme: str | None) -> dict[str, str]:
+    """Pick the DOCX palette by name. Unknown / blank values fall back
+    to classic_ats so the renderer never crashes on an unexpected
+    artifact.theme — same fallback policy as `_resolve_resume_theme`
+    in artifact_export_service."""
+    return _DOCX_THEME_PALETTES.get(
+        str(theme or "").strip(),
+        _DOCX_THEME_PALETTES["classic_ats"],
+    )
 
 # Default page margins (in inches). Matches the ~18mm @page margin the
 # WeasyPrint renderer uses for the classic_ats resume shell.
@@ -1212,7 +1247,7 @@ def _docx_resume_section_heading(document, label: str, *, palette: dict):
     run = paragraph.add_run(label.upper())
     _docx_apply_run_font(
         run,
-        family="Georgia",
+        family=palette["heading_font"],
         size_pt=11.5,
         color_hex=palette["accent"],
         bold=True,
@@ -1249,7 +1284,7 @@ def _docx_add_resume_header(document, artifact: TailoredResumeArtifact, *, palet
     run = name_paragraph.add_run(name)
     _docx_apply_run_font(
         run,
-        family="Georgia",
+        family=palette["heading_font"],
         size_pt=20,
         color_hex=palette["ink"],
         bold=True,
@@ -1270,7 +1305,7 @@ def _docx_add_resume_header(document, artifact: TailoredResumeArtifact, *, palet
         contact_run = contact_paragraph.add_run(" | ".join(contact_values))
         _docx_apply_run_font(
             contact_run,
-            family="Arial",
+            family=palette["body_font"],
             size_pt=10,
             color_hex=palette["muted"],
         )
@@ -1315,18 +1350,23 @@ def _docx_add_role_row(document, *, title: str, dates: str, palette: dict):
     title_run = paragraph.add_run(title)
     _docx_apply_run_font(
         title_run,
-        family="Arial",
+        family=palette["body_font"],
         size_pt=11.5,
         color_hex=palette["ink"],
         bold=True,
     )
     if dates:
         tab_run = paragraph.add_run("\t")
-        _docx_apply_run_font(tab_run, family="Arial", size_pt=11, color_hex=palette["muted"])
+        _docx_apply_run_font(
+            tab_run,
+            family=palette["body_font"],
+            size_pt=11,
+            color_hex=palette["muted"],
+        )
         dates_run = paragraph.add_run(dates)
         _docx_apply_run_font(
             dates_run,
-            family="Arial",
+            family=palette["body_font"],
             size_pt=10.5,
             color_hex=palette["muted"],
         )
@@ -1338,7 +1378,7 @@ def _docx_add_meta_line(document, text: str, *, palette: dict, italic: bool = Tr
     run = paragraph.add_run(text)
     _docx_apply_run_font(
         run,
-        family="Arial",
+        family=palette["body_font"],
         size_pt=10.5,
         color_hex=palette["muted"],
         italic=italic,
@@ -1354,19 +1394,19 @@ def _docx_add_bullet(document, text: str, *, palette: dict):
     run = paragraph.add_run(text)
     _docx_apply_run_font(
         run,
-        family="Arial",
+        family=palette["body_font"],
         size_pt=10.5,
         color_hex=palette["ink"],
     )
 
 
-def _docx_add_paragraph_text(document, text: str, *, palette: dict, family: str = "Arial", size_pt: float = 11, italic: bool = False, color_key: str = "ink"):
+def _docx_add_paragraph_text(document, text: str, *, palette: dict, font_key: str = "body_font", size_pt: float = 11, italic: bool = False, color_key: str = "ink"):
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_after = _docx_pt(4)
     run = paragraph.add_run(text)
     _docx_apply_run_font(
         run,
-        family=family,
+        family=palette[font_key],
         size_pt=size_pt,
         color_hex=palette[color_key],
         italic=italic,
@@ -1376,11 +1416,14 @@ def _docx_add_paragraph_text(document, text: str, *, palette: dict, family: str 
 
 def _docx_resume_summary_block(document, artifact: TailoredResumeArtifact, *, palette: dict):
     _docx_resume_section_heading(document, "Summary", palette=palette)
+    # Prose summary uses the prose font (Georgia in both themes) so
+    # the headline reads more like a written paragraph than a body
+    # bullet, regardless of theme.
     _docx_add_paragraph_text(
         document,
         artifact.professional_summary or "No professional summary generated.",
         palette=palette,
-        family="Georgia",
+        font_key="prose_font",
         size_pt=11,
         color_key="ink",
     )
@@ -1394,7 +1437,7 @@ def _docx_resume_skills_block(document, artifact: TailoredResumeArtifact, *, pal
             document,
             " | ".join(skills),
             palette=palette,
-            family="Arial",
+            font_key="body_font",
             size_pt=11,
             color_key="ink",
         )
@@ -1403,7 +1446,7 @@ def _docx_resume_skills_block(document, artifact: TailoredResumeArtifact, *, pal
             document,
             "No highlighted skills were generated.",
             palette=palette,
-            family="Arial",
+            font_key="body_font",
             size_pt=10.5,
             italic=True,
             color_key="muted",
@@ -1432,7 +1475,7 @@ def _docx_resume_experience_block(document, artifact: TailoredResumeArtifact, *,
                 document,
                 "No grounded bullet points were generated for this role.",
                 palette=palette,
-                family="Arial",
+                font_key="body_font",
                 size_pt=10.5,
                 italic=True,
                 color_key="muted",
@@ -1473,7 +1516,7 @@ def _docx_resume_education_block(document, artifact: TailoredResumeArtifact, *, 
             document,
             "No education entries were available.",
             palette=palette,
-            family="Arial",
+            font_key="body_font",
             size_pt=10.5,
             italic=True,
             color_key="muted",
@@ -1519,19 +1562,21 @@ def _build_resume_docx(artifact: TailoredResumeArtifact) -> bytes:
     `artifact.section_order` and falls back to
     `_DEFAULT_RESUME_SECTION_ORDER` for legacy callers.
 
-    Phase 1: classic_ats theme only. Phase 4 will add a palette switch
-    for `professional_neutral`.
+    Theme is read from `artifact.theme`; supported values are
+    `classic_ats` (warm-cream / brown accents, Arial body) and
+    `professional_neutral` (pure black / gray, Georgia body). Unknown
+    values fall back to `classic_ats`.
     """
     from docx import Document
 
-    palette = _DOCX_CLASSIC_ATS_PALETTE
+    palette = _resolve_docx_palette(artifact.theme)
     document = Document()
     _docx_set_page_margins(document, inches=_DOCX_PAGE_MARGIN_INCHES)
 
     # Default style baseline so paragraphs without a per-run font fall
     # back cleanly when opened in Word's Style pane.
     normal_style = document.styles["Normal"]
-    normal_style.font.name = "Arial"
+    normal_style.font.name = palette["body_font"]
     from docx.shared import Pt as _Pt
 
     normal_style.font.size = _Pt(11)
@@ -1581,15 +1626,21 @@ def _build_cover_letter_docx(artifact: CoverLetterArtifact) -> bytes:
     matching DOCX paragraph / list. Title is split via
     `_split_cover_letter_title` so the heading + role-eyebrow read the
     same way as the HTML render.
+
+    Theme is read from `artifact.theme`; both classic_ats and
+    professional_neutral use the prose font (Georgia) for the body
+    because the cover letter is letter-shaped prose in either palette.
+    The theme switch only changes ink / muted / accent / line colors
+    + the small-caps eyebrow font (which is body_font).
     """
     from docx import Document
 
-    palette = _DOCX_CLASSIC_ATS_PALETTE
+    palette = _resolve_docx_palette(artifact.theme)
     document = Document()
     _docx_set_page_margins(document, inches=_DOCX_PAGE_MARGIN_INCHES)
 
     normal_style = document.styles["Normal"]
-    normal_style.font.name = "Georgia"
+    normal_style.font.name = palette["prose_font"]
     from docx.shared import Pt as _Pt
 
     normal_style.font.size = _Pt(11.4)
@@ -1601,7 +1652,7 @@ def _build_cover_letter_docx(artifact: CoverLetterArtifact) -> bytes:
     title_run = title_paragraph.add_run(header_title)
     _docx_apply_run_font(
         title_run,
-        family="Georgia",
+        family=palette["heading_font"],
         size_pt=18,
         color_hex=palette["ink"],
         bold=True,
@@ -1612,7 +1663,7 @@ def _build_cover_letter_docx(artifact: CoverLetterArtifact) -> bytes:
         sub_run = sub_paragraph.add_run(header_subtitle.upper())
         _docx_apply_run_font(
             sub_run,
-            family="Arial",
+            family=palette["body_font"],
             size_pt=10,
             color_hex=palette["muted"],
         )
@@ -1639,7 +1690,7 @@ def _build_cover_letter_docx(artifact: CoverLetterArtifact) -> bytes:
             run = paragraph.add_run(_strip_inline_markup(str(payload or "")))
             _docx_apply_run_font(
                 run,
-                family="Georgia",
+                family=palette["heading_font"],
                 size_pt=12.5,
                 color_hex=palette["ink"],
                 bold=True,
@@ -1651,7 +1702,7 @@ def _build_cover_letter_docx(artifact: CoverLetterArtifact) -> bytes:
             run = paragraph.add_run(_strip_inline_markup(str(payload or "")))
             _docx_apply_run_font(
                 run,
-                family="Georgia",
+                family=palette["prose_font"],
                 size_pt=11.4,
                 color_hex=palette["ink"],
             )
@@ -1667,7 +1718,7 @@ def _build_cover_letter_docx(artifact: CoverLetterArtifact) -> bytes:
                 run = paragraph.add_run(_strip_inline_markup(str(item.get("text", "") or "")))
                 _docx_apply_run_font(
                     run,
-                    family="Georgia",
+                    family=palette["prose_font"],
                     size_pt=11.4,
                     color_hex=palette["ink"],
                 )
