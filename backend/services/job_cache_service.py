@@ -134,31 +134,41 @@ def refresh_cached_jobs(
             providers_report[source_name] = provider_report
             continue
 
-        # Upsert in chunks to keep payloads to the supabase REST limit
-        # (~5MB per request comfortably). 500 postings × ~20KB each is
-        # already the upper bound at full source coverage.
+        # Upsert in chunks. 100 rows per request keeps each transaction
+        # short enough to avoid Supabase throttling on the service-role
+        # endpoint — earlier 200-row chunks intermittently failed
+        # mid-refresh after sustained writes (likely the supabase REST
+        # tier's per-connection write budget). 100 is a good middle
+        # ground: low overhead, high success rate, ~1.5x more requests.
         if all_postings:
-            chunk_size = 200
+            chunk_size = 100
             for i in range(0, len(all_postings), chunk_size):
                 chunk = all_postings[i : i + chunk_size]
                 try:
                     upserted = cache.upsert_postings(source_name, chunk)
                 except Exception as exc:  # noqa: BLE001
+                    # Surface the underlying message (AppError hides it
+                    # in .details). Production debugging needs the real
+                    # supabase error string, not just our wrapper name.
+                    detail = (
+                        getattr(exc, "details", None)
+                        or f"{type(exc).__name__}: {exc}"
+                    )
                     log_event(
                         LOGGER,
                         logging.WARNING,
                         "cached_jobs_refresh_upsert_failed",
-                        f"Failed to upsert chunk for {source_name}.",
+                        f"Failed to upsert chunk for {source_name}: {detail}",
                         provider=source_name,
                         chunk_start=i,
                         chunk_size=len(chunk),
-                        error=f"{type(exc).__name__}: {exc}",
+                        error=detail,
                     )
                     provider_report["status"] = "partial"
                     provider_report["errors"].append(
                         {
                             "board": f"<upsert chunk {i}>",
-                            "message": f"{type(exc).__name__}: {exc}",
+                            "message": detail,
                         }
                     )
                     continue

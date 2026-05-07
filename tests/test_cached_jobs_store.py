@@ -65,8 +65,8 @@ class _FakeQuery:
         self.calls.append(("ilike", field, value))
         return self
 
-    def text_search(self, field, value, config=None, type_=None):
-        self.calls.append(("text_search", field, value, config, type_))
+    def wfts(self, field, value):
+        self.calls.append(("wfts", field, value))
         return self
 
     def order(self, field, desc=False):
@@ -81,11 +81,25 @@ class _FakeQuery:
         return self.response
 
 
+class _FakeRpcQuery:
+    """Records rpc(name, args).execute() calls."""
+
+    def __init__(self, response):
+        self.response = response
+        self.fn = None
+        self.args = None
+
+    def execute(self):
+        return self.response
+
+
 class _FakeClient:
-    def __init__(self, responses_per_table: dict):
+    def __init__(self, responses_per_table: dict, rpc_responses: list | None = None):
         # responses_per_table = {"cached_jobs": [resp1, resp2, ...]}
         self._responses = {k: list(v) for k, v in responses_per_table.items()}
+        self._rpc_responses = list(rpc_responses or [])
         self.queries = []
+        self.rpc_calls = []
 
     def table(self, name):
         if name not in self._responses or not self._responses[name]:
@@ -95,6 +109,16 @@ class _FakeClient:
         query.table_name = name
         self.queries.append(query)
         return query
+
+    def rpc(self, fn, args):
+        if not self._rpc_responses:
+            raise AssertionError(f"No queued rpc response for '{fn}'")
+        response = self._rpc_responses.pop(0)
+        rpc_query = _FakeRpcQuery(response)
+        rpc_query.fn = fn
+        rpc_query.args = args
+        self.rpc_calls.append(rpc_query)
+        return rpc_query
 
 
 def _make_store(client):
@@ -262,33 +286,57 @@ def test_cleanup_no_op_when_no_sources_refreshed(monkeypatch):
     assert client.queries == []
 
 
-def test_search_uses_websearch_fts_with_filters(monkeypatch):
-    """Sanity-check the search query chain: text_search applied with
-    websearch type + english config, removed_at filter present."""
+def test_search_calls_rpc_with_normalized_args(monkeypatch):
+    """The store delegates to the search_cached_jobs_ranked RPC.
+    Verify the kwargs match the function signature exactly so a
+    contract drift between Python and the migration shows up here
+    instead of as a Postgres error at runtime."""
     monkeypatch.setattr(
         "src.cached_jobs_store.create_client", lambda url, key: None
     )
-    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 99}])]})
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[{"id": 99, "title": "ML Engineer"}])],
+    )
     store = _make_store(client)
     rows = store.search(
-        query="machine learning",
+        query="  machine learning  ",   # whitespace stripped
         location="San Francisco",
+        sources=["GREENHOUSE", "lever"],  # lower-cased
         remote_only=True,
         posted_within_days=14,
         limit=10,
     )
-    assert rows == [{"id": 99}]
-    calls = client.queries[0].calls
-    # text_search, ilike, eq(remote=True), gte(posted_at, ...), order, limit
-    text_search_call = next(c for c in calls if c[0] == "text_search")
-    assert text_search_call[1] == "search_tsv"
-    assert text_search_call[2] == "machine learning"
-    assert text_search_call[3] == "english"
-    assert text_search_call[4] == "websearch"
-    assert any(c == ("ilike", "location", "%San Francisco%") for c in calls)
-    assert any(c == ("eq", "remote", True) for c in calls)
-    # removed_at IS NULL filter is applied early in the chain.
-    assert any(c == ("is_", "removed_at", "null") for c in calls)
+    assert rows == [{"id": 99, "title": "ML Engineer"}]
+    assert len(client.rpc_calls) == 1
+    rpc = client.rpc_calls[0]
+    assert rpc.fn == "search_cached_jobs_ranked"
+    assert rpc.args == {
+        "p_query": "machine learning",
+        "p_location": "San Francisco",
+        "p_sources": ["greenhouse", "lever"],
+        "p_remote_only": True,
+        "p_posted_within_days": 14,
+        "p_limit": 10,
+    }
+
+
+def test_search_passes_empty_query_to_rpc_for_browse_mode(monkeypatch):
+    """Empty query → 'browse all recent' mode. The RPC handles this
+    server-side (skips the FTS filter); the store just forwards the
+    empty string."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[])],
+    )
+    store = _make_store(client)
+    store.search(query="", limit=5)
+    rpc = client.rpc_calls[0]
+    assert rpc.args["p_query"] == ""
+    assert rpc.args["p_sources"] is None  # not [] — RPC treats None as "any source"
 
 
 def test_get_listing_status_map_flags_tombstoned_keys(monkeypatch):

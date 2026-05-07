@@ -294,52 +294,40 @@ class CachedJobsStore:
         posted_within_days: int | None = None,
         limit: int = 20,
     ) -> list[dict]:
-        """Postgres full-text search against cached_jobs.
+        """Relevance-ranked Postgres full-text search against cached_jobs.
 
-        Built via Supabase's PostgREST `text_search` filter (delegates
-        to `to_tsquery` server-side). When `query` is empty we skip
-        text-search and return the most recent active jobs — useful
-        for the "browse all" / front-page use case.
+        Delegates to the search_cached_jobs_ranked RPC — see the
+        migration of the same name. The RPC builds the tsquery once,
+        applies the FTS filter + facets, and ORDERs by ts_rank DESC,
+        posted_at DESC. We can't do the rank-ordering through
+        PostgREST's filter chain directly: text_search() returns a
+        terminating builder that doesn't chain into .order(), and
+        plain .order() can't reference a function call. Wrapping it
+        as an RPC keeps the round-trip count at one.
+
+        Empty `query` returns most-recent active jobs (the RPC
+        short-circuits the FTS filter when the query is empty).
         """
         client = self._require_client()
-        builder = (
-            client.table(self._table)
-            .select(
-                "id,source,job_id,title,company,location,employment_type,"
-                "url,summary,description,remote,posted_at,metadata,"
-                "first_seen_at,last_seen_at,removed_at"
-            )
-            .is_("removed_at", "null")
-        )
         normalized_query = str(query or "").strip()
-        if normalized_query:
-            # PostgREST exposes Postgres FTS via the `fts` filter on
-            # tsvector columns. `wfts` ('websearch_to_tsquery') is the
-            # most user-friendly variant — handles "machine learning"
-            # / "ml engineer" / quoted phrases naturally.
-            builder = builder.text_search(
-                "search_tsv", normalized_query, config="english", type_="websearch"
-            )
         normalized_location = str(location or "").strip()
-        if normalized_location:
-            builder = builder.ilike("location", f"%{normalized_location}%")
-        if sources:
-            builder = builder.in_("source", [str(s).strip().lower() for s in sources])
-        if remote_only:
-            builder = builder.eq("remote", True)
-        if posted_within_days:
-            cutoff = (
-                datetime.now(timezone.utc).timestamp()
-                - int(posted_within_days) * 86400
-            )
-            cutoff_iso = datetime.fromtimestamp(cutoff, tz=timezone.utc).isoformat()
-            builder = builder.gte("posted_at", cutoff_iso)
+        normalized_sources = (
+            [str(s).strip().lower() for s in sources if str(s).strip()]
+            if sources
+            else None
+        )
+        rpc_args = {
+            "p_query": normalized_query,
+            "p_location": normalized_location,
+            "p_sources": normalized_sources,
+            "p_remote_only": bool(remote_only),
+            "p_posted_within_days": (
+                int(posted_within_days) if posted_within_days else None
+            ),
+            "p_limit": max(1, min(int(limit or 20), 50)),
+        }
         try:
-            response = (
-                builder.order("posted_at", desc=True)
-                .limit(max(1, min(int(limit or 20), 50)))
-                .execute()
-            )
+            response = client.rpc("search_cached_jobs_ranked", rpc_args).execute()
         except Exception as exc:
             raise AppError(
                 "Failed to query cached jobs.",
