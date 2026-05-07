@@ -870,6 +870,297 @@ def test_resume_builder_structuring_falls_back_per_section_on_partial_llm_output
     _SESSIONS.pop(session_id, None)
 
 
+def test_resume_builder_structuring_caches_payload_across_exports(monkeypatch):
+    """Cache hit on re-export: a second /export against the SAME draft
+    must reuse the cached structured payload and NOT re-call the LLM.
+
+    Without this, switching theme or downloading the same artifact in
+    a different format would re-burn a structuring call AND the LLM
+    would subtly rephrase bullets (real models aren't deterministic
+    across calls), so identical-content downloads showed inconsistent
+    wording. The fix: hash the prompt's inputs and skip the call when
+    the hash matches what we cached on the session."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    structuring_call_count = {"value": 0}
+
+    class _CountingOpenAIService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                structuring_call_count["value"] += 1
+                return {
+                    "experience": [
+                        {
+                            "title": "Senior Backend Engineer",
+                            "organization": "TechCorp",
+                            "start": "2020",
+                            "end": "Present",
+                            "bullets": [
+                                "Owned distributed systems platform.",
+                                "Reduced p99 latency 30%.",
+                            ],
+                        },
+                    ],
+                    "education": [
+                        {
+                            "institution": "Stanford",
+                            "degree": "MS",
+                            "field_of_study": "Computer Science",
+                            "start": "2015",
+                            "end": "2017",
+                        },
+                    ],
+                }
+            return {
+                "draft_updates": {},
+                "assistant_message": "ok",
+                "status": "collecting",
+                "focus_field": "",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _CountingOpenAIService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya Sharma",
+                "experience_notes": "Senior Backend Engineer at TechCorp 2020-Present",
+                "education_notes": "MS Computer Science Stanford 2015-2017",
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    # First export — LLM fires once, cache populated.
+    first = client.post(
+        "/api/workspace/resume-builder/export",
+        json={
+            "session_id": session_id,
+            "export_format": "docx",
+            "theme": "classic_ats",
+        },
+    )
+    assert first.status_code == 200
+    assert structuring_call_count["value"] == 1
+
+    # Second export at a different theme — cache hit, no new LLM call.
+    second = client.post(
+        "/api/workspace/resume-builder/export",
+        json={
+            "session_id": session_id,
+            "export_format": "docx",
+            "theme": "professional_neutral",
+        },
+    )
+    assert second.status_code == 200
+    assert structuring_call_count["value"] == 1, (
+        "Re-export at a different theme must reuse cached structuring payload"
+    )
+
+    # Third export at a different format — still cache hit.
+    third = client.post(
+        "/api/workspace/resume-builder/export",
+        json={
+            "session_id": session_id,
+            "export_format": "pdf",
+            "theme": "classic_ats",
+        },
+    )
+    assert third.status_code == 200
+    assert structuring_call_count["value"] == 1, (
+        "PDF re-export must reuse cached payload from the DOCX export"
+    )
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_structuring_cache_invalidates_when_notes_change(monkeypatch):
+    """Cache miss when the user edits experience_notes. The signature
+    hash detects the change and forces a fresh LLM call so the
+    rendered output reflects the new prose."""
+    from backend.services.resume_builder_service import _SESSIONS
+
+    structuring_calls: list[str] = []
+
+    class _NotesAwareOpenAIService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                structuring_calls.append(user)
+                # Echo the title from the prose so the test can prove
+                # the second call ran on the NEW notes, not the stale
+                # cached payload.
+                title = "Frontend Engineer" if "Frontend" in user else "Senior Backend Engineer"
+                org = "Acme" if "Frontend" in user else "TechCorp"
+                return {
+                    "experience": [
+                        {
+                            "title": title,
+                            "organization": org,
+                            "start": "2020",
+                            "end": "Present",
+                            "bullets": ["Did things."],
+                        },
+                    ],
+                    "education": [],
+                }
+            return {
+                "draft_updates": {},
+                "assistant_message": "ok",
+                "status": "collecting",
+                "focus_field": "",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _NotesAwareOpenAIService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+
+    # First generate with backend prose.
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya",
+                "experience_notes": "Senior Backend Engineer at TechCorp 2020-Present",
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+    first = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert first.status_code == 200
+    first_orgs = [e["organization"] for e in first.json()["candidate_profile"]["experience"]]
+    assert first_orgs == ["TechCorp"]
+    assert len(structuring_calls) == 1
+
+    # User edits to a different role — cache must invalidate.
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "experience_notes": "Frontend Engineer at Acme 2020-Present",
+            },
+        },
+    )
+    second = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert second.status_code == 200
+    second_orgs = [e["organization"] for e in second.json()["candidate_profile"]["experience"]]
+    assert second_orgs == ["Acme"], (
+        "Edited prose must invalidate the cache and re-run the LLM"
+    )
+    assert len(structuring_calls) == 2
+
+    _SESSIONS.pop(session_id, None)
+
+
+def test_resume_builder_structuring_cache_survives_session_persistence_round_trip(monkeypatch):
+    """The cache fields (signature + structured payloads) get persisted
+    in the session payload and round-trip through Supabase. After a
+    container restart hydrates the session from Supabase the cache
+    still hits, no re-call to the LLM needed."""
+    from backend.services.resume_builder_service import (
+        _SESSIONS,
+        export_resume_builder_session_payload,
+        restore_resume_builder_session_payload,
+    )
+
+    call_counter = {"value": 0}
+
+    class _CountingOpenAIService:
+        def is_available(self):
+            return True
+
+        def run_json_prompt(self, system, user, **kwargs):
+            if kwargs.get("task_name") == "resume_builder_structuring":
+                call_counter["value"] += 1
+                return {
+                    "experience": [
+                        {
+                            "title": "Senior Backend Engineer",
+                            "organization": "TechCorp",
+                            "start": "2020",
+                            "end": "Present",
+                            "bullets": ["Built things."],
+                        },
+                    ],
+                    "education": [],
+                }
+            return {
+                "draft_updates": {},
+                "assistant_message": "ok",
+                "status": "collecting",
+                "focus_field": "",
+            }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda access_token, refresh_token: _CountingOpenAIService(),
+    )
+
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Priya",
+                "experience_notes": "Senior Backend Engineer at TechCorp 2020-Present",
+                "skills": ["Python"],
+                "contact_lines": ["priya@example.com"],
+            },
+        },
+    )
+
+    # Populate the cache.
+    client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert call_counter["value"] == 1
+
+    # Round-trip through the persistence boundary.
+    payload = export_resume_builder_session_payload(session_id=session_id)
+    _SESSIONS.pop(session_id, None)
+    restore_resume_builder_session_payload(payload)
+
+    # Generate again — cache must still hit, no new LLM call.
+    client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert call_counter["value"] == 1, (
+        "Cache must survive persistence round-trip — re-call after restore is wasted"
+    )
+
+    _SESSIONS.pop(session_id, None)
+
+
 def test_resume_builder_message_uses_llm_when_openai_service_available(monkeypatch):
     """LLM-first intake: when an OpenAIService is plumbed in, the
     model picks the next question and merges partial draft updates,

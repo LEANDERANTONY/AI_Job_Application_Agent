@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -84,6 +85,16 @@ class ResumeBuilderSession:
     # `{"role": "user" | "assistant", "content": str}`. Empty list means
     # the regex / step-machine flow is in use.
     conversation_history: list[dict] = field(default_factory=list)
+    # Cache for the LLM structuring pass. The signature is a SHA256 of
+    # the inputs the structuring prompt sees; if the user edits any of
+    # those inputs the hash changes and we re-run the LLM. Without this
+    # cache every export at a different theme (or a re-download for a
+    # different format) re-burns a structuring call AND the LLM may
+    # rephrase bullets between calls — re-downloads would silently
+    # produce different wording, which felt off in QA.
+    structuring_signature: str = ""
+    structured_experience_payload: list[dict] = field(default_factory=list)
+    structured_education_payload: list[dict] = field(default_factory=list)
 
 
 _SESSIONS: dict[str, ResumeBuilderSession] = {}
@@ -907,6 +918,92 @@ def _build_education_entry_from_llm(item: dict) -> EducationEntry | None:
     )
 
 
+def _structuring_signature(draft: ResumeBuilderDraft) -> str:
+    """Stable hash of the inputs the structuring prompt sees.
+
+    When this signature matches the one we cached on the session the
+    LLM call is a no-op — we rebuild the entries from the cached
+    payload. Any change to experience_notes / education_notes / draft
+    context the prompt feeds the model invalidates the cache by
+    yielding a different hash.
+
+    Uses SHA256 (not for cryptographic strength — just for collision
+    resistance over the input space we expect: a few KB of text).
+    """
+    payload = json.dumps(
+        {
+            "experience_notes": draft.experience_notes or "",
+            "education_notes": draft.education_notes or "",
+            "full_name": draft.full_name or "",
+            "target_role": draft.target_role or "",
+            "professional_summary": draft.professional_summary or "",
+            "skills": sorted(draft.skills or []),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _experience_to_dict(entry: WorkExperience) -> dict:
+    """asdict-style serialisation for cache storage. We dump WorkExperience
+    via asdict() generally, but `start` / `end` may be dicts (date parts)
+    so we coerce to the str/None contract the LLM payload uses."""
+    return {
+        "title": entry.title or "",
+        "organization": entry.organization or "",
+        "location": entry.location or "",
+        "description": entry.description or "",
+        "start": "" if entry.start is None else str(entry.start),
+        "end": "" if entry.end is None else str(entry.end),
+    }
+
+
+def _education_to_dict(entry: EducationEntry) -> dict:
+    return {
+        "institution": entry.institution or "",
+        "degree": entry.degree or "",
+        "field_of_study": getattr(entry, "field_of_study", "") or "",
+        "start": entry.start or "",
+        "end": entry.end or "",
+    }
+
+
+def _experience_from_dict(payload: dict) -> WorkExperience | None:
+    if not isinstance(payload, dict):
+        return None
+    title = str(payload.get("title", "") or "")
+    organization = str(payload.get("organization", "") or "")
+    if not title and not organization:
+        return None
+    start = str(payload.get("start", "") or "")
+    end = str(payload.get("end", "") or "")
+    return WorkExperience(
+        title=title or "Relevant Experience",
+        organization=organization,
+        location=str(payload.get("location", "") or ""),
+        description=str(payload.get("description", "") or ""),
+        start=start or None,
+        end=end or None,
+    )
+
+
+def _education_from_dict(payload: dict) -> EducationEntry | None:
+    if not isinstance(payload, dict):
+        return None
+    institution = str(payload.get("institution", "") or "")
+    degree = str(payload.get("degree", "") or "")
+    if not institution and not degree:
+        return None
+    return EducationEntry(
+        institution=institution,
+        degree=degree,
+        field_of_study=str(payload.get("field_of_study", "") or ""),
+        start=str(payload.get("start", "") or ""),
+        end=str(payload.get("end", "") or ""),
+    )
+
+
 def _structure_via_llm(
     session: ResumeBuilderSession,
     *,
@@ -925,6 +1022,12 @@ def _structure_via_llm(
     requests, or transient model errors must still be able to render
     their resume. The regex parsers handle those cases correctly even
     if the output is less polished than the LLM rewrite.
+
+    Caches the structured payload on the session keyed on a hash of the
+    structuring prompt's inputs. A re-download (PDF after DOCX, theme
+    switch, etc.) within the same session reuses the cached entries
+    instead of re-calling the LLM and getting subtly different bullet
+    wording.
     """
     if openai_service is None or not getattr(openai_service, "is_available", lambda: False)():
         return None
@@ -933,8 +1036,36 @@ def _structure_via_llm(
     has_education = bool(session.draft.education_notes.strip())
     if not has_experience and not has_education:
         # Nothing to structure — short-circuit to avoid burning a token
-        # budget on an empty payload.
+        # budget on an empty payload. Do NOT cache this state because a
+        # subsequent edit might add prose; the next call will compute a
+        # different signature and re-evaluate.
         return [], []
+
+    current_signature = _structuring_signature(session.draft)
+    if (
+        session.structuring_signature
+        and session.structuring_signature == current_signature
+    ):
+        # Cache hit — rebuild entries from stored payload. Stable
+        # bullets across re-downloads and the LLM call we save is the
+        # most expensive part of /generate and /export.
+        cached_experience = [
+            entry
+            for entry in (
+                _experience_from_dict(item)
+                for item in session.structured_experience_payload
+            )
+            if entry is not None
+        ]
+        cached_education = [
+            entry
+            for entry in (
+                _education_from_dict(item)
+                for item in session.structured_education_payload
+            )
+            if entry is not None
+        ]
+        return cached_experience, cached_education
 
     prompt = build_resume_builder_structuring_prompt(draft=asdict(session.draft))
     try:
@@ -988,6 +1119,19 @@ def _structure_via_llm(
         experience_entries = _build_experience_entries(session.draft.experience_notes)
     if has_education and not education_entries:
         education_entries = _build_education_entries(session.draft.education_notes)
+
+    # Stash the structured result so re-downloads at a different theme
+    # / format / page-load reuse identical bullets without re-calling
+    # the LLM. The signature is what gates the next cache lookup; if
+    # the user edits any of the prompt's input fields, the next
+    # _structuring_signature() differs and we re-run.
+    session.structured_experience_payload = [
+        _experience_to_dict(entry) for entry in experience_entries
+    ]
+    session.structured_education_payload = [
+        _education_to_dict(entry) for entry in education_entries
+    ]
+    session.structuring_signature = current_signature
 
     return experience_entries, education_entries
 
@@ -1135,6 +1279,17 @@ def export_resume_builder_session_payload(*, session_id: str):
             "generated_resume_markdown": session.generated_resume_markdown,
             "generated_resume_plain_text": session.generated_resume_plain_text,
             "conversation_history": list(session.conversation_history or []),
+            # Persist the structuring cache so a container restart
+            # doesn't force a re-call to the LLM (which would also
+            # subtly rewrite the bullets). Drops gracefully if the
+            # session was saved before this field existed.
+            "structuring_signature": session.structuring_signature,
+            "structured_experience_payload": list(
+                session.structured_experience_payload or []
+            ),
+            "structured_education_payload": list(
+                session.structured_education_payload or []
+            ),
         },
         separators=(",", ":"),
     )
@@ -1195,6 +1350,19 @@ def restore_resume_builder_session_payload(payload_json: str):
             raw_payload.get("generated_resume_plain_text", "") or ""
         ),
         conversation_history=sanitized_history,
+        structuring_signature=str(
+            raw_payload.get("structuring_signature", "") or ""
+        ),
+        structured_experience_payload=[
+            item
+            for item in (raw_payload.get("structured_experience_payload") or [])
+            if isinstance(item, dict)
+        ],
+        structured_education_payload=[
+            item
+            for item in (raw_payload.get("structured_education_payload") or [])
+            if isinstance(item, dict)
+        ],
     )
     _SESSIONS[session.session_id] = session
     return _serialize_session(session)
