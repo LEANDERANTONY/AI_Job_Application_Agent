@@ -4068,33 +4068,6 @@ code {
   border-radius: 6px;
   color: var(--l-fg-2);
 }
-/* Hero-stat block used inside bento tiles to communicate a single
-   number (e.g. "0.3s — average search time"). Replaces the SQL
-   snippet that previously sat in the FAST SEARCH tile. */
-.l-bento-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 12px;
-  padding: 18px 20px;
-  background: rgba(48, 100, 255, 0.08);
-  border: 1px solid rgba(48, 100, 255, 0.20);
-  border-radius: 10px;
-  align-self: flex-start;
-}
-.l-bento-stat-num {
-  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
-  font-size: 32px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--l-fg);
-  line-height: 1;
-}
-.l-bento-stat-label {
-  font-size: 12.5px;
-  color: var(--l-fg-2);
-  letter-spacing: -0.005em;
-}
 .l-bento-format-row {
   display: flex;
   align-items: center;

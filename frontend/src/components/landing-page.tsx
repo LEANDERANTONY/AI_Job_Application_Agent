@@ -776,7 +776,7 @@ function WorkbenchVisual3({ active }: { active: boolean }) {
 //     swipe / drag interactions sync the dots without React state
 //     fighting the user.
 
-const BENTO_TILES_COUNT = 5;
+const BENTO_TILES_COUNT = 4;
 
 function BentoSection() {
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -847,20 +847,6 @@ function BentoSection() {
               <span className="l-bento-provider">lever</span>
               <span className="l-bento-provider">ashby</span>
               <span className="l-bento-provider">workday</span>
-            </div>
-          </article>
-
-          <article className="l-bento-tile">
-            <span className="l-bento-eyebrow">Fast search</span>
-            <h3 className="l-bento-title">Results in under a second.</h3>
-            <p className="l-bento-body">
-              No spinners, no waiting. Search across thousands of jobs with
-              up to five filters stacked, and the right matches appear
-              instantly.
-            </p>
-            <div className="l-bento-stat">
-              <div className="l-bento-stat-num">~0.3s</div>
-              <div className="l-bento-stat-label">to find your next role</div>
             </div>
           </article>
 
