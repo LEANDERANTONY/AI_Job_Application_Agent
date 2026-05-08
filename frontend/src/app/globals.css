@@ -3806,11 +3806,11 @@ code {
   flex: 0 0 100%;
   scroll-snap-align: start;
   scroll-snap-stop: always;
-  /* Near-black card with a small blue corner glow — same treatment as
-     the workbench stage so both surfaces feel like one family. */
-  background:
-    radial-gradient(50% 70% at 0% 0%, rgba(48, 100, 255, 0.08), transparent 65%),
-    var(--l-card);
+  /* Match the workspace's .b-jd-block treatment — flat
+     rgba(0, 0, 0, 0.40) overlay with a subtle border. Drops the blue
+     corner glow so the carousel reads as the same surface family as
+     the workbench mock above. */
+  background: rgba(0, 0, 0, 0.40);
   border: 1px solid var(--l-line-strong);
   border-radius: var(--l-radius-lg);
   padding: 36px 40px;
