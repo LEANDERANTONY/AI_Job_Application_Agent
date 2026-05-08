@@ -434,7 +434,7 @@ function ArtifactPreview() {
             <p className="l-artifact-paragraph">
               Eight years building inference platforms across Anthropic and
               Stripe. Led the rate-limiter rewrite and the multi-tenant
-              tokenizer that landed inside the SLO.<span className="l-artifact-caret" />
+              tokenizer that landed inside the SLO.
             </p>
           </div>
 
@@ -447,6 +447,47 @@ function ArtifactPreview() {
               <span className="l-artifact-chip">Triton</span>
               <span className="l-artifact-chip">Ray</span>
               <span className="l-artifact-chip">Postgres</span>
+            </div>
+          </div>
+
+          {/* Experience section makes the artifact preview feel like a
+              real recruiter-ready resume rather than a 3-row mock.
+              Streaming caret lives mid-bullet to suggest the AI is
+              actively writing this section right now. */}
+          <div className="l-artifact-section">
+            <div className="l-artifact-section-eyebrow">EXPERIENCE</div>
+            <div className="l-artifact-job">
+              <div className="l-artifact-job-head">
+                <span className="l-artifact-job-title">
+                  Staff ML Engineer · Anthropic
+                </span>
+                <span className="l-artifact-job-dates">2023 — Present</span>
+              </div>
+              <ul className="l-artifact-bullets">
+                <li>
+                  Cut p99 inference latency 38% by rewriting the
+                  rate-limiter around a token-bucket per-tenant pool.
+                </li>
+                <li>
+                  Owned the multi-tenant tokenizer rollout — shipped
+                  inside the 99.9% availability SLO across 14 regions
+                  <span className="l-artifact-caret" />
+                </li>
+              </ul>
+            </div>
+            <div className="l-artifact-job">
+              <div className="l-artifact-job-head">
+                <span className="l-artifact-job-title">
+                  Senior ML Engineer · Stripe
+                </span>
+                <span className="l-artifact-job-dates">2020 — 2023</span>
+              </div>
+              <ul className="l-artifact-bullets">
+                <li>
+                  Built Stripe&apos;s feature platform serving 30k+ models
+                  with low-latency online retrieval.
+                </li>
+              </ul>
             </div>
           </div>
         </div>

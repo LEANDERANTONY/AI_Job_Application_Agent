@@ -3318,12 +3318,18 @@ code {
 .l-artifact-card {
   position: relative;
   z-index: 1;
-  background: var(--l-card-strong);
+  /* Near-pure-black with the same top-left blue accent as the
+     workbench + bento cards. The base #020308 is deeper than the
+     workbench's #04060b so the artifact reads as the centerpiece —
+     the user wanted "more black" + "a bit taller". */
+  background:
+    radial-gradient(50% 70% at 0% 0%, rgba(48, 100, 255, 0.06), transparent 60%),
+    #020308;
   border: 1px solid var(--l-line-strong);
   border-radius: var(--l-radius-lg);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 24px 60px rgba(0, 0, 0, 0.45);
+    0 28px 72px rgba(0, 0, 0, 0.55);
   overflow: hidden;
 }
 .l-artifact-head {
@@ -3424,6 +3430,61 @@ code {
   border-radius: 6px;
   font-size: 12px;
   color: var(--l-fg-2);
+}
+
+/* Experience section in the artifact preview — same typographic
+   treatment as the rendered resume's experience block. */
+.l-artifact-job {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.l-artifact-job + .l-artifact-job {
+  margin-top: 6px;
+}
+.l-artifact-job-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.l-artifact-job-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--l-fg);
+  letter-spacing: -0.005em;
+}
+.l-artifact-job-dates {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11.5px;
+  color: var(--l-fg-3);
+  letter-spacing: 0.02em;
+}
+.l-artifact-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 2px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.l-artifact-bullets li {
+  position: relative;
+  padding-left: 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--l-fg-2);
+}
+.l-artifact-bullets li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--l-fg-4);
 }
 .l-artifact-foot {
   display: flex;
