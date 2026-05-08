@@ -3044,6 +3044,95 @@ code {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* Mobile hamburger button + dropdown panel. Hidden on desktop via
+   `display: none` here; the mobile media query below flips the
+   visibility (hide `.l-topbar-nav`, show `.l-topbar-burger`). The
+   panel itself only renders when `menuOpen` is true in JSX. */
+.l-topbar-burger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--l-line-strong);
+  border-radius: 8px;
+  color: var(--l-fg);
+  cursor: pointer;
+  transition: background 160ms var(--l-ease), border-color 160ms var(--l-ease),
+    transform 160ms var(--l-ease);
+}
+.l-topbar-burger:hover { background: rgba(255, 255, 255, 0.08); }
+.l-topbar-burger:active { transform: scale(0.96); }
+.l-topbar-burger:focus-visible {
+  outline: 2px solid rgba(48, 100, 255, 0.55);
+  outline-offset: 2px;
+}
+
+/* Backdrop is a button so taps anywhere outside the panel close the
+   menu. Fixed full-screen, sits between page content and the panel. */
+.l-topbar-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  background: rgba(4, 7, 15, 0.55);
+  backdrop-filter: blur(3px);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  /* Reset default button styling so it reads as an invisible overlay. */
+  appearance: none;
+}
+
+/* Floating panel anchored under the topbar via fixed positioning.
+   `position: fixed; top: 64px` keeps it directly below the sticky
+   header even after the page is scrolled — `position: absolute` would
+   anchor to the topbar's in-flow box (top of page), not its visible
+   position. */
+.l-topbar-menu {
+  position: fixed;
+  top: 64px;
+  right: 12px;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+  padding: 12px;
+  background: rgba(8, 12, 22, 0.96);
+  border: 1px solid var(--l-line-strong);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 48px rgba(0, 0, 0, 0.55);
+  animation: lFadeUp 200ms var(--l-ease);
+  animation-fill-mode: both;
+}
+.l-topbar-menu-link {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--l-fg-2);
+  transition: background 160ms var(--l-ease), color 160ms var(--l-ease);
+}
+.l-topbar-menu-link:hover {
+  color: var(--l-fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+.l-topbar-menu-divider {
+  height: 1px;
+  background: var(--l-line);
+  margin: 4px 0;
+}
+.l-topbar-menu-action {
+  width: 100%;
+  justify-content: center;
+}
+
 /* ── Eyebrow + buttons (used everywhere) ──────────────────────────── */
 
 .l-eyebrow {
@@ -3474,6 +3563,15 @@ code {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* Per-step inline visual wrapper. On desktop the shared sticky visual
+   (`.l-workbench-visual`) is the source of truth, so this is hidden.
+   The mobile media query below flips: shared visual hidden, this one
+   shown — it provides each step's mock inline above its text. */
+.l-workbench-step-visual {
+  display: none;
+}
+
 .l-mock-eyebrow {
   font-family: var(--font-geist-mono), monospace;
   font-size: 10.5px;
@@ -4190,7 +4288,21 @@ code {
   color: var(--l-fg);
 }
 
-/* ── Responsive (single 900px breakpoint, then 540px) ─────────────── */
+/* ── Responsive (900 / 700 / 540 breakpoints) ─────────────────────── */
+/*
+   900: tablet/laptop divide. Workbench grid collapses to single column
+        and the sticky shared visual is replaced with inline per-step
+        visuals — without this, only the topmost visual is ever seen
+        once the page scrolls past it (sticky goes nowhere with no
+        column to anchor against).
+   700: full mobile pivot. Topbar swaps to a hamburger panel, hero
+        title is allowed to wrap, section heads move from centered to
+        left-aligned (centered headlines on a narrow phone column read
+        as awkwardly indented).
+   540: small phones. Hero buttons stack to full-width column, footer
+        moves to a single column with socials right-aligned. Tightens
+        section padding from 24 to 18 px.
+*/
 
 @media (max-width: 900px) {
   .l-hero { padding: 60px 24px 80px; }
@@ -4198,31 +4310,94 @@ code {
   .l-workbench { padding: 60px 24px 40px; }
   .l-workbench-grid {
     grid-template-columns: minmax(0, 1fr);
-    gap: 32px;
+    gap: 24px;
   }
+  /* The desktop sticky visual is hidden entirely on mobile. Each step
+     gets its own inline `.l-workbench-step-visual` instead, so the
+     visual stays paired with its prose as the user scrolls. */
   .l-workbench-visual {
-    position: relative;
-    top: auto;
-    height: auto;
-  }
-  .l-workbench-visual-stage {
-    max-width: 420px;
+    display: none;
   }
   .l-workbench-step {
     min-height: auto;
-    padding: 24px 0;
+    padding: 8px 0 24px;
+    /* On desktop the inactive steps fade to 0.45 opacity so the
+       "active" one stands out against the sticky visual. With per-step
+       inline visuals on mobile, every step is its own focused card —
+       fading the others looks broken (they read as half-loaded). */
+    opacity: 1;
   }
+  /* Per-step inline visual mirrors the desktop stage's chrome (40%
+     black overlay, 1px hairline border, the same drop shadow) so the
+     surface family stays consistent across breakpoints. The mocks
+     inside are `position: absolute; inset: 0` and were authored to
+     fill a 1/1 stage, so they continue to render correctly. */
+  .l-workbench-step-visual {
+    display: block;
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 1 / 1;
+    margin: 0 auto 18px;
+    border-radius: var(--l-radius-lg);
+    background: rgba(0, 0, 0, 0.40);
+    border: 1px solid var(--l-line-strong);
+    overflow: hidden;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 18px 44px rgba(0, 0, 0, 0.50);
+  }
+  /* Each step renders exactly one mock with `active` always true, so
+     it shows up immediately. The crossfade transition still applies
+     the first time but doesn't cause flicker since opacity starts
+     at 1 once `.is-active` is on. */
   .l-bento { padding: 60px 24px; }
   .l-bento-tile { padding: 30px 28px; min-height: 320px; }
   .l-final { padding: 80px 24px; }
 }
 
+@media (max-width: 700px) {
+  /* Swap the desktop nav for the hamburger button. The dropdown panel
+     itself is rendered conditionally in JSX and styled at the global
+     scope above. */
+  .l-topbar-nav { display: none; }
+  .l-topbar-burger { display: inline-flex; }
+
+  /* Section heads — left-align on phones. Centered titles on a
+     narrow column read as floating; flush-left matches the rest of
+     the page's text rhythm and saves vertical space. */
+  .l-section-head {
+    align-items: flex-start;
+    text-align: left;
+    /* Drop the auto-centering since we want the head at the section's
+       left edge, in line with the body content. */
+    margin: 0;
+    max-width: 100%;
+  }
+
+  /* Hero — let the title wrap. The desktop layout uses three lines
+     each with `white-space: nowrap` so the typography reads as a
+     deliberate stack ("Tailor every job application" / "with an" /
+     "AI workbench"). On a phone-width column, "Tailor every job
+     application" can't fit on one row at any reasonable type size —
+     forcing nowrap pushes the body into horizontal-overflow which
+     clips the rest of the hero (CTAs, pills, screenshot). Allowing
+     wrap drops the constraint and the title flows naturally. */
+  .l-hero-title {
+    font-size: clamp(28px, 7.5vw, 40px);
+  }
+  .l-hero-title span {
+    white-space: normal;
+  }
+  .l-hero-copy { align-items: flex-start; text-align: left; }
+  .l-hero-actions { justify-content: flex-start; }
+  .l-hero-pills { justify-content: flex-start; }
+  .l-hero-sub { max-width: 100%; }
+}
+
 @media (max-width: 540px) {
   .l-topbar-inner { padding: 12px 18px; }
-  .l-topbar-nav { gap: 4px; }
-  .l-topbar-link { padding: 0 8px; font-size: 12.5px; }
   .l-hero { padding: 48px 18px 60px; }
-  .l-hero-title { font-size: clamp(36px, 11vw, 48px); }
   .l-hero-actions { width: 100%; flex-direction: column; }
   .l-hero-actions .l-btn { width: 100%; }
   .l-workbench, .l-bento, .l-final { padding-left: 18px; padding-right: 18px; }
@@ -4232,9 +4407,20 @@ code {
   .l-footer-inner {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* Two columns at the section's edges instead of two equal-width
+     columns hugging the left half. `auto auto` lets each column take
+     only the width it needs and `space-between` pushes them to the
+     ends — Navigation flush left, Socials flush right. Matches the
+     header-vs-footer rhythm. */
   .l-footer-cols {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: auto auto;
+    justify-content: space-between;
     gap: 24px;
+  }
+  /* Right-align the socials column's heading + links so its content
+     hugs the right edge instead of left-aligning under the heading. */
+  .l-footer-col:last-child {
+    text-align: right;
   }
 }
 

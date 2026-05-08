@@ -71,6 +71,11 @@ export function LandingPage() {
   const [pendingAction, setPendingAction] =
     useState<LandingPendingAction>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  // Mobile hamburger menu state. Driven by a button in the topbar that
+  // only renders on small viewports (CSS-controlled). The dropdown panel
+  // sits as a floating card under the header; tapping a link or the
+  // backdrop closes it. ESC also closes via the keydown effect below.
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const anyActionPending = pendingAction !== null;
 
@@ -147,6 +152,24 @@ export function LandingPage() {
     };
   }, []);
 
+  // While the mobile menu is open, listen for ESC to close it and lock
+  // body scroll so the backgrounded page doesn't move under the fixed
+  // panel + backdrop. Both side-effects are scoped to `menuOpen` so
+  // they tear down cleanly when the menu closes.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [menuOpen]);
+
   async function handleGoogleSignIn() {
     setPendingAction("signin");
     setAuthError(null);
@@ -221,6 +244,8 @@ export function LandingPage() {
             <BrandLogo className="l-brand-logo" size={32} />
             <span className="l-brand-name">Job Application Copilot</span>
           </Link>
+          {/* Desktop nav — hidden on mobile via CSS at the same
+              breakpoint where the hamburger appears. */}
           <nav className="l-topbar-nav" aria-label="Landing navigation">
             <a href="#workbench" className="l-topbar-link">Workflow</a>
             <a href="#bento" className="l-topbar-link">Features</a>
@@ -243,7 +268,77 @@ export function LandingPage() {
               {primaryCtaLabel}
             </button>
           </nav>
+          {/* Mobile hamburger button — hidden on desktop via CSS. The
+              dropdown panel below renders only when open. */}
+          <button
+            type="button"
+            className="l-topbar-burger"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            aria-controls="l-topbar-menu"
+            onClick={() => setMenuOpen((prev) => !prev)}
+          >
+            <BurgerGlyph open={menuOpen} />
+          </button>
         </div>
+        {menuOpen ? (
+          <>
+            {/* Backdrop covers the rest of the page so a tap outside
+                the menu closes it. The panel itself stops propagation
+                so taps inside don't bubble to the backdrop. */}
+            <button
+              type="button"
+              className="l-topbar-menu-backdrop"
+              aria-label="Close menu"
+              onClick={() => setMenuOpen(false)}
+            />
+            <nav
+              id="l-topbar-menu"
+              className="l-topbar-menu"
+              aria-label="Mobile navigation"
+            >
+              <a
+                href="#workbench"
+                className="l-topbar-menu-link"
+                onClick={() => setMenuOpen(false)}
+              >
+                Workflow
+              </a>
+              <a
+                href="#bento"
+                className="l-topbar-menu-link"
+                onClick={() => setMenuOpen(false)}
+              >
+                Features
+              </a>
+              <div className="l-topbar-menu-divider" aria-hidden />
+              {isSignedIn ? (
+                <button
+                  className="l-btn l-btn-ghost l-topbar-menu-action"
+                  disabled={anyActionPending}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    void handleSignOut();
+                  }}
+                  type="button"
+                >
+                  {pendingAction === "signout" ? "Signing out…" : "Sign out"}
+                </button>
+              ) : null}
+              <button
+                className="l-btn l-btn-primary l-topbar-menu-action"
+                disabled={anyActionPending || authStatus === "restoring"}
+                onClick={() => {
+                  setMenuOpen(false);
+                  void onPrimaryCta();
+                }}
+                type="button"
+              >
+                {primaryCtaLabel}
+              </button>
+            </nav>
+          </>
+        ) : null}
       </header>
 
       <main className="l-main">
@@ -501,6 +596,17 @@ function WorkbenchSection() {
                 currentStep === idx ? "is-active" : ""
               }`}
             >
+              {/* Per-step inline visual — only shown on mobile via CSS
+                  (.l-workbench-step-visual { display: none } by default,
+                  flipped to block at the workbench's mobile breakpoint).
+                  The desktop sticky visual is hidden in that same media
+                  query, so each layout has exactly one visual surface. */}
+              <div className="l-workbench-step-visual" aria-hidden>
+                {idx === 0 ? <WorkbenchVisual0 active /> : null}
+                {idx === 1 ? <WorkbenchVisual1 active /> : null}
+                {idx === 2 ? <WorkbenchVisual2 active /> : null}
+                {idx === 3 ? <WorkbenchVisual3 active /> : null}
+              </div>
               <span className="l-eyebrow l-workbench-eyebrow">
                 {step.eyebrow}
               </span>
@@ -1040,6 +1146,37 @@ function GoogleGlyph() {
         fill="#EA4335"
         d="M9 3.58c1.32 0 2.5.45 3.44 1.34l2.58-2.58A9 9 0 0 0 9 0 9 9 0 0 0 .96 4.97l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"
       />
+    </svg>
+  );
+}
+
+// Animated hamburger ↔ close glyph. Two horizontal bars when closed,
+// rotated into an X when open. Pure inline SVG so it inherits the
+// button's `currentColor` and respects the same theming pipeline as
+// every other glyph on the page.
+function BurgerGlyph({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      {open ? (
+        <>
+          <line x1="6" y1="6" x2="18" y2="18" />
+          <line x1="6" y1="18" x2="18" y2="6" />
+        </>
+      ) : (
+        <>
+          <line x1="4" y1="7" x2="20" y2="7" />
+          <line x1="4" y1="17" x2="20" y2="17" />
+        </>
+      )}
     </svg>
   );
 }
