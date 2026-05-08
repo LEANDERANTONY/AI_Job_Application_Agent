@@ -8,7 +8,21 @@
 
 **Live:** [job-application-copilot.xyz](https://job-application-copilot.xyz) · **Workspace:** [app.job-application-copilot.xyz](https://app.job-application-copilot.xyz)
 
+![Architecture overview](docs/job-agent-architecture.svg)
+
+---
+
+## Visual tour
+
 ![Job Search step with 12 live matches and saved jobs drawer](docs/images/landing_jobsearch.png)
+
+| Step 01 — Resume builder (chat one into existence) | Step 03 — Job Detail (parsed JD with match score + skill chips) |
+|---|---|
+| ![](docs/images/landing_resumebuilder.png) | ![](docs/images/landing_jd.png) |
+
+| Output — `classic_ats` theme | Output — Cover letter |
+|---|---|---|
+| ![](docs/images/classic_resume_render.jpg) | ![](docs/images/cover_letter_render.jpg) |
 
 ---
 
@@ -23,18 +37,6 @@
 | **Artifact export** | Two themes (`classic_ats` for ATS parsers, `professional_neutral` for human readers) in DOCX or PDF. The same source data feeds either pathway. |
 | **Grounded assistant** | Floating workspace chat with full context of the loaded resume, JD, analysis state, and saved jobs. Streams answers as they generate. |
 | **Command palette** | `⌘K` / `Ctrl+K` from anywhere — jump between steps, load a saved job, re-ask a recent assistant question, or run the analysis. |
-
----
-
-## Visual tour
-
-| Step 03 — Job Detail (parsed JD with match score + skill chips) | Step 01 — Resume builder (chat one into existence) |
-|---|---|
-| ![](docs/images/landing_jd.png) | ![](docs/images/landing_resumebuilder.png) |
-
-| Output — `classic_ats` theme | Output — `professional_neutral` theme | Output — Cover letter |
-|---|---|---|
-| ![](docs/images/classic_resume_render.jpg) | ![](docs/images/modern_resume_render.jpg) | ![](docs/images/cover_letter_render.jpg) |
 
 ---
 
@@ -61,8 +63,6 @@ See [ADR-013](docs/adr/ADR-013-cached-jobs-cache-layer-with-scheduled-refresh.md
 
 Each agent follows the same operating shape: deterministic baseline first, LLM-assisted refinement second, structured JSON output, and a deterministic fallback when assisted execution is unavailable. **Per-agent fallback isolation** means a single failing agent falls back independently — the other three keep their LLM-quality output. See [ADR-018](docs/adr/ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md) for the three-layer retry stack (SDK retry × 2 + app-level retry + per-agent retry).
 
-![Architecture overview](docs/job-agent-architecture.svg)
-
 ## How grounding works
 
 - Deterministic services build the candidate profile, JD summary, fit analysis, and first-pass tailored draft before the agent layer runs.
@@ -71,35 +71,12 @@ Each agent follows the same operating shape: deterministic baseline first, LLM-a
 - Cover-letter generation is gated on review approval.
 - The fallback review path checks whether the output references missing hard skills that aren't evidenced in the source profile.
 
-## Workspace assistant
-
-A floating chat surface that's grounded in your live workspace state. Answers are streamed token-by-token via Server-Sent Events. The model sees:
-
-- `current_step` (which step you're standing on)
-- `has_resume` / `has_jd` / `has_analysis` flags
-- Compact resume + JD summaries (counts and identity, no raw text)
-- Saved jobs count + last search query
-
-So "what should I do next?" returns three different correct answers across the cold-start / mid-flow / ready-to-run personas. See [ADR-017](docs/adr/ADR-017-workspace-assistant-state-aware-context.md).
-
-## Product surface
-
-1. Sign in with Google through Supabase-backed auth
-2. Upload a resume or build one through the conversational assistant
-3. Search the cached job index, paste a posting URL, or open a saved bookmark
-4. Review the parsed JD with hard / soft / must-have skill chips
-5. Run the supervised pipeline; watch agent stages stream in real time
-6. Review the tailored resume + cover letter side-by-side
-7. Ask grounded follow-up questions in the workspace assistant
-8. Export DOCX or PDF in either theme
-
 ## Engineering notes
 
 - **44 Python test files** cover parsing, normalization, fitting, tailoring, orchestration, builders, exports, auth, quotas, persistence, error handling, and the four ATS adapters.
 - **Quality runners** in `tests/quality/` produce evidence for each LLM-driven stage (parser, tailoring, review, resume gen, cover letter, assistant, JD parser, latency baseline).
 - **19 ADRs** in `docs/adr/` record the architectural decisions, including the Streamlit-first → Next.js + FastAPI transition (ADR-012), DOCX-first export (ADR-015), conversational builder (ADR-016), state-aware assistant (ADR-017), and three-layer retry stack (ADR-018).
 - **Architecture details** live in [docs/architecture.md](docs/architecture.md).
-- **Design system reference** lives in [`design_system/`](design_system/) — the shipped Direction-B handoff prototype, per-screen specs (chrome + 4 steps), and the landing page spec set.
 
 ## Deployment
 
