@@ -3044,6 +3044,22 @@ code {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* Visual-gap fix between the link cluster (Workflow / Features) and
+   the first button (Sign out, or Sign in with Google when logged
+   out). The nav uses `gap: 6px` and each link/button has 14 px
+   horizontal padding, which gives a 34 px text-to-text gap between
+   the two links — but the button's visible background starts
+   immediately at its 34 px box, so the EMPTY whitespace between
+   "Features" and the button's left edge is only 20 px (14 px link
+   pad + 6 px gap). Adding 14 px of left-margin to the first button
+   pushes its background-edge another 14 px right, so the empty
+   whitespace from "Features" matches the text-to-text gap before
+   it. Targets `button:first-of-type` so it works whether or not
+   "Sign out" is present (varies by auth state). */
+.l-topbar-nav > button:first-of-type {
+  margin-left: 14px;
+}
+
 /* Mobile hamburger button + dropdown panel. Hidden on desktop via
    `display: none` here; the mobile media query below flips the
    visibility (hide `.l-topbar-nav`, show `.l-topbar-burger`). The
