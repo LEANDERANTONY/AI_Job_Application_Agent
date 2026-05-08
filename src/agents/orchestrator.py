@@ -167,35 +167,113 @@ class ApplicationOrchestrator:
             )
 
         def run_agent_step(agent_name, runner, **context):
+            # Per-agent retry: if an LLM agent raises AgentExecutionError
+            # (e.g. the OpenAI call exhausted SDK + app retries, or the
+            # response came back semantically broken even after the
+            # output-budget retry), give it ONE more full attempt before
+            # cascading the failure to the orchestrator's whole-pipeline
+            # fallback. This stops a single bad agent step from
+            # downgrading the entire run to deterministic mode.
+            #
+            # Retry is assisted-mode only — in deterministic mode the
+            # agents don't make LLM calls and won't raise
+            # AgentExecutionError anyway, so this is a no-op there.
+            #
+            # Only retry AgentExecutionError. Any other exception (a
+            # bug, a contract violation in our own code) propagates
+            # immediately because retrying won't change the outcome.
+            agent_retry_delay_seconds = 0.4
             started_at = time.perf_counter()
-            try:
-                result = runner()
-            except Exception as exc:
+            last_exc = None
+            for attempt_index in range(2):
+                attempt_started_at = time.perf_counter()
+                try:
+                    result = runner()
+                except AgentExecutionError as exc:
+                    last_exc = exc
+                    if attempt_index == 0 and mode == "openai":
+                        log_event(
+                            LOGGER,
+                            logging.WARNING,
+                            "agent_run_retry",
+                            "Agent run failed; retrying once before falling back.",
+                            agent=agent_name,
+                            mode=mode,
+                            model=model_name,
+                            attempt_duration_ms=round(
+                                (time.perf_counter() - attempt_started_at) * 1000,
+                                2,
+                            ),
+                            error_type=type(exc).__name__,
+                            details=exc.details or "",
+                            retry_delay_seconds=agent_retry_delay_seconds,
+                            **context,
+                        )
+                        time.sleep(agent_retry_delay_seconds)
+                        continue
+                    # Either we're not in assisted mode (so retry is a
+                    # no-op anyway) or this was already the second
+                    # attempt. Log the final failure and re-raise.
+                    log_event(
+                        LOGGER,
+                        logging.ERROR,
+                        "agent_run_failed",
+                        "Agent run failed (after assisted-mode retry).",
+                        agent=agent_name,
+                        mode=mode,
+                        model=model_name,
+                        duration_ms=round(
+                            (time.perf_counter() - started_at) * 1000, 2
+                        ),
+                        attempts=attempt_index + 1,
+                        error_type=type(exc).__name__,
+                        **context,
+                    )
+                    raise
+                except Exception as exc:
+                    # Non-AgentExecutionError exceptions (bugs in our
+                    # code, contract violations, etc.) — retrying
+                    # won't change the outcome. Log and re-raise
+                    # immediately.
+                    log_event(
+                        LOGGER,
+                        logging.ERROR,
+                        "agent_run_failed",
+                        "Agent run failed with unexpected exception.",
+                        agent=agent_name,
+                        mode=mode,
+                        model=model_name,
+                        duration_ms=round(
+                            (time.perf_counter() - started_at) * 1000, 2
+                        ),
+                        attempts=attempt_index + 1,
+                        error_type=type(exc).__name__,
+                        **context,
+                    )
+                    raise
+                # Success path. If this was the second attempt, the
+                # retry saved the run — reflect that in the log so we
+                # can see how often it actually pays off.
                 log_event(
                     LOGGER,
-                    logging.ERROR,
-                    "agent_run_failed",
-                    "Agent run failed.",
+                    logging.INFO,
+                    "agent_run_completed",
+                    "Agent run completed.",
                     agent=agent_name,
                     mode=mode,
                     model=model_name,
                     duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
-                    error_type=type(exc).__name__,
+                    attempts=attempt_index + 1,
+                    recovered_via_retry=attempt_index > 0,
                     **context,
                 )
-                raise
-            log_event(
-                LOGGER,
-                logging.INFO,
-                "agent_run_completed",
-                "Agent run completed.",
-                agent=agent_name,
-                mode=mode,
-                model=model_name,
-                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
-                **context,
+                return result
+            # Unreachable: every iteration of the loop either returns
+            # or raises. Defensive raise so a future edit can't silently
+            # produce None.
+            raise last_exc if last_exc else AgentExecutionError(
+                "Agent run exited the retry loop without producing a result."
             )
-            return result
 
         # Matchmaker agent: the deterministic build_fit_analysis() above
         # already computed matched/missing skills, score, and grounded
