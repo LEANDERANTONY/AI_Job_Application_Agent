@@ -3303,7 +3303,11 @@ code {
 .l-artifact {
   position: relative;
   width: 100%;
-  max-width: 920px;
+  /* Wider than the title block above (1080px) so the artifact reads
+     as the showcase. ~20% wider than the previous 920px to flatten
+     the aspect ratio — user said it "felt too tall" after the
+     experience section was added. */
+  max-width: 1120px;
   animation: lFadeUp 800ms var(--l-ease) 700ms;
   animation-fill-mode: both;
 }
