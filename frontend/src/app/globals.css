@@ -3385,11 +3385,17 @@ code {
   position: relative;
   width: 100%;
   max-width: 480px;
-  aspect-ratio: 4 / 5;
+  /* Was `aspect-ratio: 4 / 5` (480 × 600). That left a fixed 600px
+     stage inside an 869px-tall sticky container, so 200+px of slack
+     sat unused at the bottom while the right column's last-step text
+     extended past the stage bottom. Letting the stage flex to fill
+     the container ties the stage's vertical span to the sticky's
+     vertical span — the stage now ends near where the user finishes
+     reading step 04. min-height keeps it from collapsing on narrow
+     viewports. */
+  flex: 1 1 auto;
+  min-height: 480px;
   border-radius: var(--l-radius-lg);
-  /* Near-black card with a small blue glow tucked into the top-left
-     corner. The glow gives depth without painting the whole card with
-     the blue tint that read as "washed out" before. */
   background:
     radial-gradient(60% 80% at 0% 0%, rgba(48, 100, 255, 0.10), transparent 60%),
     var(--l-card-strong);
@@ -3699,16 +3705,6 @@ code {
   padding: 8px 0 32px;
   opacity: 0.45;
   transition: opacity 360ms var(--l-ease);
-}
-/* Last step (Analysis) shrinks to its natural content height + a
-   small tail so the section ENDS close to where the sticky visual
-   releases. Without this, step 04 reserves a 48vh block — the user
-   finishes reading early but keeps scrolling through empty space
-   while the visual scrolls past, making the card and text look
-   "drifted apart" at the bottom of the section. */
-.l-workbench-step:last-child {
-  min-height: 0;
-  padding-bottom: 8px;
 }
 .l-workbench-step.is-active {
   opacity: 1;
