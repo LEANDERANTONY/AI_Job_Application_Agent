@@ -609,3 +609,63 @@ Persistent per-user usage storage, saved artifact history, and quotas are intent
   - Frontend: replaced the lone "Remote only" checkbox with five dropdowns — Source / Work mode / Type (multi-select), Posted within (single-select, retained), Sort (single-select, new). Multi-select chips built on native `<details>`/`<summary>` for keyboard accessibility plus an extra `mousedown` outside-click + `Escape` dismiss handler so the popover behaves like a native menu.
   - Verified end-to-end against the live cache: filtering by Source = greenhouse + lever, Work mode = remote, Sort = company A → Z returned 12 alphabetically-sorted Pinterest-then-Affirm matches, all remote-friendly.
 - Total active cache after Day 40: ~11,877 jobs across four ATS providers.
+
+## Day 41: Landing Polish, Independent Step Navigation, Assistant State-Awareness, And Multi-Layer LLM Retry
+
+### Landing redesign — final polish pass
+
+- Workbench scroll narrative iteration: shrunk the sticky visual stage from a stretched 480 × 853 to a square 480 × 480 (aspect-ratio 1/1) with center-pinning so empty space inside the stage stops at ~60–100 px instead of the previous 300+ px.
+- Each of the four mock cards now mirrors the real workspace page rather than a generic data card:
+  - Step 01 Resume: parsed-profile hero (Aria Patel · Staff ML Engineer · San Francisco) + 3-up stats grid (12 roles · 27 skills · 9 yrs) + skills chip cluster + filename pill with a green `PARSED` tag.
+  - Step 02 Job Search: search bar with location, four filter chips, "47 MATCHES · BY RELEVANCE" header, three result cards with a gold "★ TOP MATCH" badge on the leader.
+  - Step 03 JD: three big metric tiles (Match score 87%, Hard skills 12, Years 5+) with a blue-tinted accent on the match-score card, plus hard/soft skills chip rows.
+  - Step 04 Analysis: four agent pipeline cards (Matchmaker ✓, Forge ✓, Gatekeeper running 62% with progress bar, Cover letter agent ○ standby).
+- Step text is now `justify-content: center` inside each 48vh block so step 01 reads at viewport center on first scroll-in, aligning with the centered visual stage.
+- Bento carousel tiles + workbench mock card surface dropped the previous blue corner-glow radial in favor of a flat `rgba(0, 0, 0, 0.40)` overlay that matches the workspace's `.b-jd-block` treatment — landing and workspace now read as one surface family.
+- Topbar consolidated to `Workflow · Features · [Auth]` — dropped the third GitHub link (already covered by the hero CTA + footer link).
+- Extracted the landing page into a design-system reference at `frontend_redesign/redesign/landing/` (README + 5 specs covering chrome, hero, workbench, bento, final CTA) — peer to the existing workspace `handoff/` so future passes have a same-shape context bundle.
+
+### Independent step navigation in the workspace
+
+- Removed the resume-parse gate on Job Search and Job Detail. A user can now paste a JD they're curious about before they have a resume, or browse listings without uploading anything. The "Upload a resume to unlock" tooltips on the rail are gone.
+- Only Analysis stays gated (it can't run without both inputs). The page-level "Upload a resume to proceed" affordance inside `AnalysisRunner.tsx` already enforces this honestly.
+- Cleaned up the now-dead "Upload a resume first" fallback `sub` text on the `nav-jobs` and `nav-jd` command-palette entries.
+
+### Assistant chat — ungated and state-aware
+
+- Removed the analysis-required gate that locked the assistant chat until a workspace had been analyzed. Users can now ask product-help questions ("how do I use this?", "what's step 03 for?") from the very first visit.
+  - Three gates lifted in one pass: the panel's footer "Assistant unlocks after your first workspace run" lockup, the `submitAssistantQuestion` early-return + warning notice, and the `assistantUnlocked` prop on the command palette (now always true).
+  - Renamed the cosmetic prop from `requiresWorkspaceRun` → `hasWorkspaceContext` so the panel adapts copy (header sub, empty state, textarea placeholder) based on whether a workspace exists, not whether the chat is locked.
+- Added a `WorkspaceStateContext` projection that rides on every assistant query — `current_step`, `has_resume`, small `resume_summary`, `has_jd`, small `jd_summary`, `has_analysis`, `saved_jobs_count`, `last_search_query`. Counts only, no raw resume text. Backend's `WorkspaceStateContextModel` validates it; service layer folds it into the `app_context` dict that reaches `AssistantService`.
+- Added a 9-rule `_WORKSPACE_STATE_GUIDANCE` block to both the JSON-contract (`build_assistant_prompt`) and the streaming prose (`build_assistant_text_prompt`) system prompts so the LLM knows the shape of the new field, the step-number mapping (01=Resume, 02=Job Search, 03=Job Detail, 04=Analysis), the auth contract (signed-out users get redirected to landing — there's no "use feature X without signing in" answer), and the field semantics (e.g. `experience_entries_count` is the count of jobs held, NOT years).
+- Battle-tested across three personas (cold start / mid-flow / ready-to-run) over three rounds:
+  - Round 1: 22/24 passes; surfaced two bugs (entry-count read as years, step-03 mismatch).
+  - Round 2: 13/15 passes after the first two fixes; surfaced a product-knowledge gap (the "assistant builder" mode wasn't in the retrieval index) and a "yes you can analyze signed-out" mistake.
+  - Round 3: 12/12 passes after refreshing `src/product_knowledge.py` to ground truth (12 documents covering auth, the 4-step flow, resume intake modes, all four ATS sources, supervised pipeline agents, exports, saved workspace, command palette, the assistant FAB, cover letter, quotas).
+  - Combined: 47/51 (92%) with 0 outstanding correctness failures.
+
+### LLM resilience — three-layer retry stack + per-agent fallback isolation
+
+The orchestrator's previous behavior was all-or-nothing: any single agent failure (after the SDK's built-in retries) cascaded to "downgrade the WHOLE pipeline to deterministic." A single bad packet during the Forge agent meant Gatekeeper, Builder, and Cover letter all ran deterministic too. Reworked the resilience layer:
+
+- **Layer 1 (existing):** OpenAI Python SDK retries up to 2 times on transient HTTP / 5xx / 429-with-Retry-After (we set `max_retries=2` on the client).
+- **Layer 2 (new):** App-level retry on top of the SDK. After the SDK exhausts its 2, we try ONE more time on a tight allow-list — `APIConnectionError`, `APITimeoutError`, `InternalServerError`. NOT for 4xx / auth / persistent rate-limit / content-policy (deterministic problems). 400 ms delay between attempts. New `openai_request_app_retry` log event for production observability.
+- **Layer 3 (new):** Per-agent retry inside the orchestrator. If an agent's `.run(...)` raises `AgentExecutionError` (e.g. all OpenAI-call retries exhausted, or the response was semantically broken even after the existing budget retry), we wait 400 ms and retry that agent's full run once. Only fires in `mode="openai"`; no-op in deterministic.
+- **Per-agent fallback isolation (new):** When an agent's two LLM attempts both fail, the orchestrator runs that agent's deterministic fallback (via `AgentClass(None).run(...)`) for THAT agent only — downstream agents still try the LLM path. Forge failing no longer affects Gatekeeper.
+  - Each call site now passes a `deterministic_fallback_runner` lambda alongside the assisted runner.
+  - The whole-pipeline fallback is now a safety net that fires only if a per-agent deterministic fallback ITSELF errors out (very unusual — would mean our own deterministic code is broken).
+  - Added a mode-reconciliation pass: if a pipeline started as `mode="openai"` but every agent ended up falling back per-agent (zero LLM successes), `result.mode` flips honestly to `deterministic_fallback` and the first LLM error's user_message becomes the `fallback_reason`.
+
+Worst-case retry budget for a transient failure: SDK 2 + app 1 + per-agent 1 = up to 4 effective LLM attempts before an agent gives up. After that, that agent's deterministic fallback runs and the rest of the pipeline keeps using the LLM.
+
+Coverage check: every `responses.create` call in the codebase routes through the new `_create_response_with_app_retry` helper now (`run_json_prompt`, `run_text_stream`, and the existing output-budget retry helper). By extension, the resume parser, JD parser, JD summary, all four workflow agents, AND the assistant chat all inherit the new retry layer for free.
+
+Tests: 17 new resilience tests pin the contracts —
+- 9 in `tests/test_openai_app_retry.py`: retries on the 3 allow-listed types, does NOT retry on 4xx/auth, returns success after retry, raises on double-failure.
+- 8 in `tests/test_orchestrator.py` (5 existing + 3 new): per-agent retry recovers, per-agent fallback isolates a single failing agent, full-pipeline mode flips to deterministic when no agent succeeded with LLM.
+
+### ADRs added
+
+- [ADR-017: Workspace assistant — ungated + state-aware context](docs/adr/ADR-017-workspace-assistant-state-aware-context.md)
+- [ADR-018: Three-layer LLM retry + per-agent fallback isolation](docs/adr/ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md)
+- [ADR-019: Independent step navigation in the workspace](docs/adr/ADR-019-independent-step-navigation.md)

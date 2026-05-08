@@ -48,13 +48,15 @@ This is no longer a Streamlit runtime. The old Streamlit shell and related deplo
 
 Owns the user-facing workspace:
 
-- account state and sign-in flow
-- resume intake
+- account state and sign-in flow (signed-out users hitting `/workspace` get redirected to the landing page; cross-origin host strip mirrors the existing app-subdomain middleware)
+- resume intake (Upload mode + Build with assistant conversational chat; see [ADR-016](adr/ADR-016-conversational-llm-resume-builder.md))
 - job search and saved jobs
 - JD review
 - workflow progress UI
 - document preview and export actions
-- assistant chat
+- assistant chat — not gated; answers product-help questions from the first visit and grounded package questions once an analysis has run; see [ADR-017](adr/ADR-017-workspace-assistant-state-aware-context.md)
+
+Step rail navigation: Resume / Job Search / Job Detail are independently accessible — a user can paste a JD without a resume, or browse listings without uploading anything. Only Analysis is gated (it requires both a parsed resume and a parsed JD); the rail-level lock is a hint, and the AnalysisRunner page surfaces what's missing when the user lands there early. See [ADR-019](adr/ADR-019-independent-step-navigation.md).
 
 ### `backend/`
 
@@ -92,6 +94,8 @@ The active orchestrator path runs:
 
 The earlier `fit` and `strategy` stages are no longer part of the live workflow. The `TailoringAgent` consumes the structured `FitAnalysis` produced by `src/services/fit_service.py` directly — no FitAgent narration step. Each agent has a Tier-2/Tier-3 quality runner under `tests/quality/` that scores it on fixture (resume, JD) pairs.
 
+**Per-agent retry + fallback isolation.** Each agent step inside the orchestrator gets its own retry budget and its own fallback path. If an agent's LLM call raises `AgentExecutionError` (after the OpenAI service's own SDK + app-level retries exhaust), the orchestrator retries the agent's full `.run(...)` once with a 400 ms delay. If the retry also fails, only THAT agent's deterministic fallback runs — downstream agents continue trying the LLM path. A single bad packet during the Forge agent no longer cascades to "downgrade the whole pipeline to deterministic." The whole-pipeline deterministic fallback remains as a safety net for the unusual case where a per-agent deterministic path itself errors out. If every agent ended up falling back per-agent (zero LLM successes), `result.mode` is honestly downgraded to `deterministic_fallback`. See [ADR-018](adr/ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md).
+
 ### `src/prompts.py`
 
 Owns grounded prompt builders for the specialist agents and assistant.
@@ -103,21 +107,22 @@ Owns the thin OpenAI wrapper used by the workflow and assistant layers.
 Responsibilities include:
 
 - task-aware model routing
-- Responses API calls
+- Responses API calls (JSON-contract path via `run_json_prompt`, streaming prose path via `run_text_stream`)
 - GPT-5 reasoning-effort routing
 - usage accounting metadata
 - optional persisted usage-event callbacks
 - daily-quota preflight checks
-- incomplete-response retry handling
+- output-budget retry handling (when responses are truncated due to insufficient `max_output_tokens`)
+- application-level retry on top of the OpenAI Python SDK's own retries (`max_retries=2`) — adds one extra attempt on the narrow allow-list `APIConnectionError` / `APITimeoutError` / `InternalServerError`. Every `responses.create` in the codebase routes through `_create_response_with_app_retry`, so the resume parser, JD parser, JD summary, all four supervised-workflow agents, and the assistant chat all inherit the retry layer for free. See [ADR-018](adr/ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md).
 
 ### `src/assistant_service.py`
 
-Owns the single in-app assistant behavior.
+Owns the single in-app assistant behavior. The chat is **not gated** on having run an analysis — it answers product-help questions ("how do I use this?", "what's step 03 for?") from the very first visit and grounded package questions ("summarize my fit") once an analysis has run. See [ADR-017](adr/ADR-017-workspace-assistant-state-aware-context.md).
 
 Responsibilities include:
 
 - routing between product-help questions and grounded package questions
-- compact workspace-context assembly
+- compact workspace-context assembly, including a `workspace_state` projection (`current_step`, `has_resume`, `resume_summary`, `has_jd`, `jd_summary`, `has_analysis`, `saved_jobs_count`, `last_search_query`) sent on every query so the LLM can answer state-aware questions before any analysis exists
 - deterministic fallback behavior when assisted execution is unavailable
 
 ### Builders and Exporters
@@ -229,6 +234,8 @@ The repo includes focused tests for:
 - conversational resume-builder turn handling + structuring pass
 - backend workspace routes
 - assistant SSE streaming endpoint
+- OpenAI application-level retry contract (`tests/test_openai_app_retry.py`): retries on the narrow allow-list `APIConnectionError` / `APITimeoutError` / `InternalServerError`, does NOT retry on 4xx / auth / persistent rate-limit, returns success after retry, raises on double-failure
+- per-agent orchestrator behavior (`tests/test_orchestrator.py`): per-agent retry recovers a flaky agent, per-agent fallback isolates a single failing agent (downstream agents still use LLM), `result.mode` reconciles to `deterministic_fallback` when no agent succeeded with LLM
 
 Tier-2 / Tier-3 quality runners under `tests/quality/` evaluate LLM-driven components (resume parser, JD parser, renderer fidelity, skill canonicalization, tailoring, review, resume generation, cover letter, resume builder, assistant, end-to-end orchestrator) on fixture sets with weighted scorecards and a `--include-llm` cost gate.
 
