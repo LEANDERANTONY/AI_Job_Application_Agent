@@ -23,7 +23,7 @@ The product now runs as a split web application:
 - `frontend/` is the Next.js workspace deployed on Vercel
 - `backend/` is the FastAPI API deployed on the VPS
 - `src/` contains the shared Python workflow, builders, orchestration, auth helpers, and persistence logic
-- `deploy/vps/` contains the Docker Compose + Caddy deployment bundle for the backend stack
+- `backend/vps/` contains the Docker Compose + Caddy deployment bundle for the backend stack
 
 This is no longer a Streamlit runtime. The old Streamlit shell and related deployment files were removed from the active codebase.
 

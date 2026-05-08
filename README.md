@@ -99,13 +99,13 @@ So "what should I do next?" returns three different correct answers across the c
 - **Quality runners** in `tests/quality/` produce evidence for each LLM-driven stage (parser, tailoring, review, resume gen, cover letter, assistant, JD parser, latency baseline).
 - **19 ADRs** in `docs/adr/` record the architectural decisions, including the Streamlit-first → Next.js + FastAPI transition (ADR-012), DOCX-first export (ADR-015), conversational builder (ADR-016), state-aware assistant (ADR-017), and three-layer retry stack (ADR-018).
 - **Architecture details** live in [docs/architecture.md](docs/architecture.md).
-- **Design system reference** lives in [`design_system/`](design_system/) — three exploration directions (A/B/C), the Direction-B handoff prototype + per-screen specs, and the landing page spec set.
+- **Design system reference** lives in [`design_system/`](design_system/) — the shipped Direction-B handoff prototype, per-screen specs (chrome + 4 steps), and the landing page spec set.
 
 ## Deployment
 
 - `app.job-application-copilot.xyz` → Vercel-hosted Next.js workspace
 - `api.job-application-copilot.xyz` → VPS-hosted FastAPI backend
-- `deploy/vps/` → Docker Compose + Caddy bundle for the backend stack
 - `frontend/` → Next.js + React 19 + Turbopack
 - `backend/` → FastAPI + Uvicorn, async OpenAI client, Supabase Postgres
+- `backend/vps/` → Docker Compose + Caddy bundle for the backend stack
 - `src/` → shared Python core (orchestrator, agents, builders, schemas, services)

@@ -49,6 +49,6 @@ For Vercel production:
 
 - Add the Vercel workspace URL to Supabase allowed redirect URLs because Google sign-in returns to `/workspace`.
 - Keep the backend CORS list aligned with the Vercel domain and any custom domain you place in front of it.
-- On the VPS, set `AI_JOB_APPLICATION_API_DOMAIN` in `deploy/vps/.env` so Caddy serves the FastAPI container on the final API subdomain.
+- On the VPS, set `AI_JOB_APPLICATION_API_DOMAIN` in `backend/vps/.env` so Caddy serves the FastAPI container on the final API subdomain.
 - Because this app shares the same VPS as HelpMate, do not run two separate public Caddy stacks on `80/443`. The safer production shape is one shared ingress proxy routing multiple domains or subdomains to separate app containers.
 - The frontend is build-verified with `npm run build`; the remaining work after code merge is hosted QA across real env vars and auth callbacks.

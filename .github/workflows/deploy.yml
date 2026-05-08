@@ -62,7 +62,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           script: |
-            mkdir -p "${{ env.VPS_APP_DIR }}/deploy/vps"
+            mkdir -p "${{ env.VPS_APP_DIR }}/backend/vps"
 
       - name: Copy deployment files
         uses: appleboy/scp-action@v0.1.7
@@ -71,8 +71,8 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          source: deploy/vps/docker-compose.yml,deploy/vps/docker-compose.override.yml
-          target: ${{ env.VPS_APP_DIR }}/deploy/vps
+          source: backend/vps/docker-compose.yml,backend/vps/docker-compose.override.yml
+          target: ${{ env.VPS_APP_DIR }}/backend/vps
           strip_components: 2
 
       - name: Deploy via SSH
@@ -90,7 +90,7 @@ jobs:
           script: |
             echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
             docker pull "$IMAGE:latest"
-            cd "${{ env.VPS_APP_DIR }}/deploy/vps"
+            cd "${{ env.VPS_APP_DIR }}/backend/vps"
             docker compose -p ai_job_application_agent up -d --no-deps --no-build --force-recreate api
             docker logout ghcr.io
 
