@@ -44,7 +44,7 @@ def test_extract_job_details_finds_core_fields():
 
 
 def test_parse_jd_file_reads_pdf_fixture():
-    sample_path = Path(__file__).resolve().parents[1] / "static" / "demo_job_description" / "Sample_Job_Description_MLEngineer.pdf"
+    sample_path = Path(__file__).resolve().parents[1] / "docs" / "static" / "demo_job_description" / "Sample_Job_Description_MLEngineer.pdf"
 
     with sample_path.open("rb") as handle:
         parsed = parse_jd_text(handle)
@@ -55,7 +55,7 @@ def test_parse_jd_file_reads_pdf_fixture():
 
 
 def test_parse_jd_file_reads_docx_fixture():
-    sample_path = Path(__file__).resolve().parents[1] / "static" / "demo_job_description" / "Sample_Job_Description_DataAnalyst.docx"
+    sample_path = Path(__file__).resolve().parents[1] / "docs" / "static" / "demo_job_description" / "Sample_Job_Description_DataAnalyst.docx"
 
     with sample_path.open("rb") as handle:
         parsed = parse_jd_text(handle)
@@ -66,7 +66,7 @@ def test_parse_jd_file_reads_docx_fixture():
 
 
 def test_build_job_description_from_pdf_fixture_extracts_expected_signals():
-    sample_path = Path(__file__).resolve().parents[1] / "static" / "demo_job_description" / "Sample_Job_Description_MLEngineer.pdf"
+    sample_path = Path(__file__).resolve().parents[1] / "docs" / "static" / "demo_job_description" / "Sample_Job_Description_MLEngineer.pdf"
 
     with sample_path.open("rb") as handle:
         parsed = parse_jd_text(handle)
@@ -81,7 +81,7 @@ def test_build_job_description_from_pdf_fixture_extracts_expected_signals():
 
 
 def test_build_job_description_from_docx_fixture_extracts_expected_signals():
-    sample_path = Path(__file__).resolve().parents[1] / "static" / "demo_job_description" / "Sample_Job_Description_DataAnalyst.docx"
+    sample_path = Path(__file__).resolve().parents[1] / "docs" / "static" / "demo_job_description" / "Sample_Job_Description_DataAnalyst.docx"
 
     with sample_path.open("rb") as handle:
         parsed = parse_jd_text(handle)

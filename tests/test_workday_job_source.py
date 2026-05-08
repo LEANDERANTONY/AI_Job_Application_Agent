@@ -179,24 +179,35 @@ def test_adapter_normalizes_workday_payload_to_jobposting():
 
 
 def test_adapter_paginates_until_max_or_total():
-    """Workday returns up to 50 per page; the adapter walks pages
-    until it hits MAX_JOBS_PER_BOARD (250) OR the payload's total.
-    Pin both: verify the right number of POSTs went out and the
-    union of results came through."""
+    """The adapter walks pages until it hits MAX_JOBS_PER_BOARD OR the
+    payload's `total`, whichever fires first. Pin both: verify the
+    right number of POSTs went out and the union of results came
+    through.
+
+    Test reads `_PAGE_SIZE` from the module instead of hard-coding so
+    a later page-size change (e.g. when Workday tightens API limits
+    again) doesn't re-break the test. We just need the math to land
+    cleanly: PAGES_TO_RETURN pages × _PAGE_SIZE per page = total,
+    so the early-stop hits exactly when `offset == total`.
+    """
+    from src.job_sources.workday import _PAGE_SIZE
+
     api_url = (
         "https://nvidia.wd5.myworkdayjobs.com/wday/cxs/"
         "nvidia/NVIDIAExternalCareerSite/jobs"
     )
-    # Three pages of 50 each = 150 jobs total. Adapter should stop
-    # after page 3 (4th page would be empty).
+
+    PAGES_TO_RETURN = 3
+    total = _PAGE_SIZE * PAGES_TO_RETURN
     pages = [
-        {"jobPostings": [_job_payload(req_id=f"R{i}", title=f"Job {i}") for i in range(50)],
-         "total": 150},
-        {"jobPostings": [_job_payload(req_id=f"R{50+i}", title=f"Job {50+i}") for i in range(50)],
-         "total": 150},
-        {"jobPostings": [_job_payload(req_id=f"R{100+i}", title=f"Job {100+i}") for i in range(50)],
-         "total": 150},
-        {"jobPostings": [], "total": 150},  # Should not be reached
+        {
+            "jobPostings": [
+                _job_payload(req_id=f"R{p * _PAGE_SIZE + i}", title=f"Job {p * _PAGE_SIZE + i}")
+                for i in range(_PAGE_SIZE)
+            ],
+            "total": total,
+        }
+        for p in range(PAGES_TO_RETURN)
     ]
     fake = _FakeSession({api_url: pages})
     adapter = WorkdayJobSourceAdapter(
@@ -207,10 +218,11 @@ def test_adapter_paginates_until_max_or_total():
     assert len(results) == 1
     label, status, postings = results[0]
     assert status == "ok"
-    assert len(postings) == 150
-    # 3 POST calls (the 4th empty page never reached because offset
-    # 150 >= total 150 trips the early-stop condition).
-    assert len(fake.calls) == 3
+    assert len(postings) == total
+    # PAGES_TO_RETURN POSTs — the next page never gets requested
+    # because the offset == total early-stop trips immediately after
+    # the last full page.
+    assert len(fake.calls) == PAGES_TO_RETURN
 
 
 def test_adapter_unconfigured_returns_not_configured():
