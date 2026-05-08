@@ -3372,29 +3372,30 @@ code {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Top-align so the visual stage sits at the top of its sticky
-     container, parallel to the step text on the right (which is also
-     `justify-content: flex-start`). Centering the visual created a
-     mismatch where step 01's text sat way above the card at the start
-     of the section. */
-  justify-content: flex-start;
-  padding-top: 12px;
+  /* Center-pin: the [stage + rail] group sits in the vertical middle
+     of the sticky container, which is one viewport tall. As the steps
+     scroll past on the right, the visual reads as floating at viewport
+     center the entire way down. Step start/end alignment with the
+     stage edges no longer matters because the stage is always
+     centered — earlier the stage was stretched (`flex: 1 1 auto`) to
+     match step 04's bottom, which left ~400px of dead dark space
+     inside the card since the mock content is fixed-size. */
+  justify-content: center;
   gap: 24px;
 }
 .l-workbench-visual-stage {
   position: relative;
   width: 100%;
   max-width: 480px;
-  /* Was `aspect-ratio: 4 / 5` (480 × 600). That left a fixed 600px
-     stage inside an 869px-tall sticky container, so 200+px of slack
-     sat unused at the bottom while the right column's last-step text
-     extended past the stage bottom. Letting the stage flex to fill
-     the container ties the stage's vertical span to the sticky's
-     vertical span — the stage now ends near where the user finishes
-     reading step 04. min-height keeps it from collapsing on narrow
-     viewports. */
-  flex: 1 1 auto;
-  min-height: 480px;
+  /* Fixed-aspect stage instead of flex-stretching to fill the sticky
+     container. 1/1 gives 480 × 480 on desktop — close to the natural
+     height of the mocks (~280–360px each) once the inner result/doc
+     containers stop flex-stretching, so empty space is minimal once
+     the mock is centered. The max-height cap keeps it from
+     overflowing on short viewports (e.g. laptop with bookmarks bar). */
+  flex: 0 0 auto;
+  aspect-ratio: 1 / 1;
+  max-height: calc(100vh - 200px);
   border-radius: var(--l-radius-lg);
   /* Same treatment as the workspace's JD review blocks
      (`.b-jd-block`): a solid 40% black overlay over the page, with a
@@ -3450,6 +3451,12 @@ code {
   padding: 26px;
   display: flex;
   flex-direction: column;
+  /* Center content vertically so the four mocks read at the same
+     visual density even though their child counts vary (resume has 5
+     elements, search/analysis have ~7 each, JD has 4). Without this
+     the short mocks pile up at the top and leave a big dark gap at
+     the bottom of the 480 × 600 stage. */
+  justify-content: center;
   gap: 14px;
   opacity: 0;
   transform: translateY(8px);
@@ -3550,8 +3557,11 @@ code {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  flex: 1;
-  min-height: 0;
+  /* Was `flex: 1` so the results list stretched to fill a 600+ stage.
+     With the smaller, naturally-sized stage we let it size to its
+     three result cards. Empty stretch made the bottom of the mock
+     read as dead dark space. */
+  flex: 0 1 auto;
 }
 .l-mock-result {
   padding: 10px 12px;
@@ -3672,8 +3682,9 @@ code {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  flex: 1;
-  min-height: 0;
+  /* Same change as .l-mock-results — stop flex-growing into the stage
+     and let the doc preview size to its line placeholders. */
+  flex: 0 1 auto;
 }
 .l-mock-doc-name {
   font-family: var(--font-geist-mono), monospace;
