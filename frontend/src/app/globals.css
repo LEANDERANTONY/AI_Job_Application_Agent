@@ -3071,13 +3071,16 @@ code {
 }
 
 /* Backdrop is a button so taps anywhere outside the panel close the
-   menu. Fixed full-screen, sits between page content and the panel. */
+   menu. Fixed full-screen, sits between page content and the panel.
+   Strong dim (~70 % black) so the page underneath reads as clearly
+   backgrounded — at lower opacities the hero title was visible
+   "behind" the menu and the layering felt unclear. */
 .l-topbar-menu-backdrop {
   position: fixed;
   inset: 0;
   z-index: 19;
-  background: rgba(4, 7, 15, 0.55);
-  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.70);
+  backdrop-filter: blur(4px);
   border: 0;
   padding: 0;
   cursor: pointer;
@@ -3090,9 +3093,12 @@ code {
    header even after the page is scrolled — `position: absolute` would
    anchor to the topbar's in-flow box (top of page), not its visible
    position. Spans full viewport width with small inset (matches the
-   common mobile drawer / dropdown pattern). The `rgba(0, 0, 0, 0.40)`
-   background mirrors the bento tile treatment (.l-bento-tile) so the
-   surface family stays consistent across landing components. */
+   common mobile drawer / dropdown pattern). Background is the page's
+   own tone at high alpha (`rgba(2, 4, 9, 0.97)`), which gives the
+   same visual color as the bento tile (rgba(0,0,0,0.40) on top of
+   page bg #04070f) but is opaque enough that nothing behind the menu
+   bleeds through — at 40 % alpha the hero title was readable
+   underneath, breaking the "this is a layered surface" cue. */
 .l-topbar-menu {
   position: fixed;
   top: 64px;
@@ -3103,8 +3109,8 @@ code {
   flex-direction: column;
   gap: 6px;
   padding: 14px;
-  background: rgba(0, 0, 0, 0.40);
-  backdrop-filter: blur(14px) saturate(140%);
+  background: rgba(2, 4, 9, 0.97);
+  backdrop-filter: blur(18px) saturate(140%);
   border: 1px solid var(--l-line-strong);
   border-radius: 14px;
   box-shadow:
@@ -4213,14 +4219,16 @@ code {
   align-items: center;
   text-align: center;
 }
-/* "Ready to tailor?" is the only headline now — bumped to a hero-
-   weight size so it visually balances against the big primary
-   button below. */
+/* "Ready to tailor?" matches the other section titles
+   (`.l-section-title`) so the typographic rhythm stays consistent
+   across the workbench, bento, and final-CTA sections. The big
+   primary button below carries the visual weight of the call to
+   action — the headline doesn't need to compete. */
 .l-final-title {
-  font-size: clamp(40px, 5.4vw, 64px);
+  font-size: clamp(28px, 4vw, 40px);
   font-weight: 600;
-  letter-spacing: -0.030em;
-  line-height: 1.05;
+  letter-spacing: -0.025em;
+  line-height: 1.12;
   color: var(--l-fg);
 }
 .l-final-actions {
