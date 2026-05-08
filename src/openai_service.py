@@ -19,6 +19,62 @@ from src.logging_utils import get_logger, log_event
 LOGGER = get_logger(__name__)
 
 
+# ── Application-level retry layer ───────────────────────────────────
+# The OpenAI Python SDK already retries up to `max_retries` times (we
+# pass 2 in the constructor) on its own list of transient HTTP errors.
+# Once those exhaust, the SDK raises. Without an extra layer, our
+# callers (workspace pipeline agents, assistant chat) immediately fall
+# through to deterministic mode — a single bad packet ruins a whole
+# analysis run.
+#
+# This retry adds one MORE attempt on top of the SDK's, but only for
+# narrow transient causes (connection / timeout / 5xx server). It does
+# NOT retry on:
+#   - 4xx client errors (BadRequest, Auth, NotFound, UnprocessableEntity)
+#     — these are deterministic, retrying won't help
+#   - 429 RateLimit — the SDK already handled retry-after; if it gave
+#     up, the user is consistently throttled and we shouldn't pile on
+#   - Content-policy violations — same reasoning as 4xx
+#
+# Streaming has a wrinkle: we can only retry the INITIAL stream creation,
+# not mid-stream failures (the consumer has already received partial
+# deltas and there's no way to restart cleanly). Mid-stream failures
+# still propagate as before.
+_APP_RETRY_DELAY_SECONDS = 0.4
+
+
+def _resolve_retryable_exception_types():
+    """Resolve the OpenAI SDK exception classes we'll retry on.
+
+    Imported lazily because exception class names have shifted across
+    SDK versions; we tolerate missing classes by falling back to a
+    minimal set rather than blowing up at import time.
+    """
+    types: list[type] = []
+    try:
+        from openai import APIConnectionError as _APIConn
+        types.append(_APIConn)
+    except Exception:
+        pass
+    try:
+        from openai import APITimeoutError as _APITimeout
+        types.append(_APITimeout)
+    except Exception:
+        pass
+    try:
+        from openai import InternalServerError as _InternalServerError
+        types.append(_InternalServerError)
+    except Exception:
+        pass
+    # If none resolved, return an empty tuple — `isinstance(exc, ())`
+    # is always False, so no retries happen. Safer than `(Exception,)`
+    # which would retry on EVERY error including 4xx client errors.
+    return tuple(types)
+
+
+_RETRYABLE_OPENAI_EXCEPTIONS = _resolve_retryable_exception_types()
+
+
 def _ensure_json_input_prompt(user_prompt):
     prompt_text = str(user_prompt or "")
     if "json" in prompt_text.lower():
@@ -132,6 +188,66 @@ class OpenAIService:
     def _resolve_reasoning_effort(self, task_name=None):
         return get_openai_reasoning_effort_for_task(task_name)
 
+    def _create_response_with_app_retry(
+        self,
+        request_payload,
+        *,
+        task_name,
+        resolved_model,
+        started_at,
+    ):
+        """Run ``self._client.responses.create(**request_payload)`` with
+        ONE application-level retry on top of the SDK's own retries.
+
+        Only retries on the narrow transient set defined in
+        ``_RETRYABLE_OPENAI_EXCEPTIONS`` (connection / timeout / 5xx).
+        Everything else (4xx, content policy, persistent rate limits,
+        etc.) propagates immediately to the caller.
+
+        On retry, sleeps ~``_APP_RETRY_DELAY_SECONDS`` and emits an
+        ``openai_request_app_retry`` log event so we can see how often
+        the second attempt is actually saving runs.
+        """
+        last_exc = None
+        for attempt_index in range(2):  # 1 retry on top of SDK's max_retries=2
+            try:
+                return self._client.responses.create(**request_payload)
+            except Exception as exc:
+                last_exc = exc
+                # Only retry the narrow transient set. Everything else
+                # (4xx, content-policy, auth, etc.) is deterministic —
+                # retrying won't help and would only add latency.
+                is_retryable = (
+                    bool(_RETRYABLE_OPENAI_EXCEPTIONS)
+                    and isinstance(exc, _RETRYABLE_OPENAI_EXCEPTIONS)
+                )
+                # First attempt and exception is retryable → retry once.
+                if attempt_index == 0 and is_retryable:
+                    log_event(
+                        LOGGER,
+                        logging.WARNING,
+                        "openai_request_app_retry",
+                        "OpenAI responses.create raised after SDK retries; trying once more at the application layer.",
+                        model=resolved_model,
+                        task_name=task_name,
+                        duration_ms=round(
+                            (time.perf_counter() - started_at) * 1000, 2
+                        ),
+                        error_type=type(exc).__name__,
+                        details=str(exc),
+                        retry_delay_seconds=_APP_RETRY_DELAY_SECONDS,
+                    )
+                    time.sleep(_APP_RETRY_DELAY_SECONDS)
+                    continue
+                # Either non-retryable, or this was the second
+                # attempt. Break and let the caller's existing error-
+                # handling path kick in.
+                break
+        # If we got here, both attempts failed (or first was non-
+        # retryable). Re-raise the last exception so the caller's
+        # try/except can log + wrap it as before.
+        raise last_exc  # noqa: TRY200 — explicit re-raise of captured exc
+
     def _record_usage(self, model_name, prompt_tokens, completion_tokens, total_tokens):
         self._usage_totals["request_count"] += 1
         self._usage_totals["prompt_tokens"] += prompt_tokens
@@ -213,13 +329,18 @@ class OpenAIService:
             request_payload["reasoning"] = {"effort": reasoning_effort}
 
         try:
-            response = self._client.responses.create(**request_payload)
+            response = self._create_response_with_app_retry(
+                request_payload,
+                task_name=task_name,
+                resolved_model=resolved_model,
+                started_at=started_at,
+            )
         except Exception as exc:
             log_event(
                 LOGGER,
                 logging.ERROR,
                 "openai_request_failed",
-                "OpenAI JSON prompt request failed.",
+                "OpenAI JSON prompt request failed (after SDK + app retries).",
                 model=resolved_model,
                 task_name=task_name,
                 duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
@@ -428,8 +549,36 @@ class OpenAIService:
             request_payload["reasoning"] = {"effort": reasoning_effort}
 
         final_response = None
+        # Stream creation gets the same one-extra-app-retry treatment as
+        # the JSON path. The retry only covers the initial connection;
+        # once we're iterating events, mid-stream failures propagate
+        # because the consumer has already received partial deltas and
+        # we can't replay them cleanly.
         try:
-            stream = self._client.responses.create(**request_payload)
+            stream = self._create_response_with_app_retry(
+                request_payload,
+                task_name=task_name,
+                resolved_model=resolved_model,
+                started_at=started_at,
+            )
+        except Exception as exc:
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "openai_request_failed",
+                "OpenAI text-stream creation failed (after SDK + app retries).",
+                model=resolved_model,
+                task_name=task_name,
+                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                error_type=type(exc).__name__,
+                details=str(exc),
+            )
+            raise AgentExecutionError(
+                "The AI workflow request failed.",
+                details=str(exc),
+            ) from exc
+
+        try:
             for event in stream:
                 event_type = self._get_field(event, "type", "")
                 if event_type == "response.output_text.delta":
@@ -453,11 +602,15 @@ class OpenAIService:
         except AgentExecutionError:
             raise
         except Exception as exc:
+            # Mid-stream failure (network drop after first delta, etc.).
+            # We do NOT retry here — partial deltas already left the
+            # building. Surface the error to the caller, which will
+            # fall back to deterministic per its own logic.
             log_event(
                 LOGGER,
                 logging.ERROR,
                 "openai_request_failed",
-                "OpenAI text-stream request failed.",
+                "OpenAI text-stream request failed mid-stream (no retry possible after partial output).",
                 model=resolved_model,
                 task_name=task_name,
                 duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
