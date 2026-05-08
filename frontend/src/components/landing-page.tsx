@@ -712,62 +712,63 @@ function WorkbenchVisual3({ active }: { active: boolean }) {
   );
 }
 
-// ─── Bento (horizontal carousel) ──────────────────────────────────────
+// ─── Bento (single-tile carousel) ─────────────────────────────────────
 //
-// Five feature tiles laid out as a horizontal scroll-snap carousel
-// instead of an asymmetric grid. The previous 3-3-2-2-2-full grid felt
-// "stagger-y" and AI-generated; the carousel treats each tile as a
-// uniform card and gives the user explicit navigation.
+// Each tile is a full-width "stage" — only ONE is visible at a time and
+// the user navigates with the arrow buttons or trackpad swipe. This
+// replaces the side-by-side strip where every tile was visible at once,
+// which read as a wall-of-tiles instead of a focused "now look at this
+// one feature" carousel.
 //
 // Implementation:
-//   - native scroll-snap for snap behavior
-//   - prev/next arrow buttons that scroll the strip by one tile width
-//   - the strip's overflow handles natural touch / trackpad swipes too
+//   - Strip is overflow-x: auto + scroll-snap-type: x mandatory.
+//   - Each tile is `flex: 0 0 100%` so only one fills the visible
+//     strip at a time.
+//   - Arrow buttons + dot indicators both drive `scrollToIndex()`.
+//   - Scroll listener derives the active index from scrollLeft so
+//     swipe / drag interactions sync the dots without React state
+//     fighting the user.
+
+const BENTO_TILES_COUNT = 5;
 
 function BentoSection() {
   const stripRef = useRef<HTMLDivElement | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
 
-  function scrollByTile(direction: 1 | -1) {
+  function scrollToIndex(index: number) {
     const strip = stripRef.current;
     if (!strip) return;
-    // Find the first non-fully-visible tile in the requested direction
-    // and scroll its left edge into the strip's left edge. This walks
-    // tile-by-tile rather than guessing a fixed width — handles the
-    // wide tiles + responsive layouts in one shot.
-    const tiles = Array.from(
-      strip.querySelectorAll<HTMLElement>(".l-bento-tile"),
-    );
-    const stripRect = strip.getBoundingClientRect();
-    if (direction === 1) {
-      const next = tiles.find(
-        (t) => t.getBoundingClientRect().left > stripRect.left + 8,
-      );
-      if (next) {
-        strip.scrollTo({
-          left:
-            strip.scrollLeft +
-            (next.getBoundingClientRect().left - stripRect.left),
-          behavior: "smooth",
-        });
-      }
-    } else {
-      // Walk from the right back; pick the last tile whose left is
-      // before the current strip's left.
-      const prev = [...tiles]
-        .reverse()
-        .find((t) => t.getBoundingClientRect().left < stripRect.left - 8);
-      if (prev) {
-        strip.scrollTo({
-          left:
-            strip.scrollLeft +
-            (prev.getBoundingClientRect().left - stripRect.left),
-          behavior: "smooth",
-        });
-      } else {
-        strip.scrollTo({ left: 0, behavior: "smooth" });
-      }
-    }
+    const clamped = Math.max(0, Math.min(BENTO_TILES_COUNT - 1, index));
+    // Width per tile = strip's clientWidth (since each tile is 100%
+    // wide). scrollTo by `clamped * width` lands on the tile's left.
+    strip.scrollTo({
+      left: clamped * strip.clientWidth,
+      behavior: "smooth",
+    });
   }
+
+  // Keep `activeIndex` in sync with the user's scroll/swipe position.
+  // Debounce-ish via rAF to avoid spamming setState on every scroll
+  // tick.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    let rafId = 0;
+    function onScroll() {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const width = strip!.clientWidth;
+        if (!width) return;
+        const idx = Math.round(strip!.scrollLeft / width);
+        setActiveIndex(idx);
+      });
+    }
+    strip.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      strip.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   return (
     <section className="l-bento" id="bento">
@@ -780,7 +781,8 @@ function BentoSection() {
           <button
             type="button"
             className="l-bento-nav-btn"
-            onClick={() => scrollByTile(-1)}
+            onClick={() => scrollToIndex(activeIndex - 1)}
+            disabled={activeIndex === 0}
             aria-label="Previous"
           >
             <ArrowGlyph direction="left" />
@@ -788,7 +790,8 @@ function BentoSection() {
           <button
             type="button"
             className="l-bento-nav-btn"
-            onClick={() => scrollByTile(1)}
+            onClick={() => scrollToIndex(activeIndex + 1)}
+            disabled={activeIndex === BENTO_TILES_COUNT - 1}
             aria-label="Next"
           >
             <ArrowGlyph direction="right" />
@@ -796,102 +799,121 @@ function BentoSection() {
         </div>
       </div>
 
-      <div className="l-bento-strip" ref={stripRef}>
-        <article className="l-bento-tile l-bento-tile-wide">
-          <span className="l-bento-eyebrow">FOUR ATS COVERAGE</span>
-          <h3 className="l-bento-title">
-            Greenhouse · Lever · Ashby · Workday
-          </h3>
-          <p className="l-bento-body">
-            ~12,000 active roles indexed across 79 Greenhouse boards, 30 Lever
-            sites, 36 Ashby boards, and 11 Workday Fortune-500 tenants.
-            Refreshed by a pg_cron job every ~30 minutes.
-          </p>
-          <div className="l-bento-providers">
-            <span className="l-bento-provider">greenhouse</span>
-            <span className="l-bento-provider">lever</span>
-            <span className="l-bento-provider">ashby</span>
-            <span className="l-bento-provider">workday</span>
-          </div>
-        </article>
+      <div className="l-bento-strip-wrap">
+        <div className="l-bento-strip" ref={stripRef}>
+          <article className="l-bento-tile">
+            <span className="l-bento-eyebrow">FOUR ATS COVERAGE</span>
+            <h3 className="l-bento-title">
+              Greenhouse · Lever · Ashby · Workday
+            </h3>
+            <p className="l-bento-body">
+              ~12,000 active roles indexed across 79 Greenhouse boards, 30
+              Lever sites, 36 Ashby boards, and 11 Workday Fortune-500
+              tenants. Refreshed by a pg_cron job every ~30 minutes.
+            </p>
+            <div className="l-bento-providers">
+              <span className="l-bento-provider">greenhouse</span>
+              <span className="l-bento-provider">lever</span>
+              <span className="l-bento-provider">ashby</span>
+              <span className="l-bento-provider">workday</span>
+            </div>
+          </article>
 
-        <article className="l-bento-tile">
-          <span className="l-bento-eyebrow">RANKED SEARCH</span>
-          <h3 className="l-bento-title">~360 ms warm</h3>
-          <p className="l-bento-body">
-            FTS + filters + sort branches inside a single Postgres RPC. ~25 s
-            live fan-out replaced by one round trip.
-          </p>
-          <pre className="l-bento-code">
+          <article className="l-bento-tile">
+            <span className="l-bento-eyebrow">RANKED SEARCH</span>
+            <h3 className="l-bento-title">~360 ms warm</h3>
+            <p className="l-bento-body">
+              FTS + filters + sort branches inside a single Postgres RPC.
+              ~25 s live fan-out replaced by one round trip.
+            </p>
+            <pre className="l-bento-code">
 {`-- search_cached_jobs_ranked
 SELECT * FROM cached_jobs
  WHERE removed_at IS NULL
    AND tsv @@ websearch_to_tsquery($1)
  ORDER BY ts_rank(tsv, q) DESC
  LIMIT $2;`}
-          </pre>
-        </article>
+            </pre>
+          </article>
 
-        <article className="l-bento-tile">
-          <span className="l-bento-eyebrow">EXPORT</span>
-          <h3 className="l-bento-title">Two themes, two formats.</h3>
-          <p className="l-bento-body">
-            Classic ATS or Professional Neutral, both shipped through PDF and
-            DOCX with a shared palette so they read as the same document.
-          </p>
-          <div className="l-bento-format-row">
-            <span className="l-bento-format">PDF</span>
-            <span className="l-bento-format">DOCX</span>
-            <span className="l-bento-format-divider" />
-            <span className="l-bento-format-tag">classic_ats</span>
-            <span className="l-bento-format-tag">professional_neutral</span>
-          </div>
-        </article>
+          <article className="l-bento-tile">
+            <span className="l-bento-eyebrow">EXPORT</span>
+            <h3 className="l-bento-title">Two themes, two formats.</h3>
+            <p className="l-bento-body">
+              Classic ATS or Professional Neutral, both shipped through PDF
+              and DOCX with a shared palette so they read as the same
+              document.
+            </p>
+            <div className="l-bento-format-row">
+              <span className="l-bento-format">PDF</span>
+              <span className="l-bento-format">DOCX</span>
+              <span className="l-bento-format-divider" />
+              <span className="l-bento-format-tag">classic_ats</span>
+              <span className="l-bento-format-tag">professional_neutral</span>
+            </div>
+          </article>
 
-        <article className="l-bento-tile">
-          <span className="l-bento-eyebrow">RESUME BUILDER</span>
-          <h3 className="l-bento-title">Chat one into existence.</h3>
-          <p className="l-bento-body">
-            An LLM-led conversation that backtracks when you correct it,
-            auto-saves your draft for 7 days, and structures everything into
-            a tailored profile at export time.
-          </p>
-          <div className="l-bento-chat">
-            <div className="l-bento-chat-turn l-bento-chat-turn-bot">
-              What&apos;s your latest role?
-            </div>
-            <div className="l-bento-chat-turn l-bento-chat-turn-user">
-              Senior ML Engineer at Stripe
-            </div>
-            <div className="l-bento-chat-turn l-bento-chat-turn-bot">
-              <span className="l-artifact-caret" />
-            </div>
-          </div>
-        </article>
-
-        <article className="l-bento-tile l-bento-tile-wide">
-          <span className="l-bento-eyebrow">STREAMING ASSISTANT</span>
-          <h3 className="l-bento-title">
-            First token under 1.5 s, grounded in your workspace.
-          </h3>
-          <p className="l-bento-body">
-            SSE event stream — meta → delta × N → followups → done. The
-            assistant reads your candidate profile, the parsed JD, and the
-            current artifact to ground its answer.
-          </p>
-          <div className="l-bento-stream">
-            <div className="l-bento-stream-event">
-              <span className="l-bento-stream-key">event</span> meta
-            </div>
-            <div className="l-bento-stream-event">
-              <span className="l-bento-stream-key">event</span> delta
-              <span className="l-bento-stream-text">
-                Based on your experience, the strongest match is…
+          <article className="l-bento-tile">
+            <span className="l-bento-eyebrow">RESUME BUILDER</span>
+            <h3 className="l-bento-title">Chat one into existence.</h3>
+            <p className="l-bento-body">
+              An LLM-led conversation that backtracks when you correct it,
+              auto-saves your draft for 7 days, and structures everything
+              into a tailored profile at export time.
+            </p>
+            <div className="l-bento-chat">
+              <div className="l-bento-chat-turn l-bento-chat-turn-bot">
+                What&apos;s your latest role?
+              </div>
+              <div className="l-bento-chat-turn l-bento-chat-turn-user">
+                Senior ML Engineer at Stripe
+              </div>
+              <div className="l-bento-chat-turn l-bento-chat-turn-bot">
                 <span className="l-artifact-caret" />
-              </span>
+              </div>
             </div>
-          </div>
-        </article>
+          </article>
+
+          <article className="l-bento-tile">
+            <span className="l-bento-eyebrow">STREAMING ASSISTANT</span>
+            <h3 className="l-bento-title">
+              First token under 1.5 s, grounded in your workspace.
+            </h3>
+            <p className="l-bento-body">
+              SSE event stream — meta → delta × N → followups → done. The
+              assistant reads your candidate profile, the parsed JD, and the
+              current artifact to ground its answer.
+            </p>
+            <div className="l-bento-stream">
+              <div className="l-bento-stream-event">
+                <span className="l-bento-stream-key">event</span> meta
+              </div>
+              <div className="l-bento-stream-event">
+                <span className="l-bento-stream-key">event</span> delta
+                <span className="l-bento-stream-text">
+                  Based on your experience, the strongest match is…
+                  <span className="l-artifact-caret" />
+                </span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        {/* Dot indicators sit centered under the strip. Click jumps to
+            that tile; the active dot animates wider. */}
+        <div className="l-bento-dots" role="tablist" aria-label="Carousel">
+          {Array.from({ length: BENTO_TILES_COUNT }).map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              role="tab"
+              aria-selected={i === activeIndex}
+              aria-label={`Go to slide ${i + 1}`}
+              className={`l-bento-dot ${i === activeIndex ? "is-active" : ""}`}
+              onClick={() => scrollToIndex(i)}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );

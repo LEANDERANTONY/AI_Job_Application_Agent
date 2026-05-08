@@ -3843,22 +3843,20 @@ code {
 /* ── Bento ────────────────────────────────────────────────────────── */
 
 .l-bento {
-  padding: 90px 0 90px;
+  padding: 90px 32px;
+  max-width: 1100px;
   margin: 0 auto;
-  /* The bento section spans full width; the section head + strip have
-     their own internal padding so the strip's overflow lines up with
-     the page edges (carousel reads as "more tiles to the right"). */
 }
 .l-bento .l-section-head {
-  /* Wider section head + nav arrows justified at the right. */
-  max-width: 1200px;
+  /* Section head + nav arrows justified at the right. */
   flex-direction: row;
   flex-wrap: wrap;
   align-items: end;
   justify-content: space-between;
   text-align: left;
-  padding: 0 32px 40px;
+  padding: 0 0 36px;
   gap: 24px;
+  max-width: none;
 }
 .l-bento .l-section-head .l-eyebrow,
 .l-bento .l-section-head .l-section-title {
@@ -3876,71 +3874,96 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--l-line-strong);
   color: var(--l-fg-2);
   cursor: pointer;
   transition: background 160ms var(--l-ease), border-color 160ms var(--l-ease),
-    color 160ms var(--l-ease), transform 160ms var(--l-ease);
+    color 160ms var(--l-ease), transform 160ms var(--l-ease),
+    opacity 160ms var(--l-ease);
 }
-.l-bento-nav-btn:hover {
+.l-bento-nav-btn:hover:not(:disabled) {
   background: rgba(48, 100, 255, 0.12);
   border-color: rgba(48, 100, 255, 0.45);
   color: var(--l-fg);
 }
-.l-bento-nav-btn:active { transform: scale(0.96); }
+.l-bento-nav-btn:active:not(:disabled) { transform: scale(0.96); }
+.l-bento-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 
+/* Strip wrapper holds the scrolling strip + the dot indicators. The
+   strip itself is overflow:auto with snap, so only the active tile is
+   visible; arrows + dots drive scroll position. */
+.l-bento-strip-wrap {
+  position: relative;
+}
 .l-bento-strip {
   display: flex;
-  gap: 18px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scroll-behavior: smooth;
   scrollbar-width: none; /* Firefox */
-  /* Side padding inside the strip = pageGutter. So the leftmost tile
-     starts in the same column as the section head, and the rightmost
-     tile leaves visible scroll-room at the page edge — the carousel
-     reads as "more to the right" without needing dots indicators. */
-  padding: 6px 32px 30px;
-  scroll-padding-left: 32px;
+  /* No internal padding — each tile is exactly 100% of the strip's
+     visible width, so the snap points line up with tile boundaries. */
 }
 .l-bento-strip::-webkit-scrollbar { display: none; }
 
 .l-bento-tile {
   position: relative;
-  /* Uniform tile width on desktop; .l-bento-tile-wide bumps it
-     ~1.6x for visual variety without breaking the rhythm. */
-  flex: 0 0 380px;
+  /* One tile == one full strip width. Setting `min-width: 0` would
+     usually allow flex shrink, but with overflow-x scroll we want
+     each tile to keep its 100% width and scroll out. */
+  flex: 0 0 100%;
   scroll-snap-align: start;
+  scroll-snap-stop: always;
   /* Near-black card with a small blue corner glow — same treatment as
-     the workbench stage so the two surfaces feel like the same family.
-     The previous `var(--l-card)` was a slightly bluish dark grey that
-     read as "washed". */
+     the workbench stage so both surfaces feel like one family. */
   background:
-    radial-gradient(60% 80% at 0% 0%, rgba(48, 100, 255, 0.07), transparent 60%),
+    radial-gradient(50% 70% at 0% 0%, rgba(48, 100, 255, 0.08), transparent 65%),
     var(--l-card);
   border: 1px solid var(--l-line-strong);
   border-radius: var(--l-radius-lg);
-  padding: 26px;
+  padding: 36px 40px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   overflow: hidden;
-  transition: transform 220ms var(--l-ease), border-color 220ms var(--l-ease),
-    box-shadow 220ms var(--l-ease);
+  /* Tile is a "stage" so it gets some vertical breathing room; min
+     keeps the carousel a consistent height as the user clicks
+     through varying-content tiles. */
+  min-height: 360px;
 }
-.l-bento-tile:hover {
-  transform: translateY(-2px);
-  border-color: rgba(160, 178, 218, 0.24);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 24px 48px rgba(0, 0, 0, 0.55);
+
+/* Dot indicators */
+.l-bento-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
 }
-.l-bento-tile-wide {
-  flex: 0 0 600px;
+.l-bento-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: none;
+  background: var(--l-line-strong);
+  cursor: pointer;
+  padding: 0;
+  transition: width 200ms var(--l-ease), background 200ms var(--l-ease);
+}
+.l-bento-dot:hover {
+  background: rgba(160, 178, 218, 0.32);
+}
+.l-bento-dot.is-active {
+  width: 24px;
+  background: var(--accent-strong);
+  box-shadow: 0 0 12px rgba(48, 100, 255, 0.5);
 }
 .l-bento-eyebrow {
   font-family: var(--font-geist-mono), monospace;
@@ -4257,14 +4280,8 @@ code {
     min-height: auto;
     padding: 24px 0;
   }
-  .l-bento { padding: 60px 0; }
-  .l-bento .l-section-head { padding: 0 24px 32px; }
-  .l-bento-strip {
-    padding: 6px 24px 30px;
-    scroll-padding-left: 24px;
-  }
-  .l-bento-tile { flex: 0 0 320px; }
-  .l-bento-tile-wide { flex: 0 0 480px; }
+  .l-bento { padding: 60px 24px; }
+  .l-bento-tile { padding: 30px 28px; min-height: 320px; }
   .l-public { padding: 60px 24px; }
   .l-final { padding: 80px 24px; }
 }
@@ -4277,14 +4294,9 @@ code {
   .l-hero-title { font-size: clamp(36px, 11vw, 48px); }
   .l-hero-actions { width: 100%; flex-direction: column; }
   .l-hero-actions .l-btn { width: 100%; }
-  .l-workbench, .l-public, .l-final { padding-left: 18px; padding-right: 18px; }
-  .l-bento .l-section-head { padding: 0 18px 28px; }
-  .l-bento-strip {
-    padding: 6px 18px 28px;
-    scroll-padding-left: 18px;
-  }
-  .l-bento-tile { flex: 0 0 280px; }
-  .l-bento-tile-wide { flex: 0 0 360px; }
+  .l-workbench, .l-bento, .l-public, .l-final { padding-left: 18px; padding-right: 18px; }
+  .l-bento-tile { padding: 24px 22px; min-height: 280px; }
+  .l-bento-title { font-size: 19px; }
   .l-footer { padding: 36px 18px 48px; }
   .l-footer-inner {
     grid-template-columns: minmax(0, 1fr);
