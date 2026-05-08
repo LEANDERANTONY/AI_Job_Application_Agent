@@ -3368,7 +3368,14 @@ code {
 .l-workbench-visual {
   position: sticky;
   top: 92px;
-  height: calc(100vh - 92px);
+  /* Sticky container height is shorter than viewport (was
+     `100vh - 92px`). With `justify-content: center` below, the
+     stage's vertical center sits ~80px higher than viewport center,
+     which lines it up with where step 01's centered text appears on
+     first scroll into the section. The 200px subtrahend accounts for
+     the 92px sticky top + a 108px lift that puts the stage's center
+     close to step text center for both first-view and active state. */
+  height: calc(100vh - 200px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3832,17 +3839,21 @@ code {
 }
 .l-workbench-step {
   /* 48vh per step — enough scroll distance for the IntersectionObserver
-     to fire one step at a time without stacking. Was 56vh which made
-     the first step's text float ~28vh below the section head; now it's
-     a tighter scroll narrative. */
+     to fire one step at a time without stacking. */
   min-height: 48vh;
   display: flex;
   flex-direction: column;
-  /* `flex-start` (was `center`) so the text starts at the TOP of the
-     block. Combined with consistent `.l-section-head` padding-bottom,
-     this closes the big gap between the section title and the first
-     step's body that the user called out. */
-  justify-content: flex-start;
+  /* Vertically center text inside each block so the step copy aligns
+     with the center-pinned visual on the left. With `flex-start`,
+     step 01's text sat at the very top of the column on first scroll
+     into the section, ~190px above the centered visual stage — they
+     read as off-axis. Centering pushes step 01 down to roughly the
+     middle of its block, much closer to the visual's vertical center.
+     Steps 02–04 are unchanged in feel because the IntersectionObserver
+     "active" state already triggers when each block crosses the
+     viewport's middle band, so centered text lines up with the
+     centered visual when active. */
+  justify-content: center;
   gap: 18px;
   padding: 8px 0 32px;
   opacity: 0.45;
