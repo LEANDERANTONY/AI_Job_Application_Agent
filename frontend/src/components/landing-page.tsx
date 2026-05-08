@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { BrandLogo } from "@/components/BrandLogo";
@@ -12,29 +12,56 @@ import {
   startGoogleSignIn,
 } from "@/lib/api";
 import type { AuthSessionResponse } from "@/lib/api-types";
+import { humanizeApiError } from "@/lib/humanizeApiError";
 import {
   buildAuthRedirectUrl,
   clearAuthQueryParams,
   clearLegacyAuthTokens,
 } from "@/lib/auth-session";
 
-const SOCIAL_LINKS = [
+const GITHUB_URL = "https://github.com/LEANDERANTONY/AI_Job_Application_Agent";
+const LINKEDIN_URL = "https://www.linkedin.com/in/leander-antony-a-176319147";
+
+// The four workspace steps, narrated for the landing. The component below
+// renders these as a sticky-pinned scroll narrative — the left column
+// holds the current step's visual, the right column scrolls through the
+// step bodies.
+const WORKBENCH_STEPS = [
   {
-    label: "GitHub",
-    href: "https://github.com/LEANDERANTONY/AI_Job_Application_Agent",
+    eyebrow: "01 · Resume",
+    title: "Drop a resume — or chat one into existence.",
+    body:
+      "An LLM-first hybrid parser turns a PDF, DOCX or TXT into a structured profile in seconds — Skills bucketed by category, Experience, Projects + Publications, with a per-profile section order so students lead with Education and seniors with Experience.",
+    aside:
+      "No resume yet? An LLM builder asks one question at a time, backtracks when you correct it, and auto-saves your draft for 7 days.",
   },
   {
-    label: "LinkedIn",
-    href: "https://www.linkedin.com/in/leander-antony-a-176319147",
+    eyebrow: "02 · Job Search",
+    title: "Search a cached index of ~12k roles across four ATSes.",
+    body:
+      "Greenhouse, Lever, Ashby, and Workday — refreshed every ~30 minutes by a pg_cron job. Filter by source, work mode, employment type, and posted-within window. Sort by relevance, recency, or company A → Z.",
+    aside:
+      "Saved a job that closed upstream? The cleanup pass tombstones it instead of deleting — your bookmark survives with an honest \"Expired\" badge.",
+  },
+  {
+    eyebrow: "03 · Job Detail",
+    title: "Parse a JD with hard + soft skills extracted.",
+    body:
+      "An LLM hybrid parser hits 0.99 across a 15-fixture quality runner — vs 0.78 from the deterministic baseline. Hard skills, soft skills, summary, and the original body sections rendered verbatim from the parser, no reorder, no dedupe.",
+    aside:
+      "Selected a job from search? The JD prefills from the cached index — one Supabase read, no extra round trip.",
+  },
+  {
+    eyebrow: "04 · Analysis",
+    title: "Generate a tailored resume + cover letter.",
+    body:
+      "The agentic workflow runs Tailoring → Review → Resume Generation → Cover Letter. Two themes — Classic ATS and Professional Neutral — both shipped through PDF and DOCX with a shared palette so they read as the same document.",
+    aside:
+      "Streaming SSE: meta → delta × N → followups → done. First token visible in under 1.5 s, grounded in your workspace state.",
   },
 ] as const;
 
 type LandingAuthStatus = "loading" | "restoring" | "signed_out" | "signed_in";
-// Tracks WHICH auth action is in flight rather than a shared boolean.
-// Without this, clicking "Enter workspace" flipped a single
-// authActionLoading flag → the sibling "Sign out" button (which
-// switched its label on the same flag) would show "Signing out…" until
-// the workspace handoff redirect completed.
 type LandingPendingAction = "signin" | "signout" | "handoff" | null;
 
 export function LandingPage() {
@@ -50,8 +77,6 @@ export function LandingPage() {
     let cancelled = false;
 
     async function bootAuthState() {
-      // One-shot migration off the old localStorage token blob; safe to
-      // remove a few weeks after the cookie cutover lands.
       clearLegacyAuthTokens();
 
       const currentUrl = new URL(window.location.href);
@@ -89,9 +114,7 @@ export function LandingPage() {
             setAuthSession(null);
             setAuthStatus("signed_out");
             setAuthError(
-              error instanceof Error
-                ? error.message
-                : "Google sign-in failed unexpectedly.",
+              humanizeApiError(error, "Google sign-in failed unexpectedly."),
             );
           }
         } finally {
@@ -100,9 +123,6 @@ export function LandingPage() {
         return;
       }
 
-      // No URL code: try a silent restore. Cookie may or may not be
-      // present; failure here is the expected first-visit state, so we
-      // suppress the error toast.
       setAuthStatus("restoring");
       setAuthError(null);
       try {
@@ -134,9 +154,7 @@ export function LandingPage() {
       window.location.href = response.url;
     } catch (error) {
       setAuthError(
-        error instanceof Error
-          ? error.message
-          : "Google sign-in could not be started.",
+        humanizeApiError(error, "Google sign-in could not be started."),
       );
       setPendingAction(null);
     }
@@ -149,8 +167,7 @@ export function LandingPage() {
     try {
       await signOutAuthSession();
     } catch {
-      // Sign-out may fail if the cookie is already invalid. Treat as
-      // success on the client. Backend clears cookies on failure too.
+      // Sign-out may fail if the cookie is already invalid. Treat as success.
     } finally {
       setAuthSession(null);
       setAuthStatus("signed_out");
@@ -168,139 +185,880 @@ export function LandingPage() {
       window.location.href = response.redirect_url;
     } catch (error) {
       setAuthError(
-        error instanceof Error
-          ? error.message
-          : "Workspace handoff failed unexpectedly.",
+        humanizeApiError(error, "Workspace handoff failed unexpectedly."),
       );
       setPendingAction(null);
     }
   }
 
   const isSignedIn = authStatus === "signed_in";
-  const signedInLabel =
-    authSession?.app_user.display_name ||
-    authSession?.app_user.email ||
-    "Signed in";
+  const primaryCtaLabel = isSignedIn
+    ? pendingAction === "handoff"
+      ? "Opening workspace…"
+      : "Enter workspace"
+    : authStatus === "restoring"
+    ? "Restoring session…"
+    : pendingAction === "signin"
+    ? "Redirecting…"
+    : "Sign in with Google";
+
+  const onPrimaryCta = isSignedIn
+    ? handleEnterWorkspace
+    : handleGoogleSignIn;
 
   return (
-    <div className="app-shell">
-      <div className="bg-orb bg-orb-one" />
-      <div className="bg-orb bg-orb-two" />
+    <div className="l-shell">
+      {/* Soft accent orbs in the page background. The opacity + blur are
+          tuned so they read as ambience, not decoration. */}
+      <div className="l-orb l-orb-1" aria-hidden />
+      <div className="l-orb l-orb-2" aria-hidden />
+      <div className="l-grain" aria-hidden />
 
-      <header className="topbar">
-          <div className="brand">
-            <div className="brand-mark">
-              <BrandLogo className="brand-logo-image" size={44} />
-            </div>
-            <div>
-              <p className="brand-title">Job Application Copilot</p>
-            </div>
-          </div>
-          <nav className="nav-links" aria-label="Landing navigation">
+      <header className="l-topbar">
+        <div className="l-topbar-inner">
+          <Link href="/" className="l-brand">
+            <BrandLogo className="l-brand-logo" size={32} />
+            <span className="l-brand-name">Job Application Copilot</span>
+          </Link>
+          <nav className="l-topbar-nav" aria-label="Landing navigation">
+            <a href="#workbench" className="l-topbar-link">Workflow</a>
+            <a href="#bento" className="l-topbar-link">Features</a>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="l-topbar-link"
+            >
+              GitHub
+            </a>
             {isSignedIn ? (
-              <>
-                <span className="status-chip status-chip-live">Signed in</span>
-                <button
-                  className="secondary-button landing-nav-button landing-nav-signout"
-                  disabled={anyActionPending}
-                  onClick={() => void handleSignOut()}
-                  type="button"
-                >
-                  {pendingAction === "signout" ? "Signing out..." : "Sign out"}
-                </button>
-              </>
-            ) : authStatus === "restoring" ? (
               <button
-                className="nav-link nav-link-active landing-nav-button"
+                className="l-btn l-btn-ghost l-btn-sm"
+                disabled={anyActionPending}
+                onClick={() => void handleSignOut()}
+                type="button"
+              >
+                {pendingAction === "signout" ? "Signing out…" : "Sign out"}
+              </button>
+            ) : null}
+            <button
+              className="l-btn l-btn-primary l-btn-sm"
               disabled={anyActionPending || authStatus === "restoring"}
-              onClick={() => void handleGoogleSignIn()}
+              onClick={() => void onPrimaryCta()}
               type="button"
             >
-              {authStatus === "restoring"
-                ? "Restoring session..."
-                : pendingAction === "signin"
-                  ? "Redirecting..."
-                  : "Sign in"}
+              {primaryCtaLabel}
             </button>
-          ) : null}
-        </nav>
+          </nav>
+        </div>
       </header>
 
-      <main className="page-frame landing-page-frame">
-        <section className="hero landing-hero">
-          <h1>Job Application Copilot</h1>
-          <p className="hero-copy landing-hero-copy">
-            Upload your resume, find or import the right role, review the job description,
-            and generate tailored application documents in one guided flow.
-          </p>
+      <main className="l-main">
+        <LandingHero
+          authError={authError}
+          authStatus={authStatus}
+          isSignedIn={isSignedIn}
+          pendingAction={pendingAction}
+          onPrimaryCta={() => void onPrimaryCta()}
+          anyActionPending={anyActionPending}
+        />
 
-          {authError ? <div className="notice-panel notice-warning">{authError}</div> : null}
+        <WorkbenchSection />
 
-          <div className="hero-actions">
-            {isSignedIn ? (
-              <button
-                className="primary-button"
-                disabled={anyActionPending}
-                onClick={() => void handleEnterWorkspace()}
-                type="button"
-              >
-                {pendingAction === "handoff"
-                  ? "Opening workspace..."
-                  : "Enter workspace"}
-              </button>
-            ) : (
-              <button
-                className="primary-button"
-                disabled={anyActionPending || authStatus === "restoring"}
-                onClick={() => void handleGoogleSignIn()}
-                type="button"
-              >
-                {authStatus === "restoring"
-                  ? "Restoring session..."
-                  : pendingAction === "signin"
-                    ? "Redirecting..."
-                    : "Sign in"}
-              </button>
-            )}
-          </div>
-        </section>
+        <BentoSection />
+
+        <BuiltInPublicSection />
+
+        <FinalCtaSection
+          authStatus={authStatus}
+          isSignedIn={isSignedIn}
+          pendingAction={pendingAction}
+          onPrimaryCta={() => void onPrimaryCta()}
+          anyActionPending={anyActionPending}
+        />
       </main>
 
-      <footer className="landing-footer">
-        <div className="landing-footer-inner">
-          <div className="landing-footer-brand">
-            <p className="landing-footer-title">Job Application Copilot</p>
-            <p className="landing-footer-copy">
-              A focused workspace for preparing stronger applications from one place.
-            </p>
-            <p className="landing-footer-credit">Built by Leander Antony A</p>
+      <LandingFooter />
+    </div>
+  );
+}
+
+// ─── Hero ─────────────────────────────────────────────────────────────
+
+type HeroProps = {
+  authError: string | null;
+  authStatus: LandingAuthStatus;
+  isSignedIn: boolean;
+  pendingAction: LandingPendingAction;
+  onPrimaryCta: () => void;
+  anyActionPending: boolean;
+};
+
+function LandingHero({
+  authError,
+  authStatus,
+  isSignedIn,
+  pendingAction,
+  onPrimaryCta,
+  anyActionPending,
+}: HeroProps) {
+  const ctaLabel = isSignedIn
+    ? pendingAction === "handoff"
+      ? "Opening workspace…"
+      : "Enter workspace"
+    : authStatus === "restoring"
+    ? "Restoring session…"
+    : pendingAction === "signin"
+    ? "Redirecting…"
+    : "Sign in with Google";
+
+  return (
+    <section className="l-hero">
+      <div className="l-hero-grid">
+        <div className="l-hero-copy">
+          <span className="l-eyebrow l-hero-eyebrow">
+            <span className="l-eyebrow-dot" /> AI-powered application workbench
+          </span>
+
+          {/* Title is split into spans so each line can stagger-fade in
+              with its own animation-delay. The .l-fade-up class is what
+              triggers the reveal — see globals.css. */}
+          <h1 className="l-hero-title">
+            <span className="l-fade-up" style={{ animationDelay: "60ms" }}>
+              Tailor every job
+            </span>
+            <span className="l-fade-up" style={{ animationDelay: "180ms" }}>
+              application with an
+            </span>
+            <span
+              className="l-fade-up l-hero-title-accent"
+              style={{ animationDelay: "300ms" }}
+            >
+              AI workbench.
+            </span>
+          </h1>
+
+          <p
+            className="l-hero-sub l-fade-up"
+            style={{ animationDelay: "440ms" }}
+          >
+            Upload your resume, find or import a role, review the job
+            description, and ship a tailored resume + cover letter in one
+            guided flow.
+          </p>
+
+          {authError ? (
+            <div className="l-notice l-notice-warning">{authError}</div>
+          ) : null}
+
+          <div
+            className="l-hero-actions l-fade-up"
+            style={{ animationDelay: "560ms" }}
+          >
+            <button
+              className="l-btn l-btn-primary"
+              disabled={anyActionPending || authStatus === "restoring"}
+              onClick={onPrimaryCta}
+              type="button"
+            >
+              <GoogleGlyph />
+              {ctaLabel}
+            </button>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="l-btn l-btn-ghost"
+            >
+              <GitHubGlyph />
+              View on GitHub
+            </a>
           </div>
 
-          <div className="landing-footer-links">
-            <div className="landing-footer-column">
-              <p className="landing-footer-heading">Navigation</p>
-              <Link href="/privacy" className="landing-footer-link">
-                Privacy Policy
-              </Link>
-            </div>
+          <ul
+            className="l-hero-pills l-fade-up"
+            style={{ animationDelay: "680ms" }}
+          >
+            <li>Resume parsing</li>
+            <li>Cached job search</li>
+            <li>Tailored DOCX + PDF</li>
+            <li>Streaming assistant</li>
+          </ul>
+        </div>
 
-            <div className="landing-footer-column">
-              <p className="landing-footer-heading">Socials</p>
-              {SOCIAL_LINKS.map((item) => (
-                <a
-                  key={item.label}
-                  href={item.href}
-                  className="landing-footer-link"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {item.label}
-                </a>
-              ))}
+        <div className="l-hero-visual">
+          <ArtifactPreview />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Hero artifact preview ────────────────────────────────────────────
+//
+// A static-but-alive preview of the workspace's artifact viewer. Pure
+// HTML/CSS — no screenshot — so it stays pixel-perfect at every viewport.
+// The streaming caret blinks via a CSS keyframe (see globals.css).
+
+function ArtifactPreview() {
+  return (
+    <div className="l-artifact" aria-hidden>
+      {/* Soft glow ring behind the card. */}
+      <div className="l-artifact-glow" />
+
+      <div className="l-artifact-card">
+        <div className="l-artifact-head">
+          <div className="l-artifact-tabs">
+            <span className="l-artifact-tab l-artifact-tab-active">
+              Tailored Resume
+            </span>
+            <span className="l-artifact-tab">Cover Letter</span>
+          </div>
+          <span className="l-artifact-stream-chip">
+            <span className="l-artifact-stream-dot" /> Streaming
+          </span>
+        </div>
+
+        <div className="l-artifact-body">
+          <div className="l-artifact-name">Aria Patel</div>
+          <div className="l-artifact-role">
+            Senior ML Engineer · Inference Platform
+          </div>
+
+          <div className="l-artifact-section">
+            <div className="l-artifact-section-eyebrow">SUMMARY</div>
+            <p className="l-artifact-paragraph">
+              Eight years building inference platforms across Anthropic and
+              Stripe. Led the rate-limiter rewrite and the multi-tenant
+              tokenizer that landed inside the SLO.<span className="l-artifact-caret" />
+            </p>
+          </div>
+
+          <div className="l-artifact-section">
+            <div className="l-artifact-section-eyebrow">SKILLS</div>
+            <div className="l-artifact-skills">
+              <span className="l-artifact-chip">Python</span>
+              <span className="l-artifact-chip">PyTorch</span>
+              <span className="l-artifact-chip">CUDA</span>
+              <span className="l-artifact-chip">Triton</span>
+              <span className="l-artifact-chip">Ray</span>
+              <span className="l-artifact-chip">Postgres</span>
             </div>
           </div>
         </div>
-      </footer>
+
+        <div className="l-artifact-foot">
+          <div className="l-artifact-theme">
+            <span className="l-artifact-theme-label">Theme</span>
+            <span className="l-artifact-theme-chip l-artifact-theme-chip-active">
+              Classic ATS
+            </span>
+            <span className="l-artifact-theme-chip">Professional Neutral</span>
+          </div>
+          <div className="l-artifact-downloads">
+            <span className="l-artifact-download">PDF</span>
+            <span className="l-artifact-download">DOCX</span>
+          </div>
+        </div>
+      </div>
     </div>
+  );
+}
+
+// ─── Workbench (sticky scroll narrative) ──────────────────────────────
+//
+// Left column is `position: sticky` and stays in view while the right
+// column scrolls through four step blocks. An IntersectionObserver
+// watches each step block and updates `currentStep`; the left column
+// has all four visuals stacked, only the active one has opacity 1.
+//
+// This is the centerpiece of the page — the workflow narrative.
+
+function WorkbenchSection() {
+  const [currentStep, setCurrentStep] = useState(0);
+  const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    const observers: IntersectionObserver[] = [];
+    stepRefs.current.forEach((node, index) => {
+      if (!node) return;
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            // Use a tight rootMargin so the active step flips at the
+            // moment its block crosses the middle of the viewport.
+            // `intersectionRatio > 0.45` gives a snappy mid-scroll
+            // crossfade rather than waiting until the block is fully
+            // in view.
+            if (entry.isIntersecting && entry.intersectionRatio > 0.45) {
+              setCurrentStep(index);
+            }
+          });
+        },
+        {
+          // Trigger when the block crosses the middle band of the
+          // viewport. -40% top + -40% bottom = "is roughly centered."
+          rootMargin: "-40% 0px -40% 0px",
+          threshold: [0, 0.45, 0.55, 1],
+        },
+      );
+      observer.observe(node);
+      observers.push(observer);
+    });
+    return () => {
+      observers.forEach((o) => o.disconnect());
+    };
+  }, []);
+
+  return (
+    <section className="l-workbench" id="workbench">
+      <div className="l-section-head">
+        <span className="l-eyebrow">Four steps · One flow</span>
+        <h2 className="l-section-title">
+          A guided workflow from raw resume to recruiter-ready DOCX.
+        </h2>
+      </div>
+
+      <div className="l-workbench-grid">
+        <div className="l-workbench-visual" aria-hidden>
+          <div className="l-workbench-visual-stage">
+            <WorkbenchVisual0 active={currentStep === 0} />
+            <WorkbenchVisual1 active={currentStep === 1} />
+            <WorkbenchVisual2 active={currentStep === 2} />
+            <WorkbenchVisual3 active={currentStep === 3} />
+          </div>
+          {/* Mini step rail so the user sees they're in a 4-step
+              narrative even on smaller screens where the sticky
+              breaks down. */}
+          <div className="l-workbench-rail">
+            {WORKBENCH_STEPS.map((step, idx) => (
+              <button
+                key={step.eyebrow}
+                type="button"
+                className={`l-workbench-rail-step ${
+                  currentStep === idx ? "is-active" : ""
+                }`}
+                onClick={() => {
+                  stepRefs.current[idx]?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                  });
+                }}
+                aria-label={step.eyebrow}
+              >
+                <span className="l-workbench-rail-num">
+                  {String(idx + 1).padStart(2, "0")}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="l-workbench-steps">
+          {WORKBENCH_STEPS.map((step, idx) => (
+            <div
+              key={step.eyebrow}
+              ref={(node) => {
+                stepRefs.current[idx] = node;
+              }}
+              className={`l-workbench-step ${
+                currentStep === idx ? "is-active" : ""
+              }`}
+            >
+              <span className="l-eyebrow l-workbench-eyebrow">
+                {step.eyebrow}
+              </span>
+              <h3 className="l-workbench-title">{step.title}</h3>
+              <p className="l-workbench-body">{step.body}</p>
+              <p className="l-workbench-aside">{step.aside}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Four small "visual mocks" — pure HTML/CSS, each represents the active
+// state of one workspace step. Stacked behind each other; only the
+// currently-active one has opacity 1. These are intentionally minimal —
+// they communicate the *shape* of each step, not pixel-perfect product
+// renderings.
+
+function WorkbenchVisual0({ active }: { active: boolean }) {
+  return (
+    <div
+      className={`l-workbench-mock l-mock-resume ${active ? "is-active" : ""}`}
+    >
+      <div className="l-mock-eyebrow">STEP 01 · RESUME</div>
+      <div className="l-mock-dropzone">
+        <div className="l-mock-file">resume_v3.pdf</div>
+        <div className="l-mock-file-meta">2.1 MB · parsed</div>
+      </div>
+      <div className="l-mock-fields">
+        <div className="l-mock-field">
+          <span className="l-mock-field-label">Name</span>
+          <span className="l-mock-field-value">Aria Patel</span>
+        </div>
+        <div className="l-mock-field">
+          <span className="l-mock-field-label">Role</span>
+          <span className="l-mock-field-value">Staff ML Engineer</span>
+        </div>
+        <div className="l-mock-field">
+          <span className="l-mock-field-label">Skills</span>
+          <span className="l-mock-field-value">Python, PyTorch, CUDA + 14</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchVisual1({ active }: { active: boolean }) {
+  return (
+    <div
+      className={`l-workbench-mock l-mock-search ${active ? "is-active" : ""}`}
+    >
+      <div className="l-mock-eyebrow">STEP 02 · JOB SEARCH</div>
+      <div className="l-mock-search-bar">
+        <span className="l-mock-search-icon">⌕</span>
+        <span className="l-mock-search-text">machine learning engineer</span>
+      </div>
+      <div className="l-mock-filters">
+        <span className="l-mock-filter">Source · 2 selected</span>
+        <span className="l-mock-filter">Work mode · Remote</span>
+        <span className="l-mock-filter">Sort · Most recent</span>
+      </div>
+      <div className="l-mock-results">
+        <div className="l-mock-result l-mock-result-top">
+          <span className="l-mock-result-badge">★ TOP MATCH</span>
+          <div className="l-mock-result-title">Senior ML Engineer</div>
+          <div className="l-mock-result-meta">Stripe · greenhouse · Remote</div>
+        </div>
+        <div className="l-mock-result">
+          <div className="l-mock-result-title">ML Engineer, Inference</div>
+          <div className="l-mock-result-meta">Pinterest · greenhouse</div>
+        </div>
+        <div className="l-mock-result">
+          <div className="l-mock-result-title">Founding ML Engineer</div>
+          <div className="l-mock-result-meta">Notion · ashby</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchVisual2({ active }: { active: boolean }) {
+  return (
+    <div
+      className={`l-workbench-mock l-mock-jd ${active ? "is-active" : ""}`}
+    >
+      <div className="l-mock-eyebrow">STEP 03 · JOB DETAIL</div>
+      <div className="l-mock-jd-title">Senior ML Engineer, Inference</div>
+      <div className="l-mock-jd-sub">Anthropic · San Francisco · Hybrid</div>
+      <div className="l-mock-skills-block">
+        <div className="l-mock-skills-head">HARD SKILLS</div>
+        <div className="l-mock-skills">
+          <span className="l-mock-chip l-mock-chip-hard">Python</span>
+          <span className="l-mock-chip l-mock-chip-hard">CUDA</span>
+          <span className="l-mock-chip l-mock-chip-hard">Triton</span>
+          <span className="l-mock-chip l-mock-chip-hard">Distributed systems</span>
+          <span className="l-mock-chip l-mock-chip-hard">Postgres</span>
+        </div>
+      </div>
+      <div className="l-mock-skills-block">
+        <div className="l-mock-skills-head">SOFT SKILLS</div>
+        <div className="l-mock-skills">
+          <span className="l-mock-chip l-mock-chip-soft">Mentorship</span>
+          <span className="l-mock-chip l-mock-chip-soft">Cross-functional</span>
+          <span className="l-mock-chip l-mock-chip-soft">Pragmatic</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchVisual3({ active }: { active: boolean }) {
+  return (
+    <div
+      className={`l-workbench-mock l-mock-analysis ${active ? "is-active" : ""}`}
+    >
+      <div className="l-mock-eyebrow">STEP 04 · ANALYSIS</div>
+      <div className="l-mock-timeline">
+        <div className="l-mock-timeline-row">
+          <span className="l-mock-timeline-dot l-mock-timeline-dot-done" />
+          Tailoring · 0:02
+        </div>
+        <div className="l-mock-timeline-row">
+          <span className="l-mock-timeline-dot l-mock-timeline-dot-done" />
+          Review · 0:04
+        </div>
+        <div className="l-mock-timeline-row l-mock-timeline-row-active">
+          <span className="l-mock-timeline-dot l-mock-timeline-dot-running" />
+          Resume generation · running
+        </div>
+        <div className="l-mock-timeline-row l-mock-timeline-row-pending">
+          <span className="l-mock-timeline-dot" />
+          Cover letter
+        </div>
+      </div>
+      <div className="l-mock-doc">
+        <div className="l-mock-doc-name">Tailored Resume · Aria Patel</div>
+        <div className="l-mock-doc-line" />
+        <div className="l-mock-doc-line l-mock-doc-line-short" />
+        <div className="l-mock-doc-line" />
+        <div className="l-mock-doc-line l-mock-doc-line-mid">
+          <span className="l-artifact-caret" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Bento (asymmetric "what else" grid) ──────────────────────────────
+
+function BentoSection() {
+  return (
+    <section className="l-bento" id="bento">
+      <div className="l-section-head">
+        <span className="l-eyebrow">Built into the workbench</span>
+        <h2 className="l-section-title">
+          Everything else worth knowing about.
+        </h2>
+      </div>
+
+      <div className="l-bento-grid">
+        <article className="l-bento-tile l-bento-tile-wide">
+          <span className="l-bento-eyebrow">FOUR ATS COVERAGE</span>
+          <h3 className="l-bento-title">
+            Greenhouse · Lever · Ashby · Workday
+          </h3>
+          <p className="l-bento-body">
+            ~12,000 active roles indexed across 79 Greenhouse boards, 30 Lever
+            sites, 36 Ashby boards, and 11 Workday Fortune-500 tenants.
+            Refreshed by a pg_cron job every ~30 minutes.
+          </p>
+          <div className="l-bento-providers">
+            <span className="l-bento-provider">greenhouse</span>
+            <span className="l-bento-provider">lever</span>
+            <span className="l-bento-provider">ashby</span>
+            <span className="l-bento-provider">workday</span>
+          </div>
+        </article>
+
+        <article className="l-bento-tile">
+          <span className="l-bento-eyebrow">RANKED SEARCH</span>
+          <h3 className="l-bento-title">~360 ms warm</h3>
+          <p className="l-bento-body">
+            FTS + filters + sort branches inside a single Postgres RPC. ~25 s
+            live fan-out replaced by one round trip.
+          </p>
+          <pre className="l-bento-code">
+{`-- search_cached_jobs_ranked
+SELECT * FROM cached_jobs
+ WHERE removed_at IS NULL
+   AND tsv @@ websearch_to_tsquery($1)
+ ORDER BY ts_rank(tsv, q) DESC
+ LIMIT $2;`}
+          </pre>
+        </article>
+
+        <article className="l-bento-tile">
+          <span className="l-bento-eyebrow">EXPORT</span>
+          <h3 className="l-bento-title">Two themes, two formats.</h3>
+          <p className="l-bento-body">
+            Classic ATS or Professional Neutral, both shipped through PDF and
+            DOCX with a shared palette so they read as the same document.
+          </p>
+          <div className="l-bento-format-row">
+            <span className="l-bento-format">PDF</span>
+            <span className="l-bento-format">DOCX</span>
+            <span className="l-bento-format-divider" />
+            <span className="l-bento-format-tag">classic_ats</span>
+            <span className="l-bento-format-tag">professional_neutral</span>
+          </div>
+        </article>
+
+        <article className="l-bento-tile">
+          <span className="l-bento-eyebrow">RESUME BUILDER</span>
+          <h3 className="l-bento-title">Chat one into existence.</h3>
+          <p className="l-bento-body">
+            An LLM-led conversation that backtracks when you correct it,
+            auto-saves your draft for 7 days, and structures everything into
+            a tailored profile at export time.
+          </p>
+          <div className="l-bento-chat">
+            <div className="l-bento-chat-turn l-bento-chat-turn-bot">
+              What&apos;s your latest role?
+            </div>
+            <div className="l-bento-chat-turn l-bento-chat-turn-user">
+              Senior ML Engineer at Stripe
+            </div>
+            <div className="l-bento-chat-turn l-bento-chat-turn-bot">
+              <span className="l-artifact-caret" />
+            </div>
+          </div>
+        </article>
+
+        <article className="l-bento-tile l-bento-tile-wide">
+          <span className="l-bento-eyebrow">STREAMING ASSISTANT</span>
+          <h3 className="l-bento-title">
+            First token under 1.5 s, grounded in your workspace.
+          </h3>
+          <p className="l-bento-body">
+            SSE event stream — meta → delta × N → followups → done. The
+            assistant reads your candidate profile, the parsed JD, and the
+            current artifact to ground its answer.
+          </p>
+          <div className="l-bento-stream">
+            <div className="l-bento-stream-event">
+              <span className="l-bento-stream-key">event</span> meta
+            </div>
+            <div className="l-bento-stream-event">
+              <span className="l-bento-stream-key">event</span> delta
+              <span className="l-bento-stream-text">
+                Based on your experience, the strongest match is…
+                <span className="l-artifact-caret" />
+              </span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+// ─── Built in public ──────────────────────────────────────────────────
+
+function BuiltInPublicSection() {
+  const stack = [
+    "Next.js 16",
+    "FastAPI",
+    "Supabase",
+    "OpenAI Responses API",
+    "WeasyPrint",
+    "python-docx",
+    "pg_cron",
+    "pg_net",
+  ];
+
+  return (
+    <section className="l-public">
+      <div className="l-public-inner">
+        <div className="l-public-head">
+          <span className="l-eyebrow">Built in public · MIT licensed</span>
+          <h2 className="l-public-title">
+            One developer, eight months, one workspace.
+          </h2>
+          <p className="l-public-sub">
+            Every architectural decision is documented in a 16-entry ADR set;
+            every shipped day is in a public DEVLOG.
+          </p>
+        </div>
+
+        <div className="l-public-stack" aria-label="Tech stack">
+          {stack.map((item, idx) => (
+            <span
+              key={item}
+              className="l-public-chip"
+              style={{ animationDelay: `${idx * 60}ms` }}
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+
+        <div className="l-public-actions">
+          <a
+            href={GITHUB_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="l-btn l-btn-ghost"
+          >
+            <GitHubGlyph />
+            Star on GitHub
+          </a>
+          <a
+            href={`${GITHUB_URL}/blob/main/DEVLOG.md`}
+            target="_blank"
+            rel="noreferrer"
+            className="l-btn l-btn-quiet"
+          >
+            Read the DEVLOG →
+          </a>
+          <a
+            href={`${GITHUB_URL}/tree/main/docs/adr`}
+            target="_blank"
+            rel="noreferrer"
+            className="l-btn l-btn-quiet"
+          >
+            Browse 16 ADRs →
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Final CTA ────────────────────────────────────────────────────────
+
+type FinalCtaProps = Omit<HeroProps, "authError">;
+
+function FinalCtaSection({
+  authStatus,
+  isSignedIn,
+  pendingAction,
+  onPrimaryCta,
+  anyActionPending,
+}: FinalCtaProps) {
+  const ctaLabel = isSignedIn
+    ? pendingAction === "handoff"
+      ? "Opening workspace…"
+      : "Enter workspace"
+    : authStatus === "restoring"
+    ? "Restoring session…"
+    : pendingAction === "signin"
+    ? "Redirecting…"
+    : "Sign in with Google";
+
+  return (
+    <section className="l-final">
+      <div className="l-final-inner">
+        <span className="l-eyebrow">Ready to tailor?</span>
+        <h2 className="l-final-title">
+          One workspace from raw resume to recruiter-ready DOCX.
+        </h2>
+        <div className="l-final-actions">
+          <button
+            className="l-btn l-btn-primary l-btn-lg"
+            disabled={anyActionPending || authStatus === "restoring"}
+            onClick={onPrimaryCta}
+            type="button"
+          >
+            <GoogleGlyph />
+            {ctaLabel}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────
+
+function LandingFooter() {
+  return (
+    <footer className="l-footer">
+      <div className="l-footer-inner">
+        <div className="l-footer-brand">
+          <p className="l-footer-name">Job Application Copilot</p>
+          <p className="l-footer-copy">
+            A focused workspace for preparing stronger applications from one
+            place.
+          </p>
+          <p className="l-footer-credit">Built by Leander Antony A</p>
+        </div>
+
+        <div className="l-footer-cols">
+          <div className="l-footer-col">
+            <p className="l-footer-heading">Project</p>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="l-footer-link"
+            >
+              GitHub
+            </a>
+            <a
+              href={`${GITHUB_URL}/blob/main/DEVLOG.md`}
+              target="_blank"
+              rel="noreferrer"
+              className="l-footer-link"
+            >
+              DEVLOG
+            </a>
+            <a
+              href={`${GITHUB_URL}/tree/main/docs/adr`}
+              target="_blank"
+              rel="noreferrer"
+              className="l-footer-link"
+            >
+              ADRs
+            </a>
+          </div>
+          <div className="l-footer-col">
+            <p className="l-footer-heading">Navigation</p>
+            <Link href="/privacy" className="l-footer-link">
+              Privacy Policy
+            </Link>
+          </div>
+          <div className="l-footer-col">
+            <p className="l-footer-heading">Socials</p>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="l-footer-link"
+            >
+              GitHub
+            </a>
+            <a
+              href={LINKEDIN_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="l-footer-link"
+            >
+              LinkedIn
+            </a>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+// ─── Inline icon glyphs ───────────────────────────────────────────────
+
+function GoogleGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 18 18"
+      aria-hidden
+      className="l-glyph"
+    >
+      <path
+        fill="#4285F4"
+        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.71v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.61z"
+      />
+      <path
+        fill="#34A853"
+        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.81.54-1.84.86-3.05.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A9 9 0 0 0 9 18z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M3.97 10.7A5.41 5.41 0 0 1 3.68 9c0-.59.1-1.16.29-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.03l3.01-2.33z"
+      />
+      <path
+        fill="#EA4335"
+        d="M9 3.58c1.32 0 2.5.45 3.44 1.34l2.58-2.58A9 9 0 0 0 9 0 9 9 0 0 0 .96 4.97l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"
+      />
+    </svg>
+  );
+}
+
+function GitHubGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+      className="l-glyph"
+    >
+      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55 0-.27-.01-1-.02-1.96-3.2.7-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.75 1.18 1.75 1.18 1.02 1.75 2.69 1.25 3.34.96.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.27-5.24-5.66 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.17.91-.25 1.89-.38 2.86-.39.97 0 1.95.13 2.86.39 2.18-1.48 3.14-1.17 3.14-1.17.62 1.58.23 2.75.11 3.04.74.8 1.18 1.82 1.18 3.07 0 4.4-2.69 5.36-5.25 5.65.41.36.78 1.06.78 2.14 0 1.55-.01 2.79-.01 3.17 0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z" />
+    </svg>
   );
 }

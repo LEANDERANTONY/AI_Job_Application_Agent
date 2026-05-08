@@ -62,6 +62,7 @@ import type {
   WorkspaceJobDescriptionUploadResponse,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
+import { humanizeApiError } from "@/lib/humanizeApiError";
 import { buildJobReview } from "@/lib/job-workspace";
 import { CheckIcon, SearchIcon } from "@/components/workspace/icons";
 import {
@@ -686,10 +687,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setSearchNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Something went wrong while searching for roles.",
+        message: humanizeApiError(
+          error,
+          "Something went wrong while searching for roles.",
+        ),
       });
     } finally {
       setSearching(false);
@@ -731,10 +732,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setWorkspaceNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The job URL import failed unexpectedly.",
+        message: humanizeApiError(
+          error,
+          "The job URL import failed unexpectedly.",
+        ),
       });
     } finally {
       setImporting(false);
@@ -777,10 +778,7 @@ export function WorkspaceShell() {
     } catch (error) {
       setResumeNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Resume upload failed unexpectedly.",
+        message: humanizeApiError(error, "Resume upload failed unexpectedly."),
       });
     } finally {
       setResumeUploading(false);
@@ -818,10 +816,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setJobFileNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Job-description upload failed unexpectedly.",
+        message: humanizeApiError(
+          error,
+          "Job-description upload failed unexpectedly.",
+        ),
       });
     } finally {
       setJobFileUploading(false);
@@ -906,10 +904,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The guided resume builder could not be started.",
+        message: humanizeApiError(
+          error,
+          "The guided resume builder could not be started.",
+        ),
       });
     } finally {
       setResumeBuilderLoading(false);
@@ -977,10 +975,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The guided resume builder could not be started.",
+        message: humanizeApiError(
+          error,
+          "The guided resume builder could not be started.",
+        ),
       });
     } finally {
       setResumeBuilderInitialized(true);
@@ -1039,10 +1037,7 @@ export function WorkspaceShell() {
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "That answer could not be saved.",
+        message: humanizeApiError(error, "That answer could not be saved."),
       });
     } finally {
       setResumeBuilderLoading(false);
@@ -1078,10 +1073,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The base resume draft could not be generated.",
+        message: humanizeApiError(
+          error,
+          "The base resume draft could not be generated.",
+        ),
       });
     } finally {
       setResumeBuilderGenerating(false);
@@ -1137,10 +1132,7 @@ export function WorkspaceShell() {
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Those draft edits could not be saved.",
+        message: humanizeApiError(error, "Those draft edits could not be saved."),
       });
     } finally {
       setResumeBuilderEditing(false);
@@ -1192,10 +1184,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "This base resume could not be moved into the workspace.",
+        message: humanizeApiError(
+          error,
+          "This base resume could not be moved into the workspace.",
+        ),
       });
     } finally {
       setResumeBuilderCommitting(false);
@@ -1246,10 +1238,7 @@ export function WorkspaceShell() {
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The download could not be prepared.",
+        message: humanizeApiError(error, "The download could not be prepared."),
       });
     } finally {
       setResumeBuilderExporting(null);
@@ -1388,22 +1377,17 @@ export function WorkspaceShell() {
         setAssistantStreamingTurn(null);
         return;
       }
-      setWorkspaceNotice({
-        level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Assistant request failed unexpectedly.",
-      });
+      const message = humanizeApiError(
+        error,
+        "Assistant request failed unexpectedly.",
+      );
+      setWorkspaceNotice({ level: "warning", message });
       setAssistantStreamingTurn((current) =>
         current
           ? {
               ...current,
               isStreaming: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Assistant request failed unexpectedly.",
+              error: message,
             }
           : current,
       );

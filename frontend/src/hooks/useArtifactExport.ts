@@ -17,6 +17,7 @@ import {
   exportWorkspaceArtifact,
   previewWorkspaceArtifact,
 } from "@/lib/api";
+import { humanizeApiError } from "@/lib/humanizeApiError";
 import type {
   ArtifactTheme,
   WorkspaceAnalysisResponse,
@@ -152,10 +153,10 @@ export function useArtifactExport({
           setArtifactPreviewTitle(null);
           setNotice({
             level: "warning",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Artifact preview could not be generated.",
+            message: humanizeApiError(
+              error,
+              "Artifact preview could not be generated.",
+            ),
           });
         }
       } finally {
@@ -212,10 +213,7 @@ export function useArtifactExport({
     } catch (error) {
       setNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Artifact export failed unexpectedly.",
+        message: humanizeApiError(error, "Artifact export failed unexpectedly."),
       });
     } finally {
       setArtifactExporting(null);

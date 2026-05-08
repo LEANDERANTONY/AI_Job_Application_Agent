@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { getBackendHealth } from "@/lib/api";
+import { humanizeApiError } from "@/lib/humanizeApiError";
 import type { BackendHealth } from "@/lib/api-types";
 
 type HealthState =
@@ -31,10 +32,7 @@ export function BackendHealthCard() {
           setState({
             status: "error",
             payload: null,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Backend health check failed.",
+            error: humanizeApiError(error, "Backend health check failed."),
           });
         }
       }

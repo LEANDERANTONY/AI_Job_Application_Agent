@@ -29,6 +29,7 @@ import type {
   WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
 } from "@/lib/api-types";
+import { humanizeApiError } from "@/lib/humanizeApiError";
 import type { WorkflowStage } from "@/components/workspace/AnalysisRunner";
 
 type Notice =
@@ -245,10 +246,10 @@ export function useAnalysisJob({
         if (!cancelled) {
           setNoticeRef.current({
             level: "warning",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Workflow status polling failed unexpectedly.",
+            message: humanizeApiError(
+              error,
+              "Workflow status polling failed unexpectedly.",
+            ),
           });
           setAnalysisLoading(false);
           setAnalysisRunMode(null);
@@ -321,13 +322,9 @@ export function useAnalysisJob({
         error_message: null,
       });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Workspace analysis failed unexpectedly.";
       setNotice({
         level: "warning",
-        message: errorMessage,
+        message: humanizeApiError(error, "Workspace analysis failed unexpectedly."),
       });
       setAnalysisLoading(false);
       setAnalysisRunMode(null);
