@@ -61,7 +61,7 @@ Considered but rejected. Running the cron inside Postgres means the schedule sur
   - per-board success gating on cleanup
   - the bearer-protected admin endpoint
   - structured per-provider error reporting
-- The system depends on `pg_net` and `pg_cron` extensions being enabled on the Supabase project. Documented in `docs/job_cache_cron_setup.sql`.
+- The system depends on `pg_net` and `pg_cron` extensions being enabled on the Supabase project. Documented in `docs/sql/job_cache_cron_setup.sql`.
 
 ## Follow-Up
 

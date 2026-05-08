@@ -6,7 +6,11 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
-STATIC_DIR = BASE_DIR / "static"
+# Demo / fixture assets live under docs/ alongside the architecture
+# diagram, ADRs, and supabase schema files. They are not served at
+# runtime by the FastAPI app — they're inputs for tests + the
+# eval_resume_parser runner under tests/quality/.
+STATIC_DIR = BASE_DIR / "docs" / "static"
 DEMO_RESUME_DIR = STATIC_DIR / "demo_resume"
 DEMO_JOB_DESCRIPTION_DIR = STATIC_DIR / "demo_job_description"
 OPENAI_KEY_PATH = BASE_DIR / "openai_key.txt"
@@ -209,7 +213,7 @@ SAVED_WORKSPACE_TTL_HOURS = _load_int_env("SAVED_WORKSPACE_TTL_HOURS", 24)
 # (e.g. picking it up the next weekend), whereas a saved workspace is
 # a post-analysis snapshot. The Supabase column default + the cron
 # `cleanup-expired-resume-builder-sessions` use this same value via
-# the migration in docs/supabase-resume-builder-ttl.sql; if you change
+# the migration in docs/sql/supabase-resume-builder.sql; if you change
 # the days here you also need to migrate the column default and update
 # `expires_at` on the row when writing.
 RESUME_BUILDER_SESSION_TTL_DAYS = _load_int_env(

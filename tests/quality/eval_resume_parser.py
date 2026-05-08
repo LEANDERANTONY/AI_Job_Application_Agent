@@ -73,7 +73,7 @@ def main():
     parser.add_argument(
         "paths",
         nargs="*",
-        help="Optional resume file paths. If omitted, uses files from static/demo_resume.",
+        help="Optional resume file paths. If omitted, uses files from docs/static/demo_resume.",
     )
     parser.add_argument(
         "--output-dir",
