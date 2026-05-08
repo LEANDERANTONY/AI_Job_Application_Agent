@@ -7102,6 +7102,14 @@ code {
   color: var(--fg-3);
 }
 .b-cmd-item-shortcut {
+  /* `inline-flex` + center alignment makes the chip's content sit
+     dead-center regardless of whether it's text ("⌘1") or an SVG
+     glyph (chevron). Without this the inline SVG aligned to the
+     text baseline, leaving visible whitespace above and to the
+     right of the chevron — the chip looked broken. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--fg-3);
@@ -7109,6 +7117,15 @@ code {
   border-radius: 4px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.02);
+  flex: 0 0 auto;
+}
+/* The chevron variant gets a square box (instead of the wider
+   text-shaped chip) so the right-pointing arrow reads as a tap
+   affordance, not as a tiny letter pretending to be a kbd hint. */
+.b-cmd-item-shortcut-chev {
+  width: 22px;
+  height: 22px;
+  padding: 0;
 }
 .b-cmd-footer {
   display: flex;
