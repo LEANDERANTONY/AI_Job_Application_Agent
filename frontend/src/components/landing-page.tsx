@@ -31,33 +31,33 @@ const WORKBENCH_STEPS = [
     eyebrow: "01 · Resume",
     title: "Drop a resume — or chat one into existence.",
     body:
-      "An LLM-first hybrid parser turns a PDF, DOCX or TXT into a structured profile in seconds — Skills bucketed by category, Experience, Projects + Publications, with a per-profile section order so students lead with Education and seniors with Experience.",
+      "Upload a PDF, Word doc, or text file and our AI pulls out everything that matters — your skills, experience, projects, publications. The layout adapts to your career stage so students lead with education and seniors lead with experience.",
     aside:
-      "No resume yet? An LLM builder asks one question at a time, backtracks when you correct it, and auto-saves your draft for 7 days.",
+      "No resume yet? Chat with our AI builder — one question at a time, change your answers whenever you need, and your draft saves automatically for a week.",
   },
   {
     eyebrow: "02 · Job Search",
-    title: "Search a cached index of ~12k roles across four ATSes.",
+    title: "Search 12,000+ open roles in one place.",
     body:
-      "Greenhouse, Lever, Ashby, and Workday — refreshed every ~30 minutes by a pg_cron job. Filter by source, work mode, employment type, and posted-within window. Sort by relevance, recency, or company A → Z.",
+      "Live listings from Greenhouse, Lever, Ashby, and Workday — refreshed every 30 minutes so you always see what's actually open. Filter by company, work mode, role type, or how recent the posting is. Sort by best match, newest, or alphabetically.",
     aside:
-      "Saved a job that closed upstream? The cleanup pass tombstones it instead of deleting — your bookmark survives with an honest \"Expired\" badge.",
+      "Saved a job that's no longer hiring? Your bookmark stays put with a clear \"Expired\" tag — nothing gets lost from your shortlist.",
   },
   {
     eyebrow: "03 · Job Detail",
-    title: "Parse a JD with hard + soft skills extracted.",
+    title: "See exactly what each role is asking for.",
     body:
-      "An LLM hybrid parser hits 0.99 across a 15-fixture quality runner — vs 0.78 from the deterministic baseline. Hard skills, soft skills, summary, and the original body sections rendered verbatim from the parser, no reorder, no dedupe.",
+      "Our AI reads the full posting and pulls out the must-have skills, the nice-to-haves, and a clean summary. The original wording stays intact, so nothing gets lost in translation.",
     aside:
-      "Selected a job from search? The JD prefills from the cached index — one Supabase read, no extra round trip.",
+      "Picked a job from search? The job description loads instantly when you open it — no waiting around.",
   },
   {
     eyebrow: "04 · Analysis",
-    title: "Generate a tailored resume + cover letter.",
+    title: "Get a tailored resume and cover letter — fast.",
     body:
-      "The agentic workflow runs Tailoring → Review → Resume Generation → Cover Letter. Two themes — Classic ATS and Professional Neutral — both shipped through PDF and DOCX with a shared palette so they read as the same document.",
+      "Our AI rewrites your resume to highlight what matters most for the role, then writes a personalized cover letter to match. Pick from two clean themes and download as Word or PDF — whichever your application portal asks for.",
     aside:
-      "Streaming SSE: meta → delta × N → followups → done. First token visible in under 1.5 s, grounded in your workspace state.",
+      "Watch the AI work in real time. The first words appear in about a second, and every claim is rooted in your actual experience — no made-up details.",
   },
 ] as const;
 
@@ -343,9 +343,9 @@ function LandingHero({
             className="l-hero-sub l-fade-up"
             style={{ animationDelay: "440ms" }}
           >
-            Upload your resume, find or import a role, review the job
-            description, and ship a tailored resume + cover letter in one
-            guided flow.
+            Upload your resume, find a role you actually want, review the
+            job description, and walk away with a tailored resume and
+            cover letter — all in one place.
           </p>
 
           {authError ? (
@@ -380,10 +380,10 @@ function LandingHero({
             className="l-hero-pills l-fade-up"
             style={{ animationDelay: "680ms" }}
           >
-            <li>Resume parsing</li>
-            <li>Cached job search</li>
-            <li>Tailored DOCX + PDF</li>
-            <li>Streaming assistant</li>
+            <li>Smart resume reader</li>
+            <li>12k+ live jobs</li>
+            <li>Tailored Word + PDF</li>
+            <li>Built-in AI assistant</li>
           </ul>
         </div>
 
@@ -560,7 +560,7 @@ function WorkbenchSection() {
       <div className="l-section-head">
         <span className="l-eyebrow">Four steps · One flow</span>
         <h2 className="l-section-title">
-          A guided workflow from raw resume to recruiter-ready DOCX.
+          From a fresh resume to a job-ready application — in four steps.
         </h2>
       </div>
 
@@ -833,14 +833,14 @@ function BentoSection() {
       <div className="l-bento-strip-wrap">
         <div className="l-bento-strip" ref={stripRef}>
           <article className="l-bento-tile">
-            <span className="l-bento-eyebrow">FOUR ATS COVERAGE</span>
+            <span className="l-bento-eyebrow">12,000+ open jobs</span>
             <h3 className="l-bento-title">
               Greenhouse · Lever · Ashby · Workday
             </h3>
             <p className="l-bento-body">
-              ~12,000 active roles indexed across 79 Greenhouse boards, 30
-              Lever sites, 36 Ashby boards, and 11 Workday Fortune-500
-              tenants. Refreshed by a pg_cron job every ~30 minutes.
+              Live listings from 130+ companies including Stripe, Pinterest,
+              Anthropic, Notion, Walmart, and Disney. Refreshed every 30
+              minutes so you&apos;re always seeing what&apos;s actually open.
             </p>
             <div className="l-bento-providers">
               <span className="l-bento-provider">greenhouse</span>
@@ -851,29 +851,26 @@ function BentoSection() {
           </article>
 
           <article className="l-bento-tile">
-            <span className="l-bento-eyebrow">RANKED SEARCH</span>
-            <h3 className="l-bento-title">~360 ms warm</h3>
+            <span className="l-bento-eyebrow">Fast search</span>
+            <h3 className="l-bento-title">Results in under a second.</h3>
             <p className="l-bento-body">
-              FTS + filters + sort branches inside a single Postgres RPC.
-              ~25 s live fan-out replaced by one round trip.
+              No spinners, no waiting. Search across thousands of jobs with
+              up to five filters stacked, and the right matches appear
+              instantly.
             </p>
-            <pre className="l-bento-code">
-{`-- search_cached_jobs_ranked
-SELECT * FROM cached_jobs
- WHERE removed_at IS NULL
-   AND tsv @@ websearch_to_tsquery($1)
- ORDER BY ts_rank(tsv, q) DESC
- LIMIT $2;`}
-            </pre>
+            <div className="l-bento-stat">
+              <div className="l-bento-stat-num">~0.3s</div>
+              <div className="l-bento-stat-label">to find your next role</div>
+            </div>
           </article>
 
           <article className="l-bento-tile">
-            <span className="l-bento-eyebrow">EXPORT</span>
+            <span className="l-bento-eyebrow">Polished exports</span>
             <h3 className="l-bento-title">Two themes, two formats.</h3>
             <p className="l-bento-body">
-              Classic ATS or Professional Neutral, both shipped through PDF
-              and DOCX with a shared palette so they read as the same
-              document.
+              Pick a clean ATS-safe layout or a more polished neutral look.
+              Download as Word or PDF — both are identical, so use whichever
+              your application portal asks for.
             </p>
             <div className="l-bento-format-row">
               <span className="l-bento-format">PDF</span>
@@ -885,12 +882,13 @@ SELECT * FROM cached_jobs
           </article>
 
           <article className="l-bento-tile">
-            <span className="l-bento-eyebrow">RESUME BUILDER</span>
+            <span className="l-bento-eyebrow">No resume? No problem.</span>
             <h3 className="l-bento-title">Chat one into existence.</h3>
             <p className="l-bento-body">
-              An LLM-led conversation that backtracks when you correct it,
-              auto-saves your draft for 7 days, and structures everything
-              into a tailored profile at export time.
+              Don&apos;t have a resume yet? Chat with our AI — answer
+              questions naturally, change your mind whenever, and we&apos;ll
+              polish everything into a clean resume at the end. Your draft
+              saves for 7 days.
             </p>
             <div className="l-bento-chat">
               <div className="l-bento-chat-turn l-bento-chat-turn-bot">
@@ -906,25 +904,24 @@ SELECT * FROM cached_jobs
           </article>
 
           <article className="l-bento-tile">
-            <span className="l-bento-eyebrow">STREAMING ASSISTANT</span>
+            <span className="l-bento-eyebrow">Built-in AI assistant</span>
             <h3 className="l-bento-title">
-              First token under 1.5 s, grounded in your workspace.
+              Get instant answers about your application.
             </h3>
             <p className="l-bento-body">
-              SSE event stream — meta → delta × N → followups → done. The
-              assistant reads your candidate profile, the parsed JD, and the
-              current artifact to ground its answer.
+              Ask anything — which skills to highlight, how to phrase your
+              summary, what gaps to address. The AI reads your resume and
+              the job description so the advice is actually relevant to
+              you.
             </p>
-            <div className="l-bento-stream">
-              <div className="l-bento-stream-event">
-                <span className="l-bento-stream-key">event</span> meta
+            <div className="l-bento-chat">
+              <div className="l-bento-chat-turn l-bento-chat-turn-user">
+                What gaps should I address for this role?
               </div>
-              <div className="l-bento-stream-event">
-                <span className="l-bento-stream-key">event</span> delta
-                <span className="l-bento-stream-text">
-                  Based on your experience, the strongest match is…
-                  <span className="l-artifact-caret" />
-                </span>
+              <div className="l-bento-chat-turn l-bento-chat-turn-bot">
+                Looking at this role, you&apos;d benefit from emphasizing
+                your distributed-systems work
+                <span className="l-artifact-caret" />
               </div>
             </div>
           </article>
