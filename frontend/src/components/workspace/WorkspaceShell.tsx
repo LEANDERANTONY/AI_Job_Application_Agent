@@ -1326,10 +1326,44 @@ export function WorkspaceShell() {
     let streamErrorDetail: string | null = null;
 
     try {
+      // Compact state projection — gives the LLM enough to answer
+      // pre-analysis questions ("what should I do next?", "is my
+      // resume parsed?") without sending the full resume_text or JD
+      // body on every turn. The full `workspace_snapshot` still rides
+      // separately when an analysis has run.
+      const workspaceStateContext = {
+        current_step: mainTab,
+        has_resume: Boolean(currentProfile),
+        resume_summary: currentProfile
+          ? {
+              name: currentProfile.full_name || "",
+              location: currentProfile.location || "",
+              skills_count: currentProfile.skills?.length ?? 0,
+              experience_count: currentProfile.experience?.length ?? 0,
+              has_certifications:
+                (currentProfile.certifications?.length ?? 0) > 0,
+            }
+          : null,
+        has_jd: Boolean(review),
+        jd_summary: review
+          ? {
+              title: review.title || "",
+              location: review.location ?? null,
+              hard_skills_count: review.requirements?.hard_skills?.length ?? 0,
+              soft_skills_count: review.requirements?.soft_skills?.length ?? 0,
+              must_haves_count: review.requirements?.must_haves?.length ?? 0,
+            }
+          : null,
+        has_analysis: Boolean(analysisState),
+        saved_jobs_count: savedJobs?.length ?? 0,
+        last_search_query: searchQuery.trim() ? searchQuery.trim() : null,
+      };
+
       await streamWorkspaceAssistantAnswer(
         {
           question: normalizedQuestion,
           current_page: "Workspace",
+          workspace_state: workspaceStateContext,
           workspace_snapshot: analysisState,
           history: buildAssistantHistoryPayload(assistantTurns),
         },

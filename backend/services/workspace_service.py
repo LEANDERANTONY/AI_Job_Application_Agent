@@ -242,6 +242,7 @@ def answer_workspace_question(
     *,
     question: str,
     current_page: str,
+    workspace_state: dict[str, Any] | None = None,
     workspace_snapshot: dict[str, Any] | None,
     history: list[dict[str, str]] | None,
     access_token: str = "",
@@ -273,6 +274,24 @@ def answer_workspace_question(
                 "has_cover_letter": bool(artifacts.get("cover_letter")),
             }
         )
+
+    # Merge the live workspace-state projection (small, sent every
+    # turn) so the LLM sees pre-analysis context too. workspace_state
+    # is authoritative for has_resume/has_jd flags — the snapshot
+    # block above only fires when an analysis has run, but the user
+    # might have a parsed resume + JD without having run analysis.
+    if workspace_state:
+        app_context["workspace_state"] = workspace_state
+        app_context.setdefault("has_resume", bool(workspace_state.get("has_resume")))
+        app_context.setdefault(
+            "has_job_description", bool(workspace_state.get("has_jd"))
+        )
+        # If snapshot didn't fire above but workspace_state says so,
+        # still expose the flags (overriding the False defaults).
+        if workspace_state.get("has_resume"):
+            app_context["has_resume"] = True
+        if workspace_state.get("has_jd"):
+            app_context["has_job_description"] = True
 
     compact_history = [
         SimpleNamespace(
@@ -363,6 +382,7 @@ def stream_workspace_question(
     *,
     question: str,
     current_page: str,
+    workspace_state: dict[str, Any] | None = None,
     workspace_snapshot: dict[str, Any] | None,
     history: list[dict[str, str]] | None,
     access_token: str = "",
@@ -409,6 +429,16 @@ def stream_workspace_question(
                 "has_cover_letter": bool(artifacts.get("cover_letter")),
             }
         )
+
+    # Same merge as in answer_workspace_question — fold the live
+    # workspace-state projection into app_context so the LLM's
+    # system prompt sees pre-analysis state too.
+    if workspace_state:
+        app_context["workspace_state"] = workspace_state
+        if workspace_state.get("has_resume"):
+            app_context["has_resume"] = True
+        if workspace_state.get("has_jd"):
+            app_context["has_job_description"] = True
 
     compact_history = [
         SimpleNamespace(

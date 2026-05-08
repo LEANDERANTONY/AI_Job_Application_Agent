@@ -118,11 +118,66 @@ class AssistantHistoryTurnModel(BaseModel):
         return str(value or "").strip()
 
 
+class ResumeSummaryModel(BaseModel):
+    """Compact projection of a parsed CandidateProfile.
+
+    Counts + identity only — never includes raw resume text. Sent on
+    every assistant turn so the LLM can answer "is my resume parsed?"
+    style questions without us shipping the full profile blob.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(default="", max_length=200)
+    location: str = Field(default="", max_length=200)
+    skills_count: int = Field(default=0, ge=0)
+    experience_count: int = Field(default=0, ge=0)
+    has_certifications: bool = False
+
+
+class JdSummaryModel(BaseModel):
+    """Compact projection of a parsed JobDescription / review.
+
+    Counts + identity only — never includes the full JD body.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(default="", max_length=200)
+    location: str | None = Field(default=None, max_length=200)
+    hard_skills_count: int = Field(default=0, ge=0)
+    soft_skills_count: int = Field(default=0, ge=0)
+    must_haves_count: int = Field(default=0, ge=0)
+
+
+class WorkspaceStateContextModel(BaseModel):
+    """Live workspace state, sent with every assistant request.
+
+    Replaces the "blind" pre-analysis assistant — the LLM now sees
+    which step the user is on, whether they've parsed a resume / JD,
+    how many jobs they've saved, etc. The full
+    `workspace_snapshot` (analysis result) still rides separately
+    when an analysis has run.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_step: Literal["resume", "jobs", "jd", "analysis"]
+    has_resume: bool = False
+    resume_summary: ResumeSummaryModel | None = None
+    has_jd: bool = False
+    jd_summary: JdSummaryModel | None = None
+    has_analysis: bool = False
+    saved_jobs_count: int = Field(default=0, ge=0)
+    last_search_query: str | None = Field(default=None, max_length=200)
+
+
 class WorkspaceAssistantRequestModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(min_length=1, max_length=1000)
     current_page: str = Field(default="Workspace", max_length=120)
+    workspace_state: WorkspaceStateContextModel | None = None
     workspace_snapshot: dict[str, Any] | None = None
     history: list[AssistantHistoryTurnModel] = Field(default_factory=list)
 

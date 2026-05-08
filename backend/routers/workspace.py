@@ -456,6 +456,11 @@ def answer_assistant_question(
         return answer_workspace_question(
             question=payload.question,
             current_page=payload.current_page,
+            workspace_state=(
+                payload.workspace_state.model_dump()
+                if payload.workspace_state
+                else None
+            ),
             workspace_snapshot=payload.workspace_snapshot,
             history=[item.model_dump() for item in payload.history],
             access_token=access_token or "",
@@ -489,6 +494,11 @@ def stream_assistant_answer(
         stream_workspace_question(
             question=payload.question,
             current_page=payload.current_page,
+            workspace_state=(
+                payload.workspace_state.model_dump()
+                if payload.workspace_state
+                else None
+            ),
             workspace_snapshot=payload.workspace_snapshot,
             history=[item.model_dump() for item in payload.history],
             access_token=access_token or "",

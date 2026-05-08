@@ -22,6 +22,28 @@ def _to_serializable(value: Any):
     return value
 
 
+# Shared system-prompt block that teaches the assistant how to read and
+# use the live workspace-state projection sent on every turn (see
+# `WorkspaceStateContext` on the frontend / `WorkspaceStateContextModel`
+# on the backend). The same block is appended to both the JSON-contract
+# prompt (`build_assistant_prompt`) and the streaming prose prompt
+# (`build_assistant_text_prompt`) so behavior is identical regardless
+# of which path the call site takes.
+_WORKSPACE_STATE_GUIDANCE = (
+    "WORKSPACE STATE: A `workspace_state` object inside `product_context` reflects the user's live progress. Read it before answering ANY question that touches what the user has done so far. "
+    "Fields: `current_step` (one of resume / jobs / jd / analysis — the tab the user is on right now), `has_resume` and `resume_summary` (parsed CandidateProfile — name, location, skills_count, experience_count, has_certifications), `has_jd` and `jd_summary` (parsed JobDescription — title, location, hard_skills_count, soft_skills_count, must_haves_count), `has_analysis` (true once the analysis pipeline has produced a fit score), `saved_jobs_count` (size of the user's shortlist), `last_search_query` (last keyword they searched). "
+    "Rules: "
+    "(1) ALWAYS check workspace_state before answering 'what's next?', 'is my resume parsed?', 'why is X locked?'. "
+    "(2) If `has_resume === false` and the user asks about resume content, do NOT invent skills, jobs, or experience — say the resume hasn't been uploaded yet and offer the upload step. "
+    "(3) If `has_jd === false` and the user asks about a role's requirements, the same rule applies — there is no JD yet. "
+    "(4) If `has_analysis === false`, you don't have a fit score, matched/missing skills, or a tailored resume — be explicit about that and explain that running the analysis is the next step. "
+    "(5) When the user asks 'what should I do next?' or similar, use `current_step` plus the boolean flags to suggest the very next concrete action (e.g. on `current_step='resume'` with `has_resume=false` → 'upload your PDF here'; on `current_step='jobs'` with `saved_jobs_count=0` → 'try a search or import a posting URL'; on `current_step='jd'` with `has_jd=false` → 'paste the job description into the textarea'; on `current_step='analysis'` with `has_resume=true` and `has_jd=true` and `has_analysis=false` → 'press Run analysis'). "
+    "(6) When `has_analysis === true`, prefer grounding from `workflow_context` / `workspace_snapshot` for specifics; fall back to `workspace_state` summaries when those are absent. "
+    "(7) Never echo raw counts as the answer ('skills_count: 27'). Translate into human language ('we found 27 skills on your resume'). "
+    "(8) Be concise — 1-3 sentences for product help, longer only when the user asked for explanation or coaching. "
+)
+
+
 def _json_block(label: str, value: Any) -> str:
     payload = json.dumps(_to_serializable(value), indent=2, default=str)
     return "{label}:\n{payload}".format(label=label, payload=payload)
@@ -332,6 +354,7 @@ def build_assistant_prompt(
             "If the user asks for broader resume or application coaching, you may provide general advice, but anchor it back to the current package when possible and separate general guidance from context-specific recommendations when helpful. "
             "If the user asks about limits, tokens, quota, warnings, or fallback behavior, explain the signed-in account-level daily quota using the provided context and do not describe any browser-session budget model. "
             "If the user asks who you are or what your name is, answer as the in-app assistant for this product. "
+            + _WORKSPACE_STATE_GUIDANCE
             + _build_contract(contract)
         ),
         "user": user_prompt,
@@ -374,7 +397,8 @@ def build_assistant_text_prompt(
             "If the user asks for broader resume or application coaching, you may provide general advice, but anchor it back to the current package when possible and separate general guidance from context-specific recommendations when helpful. "
             "If the user asks about limits, tokens, quota, warnings, or fallback behavior, explain the signed-in account-level daily quota using the provided context and do not describe any browser-session budget model. "
             "If the user asks who you are or what your name is, answer as the in-app assistant for this product. "
-            "Respond as a concise, direct prose answer. Do not return JSON, do not wrap the answer in code fences, and do not list sources — sources are surfaced separately by the app."
+            + _WORKSPACE_STATE_GUIDANCE
+            + "Respond as a concise, direct prose answer. Do not return JSON, do not wrap the answer in code fences, and do not list sources — sources are surfaced separately by the app."
         ),
         "user": user_prompt,
     }

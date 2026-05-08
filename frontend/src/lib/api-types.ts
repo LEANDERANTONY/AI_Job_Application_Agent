@@ -496,9 +496,53 @@ export type WorkspaceAnalysisRequest = {
   run_assisted: boolean;
 };
 
+/**
+ * Compact projection of the live workspace state, sent on every
+ * assistant query so the LLM can answer state-aware questions
+ * ("what should I do next?", "is my resume parsed?", "why is
+ * analysis locked?") even before the full `workspace_snapshot`
+ * exists.
+ *
+ * Intentionally small — name + counts + booleans, no resume text or
+ * full JD body. The full snapshot still rides separately when an
+ * analysis has run; this object covers the pre-analysis gap.
+ */
+export type WorkspaceStateContext = {
+  /** Which step the user is currently looking at. */
+  current_step: "resume" | "jobs" | "jd" | "analysis";
+  /** Has a CandidateProfile been parsed from the user's resume? */
+  has_resume: boolean;
+  /** Small projection of the parsed resume — null until parsed. */
+  resume_summary: {
+    name: string;
+    location: string;
+    skills_count: number;
+    experience_count: number;
+    has_certifications: boolean;
+  } | null;
+  /** Has the user pasted/imported a JD that's been at least
+   *  scaffolded into a JobDescription? */
+  has_jd: boolean;
+  /** Small projection of the parsed JD — null until present. */
+  jd_summary: {
+    title: string;
+    location: string | null;
+    hard_skills_count: number;
+    soft_skills_count: number;
+    must_haves_count: number;
+  } | null;
+  /** True once an analysis has run and produced a fit score. */
+  has_analysis: boolean;
+  /** How many jobs the user has saved to their shortlist. */
+  saved_jobs_count: number;
+  /** What they last typed in the search box, if anything. */
+  last_search_query: string | null;
+};
+
 export type WorkspaceAssistantRequest = {
   question: string;
   current_page: string;
+  workspace_state?: WorkspaceStateContext | null;
   workspace_snapshot?: WorkspaceAnalysisResponse | null;
   history?: WorkspaceAssistantHistoryTurn[];
 };
