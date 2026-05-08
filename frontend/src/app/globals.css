@@ -3396,9 +3396,12 @@ code {
   flex: 1 1 auto;
   min-height: 480px;
   border-radius: var(--l-radius-lg);
-  background:
-    radial-gradient(60% 80% at 0% 0%, rgba(48, 100, 255, 0.10), transparent 60%),
-    var(--l-card-strong);
+  /* Same treatment as the workspace's JD review blocks
+     (`.b-jd-block`): a solid 40% black overlay over the page, with a
+     subtle border. The earlier blue corner-glow gradient was making
+     the stage feel "lit up" compared to the much darker, cleaner
+     cards on the live JD page. */
+  background: rgba(0, 0, 0, 0.40);
   border: 1px solid var(--l-line-strong);
   overflow: hidden;
   box-shadow:
@@ -3470,7 +3473,10 @@ code {
   border: 1px dashed var(--l-line-strong);
   border-radius: 10px;
   padding: 22px;
-  background: rgba(48, 100, 255, 0.04);
+  /* Match the JD review block treatment — `rgba(0, 0, 0, 0.40)`
+     overlay (was `rgba(48, 100, 255, 0.04)`, which read as faintly
+     blue-lit instead of "deep dark card"). */
+  background: rgba(0, 0, 0, 0.40);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -3495,7 +3501,9 @@ code {
   align-items: baseline;
   gap: 12px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  /* Match `.b-jd-block` — solid dark overlay rather than the faint
+     white tint the mock fields used before. */
+  background: rgba(0, 0, 0, 0.40);
   border: 1px solid var(--l-line);
   border-radius: 8px;
   font-size: 12.5px;
@@ -3547,7 +3555,7 @@ code {
 }
 .l-mock-result {
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.40);
   border: 1px solid var(--l-line);
   border-radius: 8px;
   display: flex;
