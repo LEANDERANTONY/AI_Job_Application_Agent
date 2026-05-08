@@ -8,7 +8,7 @@
 
 **Live:** [job-application-copilot.xyz](https://job-application-copilot.xyz) · **Workspace:** [app.job-application-copilot.xyz](https://app.job-application-copilot.xyz)
 
-![Architecture overview](docs/job-agent-architecture.svg)
+![Architecture overview](docs/images/job-agent-architecture.svg)
 
 ---
 
@@ -21,7 +21,7 @@
 | ![](docs/images/landing_resumebuilder.png) | ![](docs/images/landing_jd.png) |
 
 | Output — `classic_ats` theme | Output — Cover letter |
-|---|---|---|
+|---|---|
 | ![](docs/images/classic_resume_render.jpg) | ![](docs/images/cover_letter_render.jpg) |
 
 ---

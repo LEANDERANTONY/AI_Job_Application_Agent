@@ -280,3 +280,6 @@ reports/
 VISUAL_LOOP_MVP.md
 # Claude Code session state + worktrees (harness-managed, not source)
 .claude/
+
+# Design system reference material — local-only handoff/specs/screens
+design_system/
