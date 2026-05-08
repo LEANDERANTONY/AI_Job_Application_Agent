@@ -329,7 +329,24 @@ export function CommandPalette({
             ref={inputRef}
             value={query}
           />
-          <span className="b-cmd-esc">Esc</span>
+          {/* Close affordance — clickable on every platform. On
+              desktop it reads "Esc" so the keyboard hint is preserved
+              (the keydown listener still fires for power users). On
+              mobile (≤ 540 px) the CSS swaps to a tappable X icon
+              since there's no Esc key on touch devices. */}
+          <button
+            type="button"
+            className="b-cmd-close"
+            aria-label="Close command palette"
+            onClick={onClose}
+          >
+            <span className="b-cmd-close-text" aria-hidden="true">
+              Esc
+            </span>
+            <span className="b-cmd-close-icon" aria-hidden="true">
+              <CloseIcon />
+            </span>
+          </button>
         </div>
 
         <div className="b-cmd-list">
@@ -361,11 +378,14 @@ export function CommandPalette({
                         ) : null}
                       </span>
                       {item.shortcut ? (
-                        <span className="b-cmd-item-shortcut">
+                        <span className="b-cmd-item-shortcut b-cmd-item-shortcut-key">
                           ⌘{item.shortcut}
                         </span>
                       ) : (
-                        <span className="b-cmd-item-shortcut" aria-hidden="true">
+                        <span
+                          className="b-cmd-item-shortcut b-cmd-item-shortcut-chev"
+                          aria-hidden="true"
+                        >
                           <ChevronRightIcon />
                         </span>
                       )}

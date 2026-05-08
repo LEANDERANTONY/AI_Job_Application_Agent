@@ -97,11 +97,19 @@ type Notice = {
 
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
 
-const STEP_LABELS: Record<WorkspaceMainTab, { number: string; label: string }> = {
-  resume: { number: "01", label: "Resume" },
-  jobs: { number: "02", label: "Job Search" },
-  jd: { number: "03", label: "Job Detail" },
-  analysis: { number: "04", label: "Analysis" },
+const STEP_LABELS: Record<
+  WorkspaceMainTab,
+  { number: string; label: string; shortLabel: string }
+> = {
+  // `shortLabel` is the mobile-only label shown at ≤ 540 px, where the
+  // full "Job Search" / "Job Detail" wraps to two lines inside the rail
+  // pill. The CSS hides one or the other based on viewport; the
+  // button's `aria-label` carries the full label for screen readers
+  // regardless of which span is visible.
+  resume: { number: "01", label: "Resume", shortLabel: "Resume" },
+  jobs: { number: "02", label: "Job Search", shortLabel: "Jobs" },
+  jd: { number: "03", label: "Job Detail", shortLabel: "JD" },
+  analysis: { number: "04", label: "Analysis", shortLabel: "Analysis" },
 };
 
 const STEP_ORDER: WorkspaceMainTab[] = ["resume", "jobs", "jd", "analysis"];
@@ -1745,6 +1753,7 @@ export function WorkspaceShell() {
                       : `${meta.label} · click to open`;
                 return (
                   <button
+                    aria-label={meta.label}
                     aria-selected={active}
                     className="b-rail-step"
                     data-done={done || undefined}
@@ -1761,7 +1770,16 @@ export function WorkspaceShell() {
                     <span className="b-rail-num">
                       {done ? <CheckIcon /> : meta.number}
                     </span>
-                    {meta.label}
+                    {/* Two label spans, one shown on desktop and one on
+                        mobile. `aria-hidden` on both keeps screen
+                        readers from seeing the duplication; the
+                        button's aria-label is the source of truth. */}
+                    <span className="b-rail-label-full" aria-hidden="true">
+                      {meta.label}
+                    </span>
+                    <span className="b-rail-label-short" aria-hidden="true">
+                      {meta.shortLabel}
+                    </span>
                   </button>
                 );
               })}

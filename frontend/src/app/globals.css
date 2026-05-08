@@ -6990,14 +6990,43 @@ code {
   letter-spacing: -0.005em;
 }
 .b-cmd-input::placeholder { color: var(--fg-4); }
-.b-cmd-esc {
+/* Close button — replaces the previous static "Esc" hint with a real
+   clickable affordance so mobile users (no Esc key) can close the
+   palette by tapping. Visually identical to the old kbd chip on
+   desktop ("Esc" text); the mobile media query below swaps the text
+   for an X icon. */
+.b-cmd-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--fg-3);
   padding: 3px 7px;
   border-radius: 5px;
   border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out);
 }
+.b-cmd-close:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+/* Default desktop: text label visible, icon hidden. The mobile
+   breakpoint below flips both. */
+.b-cmd-close-text { display: inline; }
+.b-cmd-close-icon { display: none; }
+.b-cmd-close-icon svg { width: 14px; height: 14px; }
+
+/* Default desktop: full rail label shown, short label hidden. The
+   mobile breakpoint below swaps them so "Job Search" / "Job Detail"
+   render as "Jobs" / "JD" on phones (the long labels wrap to two
+   lines inside the rail pill at ≤ 540 px otherwise). */
+.b-rail-label-short { display: none; }
 .b-cmd-list {
   display: flex;
   flex-direction: column;
@@ -7485,12 +7514,37 @@ code {
   .b-cmd-panel { max-width: none; }
   .b-cmd-input-wrap { padding: 14px 14px; }
   .b-cmd-input { font-size: 14.5px; }
+  /* Swap the close button's "Esc" text for a tappable X icon. The
+     keyboard listener still handles physical Esc keys for the rare
+     mobile user with a hardware keyboard. */
+  .b-shell .b-cmd-close-text { display: none; }
+  .b-shell .b-cmd-close-icon { display: inline-flex; }
+  .b-shell .b-cmd-close {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+  }
+  /* Hide the per-row keyboard shortcut chips (⌘1, ⌘2…) — there's no
+     Cmd key on phones so the chip is dead weight. The chevrons on
+     non-shortcut rows stay (they're a tap-affordance hint). */
+  .b-shell .b-cmd-item-shortcut-key { display: none; }
+  /* Hide the desktop-only footer key hints (↑↓ navigate / ↵ run /
+     esc close) — none of those keys exist on touch. The "Grounded
+     in your active workspace" caption stays. */
+  .b-shell .b-cmd-footer-keys { display: none; }
   .b-cmd-footer {
     flex-direction: column;
     gap: 6px;
     align-items: flex-start;
     font-size: 10.5px;
   }
+
+  /* Step rail — swap the long step labels ("Job Search", "Job
+     Detail") for short ones ("Jobs", "JD"). Without this the long
+     labels wrap to two lines inside the rail pill, growing the rail
+     row from ~50 px to ~80 px and eating ~15 % of vertical space. */
+  .b-shell .b-rail-label-full { display: none; }
+  .b-shell .b-rail-label-short { display: inline; }
 
   /* FAB pinned closer to the corner; assistant popover spans the
      full width with 12px gutters so chats are readable. */
