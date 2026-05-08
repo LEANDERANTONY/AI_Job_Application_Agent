@@ -1150,10 +1150,10 @@ function GoogleGlyph() {
   );
 }
 
-// Animated hamburger ↔ close glyph. Two horizontal bars when closed,
-// rotated into an X when open. Pure inline SVG so it inherits the
-// button's `currentColor` and respects the same theming pipeline as
-// every other glyph on the page.
+// Animated hamburger ↔ close glyph. Three horizontal bars when closed
+// (the conventional hamburger), rotated into an X when open. Pure
+// inline SVG so it inherits the button's `currentColor` and respects
+// the same theming pipeline as every other glyph on the page.
 function BurgerGlyph({ open }: { open: boolean }) {
   return (
     <svg
@@ -1173,8 +1173,9 @@ function BurgerGlyph({ open }: { open: boolean }) {
         </>
       ) : (
         <>
-          <line x1="4" y1="7" x2="20" y2="7" />
-          <line x1="4" y1="17" x2="20" y2="17" />
+          <line x1="4" y1="6" x2="20" y2="6" />
+          <line x1="4" y1="12" x2="20" y2="12" />
+          <line x1="4" y1="18" x2="20" y2="18" />
         </>
       )}
     </svg>

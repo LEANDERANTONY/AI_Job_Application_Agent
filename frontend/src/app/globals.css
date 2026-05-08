@@ -3089,20 +3089,24 @@ code {
    `position: fixed; top: 64px` keeps it directly below the sticky
    header even after the page is scrolled — `position: absolute` would
    anchor to the topbar's in-flow box (top of page), not its visible
-   position. */
+   position. Spans full viewport width with small inset (matches the
+   common mobile drawer / dropdown pattern). The `rgba(0, 0, 0, 0.40)`
+   background mirrors the bento tile treatment (.l-bento-tile) so the
+   surface family stays consistent across landing components. */
 .l-topbar-menu {
   position: fixed;
   top: 64px;
+  left: 12px;
   right: 12px;
   z-index: 21;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 220px;
-  padding: 12px;
-  background: rgba(8, 12, 22, 0.96);
+  padding: 14px;
+  background: rgba(0, 0, 0, 0.40);
+  backdrop-filter: blur(14px) saturate(140%);
   border: 1px solid var(--l-line-strong);
-  border-radius: 12px;
+  border-radius: 14px;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 18px 48px rgba(0, 0, 0, 0.55);
@@ -3112,6 +3116,10 @@ code {
 .l-topbar-menu-link {
   display: flex;
   align-items: center;
+  /* Center the link text horizontally so the dropdown reads as a
+     stacked, centered menu (matches the centered Sign out + Enter
+     workspace buttons below the divider). */
+  justify-content: center;
   height: 40px;
   padding: 0 12px;
   border-radius: 8px;
@@ -4375,23 +4383,17 @@ code {
     max-width: 100%;
   }
 
-  /* Hero — let the title wrap. The desktop layout uses three lines
-     each with `white-space: nowrap` so the typography reads as a
-     deliberate stack ("Tailor every job application" / "with an" /
-     "AI workbench"). On a phone-width column, "Tailor every job
-     application" can't fit on one row at any reasonable type size —
-     forcing nowrap pushes the body into horizontal-overflow which
-     clips the rest of the hero (CTAs, pills, screenshot). Allowing
-     wrap drops the constraint and the title flows naturally. */
+  /* Hero — keep the desktop's centered, 3-line stacked title on
+     mobile, just at a smaller type size so "Tailor every job
+     application" still fits on a single row at iPhone width. We
+     INTENTIONALLY do NOT override `white-space` here: the desktop
+     `.l-hero-title span { white-space: nowrap }` rule cascades
+     through and forces the three lines to break exactly where the
+     JSX breaks them, instead of the browser auto-wrapping the long
+     line into an awkward 4-line stack. */
   .l-hero-title {
-    font-size: clamp(28px, 7.5vw, 40px);
+    font-size: clamp(22px, 6vw, 32px);
   }
-  .l-hero-title span {
-    white-space: normal;
-  }
-  .l-hero-copy { align-items: flex-start; text-align: left; }
-  .l-hero-actions { justify-content: flex-start; }
-  .l-hero-pills { justify-content: flex-start; }
   .l-hero-sub { max-width: 100%; }
 }
 
