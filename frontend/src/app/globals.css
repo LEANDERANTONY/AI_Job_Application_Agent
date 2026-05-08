@@ -3197,7 +3197,9 @@ code {
   gap: 24px;
   align-items: center;
   text-align: center;
-  max-width: 880px;
+  /* Wide enough to let the longest title line ("Tailor every job
+     application") fit on one row at the desktop font-size. */
+  max-width: 1080px;
 }
 .l-hero-eyebrow {
   padding: 6px 12px 6px 10px;
@@ -3208,15 +3210,18 @@ code {
 .l-hero-title {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: clamp(44px, 6.4vw, 76px);
+  gap: 4px;
+  font-size: clamp(40px, 5.6vw, 68px);
   font-weight: 600;
-  letter-spacing: -0.032em;
-  line-height: 1.04;
-  text-wrap: balance;
+  letter-spacing: -0.030em;
+  line-height: 1.06;
 }
 .l-hero-title span {
   display: inline-block;
+  /* Keep each of the three title lines on a single physical row.
+     We're explicitly choosing the breaks in JSX, not letting the
+     browser wrap the long line into a pyramid. */
+  white-space: nowrap;
 }
 .l-hero-title-accent {
   background: linear-gradient(180deg, #ffffff 0%, #8db4ff 90%);

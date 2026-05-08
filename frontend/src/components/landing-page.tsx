@@ -320,22 +320,30 @@ function LandingHero({
             <span className="l-eyebrow-dot" /> AI-powered application workbench
           </span>
 
-          {/* Title stays as a single block but each line still stagger-
-              fades on its own delay so the reveal feels intentional.
-              The .l-fade-up class is the trigger — see globals.css. */}
+          {/* Three deliberate lines so the title reads as a stack
+              rather than a balanced wrap-pyramid:
+                  Tailor every job application
+                  with an
+                  AI workbench.
+              Each span stagger-fades on its own delay (.l-fade-up). */}
           <h1 className="l-hero-title">
             <span className="l-fade-up" style={{ animationDelay: "60ms" }}>
               Tailor every job application
             </span>
             <span className="l-fade-up" style={{ animationDelay: "180ms" }}>
-              with an{" "}
-              <span className="l-hero-title-accent">AI workbench.</span>
+              with an
+            </span>
+            <span
+              className="l-fade-up l-hero-title-accent"
+              style={{ animationDelay: "300ms" }}
+            >
+              AI workbench.
             </span>
           </h1>
 
           <p
             className="l-hero-sub l-fade-up"
-            style={{ animationDelay: "320ms" }}
+            style={{ animationDelay: "440ms" }}
           >
             Upload your resume, find or import a role, review the job
             description, and ship a tailored resume + cover letter in one
@@ -348,7 +356,7 @@ function LandingHero({
 
           <div
             className="l-hero-actions l-fade-up"
-            style={{ animationDelay: "440ms" }}
+            style={{ animationDelay: "560ms" }}
           >
             <button
               className="l-btn l-btn-primary"
@@ -372,7 +380,7 @@ function LandingHero({
 
           <ul
             className="l-hero-pills l-fade-up"
-            style={{ animationDelay: "560ms" }}
+            style={{ animationDelay: "680ms" }}
           >
             <li>Resume parsing</li>
             <li>Cached job search</li>
