@@ -2904,14 +2904,22 @@ code {
 .l-shell {
   /* Local tokens layered on top of the global ones. Kept separate from
      the workspace `.b-shell` block so the two surfaces can drift
-     visually without dragging each other along. */
+     visually without dragging each other along.
+
+     Card colors went through a "washed blue" phase where they were
+     `rgba(10–14, 14–20, 22–32, …)` — bluish-grey on the dark page that
+     read as muddy. The current values are near-pure-black so the
+     cards feel like cut-outs against the page rather than slightly
+     lighter blue rectangles on top of it. The blue accent comes back
+     in via the per-tile inner radial gradient (set per-tile, not on
+     the token). */
   --l-radius:     14px;
   --l-radius-lg:  20px;
   --l-radius-sm:  10px;
-  --l-line:       rgba(160, 178, 218, 0.10);
-  --l-line-strong: rgba(160, 178, 218, 0.18);
-  --l-card:       rgba(10, 14, 22, 0.62);
-  --l-card-strong: rgba(14, 20, 32, 0.78);
+  --l-line:       rgba(255, 255, 255, 0.06);
+  --l-line-strong: rgba(255, 255, 255, 0.10);
+  --l-card:       #06080d;
+  --l-card-strong: #04060b;
   --l-fg:         #f5f8ff;
   --l-fg-2:       #c7cfdf;
   --l-fg-3:       #8a93a8;
@@ -3170,23 +3178,28 @@ code {
 /* ── Hero ─────────────────────────────────────────────────────────── */
 
 .l-hero {
-  padding: 90px 32px 110px;
+  padding: 80px 32px 90px;
   max-width: 1200px;
   margin: 0 auto;
 }
-.l-hero-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 56px;
+/* Single-column stacked layout: copy on top, artifact mock below at
+   full width. Replaces the earlier 2-col grid so the title gets the
+   centered stage and the screenshot reads bigger underneath. */
+.l-hero-stack {
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  gap: 56px;
 }
 .l-hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 24px;
+  align-items: center;
+  text-align: center;
+  max-width: 880px;
 }
 .l-hero-eyebrow {
-  align-self: start;
   padding: 6px 12px 6px 10px;
   border: 1px solid var(--l-line-strong);
   border-radius: 999px;
@@ -3195,11 +3208,12 @@ code {
 .l-hero-title {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: clamp(40px, 5.5vw, 64px);
+  gap: 6px;
+  font-size: clamp(44px, 6.4vw, 76px);
   font-weight: 600;
-  letter-spacing: -0.030em;
-  line-height: 1.02;
+  letter-spacing: -0.032em;
+  line-height: 1.04;
+  text-wrap: balance;
 }
 .l-hero-title span {
   display: inline-block;
@@ -3211,10 +3225,10 @@ code {
   -webkit-text-fill-color: transparent;
 }
 .l-hero-sub {
-  font-size: 17px;
+  font-size: 18px;
   line-height: 1.55;
   color: var(--l-fg-2);
-  max-width: 540px;
+  max-width: 640px;
   margin: 0;
 }
 .l-hero-actions {
@@ -3222,6 +3236,7 @@ code {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  justify-content: center;
   margin-top: 4px;
 }
 .l-hero-pills {
@@ -3232,6 +3247,7 @@ code {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
+  justify-content: center;
   margin-top: 8px;
   font-size: 12.5px;
   color: var(--l-fg-3);
@@ -3274,13 +3290,14 @@ code {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 520px;
+  width: 100%;
 }
 .l-artifact {
   position: relative;
   width: 100%;
-  max-width: 540px;
-  animation: lFadeUp 800ms var(--l-ease) 700ms backwards;
+  max-width: 920px;
+  animation: lFadeUp 800ms var(--l-ease) 700ms;
+  animation-fill-mode: both;
 }
 .l-artifact-glow {
   position: absolute;
@@ -3350,15 +3367,15 @@ code {
   50% { opacity: 0.4; }
 }
 .l-artifact-body {
-  padding: 22px 24px 18px;
+  padding: 32px 36px 26px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 .l-artifact-name {
   font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
   font-weight: 600;
-  font-size: 24px;
+  font-size: 28px;
   letter-spacing: -0.02em;
   color: var(--l-fg);
 }
@@ -3488,12 +3505,17 @@ code {
   max-width: 480px;
   aspect-ratio: 4 / 5;
   border-radius: var(--l-radius-lg);
-  background: var(--l-card-strong);
+  /* Near-black card with a small blue glow tucked into the top-left
+     corner. The glow gives depth without painting the whole card with
+     the blue tint that read as "washed out" before. */
+  background:
+    radial-gradient(60% 80% at 0% 0%, rgba(48, 100, 255, 0.10), transparent 60%),
+    var(--l-card-strong);
   border: 1px solid var(--l-line-strong);
   overflow: hidden;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 24px 60px rgba(0, 0, 0, 0.45);
+    0 24px 60px rgba(0, 0, 0, 0.55);
 }
 .l-workbench-rail {
   display: inline-flex;
@@ -3821,21 +3843,86 @@ code {
 /* ── Bento ────────────────────────────────────────────────────────── */
 
 .l-bento {
-  padding: 90px 32px 90px;
-  max-width: 1200px;
+  padding: 90px 0 90px;
   margin: 0 auto;
+  /* The bento section spans full width; the section head + strip have
+     their own internal padding so the strip's overflow lines up with
+     the page edges (carousel reads as "more tiles to the right"). */
 }
-.l-bento-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+.l-bento .l-section-head {
+  /* Wider section head + nav arrows justified at the right. */
+  max-width: 1200px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  text-align: left;
+  padding: 0 32px 40px;
+  gap: 24px;
+}
+.l-bento .l-section-head .l-eyebrow,
+.l-bento .l-section-head .l-section-title {
+  text-align: left;
+}
+.l-bento .l-section-title {
+  max-width: 720px;
+}
+.l-bento-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.l-bento-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--l-line-strong);
+  color: var(--l-fg-2);
+  cursor: pointer;
+  transition: background 160ms var(--l-ease), border-color 160ms var(--l-ease),
+    color 160ms var(--l-ease), transform 160ms var(--l-ease);
+}
+.l-bento-nav-btn:hover {
+  background: rgba(48, 100, 255, 0.12);
+  border-color: rgba(48, 100, 255, 0.45);
+  color: var(--l-fg);
+}
+.l-bento-nav-btn:active { transform: scale(0.96); }
+
+.l-bento-strip {
+  display: flex;
   gap: 18px;
-  grid-auto-rows: minmax(220px, auto);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  scrollbar-width: none; /* Firefox */
+  /* Side padding inside the strip = pageGutter. So the leftmost tile
+     starts in the same column as the section head, and the rightmost
+     tile leaves visible scroll-room at the page edge — the carousel
+     reads as "more to the right" without needing dots indicators. */
+  padding: 6px 32px 30px;
+  scroll-padding-left: 32px;
 }
+.l-bento-strip::-webkit-scrollbar { display: none; }
+
 .l-bento-tile {
   position: relative;
-  grid-column: span 2;
-  background: var(--l-card);
-  border: 1px solid var(--l-line);
+  /* Uniform tile width on desktop; .l-bento-tile-wide bumps it
+     ~1.6x for visual variety without breaking the rhythm. */
+  flex: 0 0 380px;
+  scroll-snap-align: start;
+  /* Near-black card with a small blue corner glow — same treatment as
+     the workbench stage so the two surfaces feel like the same family.
+     The previous `var(--l-card)` was a slightly bluish dark grey that
+     read as "washed". */
+  background:
+    radial-gradient(60% 80% at 0% 0%, rgba(48, 100, 255, 0.07), transparent 60%),
+    var(--l-card);
+  border: 1px solid var(--l-line-strong);
   border-radius: var(--l-radius-lg);
   padding: 26px;
   display: flex;
@@ -3850,10 +3937,10 @@ code {
   border-color: rgba(160, 178, 218, 0.24);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 24px 48px rgba(0, 0, 0, 0.42);
+    0 24px 48px rgba(0, 0, 0, 0.55);
 }
 .l-bento-tile-wide {
-  grid-column: span 3;
+  flex: 0 0 600px;
 }
 .l-bento-eyebrow {
   font-family: var(--font-geist-mono), monospace;
@@ -4152,10 +4239,7 @@ code {
 
 @media (max-width: 900px) {
   .l-hero { padding: 60px 24px 80px; }
-  .l-hero-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 40px;
-  }
+  .l-hero-stack { gap: 40px; }
   .l-workbench { padding: 60px 24px 40px; }
   .l-workbench-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -4173,13 +4257,14 @@ code {
     min-height: auto;
     padding: 24px 0;
   }
-  .l-bento { padding: 60px 24px; }
-  .l-bento-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .l-bento { padding: 60px 0; }
+  .l-bento .l-section-head { padding: 0 24px 32px; }
+  .l-bento-strip {
+    padding: 6px 24px 30px;
+    scroll-padding-left: 24px;
   }
-  .l-bento-tile, .l-bento-tile-wide {
-    grid-column: span 1;
-  }
+  .l-bento-tile { flex: 0 0 320px; }
+  .l-bento-tile-wide { flex: 0 0 480px; }
   .l-public { padding: 60px 24px; }
   .l-final { padding: 80px 24px; }
 }
@@ -4192,10 +4277,14 @@ code {
   .l-hero-title { font-size: clamp(36px, 11vw, 48px); }
   .l-hero-actions { width: 100%; flex-direction: column; }
   .l-hero-actions .l-btn { width: 100%; }
-  .l-workbench, .l-bento, .l-public, .l-final { padding-left: 18px; padding-right: 18px; }
-  .l-bento-grid {
-    grid-template-columns: minmax(0, 1fr);
+  .l-workbench, .l-public, .l-final { padding-left: 18px; padding-right: 18px; }
+  .l-bento .l-section-head { padding: 0 18px 28px; }
+  .l-bento-strip {
+    padding: 6px 18px 28px;
+    scroll-padding-left: 18px;
   }
+  .l-bento-tile { flex: 0 0 280px; }
+  .l-bento-tile-wide { flex: 0 0 360px; }
   .l-footer { padding: 36px 18px 48px; }
   .l-footer-inner {
     grid-template-columns: minmax(0, 1fr);

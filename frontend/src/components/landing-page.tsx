@@ -314,33 +314,28 @@ function LandingHero({
 
   return (
     <section className="l-hero">
-      <div className="l-hero-grid">
+      <div className="l-hero-stack">
         <div className="l-hero-copy">
           <span className="l-eyebrow l-hero-eyebrow">
             <span className="l-eyebrow-dot" /> AI-powered application workbench
           </span>
 
-          {/* Title is split into spans so each line can stagger-fade in
-              with its own animation-delay. The .l-fade-up class is what
-              triggers the reveal — see globals.css. */}
+          {/* Title stays as a single block but each line still stagger-
+              fades on its own delay so the reveal feels intentional.
+              The .l-fade-up class is the trigger — see globals.css. */}
           <h1 className="l-hero-title">
             <span className="l-fade-up" style={{ animationDelay: "60ms" }}>
-              Tailor every job
+              Tailor every job application
             </span>
             <span className="l-fade-up" style={{ animationDelay: "180ms" }}>
-              application with an
-            </span>
-            <span
-              className="l-fade-up l-hero-title-accent"
-              style={{ animationDelay: "300ms" }}
-            >
-              AI workbench.
+              with an{" "}
+              <span className="l-hero-title-accent">AI workbench.</span>
             </span>
           </h1>
 
           <p
             className="l-hero-sub l-fade-up"
-            style={{ animationDelay: "440ms" }}
+            style={{ animationDelay: "320ms" }}
           >
             Upload your resume, find or import a role, review the job
             description, and ship a tailored resume + cover letter in one
@@ -353,7 +348,7 @@ function LandingHero({
 
           <div
             className="l-hero-actions l-fade-up"
-            style={{ animationDelay: "560ms" }}
+            style={{ animationDelay: "440ms" }}
           >
             <button
               className="l-btn l-btn-primary"
@@ -377,7 +372,7 @@ function LandingHero({
 
           <ul
             className="l-hero-pills l-fade-up"
-            style={{ animationDelay: "680ms" }}
+            style={{ animationDelay: "560ms" }}
           >
             <li>Resume parsing</li>
             <li>Cached job search</li>
@@ -386,6 +381,9 @@ function LandingHero({
           </ul>
         </div>
 
+        {/* Artifact mock now sits below the title at full width. The
+            existing <ArtifactPreview /> markup is unchanged — only the
+            wrapper styling shifted in globals.css. */}
         <div className="l-hero-visual">
           <ArtifactPreview />
         </div>
@@ -714,9 +712,63 @@ function WorkbenchVisual3({ active }: { active: boolean }) {
   );
 }
 
-// ─── Bento (asymmetric "what else" grid) ──────────────────────────────
+// ─── Bento (horizontal carousel) ──────────────────────────────────────
+//
+// Five feature tiles laid out as a horizontal scroll-snap carousel
+// instead of an asymmetric grid. The previous 3-3-2-2-2-full grid felt
+// "stagger-y" and AI-generated; the carousel treats each tile as a
+// uniform card and gives the user explicit navigation.
+//
+// Implementation:
+//   - native scroll-snap for snap behavior
+//   - prev/next arrow buttons that scroll the strip by one tile width
+//   - the strip's overflow handles natural touch / trackpad swipes too
 
 function BentoSection() {
+  const stripRef = useRef<HTMLDivElement | null>(null);
+
+  function scrollByTile(direction: 1 | -1) {
+    const strip = stripRef.current;
+    if (!strip) return;
+    // Find the first non-fully-visible tile in the requested direction
+    // and scroll its left edge into the strip's left edge. This walks
+    // tile-by-tile rather than guessing a fixed width — handles the
+    // wide tiles + responsive layouts in one shot.
+    const tiles = Array.from(
+      strip.querySelectorAll<HTMLElement>(".l-bento-tile"),
+    );
+    const stripRect = strip.getBoundingClientRect();
+    if (direction === 1) {
+      const next = tiles.find(
+        (t) => t.getBoundingClientRect().left > stripRect.left + 8,
+      );
+      if (next) {
+        strip.scrollTo({
+          left:
+            strip.scrollLeft +
+            (next.getBoundingClientRect().left - stripRect.left),
+          behavior: "smooth",
+        });
+      }
+    } else {
+      // Walk from the right back; pick the last tile whose left is
+      // before the current strip's left.
+      const prev = [...tiles]
+        .reverse()
+        .find((t) => t.getBoundingClientRect().left < stripRect.left - 8);
+      if (prev) {
+        strip.scrollTo({
+          left:
+            strip.scrollLeft +
+            (prev.getBoundingClientRect().left - stripRect.left),
+          behavior: "smooth",
+        });
+      } else {
+        strip.scrollTo({ left: 0, behavior: "smooth" });
+      }
+    }
+  }
+
   return (
     <section className="l-bento" id="bento">
       <div className="l-section-head">
@@ -724,9 +776,27 @@ function BentoSection() {
         <h2 className="l-section-title">
           Everything else worth knowing about.
         </h2>
+        <div className="l-bento-nav">
+          <button
+            type="button"
+            className="l-bento-nav-btn"
+            onClick={() => scrollByTile(-1)}
+            aria-label="Previous"
+          >
+            <ArrowGlyph direction="left" />
+          </button>
+          <button
+            type="button"
+            className="l-bento-nav-btn"
+            onClick={() => scrollByTile(1)}
+            aria-label="Next"
+          >
+            <ArrowGlyph direction="right" />
+          </button>
+        </div>
       </div>
 
-      <div className="l-bento-grid">
+      <div className="l-bento-strip" ref={stripRef}>
         <article className="l-bento-tile l-bento-tile-wide">
           <span className="l-bento-eyebrow">FOUR ATS COVERAGE</span>
           <h3 className="l-bento-title">
@@ -824,6 +894,28 @@ SELECT * FROM cached_jobs
         </article>
       </div>
     </section>
+  );
+}
+
+function ArrowGlyph({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      style={{
+        transform: direction === "left" ? "rotate(180deg)" : undefined,
+      }}
+    >
+      <path d="M5 12h14" />
+      <path d="m13 5 7 7-7 7" />
+    </svg>
   );
 }
 
