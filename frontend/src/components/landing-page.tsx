@@ -30,7 +30,7 @@ const LINKEDIN_URL = "https://www.linkedin.com/in/leander-antony-a-176319147";
 const WORKBENCH_STEPS = [
   {
     eyebrow: "01 · Resume",
-    title: "Drop a resume — or chat one into existence",
+    title: "Drop a resume or chat one into existence",
     body:
       "Upload a PDF, Word doc, or text file and our AI pulls out everything that matters — your skills, experience, projects, publications. The layout adapts to your career stage so students lead with education and seniors lead with experience.",
     aside:
@@ -54,7 +54,7 @@ const WORKBENCH_STEPS = [
   },
   {
     eyebrow: "04 · Analysis",
-    title: "Get a tailored resume and cover letter — fast",
+    title: "Get a tailored resume and cover letter",
     body:
       "Our AI rewrites your resume to highlight what matters most for the role, then writes a personalized cover letter to match. Pick from two clean themes and download as Word or PDF — whichever your application portal asks for.",
     aside:
@@ -346,7 +346,7 @@ function LandingHero({
           >
             Upload your resume, find a role you actually want, review the
             job description, and walk away with a tailored resume and
-            cover letter — all in one place.
+            cover letter.
           </p>
 
           {authError ? (
