@@ -57,8 +57,14 @@ from src.schemas import (
 # 90% of a typical Fortune 500 hiring window without ballooning the
 # refresh into hundreds of HTTP calls.
 _MAX_JOBS_PER_BOARD = 250
-# Workday accepts up to 50 per page reliably; 20 is the browser default.
-_PAGE_SIZE = 50
+# Workday's CXS API now rejects `limit > 20` with a bare HTTP 400
+# (errorCode "HTTP_400", empty message — diagnosed against
+# nvidia.wd5 / micron.wd1 / hpe.wd5 / etc., all 11 tenants). The
+# old code used 50 (the previously-permitted ceiling) and silently
+# got every board kicked out at the first page, producing 0 jobs
+# for the entire workday source. 20 matches the browser default and
+# every tenant in the validated pool accepts it without complaint.
+_PAGE_SIZE = 20
 # Workday IP-rate-limits aggressively (we got 400s after ~80 POSTs in
 # a few minutes during validation). Two throttles below mitigate:
 #   1) Lower per-provider concurrency (3 not 8) so we don't slam them

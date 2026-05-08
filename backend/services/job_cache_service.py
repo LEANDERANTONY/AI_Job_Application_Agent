@@ -143,9 +143,19 @@ def refresh_cached_jobs(
         # endpoint — earlier 200-row chunks intermittently failed
         # mid-refresh after sustained writes (likely the supabase REST
         # tier's per-connection write budget). 100 is a good middle
-        # ground: low overhead, high success rate, ~1.5x more requests.
+        # ground for the lighter-payload sources.
+        #
+        # Ashby is the exception: its postings carry much larger
+        # description bodies, and the GENERATED STORED `search_tsv`
+        # column has to be re-derived on every row insert. At
+        # chunk_size=100 we observed five consecutive statement
+        # timeouts per refresh ("canceling statement due to statement
+        # timeout") on Supabase's default 60 s `statement_timeout`,
+        # silently losing ~500 rows. chunk_size=30 finishes each
+        # chunk in well under 60 s; total Ashby refresh goes from
+        # ~18 requests to ~60, but every row lands.
         if all_postings:
-            chunk_size = 100
+            chunk_size = 30 if source_name == "ashby" else 100
             for i in range(0, len(all_postings), chunk_size):
                 chunk = all_postings[i : i + chunk_size]
                 try:
