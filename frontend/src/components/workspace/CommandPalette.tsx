@@ -47,7 +47,6 @@ export type CommandPaletteProps = {
   /** Last few assistant Q's. Empty = section hidden. */
   recentAssistantQuestions: string[];
   onAskAssistant: (question: string) => void;
-  assistantUnlocked: boolean;
 
   /** Action: run analysis (gated by ready state). */
   analysisReady: boolean;
@@ -80,7 +79,6 @@ export function CommandPalette({
   onLoadSavedJob,
   recentAssistantQuestions,
   onAskAssistant,
-  assistantUnlocked,
   analysisReady,
   onRunAnalysis,
   onReuploadResume,
@@ -174,7 +172,11 @@ export function CommandPalette({
       }
     }
 
-    if (recentAssistantQuestions.length && assistantUnlocked) {
+    // Recent questions used to be gated on `assistantUnlocked`, which
+    // hid them until the user had run an analysis. The assistant is
+    // ungated now (see AssistantPanel), so recent turns surface
+    // whenever the user has any history at all.
+    if (recentAssistantQuestions.length) {
       for (const question of recentAssistantQuestions.slice(0, 5)) {
         list.push({
           id: `recent-${question.slice(0, 24)}`,
@@ -230,7 +232,6 @@ export function CommandPalette({
     return list;
   }, [
     analysisReady,
-    assistantUnlocked,
     navigation,
     onAskAssistant,
     onClearWorkspace,

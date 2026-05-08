@@ -646,11 +646,16 @@ export function WorkspaceShell() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [paletteOpen]);
 
-  const assistantRequiresWorkspaceRun = !analysisState;
+  // The assistant is no longer gated on having run an analysis. Users
+  // can ask product-help questions ("how do I use this?", "where do I
+  // upload my resume?") before they have any workspace at all — the
+  // backend's AssistantService.answer_product_help path handles these
+  // when the workspace snapshot is null. We still pass a
+  // `hasWorkspaceContext` boolean down so the panel can adapt its
+  // empty-state and header copy (grounded vs general).
+  const hasWorkspaceContext = Boolean(analysisState);
   const assistantCanSubmit =
-    !assistantRequiresWorkspaceRun &&
-    !assistantSending &&
-    Boolean(assistantQuestion.trim());
+    !assistantSending && Boolean(assistantQuestion.trim());
 
   // ── Handlers (unchanged) ────────────────────────────────────────
   async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
@@ -1294,14 +1299,12 @@ export function WorkspaceShell() {
       return;
     }
 
-    if (!analysisState) {
-      setWorkspaceNotice({
-        level: "warning",
-        message:
-          "Run the AI analysis first so the assistant has grounded context to use.",
-      });
-      return;
-    }
+    // Note: previously this also hard-returned when `analysisState` was
+    // null with a "Run the AI analysis first…" notice. The gate was
+    // lifted so users can ask product-help questions before they have
+    // any workspace at all — the backend's
+    // AssistantService.answer_product_help path handles a null
+    // workspace_snapshot gracefully.
 
     // Abort any previous stream still in flight before starting a new one —
     // double-submits should never produce overlapping streamingTurn updates.
@@ -1908,12 +1911,12 @@ export function WorkspaceShell() {
       <AssistantPanel
         canSubmit={assistantCanSubmit}
         forceOpen={forceAssistantOpen}
+        hasWorkspaceContext={hasWorkspaceContext}
         onClearConversation={handleClearAssistantConversation}
         onForceOpenHandled={() => setForceAssistantOpen(false)}
         onQuestionChange={setAssistantQuestion}
         onSubmit={handleAssistantSubmit}
         question={assistantQuestion}
-        requiresWorkspaceRun={assistantRequiresWorkspaceRun}
         sending={assistantSending}
         streamingTurn={assistantStreamingTurn}
         turns={assistantTurns}
@@ -1921,7 +1924,6 @@ export function WorkspaceShell() {
 
       <CommandPalette
         analysisReady={stepReady.analysis}
-        assistantUnlocked={!assistantRequiresWorkspaceRun}
         navigation={stepReady}
         onAskAssistant={(question) => {
           setAssistantQuestion(question);

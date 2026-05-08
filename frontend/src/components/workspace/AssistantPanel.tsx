@@ -9,9 +9,14 @@
 //
 // The streaming surface and clear-conversation behavior are preserved
 // verbatim (see WorkspaceShell.handleAssistantSubmit /
-// handleClearAssistantConversation). The `requiresWorkspaceRun` gate
-// also stays — the assistant unlocks only after the first analysis
-// run, same as before.
+// handleClearAssistantConversation). The previous `requiresWorkspaceRun`
+// gate that locked the assistant until an analysis had run was lifted —
+// users can now ask product-help questions ("how do I use this?",
+// "what's step 03 for?") before they have any workspace at all. The
+// backend's AssistantService.answer_product_help path handles those
+// gracefully when no workspace snapshot is attached. The remaining
+// `hasWorkspaceContext` prop only controls cosmetic copy (grounded vs
+// general).
 //
 // The suggested-follow-up panel was intentionally removed in commit
 // 9138ead and is not restored here.
@@ -52,11 +57,13 @@ export type AssistantPanelProps = {
   /** In-flight streaming turn, or null when no request is open. */
   streamingTurn?: AssistantStreamingTurn | null;
   /**
-   * `true` while the workspace has not yet been analyzed; the assistant
-   * is gated on a successful analysis run for the application-Q&A
-   * surface.
+   * `true` once the user has run an analysis (i.e. there's a workspace
+   * snapshot the assistant can ground answers in). Affects only the
+   * cosmetic header sub-line and the empty-state copy — the assistant
+   * is *not* gated on this. Without a workspace, the assistant routes
+   * through the product-help path on the backend.
    */
-  requiresWorkspaceRun: boolean;
+  hasWorkspaceContext: boolean;
   question: string;
   onQuestionChange: (value: string) => void;
   sending: boolean;
@@ -75,7 +82,7 @@ export type AssistantPanelProps = {
 export function AssistantPanel({
   turns,
   streamingTurn = null,
-  requiresWorkspaceRun,
+  hasWorkspaceContext,
   question,
   onQuestionChange,
   sending,
@@ -157,9 +164,9 @@ export function AssistantPanel({
             <div>
               <div className="rd-assistant-title">Assistant</div>
               <div className="rd-assistant-sub">
-                {requiresWorkspaceRun
-                  ? "Unlocks after the first workspace run."
-                  : "Grounded in your active workspace."}
+                {hasWorkspaceContext
+                  ? "Grounded in your active workspace."
+                  : "Ask anything — product help or workspace Q&A."}
               </div>
             </div>
             <div className="rd-assistant-head-actions">
@@ -239,37 +246,35 @@ export function AssistantPanel({
               </>
             ) : (
               <div className="rd-assistant-empty">
-                {requiresWorkspaceRun
-                  ? "Run the analysis first — the assistant grounds answers in your workspace package."
-                  : "Ask about your tailored resume, cover letter, or the current package."}
+                {hasWorkspaceContext
+                  ? "Ask about your tailored resume, cover letter, or the current package."
+                  : "Ask how to use the workspace, what each step does, or what to do next. Once you've run an analysis, you can ask about your tailored package too."}
               </div>
             )}
           </div>
 
-          {requiresWorkspaceRun ? (
-            <div className="rd-assistant-locked">
-              Assistant unlocks after your first workspace run.
-            </div>
-          ) : (
-            <form className="rd-assistant-form" onSubmit={handleSubmit}>
-              <textarea
-                className="rd-assistant-input"
-                disabled={sending}
-                onChange={(event) => onQuestionChange(event.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask about your package, resume, cover letter, or outputs…"
-                value={question}
-              />
-              <button
-                aria-label="Send"
-                className="rd-assistant-send"
-                disabled={!canSubmit}
-                type="submit"
-              >
-                <SendIcon />
-              </button>
-            </form>
-          )}
+          <form className="rd-assistant-form" onSubmit={handleSubmit}>
+            <textarea
+              className="rd-assistant-input"
+              disabled={sending}
+              onChange={(event) => onQuestionChange(event.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                hasWorkspaceContext
+                  ? "Ask about your package, resume, cover letter, or outputs…"
+                  : "Ask how to use the workspace, what each step does…"
+              }
+              value={question}
+            />
+            <button
+              aria-label="Send"
+              className="rd-assistant-send"
+              disabled={!canSubmit}
+              type="submit"
+            >
+              <SendIcon />
+            </button>
+          </form>
         </div>
       ) : null}
     </>
