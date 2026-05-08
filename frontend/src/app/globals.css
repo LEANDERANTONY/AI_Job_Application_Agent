@@ -3319,220 +3319,23 @@ code {
   filter: blur(40px);
   z-index: 0;
 }
-.l-artifact-card {
+/* Real workspace screenshot rendered inside the artifact wrapper.
+   Drop shadow + subtle border + rounded corners give it the same
+   "centerpiece card" feel the hand-built mock had, just sourced from
+   an actual product capture instead of HTML/CSS. */
+.l-artifact-image {
   position: relative;
   z-index: 1;
-  /* Near-pure-black with the same top-left blue accent as the
-     workbench + bento cards. The base #020308 is deeper than the
-     workbench's #04060b so the artifact reads as the centerpiece —
-     the user wanted "more black" + "a bit taller". */
-  background:
-    radial-gradient(50% 70% at 0% 0%, rgba(48, 100, 255, 0.06), transparent 60%),
-    #020308;
-  border: 1px solid var(--l-line-strong);
+  display: block;
+  width: 100%;
+  height: auto;
   border-radius: var(--l-radius-lg);
+  border: 1px solid var(--l-line-strong);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 28px 72px rgba(0, 0, 0, 0.55);
+  /* Keep the image inside the rounded corners. */
   overflow: hidden;
-}
-.l-artifact-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--l-line);
-}
-.l-artifact-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(0, 0, 0, 0.30);
-  border: 1px solid var(--l-line);
-  border-radius: 999px;
-  padding: 3px;
-  font-size: 12px;
-}
-.l-artifact-tab {
-  padding: 5px 12px;
-  border-radius: 999px;
-  color: var(--l-fg-3);
-}
-.l-artifact-tab-active {
-  background: rgba(48, 100, 255, 0.18);
-  color: var(--l-fg);
-}
-.l-artifact-stream-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  color: #7fe0b0;
-  text-transform: uppercase;
-}
-.l-artifact-stream-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: #7fe0b0;
-  box-shadow: 0 0 12px rgba(127, 224, 176, 0.6);
-  animation: lPulse 1600ms var(--l-ease) infinite;
-}
-@keyframes lPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-.l-artifact-body {
-  padding: 32px 36px 26px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.l-artifact-name {
-  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
-  font-weight: 600;
-  font-size: 28px;
-  letter-spacing: -0.02em;
-  color: var(--l-fg);
-}
-.l-artifact-role {
-  font-size: 14px;
-  color: var(--l-fg-2);
-  margin-top: -8px;
-}
-.l-artifact-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.l-artifact-section-eyebrow {
-  font-family: var(--font-geist-mono), "Geist Mono", monospace;
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  color: var(--l-fg-3);
-}
-.l-artifact-paragraph {
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--l-fg-2);
-  margin: 0;
-}
-.l-artifact-skills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.l-artifact-chip {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--l-line);
-  border-radius: 6px;
-  font-size: 12px;
-  color: var(--l-fg-2);
-}
-
-/* Experience section in the artifact preview — same typographic
-   treatment as the rendered resume's experience block. */
-.l-artifact-job {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.l-artifact-job + .l-artifact-job {
-  margin-top: 6px;
-}
-.l-artifact-job-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.l-artifact-job-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--l-fg);
-  letter-spacing: -0.005em;
-}
-.l-artifact-job-dates {
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 11.5px;
-  color: var(--l-fg-3);
-  letter-spacing: 0.02em;
-}
-.l-artifact-bullets {
-  list-style: none;
-  padding: 0;
-  margin: 2px 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.l-artifact-bullets li {
-  position: relative;
-  padding-left: 14px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--l-fg-2);
-}
-.l-artifact-bullets li::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0.6em;
-  width: 4px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--l-fg-4);
-}
-.l-artifact-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 22px;
-  border-top: 1px solid var(--l-line);
-  background: rgba(0, 0, 0, 0.20);
-  font-size: 12.5px;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.l-artifact-theme {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.l-artifact-theme-label {
-  color: var(--l-fg-3);
-  margin-right: 4px;
-}
-.l-artifact-theme-chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--l-line);
-  color: var(--l-fg-3);
-}
-.l-artifact-theme-chip-active {
-  background: rgba(48, 100, 255, 0.15);
-  border-color: rgba(48, 100, 255, 0.4);
-  color: var(--l-fg);
-}
-.l-artifact-downloads {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.l-artifact-download {
-  padding: 5px 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--l-line-strong);
-  border-radius: 8px;
-  color: var(--l-fg);
-  font-weight: 500;
 }
 
 /* Streaming caret — used in the hero artifact + a few other places. */

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 
 import { BrandLogo } from "@/components/BrandLogo";
@@ -387,126 +388,24 @@ function LandingHero({
           </ul>
         </div>
 
-        {/* Artifact mock now sits below the title at full width. The
-            existing <ArtifactPreview /> markup is unchanged — only the
-            wrapper styling shifted in globals.css. */}
+        {/* Real workspace screenshot below the title at full width.
+            The wrapper handles the glow + drop shadow + accent corner
+            so the image feels like the centerpiece of the hero. */}
         <div className="l-hero-visual">
-          <ArtifactPreview />
+          <div className="l-artifact">
+            <div className="l-artifact-glow" />
+            <Image
+              className="l-artifact-image"
+              src="/landing/hero-workspace.png"
+              alt="Job Application Copilot workspace — Job Search with results and saved jobs"
+              width={1200}
+              height={827}
+              priority
+            />
+          </div>
         </div>
       </div>
     </section>
-  );
-}
-
-// ─── Hero artifact preview ────────────────────────────────────────────
-//
-// A static-but-alive preview of the workspace's artifact viewer. Pure
-// HTML/CSS — no screenshot — so it stays pixel-perfect at every viewport.
-// The streaming caret blinks via a CSS keyframe (see globals.css).
-
-function ArtifactPreview() {
-  return (
-    <div className="l-artifact" aria-hidden>
-      {/* Soft glow ring behind the card. */}
-      <div className="l-artifact-glow" />
-
-      <div className="l-artifact-card">
-        <div className="l-artifact-head">
-          <div className="l-artifact-tabs">
-            <span className="l-artifact-tab l-artifact-tab-active">
-              Tailored Resume
-            </span>
-            <span className="l-artifact-tab">Cover Letter</span>
-          </div>
-          <span className="l-artifact-stream-chip">
-            <span className="l-artifact-stream-dot" /> Streaming
-          </span>
-        </div>
-
-        <div className="l-artifact-body">
-          <div className="l-artifact-name">Aria Patel</div>
-          <div className="l-artifact-role">
-            Senior ML Engineer · Inference Platform
-          </div>
-
-          <div className="l-artifact-section">
-            <div className="l-artifact-section-eyebrow">SUMMARY</div>
-            <p className="l-artifact-paragraph">
-              Eight years building inference platforms across Anthropic and
-              Stripe. Led the rate-limiter rewrite and the multi-tenant
-              tokenizer that landed inside the SLO.
-            </p>
-          </div>
-
-          <div className="l-artifact-section">
-            <div className="l-artifact-section-eyebrow">SKILLS</div>
-            <div className="l-artifact-skills">
-              <span className="l-artifact-chip">Python</span>
-              <span className="l-artifact-chip">PyTorch</span>
-              <span className="l-artifact-chip">CUDA</span>
-              <span className="l-artifact-chip">Triton</span>
-              <span className="l-artifact-chip">Ray</span>
-              <span className="l-artifact-chip">Postgres</span>
-            </div>
-          </div>
-
-          {/* Experience section makes the artifact preview feel like a
-              real recruiter-ready resume rather than a 3-row mock.
-              Streaming caret lives mid-bullet to suggest the AI is
-              actively writing this section right now. */}
-          <div className="l-artifact-section">
-            <div className="l-artifact-section-eyebrow">EXPERIENCE</div>
-            <div className="l-artifact-job">
-              <div className="l-artifact-job-head">
-                <span className="l-artifact-job-title">
-                  Staff ML Engineer · Anthropic
-                </span>
-                <span className="l-artifact-job-dates">2023 — Present</span>
-              </div>
-              <ul className="l-artifact-bullets">
-                <li>
-                  Cut p99 inference latency 38% by rewriting the
-                  rate-limiter around a token-bucket per-tenant pool.
-                </li>
-                <li>
-                  Owned the multi-tenant tokenizer rollout — shipped
-                  inside the 99.9% availability SLO across 14 regions
-                  <span className="l-artifact-caret" />
-                </li>
-              </ul>
-            </div>
-            <div className="l-artifact-job">
-              <div className="l-artifact-job-head">
-                <span className="l-artifact-job-title">
-                  Senior ML Engineer · Stripe
-                </span>
-                <span className="l-artifact-job-dates">2020 — 2023</span>
-              </div>
-              <ul className="l-artifact-bullets">
-                <li>
-                  Built Stripe&apos;s feature platform serving 30k+ models
-                  with low-latency online retrieval.
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        <div className="l-artifact-foot">
-          <div className="l-artifact-theme">
-            <span className="l-artifact-theme-label">Theme</span>
-            <span className="l-artifact-theme-chip l-artifact-theme-chip-active">
-              Classic ATS
-            </span>
-            <span className="l-artifact-theme-chip">Professional Neutral</span>
-          </div>
-          <div className="l-artifact-downloads">
-            <span className="l-artifact-download">PDF</span>
-            <span className="l-artifact-download">DOCX</span>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
