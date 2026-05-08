@@ -3700,6 +3700,16 @@ code {
   opacity: 0.45;
   transition: opacity 360ms var(--l-ease);
 }
+/* Last step (Analysis) shrinks to its natural content height + a
+   small tail so the section ENDS close to where the sticky visual
+   releases. Without this, step 04 reserves a 48vh block — the user
+   finishes reading early but keeps scrolling through empty space
+   while the visual scrolls past, making the card and text look
+   "drifted apart" at the bottom of the section. */
+.l-workbench-step:last-child {
+  min-height: 0;
+  padding-bottom: 8px;
+}
 .l-workbench-step.is-active {
   opacity: 1;
 }
