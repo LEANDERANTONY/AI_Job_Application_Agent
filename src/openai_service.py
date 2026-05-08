@@ -707,14 +707,23 @@ class OpenAIService:
             retry_max_output_tokens=retry_max_output_tokens,
             retry_reason=retry_reason,
         )
+        # Route the budget-retry call through the same app-retry
+        # helper as the initial call. If we under-allocated tokens AND
+        # the retry attempt happens during a transient outage, we
+        # still get one extra shot before giving up on the whole run.
         try:
-            response = self._client.responses.create(**retry_payload)
+            response = self._create_response_with_app_retry(
+                retry_payload,
+                task_name=task_name,
+                resolved_model=resolved_model,
+                started_at=started_at,
+            )
         except Exception as retry_exc:
             log_event(
                 LOGGER,
                 logging.ERROR,
                 "openai_request_failed",
-                "OpenAI JSON prompt retry failed after incomplete response.",
+                "OpenAI JSON prompt retry failed after incomplete response (budget-retry path, after SDK + app retries).",
                 model=resolved_model,
                 task_name=task_name,
                 duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
