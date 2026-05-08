@@ -459,7 +459,7 @@ function WorkbenchSection() {
       <div className="l-section-head">
         <span className="l-eyebrow">Four steps · One flow</span>
         <h2 className="l-section-title">
-          From resume to job-ready application.
+          From a fresh resume to job ready application.
         </h2>
       </div>
 
