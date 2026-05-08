@@ -512,12 +512,16 @@ export type WorkspaceStateContext = {
   current_step: "resume" | "jobs" | "jd" | "analysis";
   /** Has a CandidateProfile been parsed from the user's resume? */
   has_resume: boolean;
-  /** Small projection of the parsed resume — null until parsed. */
+  /** Small projection of the parsed resume — null until parsed.
+   *  `experience_entries_count` is the number of work-experience
+   *  *entries* on the resume (e.g. 4 jobs held), NOT years of total
+   *  experience. The earlier name `experience_count` led the model
+   *  to answer "how many years?" with the entry count. */
   resume_summary: {
     name: string;
     location: string;
     skills_count: number;
-    experience_count: number;
+    experience_entries_count: number;
     has_certifications: boolean;
   } | null;
   /** Has the user pasted/imported a JD that's been at least

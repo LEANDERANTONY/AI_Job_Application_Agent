@@ -31,7 +31,11 @@ def _to_serializable(value: Any):
 # of which path the call site takes.
 _WORKSPACE_STATE_GUIDANCE = (
     "WORKSPACE STATE: A `workspace_state` object inside `product_context` reflects the user's live progress. Read it before answering ANY question that touches what the user has done so far. "
-    "Fields: `current_step` (one of resume / jobs / jd / analysis — the tab the user is on right now), `has_resume` and `resume_summary` (parsed CandidateProfile — name, location, skills_count, experience_count, has_certifications), `has_jd` and `jd_summary` (parsed JobDescription — title, location, hard_skills_count, soft_skills_count, must_haves_count), `has_analysis` (true once the analysis pipeline has produced a fit score), `saved_jobs_count` (size of the user's shortlist), `last_search_query` (last keyword they searched). "
+    "Fields: `current_step` (one of resume / jobs / jd / analysis — the tab the user is on right now), `has_resume` and `resume_summary` (parsed CandidateProfile — name, location, skills_count, experience_entries_count, has_certifications), `has_jd` and `jd_summary` (parsed JobDescription — title, location, hard_skills_count, soft_skills_count, must_haves_count), `has_analysis` (true once the analysis pipeline has produced a fit score), `saved_jobs_count` (size of the user's shortlist), `last_search_query` (last keyword they searched). "
+    "Step numbering when the user asks 'what's step N?': step 01 = Resume, step 02 = Job Search, step 03 = Job Detail (JD review), step 04 = Analysis. The `current_step` value matches each step's id. "
+    "Field semantics — read carefully: "
+    "`experience_entries_count` is the number of WORK ENTRIES on the resume (e.g. 4 jobs held), NOT years of total experience. If the user asks 'how many years of experience do I have?', the resume_summary does NOT carry that — say it isn't computed in the current context and offer to look at the parsed experience timeline once the snapshot is available. "
+    "`skills_count` is a count, not a list — never enumerate specific skills from the count alone. "
     "Rules: "
     "(1) ALWAYS check workspace_state before answering 'what's next?', 'is my resume parsed?', 'why is X locked?'. "
     "(2) If `has_resume === false` and the user asks about resume content, do NOT invent skills, jobs, or experience — say the resume hasn't been uploaded yet and offer the upload step. "

@@ -1339,7 +1339,9 @@ export function WorkspaceShell() {
               name: currentProfile.full_name || "",
               location: currentProfile.location || "",
               skills_count: currentProfile.skills?.length ?? 0,
-              experience_count: currentProfile.experience?.length ?? 0,
+              // Count of *entries* (jobs held), not years.
+              experience_entries_count:
+                currentProfile.experience?.length ?? 0,
               has_certifications:
                 (currentProfile.certifications?.length ?? 0) > 0,
             }

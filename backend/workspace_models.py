@@ -131,7 +131,11 @@ class ResumeSummaryModel(BaseModel):
     name: str = Field(default="", max_length=200)
     location: str = Field(default="", max_length=200)
     skills_count: int = Field(default=0, ge=0)
-    experience_count: int = Field(default=0, ge=0)
+    # Count of work-experience *entries* on the resume (e.g. 4 jobs
+    # held). NOT years of total experience — the earlier name
+    # `experience_count` led the LLM to answer "how many years?"
+    # with the entry count.
+    experience_entries_count: int = Field(default=0, ge=0)
     has_certifications: bool = False
 
 
