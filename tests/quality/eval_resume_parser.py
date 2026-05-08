@@ -5,7 +5,10 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+# `tests/quality/<file>.py` → repo root is three parents up. Without
+# this, `from src.config import …` below fails because `src/` isn't
+# on sys.path when the runner is invoked directly.
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 

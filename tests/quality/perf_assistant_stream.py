@@ -29,19 +29,19 @@ Examples
 --------
 Local, deterministic fallback (no OpenAI key needed)::
 
-    uv run python scripts/perf_assistant_stream.py \\
+    uv run python tests/quality/perf_assistant_stream.py \\
         --url http://localhost:8000/api/workspace/assistant/answer/stream
 
 Local, OpenAI-backed (real model, real first-token latency)::
 
-    uv run python scripts/perf_assistant_stream.py \\
+    uv run python tests/quality/perf_assistant_stream.py \\
         --url http://localhost:8000/api/workspace/assistant/answer/stream \\
         --token "$YOUR_SUPABASE_ACCESS_TOKEN" \\
         --refresh-token "$YOUR_SUPABASE_REFRESH_TOKEN"
 
 Deployed::
 
-    uv run python scripts/perf_assistant_stream.py \\
+    uv run python tests/quality/perf_assistant_stream.py \\
         --url https://api.example.com/api/workspace/assistant/answer/stream \\
         --token "$ACCESS" --refresh-token "$REFRESH"
 """
