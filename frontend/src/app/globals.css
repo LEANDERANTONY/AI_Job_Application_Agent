@@ -4241,8 +4241,8 @@ code {
 }
 .l-footer-cols {
   display: grid;
-  grid-template-columns: repeat(3, minmax(120px, auto));
-  gap: 32px;
+  grid-template-columns: repeat(2, minmax(120px, auto));
+  gap: 48px;
 }
 .l-footer-col {
   display: flex;

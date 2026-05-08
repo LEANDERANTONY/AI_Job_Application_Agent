@@ -1056,33 +1056,6 @@ function LandingFooter() {
 
         <div className="l-footer-cols">
           <div className="l-footer-col">
-            <p className="l-footer-heading">Project</p>
-            <a
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="l-footer-link"
-            >
-              GitHub
-            </a>
-            <a
-              href={`${GITHUB_URL}/blob/main/DEVLOG.md`}
-              target="_blank"
-              rel="noreferrer"
-              className="l-footer-link"
-            >
-              DEVLOG
-            </a>
-            <a
-              href={`${GITHUB_URL}/tree/main/docs/adr`}
-              target="_blank"
-              rel="noreferrer"
-              className="l-footer-link"
-            >
-              ADRs
-            </a>
-          </div>
-          <div className="l-footer-col">
             <p className="l-footer-heading">Navigation</p>
             <Link href="/privacy" className="l-footer-link">
               Privacy Policy
