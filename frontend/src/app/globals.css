@@ -3434,7 +3434,13 @@ code {
   position: absolute;
   inset: -40px;
   border-radius: 32px;
-  background: radial-gradient(60% 60% at 60% 40%, rgba(48, 100, 255, 0.25), transparent 70%);
+  /* Was 0.25 — produced a bright blue halo extending past the image
+     edges that, layered on top of the workspace's own `b-shell`
+     ambient orb baked into the screenshot PNG, read as a "whitish
+     hot spot" with serrated banding from the underlying noise
+     texture. Dropped to 0.10 so the glow only acts as a soft
+     framing edge rather than a competing light source. */
+  background: radial-gradient(60% 60% at 60% 40%, rgba(48, 100, 255, 0.10), transparent 70%);
   filter: blur(40px);
   z-index: 0;
 }
