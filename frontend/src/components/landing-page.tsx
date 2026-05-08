@@ -479,27 +479,27 @@ function WorkbenchSection() {
   const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
+    // Use a single "horizontal line" observer in the middle of the
+    // viewport. With rootMargin -50% top / -50% bottom, the
+    // observer's effective viewport collapses to a 1px line at the
+    // viewport's vertical center — the step whose block crosses that
+    // line is the active one. This avoids the failure mode where a
+    // step block that's taller than the narrowed band can never reach
+    // the threshold ratio.
     const observers: IntersectionObserver[] = [];
     stepRefs.current.forEach((node, index) => {
       if (!node) return;
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            // Use a tight rootMargin so the active step flips at the
-            // moment its block crosses the middle of the viewport.
-            // `intersectionRatio > 0.45` gives a snappy mid-scroll
-            // crossfade rather than waiting until the block is fully
-            // in view.
-            if (entry.isIntersecting && entry.intersectionRatio > 0.45) {
+            if (entry.isIntersecting) {
               setCurrentStep(index);
             }
           });
         },
         {
-          // Trigger when the block crosses the middle band of the
-          // viewport. -40% top + -40% bottom = "is roughly centered."
-          rootMargin: "-40% 0px -40% 0px",
-          threshold: [0, 0.45, 0.55, 1],
+          rootMargin: "-50% 0px -50% 0px",
+          threshold: 0,
         },
       );
       observer.observe(node);

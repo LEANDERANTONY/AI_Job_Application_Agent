@@ -2892,6 +2892,1321 @@ code {
 }
 
 /* =====================================================================
+   Landing redesign — "Workbench" narrative
+   Scoped under .l-shell. Reuses the shared :root tokens (--accent,
+   --text, --muted) at the top of this file, but adds local variables
+   for spacing + motion that only the landing needs.
+
+   Sections: topbar · hero · workbench (sticky scroll) · bento · public
+   · final CTA · footer.
+   ===================================================================== */
+
+.l-shell {
+  /* Local tokens layered on top of the global ones. Kept separate from
+     the workspace `.b-shell` block so the two surfaces can drift
+     visually without dragging each other along. */
+  --l-radius:     14px;
+  --l-radius-lg:  20px;
+  --l-radius-sm:  10px;
+  --l-line:       rgba(160, 178, 218, 0.10);
+  --l-line-strong: rgba(160, 178, 218, 0.18);
+  --l-card:       rgba(10, 14, 22, 0.62);
+  --l-card-strong: rgba(14, 20, 32, 0.78);
+  --l-fg:         #f5f8ff;
+  --l-fg-2:       #c7cfdf;
+  --l-fg-3:       #8a93a8;
+  --l-fg-4:       #5e6677;
+  --l-ease:       cubic-bezier(0.16, 1, 0.30, 1);
+  --l-duration:   320ms;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  color: var(--l-fg);
+  background:
+    radial-gradient(900px 480px at 50% -10%, rgba(48, 100, 255, 0.07), transparent 60%),
+    linear-gradient(180deg, #04070f 0%, #02040a 50%, #000 100%);
+  font-family: var(--font-dm-sans), "DM Sans", system-ui, sans-serif;
+  letter-spacing: -0.005em;
+  /* `overflow-x: clip` (not `hidden`) so the orbs don't trigger
+     horizontal scroll WITHOUT also breaking sticky positioning on
+     descendants — `hidden` creates a scroll container that disables
+     `position: sticky` for everything inside it. */
+  overflow-x: clip;
+}
+
+.l-shell h1, .l-shell h2, .l-shell h3 {
+  font-family: var(--font-space-grotesk), "Space Grotesk", "Inter", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  margin: 0;
+}
+
+/* Soft accent orbs in the page background. Big + heavily blurred so
+   they read as ambience, not decoration. They're `position: fixed`
+   so they don't scroll-jitter. */
+.l-orb {
+  position: fixed;
+  border-radius: 999px;
+  filter: blur(110px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+}
+.l-orb-1 {
+  top: -20rem;
+  right: -10rem;
+  width: 36rem;
+  height: 36rem;
+  background: radial-gradient(circle, rgba(48, 100, 255, 0.30), transparent 70%);
+}
+.l-orb-2 {
+  bottom: 10rem;
+  left: -16rem;
+  width: 32rem;
+  height: 32rem;
+  background: radial-gradient(circle, rgba(70, 60, 200, 0.20), transparent 70%);
+  opacity: 0.45;
+}
+.l-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.7) 1px, transparent 1px);
+  background-size: 3px 3px;
+  mix-blend-mode: overlay;
+}
+
+/* ── Topbar ───────────────────────────────────────────────────────── */
+
+.l-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(14px) saturate(140%);
+  background: rgba(4, 7, 15, 0.65);
+  border-bottom: 1px solid var(--l-line);
+}
+.l-topbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.l-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--l-fg);
+}
+.l-brand-logo {
+  width: 32px;
+  height: 32px;
+}
+.l-brand-name {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  font-size: 15px;
+}
+.l-topbar-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.l-topbar-link {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13.5px;
+  color: var(--l-fg-3);
+  border-radius: 8px;
+  transition: color 160ms var(--l-ease), background 160ms var(--l-ease);
+}
+.l-topbar-link:hover {
+  color: var(--l-fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Eyebrow + buttons (used everywhere) ──────────────────────────── */
+
+.l-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+}
+.l-eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  box-shadow: 0 0 12px rgba(48, 100, 255, 0.55);
+}
+
+.l-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--l-fg);
+  background: transparent;
+  cursor: pointer;
+  transition: background 160ms var(--l-ease), border-color 160ms var(--l-ease),
+    box-shadow 160ms var(--l-ease), transform 160ms var(--l-ease);
+  white-space: nowrap;
+}
+.l-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.l-btn-primary {
+  background:
+    linear-gradient(180deg, rgba(70, 110, 255, 0.95), rgba(38, 78, 220, 0.95)),
+    var(--accent);
+  border-color: rgba(170, 195, 255, 0.30);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 24px rgba(48, 100, 255, 0.30);
+  color: #ffffff;
+}
+.l-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 32px rgba(48, 100, 255, 0.45);
+}
+.l-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--l-line-strong);
+}
+.l-btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(160, 178, 218, 0.30);
+}
+.l-btn-quiet {
+  background: transparent;
+  color: var(--l-fg-2);
+}
+.l-btn-quiet:hover {
+  color: var(--l-fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+.l-btn-sm {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.l-btn-lg {
+  height: 52px;
+  padding: 0 26px;
+  font-size: 15.5px;
+  border-radius: 12px;
+}
+.l-glyph {
+  flex-shrink: 0;
+}
+
+.l-notice {
+  border: 1px solid var(--l-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  color: var(--l-fg-2);
+}
+.l-notice-warning {
+  border-color: rgba(255, 162, 100, 0.32);
+  color: #ffd6a8;
+  background: rgba(255, 162, 100, 0.08);
+}
+
+/* ── Main + section heads ─────────────────────────────────────────── */
+
+.l-main {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+}
+
+.l-section-head {
+  max-width: 760px;
+  margin: 0 auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-bottom: 56px;
+}
+.l-section-title {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+  color: var(--l-fg);
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────── */
+
+.l-hero {
+  padding: 90px 32px 110px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.l-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 56px;
+  align-items: center;
+}
+.l-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.l-hero-eyebrow {
+  align-self: start;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid var(--l-line-strong);
+  border-radius: 999px;
+  background: rgba(48, 100, 255, 0.06);
+}
+.l-hero-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: clamp(40px, 5.5vw, 64px);
+  font-weight: 600;
+  letter-spacing: -0.030em;
+  line-height: 1.02;
+}
+.l-hero-title span {
+  display: inline-block;
+}
+.l-hero-title-accent {
+  background: linear-gradient(180deg, #ffffff 0%, #8db4ff 90%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.l-hero-sub {
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--l-fg-2);
+  max-width: 540px;
+  margin: 0;
+}
+.l-hero-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.l-hero-pills {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--l-fg-3);
+}
+.l-hero-pills li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.l-hero-pills li::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--l-fg-4);
+}
+
+/* Stagger fade-up — used by hero text + everywhere else with the
+   .l-fade-up class. The `animation-fill-mode: backwards` keeps the
+   element invisible until its delay starts so the page doesn't flash
+   the un-animated state. */
+.l-fade-up {
+  opacity: 0;
+  transform: translateY(14px);
+  animation: lFadeUp 700ms var(--l-ease) forwards;
+  animation-fill-mode: both;
+}
+@keyframes lFadeUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hero artifact preview — the "live" mock of the workspace's artifact
+   viewer. Pure HTML/CSS so it scales pixel-perfectly. The streaming
+   caret blinks via @keyframes lBlink. */
+.l-hero-visual {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 520px;
+}
+.l-artifact {
+  position: relative;
+  width: 100%;
+  max-width: 540px;
+  animation: lFadeUp 800ms var(--l-ease) 700ms backwards;
+}
+.l-artifact-glow {
+  position: absolute;
+  inset: -40px;
+  border-radius: 32px;
+  background: radial-gradient(60% 60% at 60% 40%, rgba(48, 100, 255, 0.25), transparent 70%);
+  filter: blur(40px);
+  z-index: 0;
+}
+.l-artifact-card {
+  position: relative;
+  z-index: 1;
+  background: var(--l-card-strong);
+  border: 1px solid var(--l-line-strong);
+  border-radius: var(--l-radius-lg);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.l-artifact-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--l-line);
+}
+.l-artifact-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.30);
+  border: 1px solid var(--l-line);
+  border-radius: 999px;
+  padding: 3px;
+  font-size: 12px;
+}
+.l-artifact-tab {
+  padding: 5px 12px;
+  border-radius: 999px;
+  color: var(--l-fg-3);
+}
+.l-artifact-tab-active {
+  background: rgba(48, 100, 255, 0.18);
+  color: var(--l-fg);
+}
+.l-artifact-stream-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: #7fe0b0;
+  text-transform: uppercase;
+}
+.l-artifact-stream-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #7fe0b0;
+  box-shadow: 0 0 12px rgba(127, 224, 176, 0.6);
+  animation: lPulse 1600ms var(--l-ease) infinite;
+}
+@keyframes lPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.l-artifact-body {
+  padding: 22px 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.l-artifact-name {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  color: var(--l-fg);
+}
+.l-artifact-role {
+  font-size: 14px;
+  color: var(--l-fg-2);
+  margin-top: -8px;
+}
+.l-artifact-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.l-artifact-section-eyebrow {
+  font-family: var(--font-geist-mono), "Geist Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: var(--l-fg-3);
+}
+.l-artifact-paragraph {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--l-fg-2);
+  margin: 0;
+}
+.l-artifact-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.l-artifact-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--l-line);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--l-fg-2);
+}
+.l-artifact-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  border-top: 1px solid var(--l-line);
+  background: rgba(0, 0, 0, 0.20);
+  font-size: 12.5px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.l-artifact-theme {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.l-artifact-theme-label {
+  color: var(--l-fg-3);
+  margin-right: 4px;
+}
+.l-artifact-theme-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--l-line);
+  color: var(--l-fg-3);
+}
+.l-artifact-theme-chip-active {
+  background: rgba(48, 100, 255, 0.15);
+  border-color: rgba(48, 100, 255, 0.4);
+  color: var(--l-fg);
+}
+.l-artifact-downloads {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.l-artifact-download {
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--l-line-strong);
+  border-radius: 8px;
+  color: var(--l-fg);
+  font-weight: 500;
+}
+
+/* Streaming caret — used in the hero artifact + a few other places. */
+.l-artifact-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  background: var(--accent-strong);
+  margin-left: 3px;
+  vertical-align: -2px;
+  animation: lBlink 1s step-end infinite;
+}
+@keyframes lBlink {
+  50% { opacity: 0; }
+}
+
+/* ── Workbench (sticky scroll narrative) ─────────────────────────── */
+
+.l-workbench {
+  padding: 90px 32px 60px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.l-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 80px;
+  align-items: start;
+}
+.l-workbench-visual {
+  position: sticky;
+  top: 92px;
+  height: calc(100vh - 92px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+.l-workbench-visual-stage {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  aspect-ratio: 4 / 5;
+  border-radius: var(--l-radius-lg);
+  background: var(--l-card-strong);
+  border: 1px solid var(--l-line-strong);
+  overflow: hidden;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.l-workbench-rail {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--l-line);
+  border-radius: 999px;
+}
+.l-workbench-rail-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--l-fg-3);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 160ms var(--l-ease);
+}
+.l-workbench-rail-step:hover {
+  color: var(--l-fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+.l-workbench-rail-step.is-active {
+  background: rgba(48, 100, 255, 0.20);
+  color: var(--l-fg);
+}
+
+/* The four step mocks live stacked inside .l-workbench-visual-stage —
+   only the active one has opacity 1, the others fade out. The crossfade
+   feels like the workspace itself walking through the steps. */
+.l-workbench-mock {
+  position: absolute;
+  inset: 0;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 360ms var(--l-ease), transform 360ms var(--l-ease);
+  pointer-events: none;
+}
+.l-workbench-mock.is-active {
+  opacity: 1;
+  transform: translateY(0);
+}
+.l-mock-eyebrow {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: var(--l-fg-3);
+  text-transform: uppercase;
+}
+
+/* Step 01 — Resume mock */
+.l-mock-dropzone {
+  border: 1px dashed var(--l-line-strong);
+  border-radius: 10px;
+  padding: 22px;
+  background: rgba(48, 100, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+.l-mock-file {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 13px;
+  color: var(--l-fg);
+}
+.l-mock-file-meta {
+  font-size: 11px;
+  color: var(--l-fg-3);
+}
+.l-mock-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.l-mock-field {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--l-line);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.l-mock-field-label {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+  width: 64px;
+  flex-shrink: 0;
+}
+.l-mock-field-value {
+  color: var(--l-fg);
+}
+
+/* Step 02 — Search mock */
+.l-mock-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--l-line-strong);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.l-mock-search-icon { color: var(--l-fg-3); }
+.l-mock-search-text { color: var(--l-fg-2); }
+.l-mock-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.l-mock-filter {
+  padding: 4px 10px;
+  border: 1px solid var(--l-line-strong);
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--l-fg-2);
+}
+.l-mock-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+.l-mock-result {
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--l-line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.l-mock-result-top {
+  border-color: rgba(48, 100, 255, 0.45);
+  box-shadow: 0 0 0 1px rgba(48, 100, 255, 0.25);
+}
+.l-mock-result-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px 8px;
+  background: rgba(48, 100, 255, 0.18);
+  color: #c5d8ff;
+  border-radius: 6px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  margin-bottom: 4px;
+}
+.l-mock-result-title {
+  font-size: 13px;
+  color: var(--l-fg);
+  font-weight: 500;
+}
+.l-mock-result-meta {
+  font-size: 11.5px;
+  color: var(--l-fg-3);
+}
+
+/* Step 03 — JD mock */
+.l-mock-jd-title {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--l-fg);
+}
+.l-mock-jd-sub {
+  font-size: 12.5px;
+  color: var(--l-fg-3);
+  margin-top: -6px;
+}
+.l-mock-skills-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.l-mock-skills-head {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  color: var(--l-fg-3);
+}
+.l-mock-skills {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.l-mock-chip {
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  border: 1px solid var(--l-line);
+}
+.l-mock-chip-hard {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--l-fg);
+}
+.l-mock-chip-soft {
+  background: rgba(48, 100, 255, 0.14);
+  border-color: rgba(48, 100, 255, 0.32);
+  color: #cfddff;
+}
+
+/* Step 04 — Analysis mock */
+.l-mock-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.l-mock-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--l-fg-2);
+}
+.l-mock-timeline-row-active { color: var(--l-fg); }
+.l-mock-timeline-row-pending { color: var(--l-fg-4); }
+.l-mock-timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.l-mock-timeline-dot-done {
+  background: #7fe0b0;
+  box-shadow: 0 0 8px rgba(127, 224, 176, 0.4);
+}
+.l-mock-timeline-dot-running {
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 4px rgba(48, 100, 255, 0.18);
+  animation: lPulse 1400ms var(--l-ease) infinite;
+}
+.l-mock-doc {
+  margin-top: 6px;
+  padding: 14px;
+  background: rgba(0, 0, 0, 0.30);
+  border: 1px solid var(--l-line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
+.l-mock-doc-name {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  color: var(--l-fg-3);
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.l-mock-doc-line {
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.10);
+}
+.l-mock-doc-line-short { width: 60%; }
+.l-mock-doc-line-mid { width: 80%; display: flex; align-items: center; }
+
+/* The right-column scroll narrative — four blocks each ~viewport-tall. */
+.l-workbench-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.l-workbench-step {
+  min-height: 56vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px 0;
+  opacity: 0.45;
+  transition: opacity 360ms var(--l-ease);
+}
+.l-workbench-step.is-active {
+  opacity: 1;
+}
+.l-workbench-eyebrow {
+  display: inline-block;
+}
+.l-workbench-title {
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--l-fg);
+}
+.l-workbench-body {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--l-fg-2);
+  max-width: 480px;
+  margin: 0;
+}
+.l-workbench-aside {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--l-fg-3);
+  max-width: 480px;
+  padding-left: 14px;
+  border-left: 2px solid rgba(48, 100, 255, 0.32);
+  margin: 0;
+}
+
+/* ── Bento ────────────────────────────────────────────────────────── */
+
+.l-bento {
+  padding: 90px 32px 90px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.l-bento-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 18px;
+  grid-auto-rows: minmax(220px, auto);
+}
+.l-bento-tile {
+  position: relative;
+  grid-column: span 2;
+  background: var(--l-card);
+  border: 1px solid var(--l-line);
+  border-radius: var(--l-radius-lg);
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  transition: transform 220ms var(--l-ease), border-color 220ms var(--l-ease),
+    box-shadow 220ms var(--l-ease);
+}
+.l-bento-tile:hover {
+  transform: translateY(-2px);
+  border-color: rgba(160, 178, 218, 0.24);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 24px 48px rgba(0, 0, 0, 0.42);
+}
+.l-bento-tile-wide {
+  grid-column: span 3;
+}
+.l-bento-eyebrow {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+}
+.l-bento-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--l-fg);
+}
+.l-bento-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--l-fg-2);
+  margin: 0;
+  flex: 1;
+}
+.l-bento-providers {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.l-bento-provider {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--l-line);
+  border-radius: 6px;
+  color: var(--l-fg-2);
+}
+.l-bento-code {
+  margin: 0;
+  margin-top: 6px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line);
+  border-radius: 10px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11.5px;
+  color: var(--l-fg-2);
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+.l-bento-format-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.l-bento-format {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  background: rgba(48, 100, 255, 0.15);
+  border: 1px solid rgba(48, 100, 255, 0.35);
+  border-radius: 8px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11.5px;
+  color: #cfddff;
+}
+.l-bento-format-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--l-line-strong);
+}
+.l-bento-format-tag {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  color: var(--l-fg-3);
+  padding: 4px 10px;
+  border: 1px solid var(--l-line);
+  border-radius: 6px;
+}
+.l-bento-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.l-bento-chat-turn {
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  max-width: 90%;
+}
+.l-bento-chat-turn-bot {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--l-line);
+  color: var(--l-fg-2);
+  align-self: flex-start;
+}
+.l-bento-chat-turn-user {
+  background: rgba(48, 100, 255, 0.18);
+  border: 1px solid rgba(48, 100, 255, 0.32);
+  color: var(--l-fg);
+  align-self: flex-end;
+}
+.l-bento-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 14px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line);
+  border-radius: 10px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11.5px;
+  color: var(--l-fg-2);
+}
+.l-bento-stream-event {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 1.55;
+}
+.l-bento-stream-key {
+  color: var(--l-fg-3);
+}
+.l-bento-stream-text {
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  font-size: 12.5px;
+  color: var(--l-fg-2);
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Built in public ──────────────────────────────────────────────── */
+
+.l-public {
+  padding: 90px 32px;
+  border-top: 1px solid var(--l-line);
+  border-bottom: 1px solid var(--l-line);
+  background:
+    radial-gradient(60% 80% at 50% 0%, rgba(48, 100, 255, 0.05), transparent 70%),
+    rgba(255, 255, 255, 0.005);
+}
+.l-public-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  align-items: center;
+  text-align: center;
+}
+.l-public-head {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+}
+.l-public-title {
+  font-size: clamp(26px, 3.4vw, 36px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--l-fg);
+}
+.l-public-sub {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--l-fg-2);
+  max-width: 540px;
+  margin: 0;
+}
+.l-public-stack {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.l-public-chip {
+  padding: 7px 14px;
+  border: 1px solid var(--l-line-strong);
+  border-radius: 999px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11.5px;
+  color: var(--l-fg-2);
+  background: rgba(255, 255, 255, 0.03);
+  animation: lFadeUp 600ms var(--l-ease) forwards;
+  animation-fill-mode: both;
+}
+.l-public-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ── Final CTA ────────────────────────────────────────────────────── */
+
+.l-final {
+  padding: 110px 32px 90px;
+}
+.l-final-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  align-items: center;
+  text-align: center;
+}
+.l-final-title {
+  font-size: clamp(30px, 4.2vw, 44px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  color: var(--l-fg);
+}
+.l-final-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────── */
+
+.l-footer {
+  border-top: 1px solid var(--l-line);
+  padding: 44px 32px 64px;
+  background: rgba(0, 0, 0, 0.30);
+}
+.l-footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 40px;
+}
+.l-footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.l-footer-name {
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--l-fg);
+  margin: 0;
+}
+.l-footer-copy {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--l-fg-2);
+  max-width: 360px;
+  margin: 0;
+}
+.l-footer-credit {
+  font-size: 12px;
+  color: var(--l-fg-3);
+  margin: 8px 0 0;
+}
+.l-footer-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, auto));
+  gap: 32px;
+}
+.l-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.l-footer-heading {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+  margin: 0 0 4px;
+}
+.l-footer-link {
+  font-size: 13.5px;
+  color: var(--l-fg-2);
+  transition: color 160ms var(--l-ease);
+}
+.l-footer-link:hover {
+  color: var(--l-fg);
+}
+
+/* ── Responsive (single 900px breakpoint, then 540px) ─────────────── */
+
+@media (max-width: 900px) {
+  .l-hero { padding: 60px 24px 80px; }
+  .l-hero-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 40px;
+  }
+  .l-workbench { padding: 60px 24px 40px; }
+  .l-workbench-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+  .l-workbench-visual {
+    position: relative;
+    top: auto;
+    height: auto;
+  }
+  .l-workbench-visual-stage {
+    max-width: 420px;
+  }
+  .l-workbench-step {
+    min-height: auto;
+    padding: 24px 0;
+  }
+  .l-bento { padding: 60px 24px; }
+  .l-bento-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .l-bento-tile, .l-bento-tile-wide {
+    grid-column: span 1;
+  }
+  .l-public { padding: 60px 24px; }
+  .l-final { padding: 80px 24px; }
+}
+
+@media (max-width: 540px) {
+  .l-topbar-inner { padding: 12px 18px; }
+  .l-topbar-nav { gap: 4px; }
+  .l-topbar-link { padding: 0 8px; font-size: 12.5px; }
+  .l-hero { padding: 48px 18px 60px; }
+  .l-hero-title { font-size: clamp(36px, 11vw, 48px); }
+  .l-hero-actions { width: 100%; flex-direction: column; }
+  .l-hero-actions .l-btn { width: 100%; }
+  .l-workbench, .l-bento, .l-public, .l-final { padding-left: 18px; padding-right: 18px; }
+  .l-bento-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .l-footer { padding: 36px 18px 48px; }
+  .l-footer-inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .l-footer-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+  }
+}
+
+/* =====================================================================
    Workspace redesign — Direction B "Workbench"
    Scoped under .b-shell so it doesn't leak into landing-page styles.
    ===================================================================== */
