@@ -1,0 +1,503 @@
+/* =========================================================================
+   Design tokens — shared by Directions A and B in the original prototype.
+   This file is the prototype reference; the shipped workspace tokens live
+   under .b-shell at the bottom of this file (mirroring the production
+   block in frontend/src/app/globals.css). The OKLCH values above are
+   kept as historical reference — production uses sRGB hex/rgba values
+   because color-mix(in oklch, ...) was not yet a hard-required feature
+   when the workspace shipped.
+   ========================================================================= */
+
+:root {
+  /* Surface — three deliberate levels instead of six accidental ones */
+  --bg-page:        oklch(0.16 0.014 258);
+  --bg-card:        oklch(0.20 0.016 258);
+  --bg-card-2:      oklch(0.23 0.018 258);  /* inset panels, hover */
+  --bg-input:       oklch(0.18 0.014 258);
+  --bg-chip:        oklch(0.24 0.018 258);
+
+  /* Borders — barely visible, used for structure only */
+  --border:         oklch(0.30 0.020 258);
+  --border-strong:  oklch(0.40 0.025 258);
+  --hairline:       oklch(0.26 0.018 258);
+
+  /* Text — three real levels with proper contrast */
+  --fg:             oklch(0.97 0.005 258);
+  --fg-2:           oklch(0.82 0.012 258);   /* body copy, secondary */
+  --fg-3:           oklch(0.62 0.018 258);   /* tertiary, captions */
+  --fg-4:           oklch(0.48 0.020 258);   /* placeholder, disabled */
+
+  /* Accent — chroma matched across hues */
+  --accent:         oklch(0.68 0.17 258);
+  --accent-strong:  oklch(0.74 0.17 258);
+  --accent-soft:    oklch(0.32 0.10 258);
+  --accent-fg:      oklch(0.98 0.005 258);
+  --accent-tint:    color-mix(in oklch, var(--accent) 14%, transparent);
+
+  /* Status — same chroma + lightness, vary hue */
+  --success:        oklch(0.78 0.14 160);
+  --success-soft:   oklch(0.32 0.08 160);
+  --warning:        oklch(0.80 0.13 75);
+  --warning-soft:   oklch(0.34 0.08 75);
+  --danger:         oklch(0.70 0.18 25);
+  --danger-soft:    oklch(0.32 0.10 25);
+
+  /* Type — defaults; overridden by [data-type-system="..."] below */
+  --font-display: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body:    "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+  --font-serif:   "Fraunces", ui-serif, Georgia, serif;
+
+  /* Type scale (cozy default — overridden by density) */
+  --fs-xs:    11px;
+  --fs-sm:    12.5px;
+  --fs-base:  14px;
+  --fs-md:    15px;
+  --fs-lg:    17px;
+  --fs-xl:    20px;
+  --fs-2xl:   26px;
+  --fs-3xl:   34px;
+
+  /* Spacing scale */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-7:  32px;
+  --sp-8:  40px;
+  --sp-9:  56px;
+
+  --radius-sm: 6px;
+  --radius:    10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Density: card padding, row gap */
+  --pad-card:  20px;
+  --pad-row:   16px;
+  --gap-stack: 16px;
+}
+
+/* Density variants */
+[data-density="comfy"] {
+  --pad-card:  16px;
+  --pad-row:   14px;
+  --gap-stack: 14px;
+  --fs-base:   13.5px;
+}
+[data-density="compact"] {
+  --pad-card:  12px;
+  --pad-row:   10px;
+  --gap-stack: 10px;
+  --fs-base:   13px;
+}
+
+/* Accent hue variants — matched chroma + lightness, vary hue. */
+[data-accent="indigo"] {
+  --accent:        oklch(0.68 0.17 264);
+  --accent-strong: oklch(0.74 0.17 264);
+  --accent-soft:   oklch(0.32 0.10 264);
+  --accent-tint:   color-mix(in oklch, var(--accent) 14%, transparent);
+}
+[data-accent="graphite"] {
+  --accent:        oklch(0.62 0.04 250);
+  --accent-strong: oklch(0.70 0.04 250);
+  --accent-soft:   oklch(0.30 0.03 250);
+  --accent-tint:   color-mix(in oklch, var(--accent) 18%, transparent);
+}
+[data-accent="ember"] {
+  --accent:        oklch(0.68 0.17 28);
+  --accent-strong: oklch(0.74 0.17 28);
+  --accent-soft:   oklch(0.32 0.10 28);
+  --accent-tint:   color-mix(in oklch, var(--accent) 14%, transparent);
+}
+[data-accent="forest"] {
+  --accent:        oklch(0.62 0.13 158);
+  --accent-strong: oklch(0.68 0.13 158);
+  --accent-soft:   oklch(0.30 0.08 158);
+  --accent-tint:   color-mix(in oklch, var(--accent) 14%, transparent);
+}
+
+/* Reset bits scoped to artboards */
+.rd-root,
+.rd-root *,
+.rd-root *::before,
+.rd-root *::after {
+  box-sizing: border-box;
+}
+
+.rd-root {
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  color: var(--fg);
+  background: var(--bg-page);
+  line-height: 1.55;
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+}
+
+.rd-root h1, .rd-root h2, .rd-root h3, .rd-root h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  margin: 0;
+  line-height: 1.15;
+}
+
+.rd-root p { margin: 0; color: var(--fg-2); }
+.rd-root button { font-family: inherit; font-size: inherit; cursor: pointer; }
+.rd-root input, .rd-root textarea, .rd-root select { font-family: inherit; font-size: inherit; color: inherit; }
+
+/* Shared atoms */
+.rd-mono { font-family: var(--font-mono); font-size: 0.92em; letter-spacing: -0.01em; }
+.rd-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: none;
+  margin: 0;
+}
+
+/* Buttons */
+.rd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-weight: 500;
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  white-space: nowrap;
+}
+.rd-btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: color-mix(in oklch, var(--accent) 60%, white 6%);
+}
+.rd-btn-primary:hover { background: var(--accent-strong); }
+.rd-btn-ghost {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--border);
+}
+.rd-btn-ghost:hover { background: var(--bg-card-2); border-color: var(--border-strong); }
+.rd-btn-quiet {
+  background: transparent;
+  color: var(--fg-2);
+  border-color: transparent;
+  padding: 0 10px;
+}
+.rd-btn-quiet:hover { color: var(--fg); background: var(--bg-card-2); }
+.rd-btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: color-mix(in oklch, var(--danger) 30%, transparent);
+}
+.rd-btn-danger:hover { background: color-mix(in oklch, var(--danger) 12%, transparent); }
+.rd-btn-sm { height: 28px; padding: 0 10px; font-size: 12.5px; border-radius: 6px; }
+
+.rd-btn:disabled, .rd-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Input */
+.rd-input, .rd-textarea, .rd-select {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--fg);
+  outline: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.rd-input:focus, .rd-textarea:focus, .rd-select:focus {
+  border-color: var(--accent);
+  background: var(--bg-card-2);
+}
+.rd-input::placeholder, .rd-textarea::placeholder { color: var(--fg-4); }
+.rd-textarea { resize: vertical; min-height: 92px; line-height: 1.6; }
+
+.rd-label {
+  display: block;
+  font-size: 12px;
+  color: var(--fg-3);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+/* Chips — quiet and only for data */
+.rd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: var(--bg-chip);
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+.rd-chip-skill {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-2);
+}
+.rd-chip-soft {
+  background: var(--accent-tint);
+  color: color-mix(in oklch, var(--accent-strong) 80%, white 20%);
+}
+
+/* Status pip — small dot + label, NOT shouty */
+.rd-pip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-2);
+  font-weight: 500;
+}
+.rd-pip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--fg-4);
+}
+.rd-pip-live::before    { background: var(--success); box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 22%, transparent); }
+.rd-pip-ready::before   { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent); }
+.rd-pip-warning::before { background: var(--warning); }
+
+/* Card */
+.rd-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--pad-card);
+}
+
+/* Inset panel — looks like a region inside a card without being a nested card */
+.rd-inset {
+  background: color-mix(in oklch, var(--bg-card) 70%, var(--bg-page) 30%);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+/* Hairline separator */
+.rd-hairline { height: 1px; background: var(--hairline); border: 0; margin: 0; }
+
+/* Scroll niceties */
+.rd-root ::-webkit-scrollbar { width: 10px; height: 10px; }
+.rd-root ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; border: 2px solid var(--bg-page); }
+.rd-root ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* Focus ring */
+.rd-root :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Density variants ──────────────────────────────────────────────────────
+   Drive visible spacing + type from a single attribute on <html>. Targets the
+   classes the user actually sees changing: cards, region heads, job rows,
+   list items, and base font size for the artboard root. */
+[data-density="compact"] .rd-root             { font-size: 12.5px; }
+[data-density="compact"] .rd-card             { padding: 18px 20px; }
+[data-density="compact"] .a-shell             { padding: 14px 18px 18px; gap: 12px; }
+[data-density="compact"] .a-job               { padding: 11px 12px; }
+[data-density="compact"] .b-region            { padding: 18px 22px; gap: 14px; }
+[data-density="compact"] .b-canvas            { padding: 18px 26px 28px; gap: 14px; }
+[data-density="compact"] .b-job-row           { padding: 12px 14px; }
+[data-density="compact"] .a-section-head,
+[data-density="compact"] .b-region-head       { padding-bottom: 10px; }
+[data-density="compact"] .rd-input,
+[data-density="compact"] .rd-select,
+[data-density="compact"] .rd-textarea         { padding: 6px 10px; }
+[data-density="compact"] .rd-btn              { padding: 5px 10px; min-height: 28px; }
+[data-density="compact"] .rd-btn-sm           { padding: 4px 9px; min-height: 24px; font-size: 12px; }
+
+[data-density="comfy"] .rd-root               { font-size: 14.5px; }
+[data-density="comfy"] .rd-card               { padding: 36px 40px; }
+[data-density="comfy"] .a-shell               { padding: 24px 30px 30px; gap: 22px; }
+[data-density="comfy"] .a-job                 { padding: 20px 22px; }
+[data-density="comfy"] .b-region              { padding: 32px 36px; gap: 22px; }
+[data-density="comfy"] .b-canvas              { padding: 28px 40px 44px; gap: 22px; }
+[data-density="comfy"] .b-job-row             { padding: 22px 24px; }
+[data-density="comfy"] .a-section-head,
+[data-density="comfy"] .b-region-head         { padding-bottom: 22px; }
+[data-density="comfy"] .rd-input,
+[data-density="comfy"] .rd-select,
+[data-density="comfy"] .rd-textarea           { padding: 11px 14px; }
+[data-density="comfy"] .rd-btn                { padding: 9px 16px; min-height: 36px; }
+[data-density="comfy"] .rd-btn-sm             { padding: 7px 14px; min-height: 30px; font-size: 13px; }
+
+/* ── Type systems ────────────────────────────────────────────────────────
+   Premium-SaaS-flavoured pairings, all using free Google Fonts so they work
+   without licensing. The data-type-system attribute lives on :root and is
+   set from the Tweaks panel.                                                */
+
+/* 1. Inter Tight / Inter / JetBrains Mono — Linear-leaning workhorse pair  */
+[data-type-system="inter"] {
+  --font-display: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body:    "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+  --font-serif:   "Fraunces", ui-serif, Georgia, serif;
+}
+
+/* 2. Geist / Geist / Geist Mono — Vercel's family; quietly contemporary    */
+[data-type-system="geist"] {
+  --font-display: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body:    "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-serif:   "Instrument Serif", ui-serif, Georgia, serif;
+}
+
+/* 3. Inter + Instrument Serif accents — editorial / Linear-marketing feel  */
+[data-type-system="editorial"] {
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-body:    "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+  --font-serif:   "Instrument Serif", ui-serif, Georgia, serif;
+}
+
+/* 4. Manrope / Manrope / IBM Plex Mono — Stripe-leaning warm grotesque    */
+[data-type-system="manrope"] {
+  --font-display: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-body:    "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, monospace;
+  --font-serif:   "Fraunces", ui-serif, Georgia, serif;
+}
+
+/* 5. Original — Space Grotesk / DM Sans / JetBrains Mono                  */
+[data-type-system="original"] {
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body:    "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+  --font-serif:   "Fraunces", ui-serif, Georgia, serif;
+}
+
+/* Editorial system uses a serif as display — a touch more letter-spacing
+   feels right at large sizes since Instrument Serif is quite tight. */
+[data-type-system="editorial"] .b-hero-title,
+[data-type-system="editorial"] .b-resume-hero-title,
+[data-type-system="editorial"] .b-jd-title,
+[data-type-system="editorial"] .b-profile-name {
+  letter-spacing: -0.01em;
+  font-weight: 500;
+}
+
+/* =========================================================================
+   SHIPPED VALUES — these mirror the production .b-shell scope in
+   frontend/src/app/globals.css. When this file and the production CSS
+   disagree, the production CSS wins; this block exists as a snapshot
+   for future design-system input contexts.
+
+   Differences from the OKLCH prototype above:
+   - Uses sRGB hex / rgba() instead of oklch() so the cascade works in
+     environments where color-mix(in oklch, ...) isn't first-class.
+   - Adds --accent-glow (rail progress connector + hero hairline glow)
+     and motion tokens (--ease-out, --ease-spring, --duration-fast,
+     --duration-base) which are used by the entrance animations and
+     micro-interactions in the shipped workspace.
+   - Type stack is Space Grotesk (display) + DM Sans (body) +
+     Geist Mono (mono), not the prototype default of Inter / Geist /
+     editorial. This keeps the workspace and the marketing landing
+     page on one voice.
+   - Body font-size bumped from 14px to 15.5px because the dense
+     workspace reads more comfortably at the larger size on standard
+     1080p+ displays.
+
+   The .b-shell scope (instead of :root + data-direction="b") is
+   intentional: the marketing landing page has its own legacy token
+   block at :root and we did not want the workspace tokens leaking
+   into it.
+   ========================================================================= */
+
+.b-shell {
+  /* Surfaces */
+  --bg-page:        #04070f;
+  --bg-card:        rgba(10, 14, 22, 0.72);
+  --bg-card-2:      rgba(20, 26, 40, 0.70);
+  --bg-input:       rgba(10, 14, 22, 0.85);
+  --bg-chip:        rgba(255, 255, 255, 0.04);
+
+  /* Borders */
+  --border:         rgba(160, 178, 218, 0.12);
+  --border-strong: rgba(160, 178, 218, 0.20);
+  --hairline:       rgba(160, 178, 218, 0.07);
+
+  /* Ink */
+  --fg:    #f5f8ff;
+  --fg-2:  #c7cfdf;
+  --fg-3:  #8a93a8;
+  --fg-4:  #5e6677;
+
+  /* Accent — emissive blue */
+  --accent:         #4171ff;
+  --accent-strong:  #5a86ff;
+  --accent-soft:    rgba(48, 100, 255, 0.10);
+  --accent-fg:      #ffffff;
+  --accent-tint:    rgba(48, 100, 255, 0.14);
+  --accent-glow:    rgba(48, 100, 255, 0.45);
+
+  /* Status */
+  --success:        #7fe0b0;
+  --success-soft:   rgba(127, 224, 176, 0.18);
+  --warning:        #ffcb94;
+  --warning-soft:   rgba(255, 203, 148, 0.16);
+  --danger:         #ff8b8b;
+  --danger-soft:    rgba(255, 139, 139, 0.16);
+
+  /* Type — workspace + landing page share one voice. Mono is Geist
+     Mono because the landing page doesn't load a mono and Geist Mono
+     reads cleanly alongside both DM Sans and Space Grotesk. */
+  --font-display:   var(--font-space-grotesk), "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body:      var(--font-dm-sans), "DM Sans", "Inter", system-ui, sans-serif;
+  --font-mono:      var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius:    10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Motion — `--ease-out` is a fast-start, slow-end curve that reads
+     as responsive (Linear-style). `--ease-spring` adds a tiny overshoot
+     for celebratory transitions (palette + status flips). */
+  --ease-out:        cubic-bezier(0.16, 1, 0.30, 1);
+  --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast:   150ms;
+  --duration-base:   240ms;
+
+  /* Body */
+  font-family: var(--font-body);
+  font-size: 15.5px;
+  color: var(--fg);
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+
+  /* Background — radial accent glow over a layered dark gradient. */
+  background:
+    radial-gradient(900px 480px at 50% -10%, rgba(48, 100, 255, 0.05), transparent 60%),
+    linear-gradient(180deg, #04070f 0%, #02040a 40%, #000 100%);
+}
+
+.b-shell h1, .b-shell h2, .b-shell h3, .b-shell h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}

@@ -1,0 +1,1463 @@
+/* Direction B — "Workbench" v2 (premium dark theme, restrained blue)
+   Same workflow structure as before, but now layered with the same atmosphere
+   philosophy as Direction C: near-pure-black backgrounds, hairline borders,
+   monochrome chrome — and blue reserved ONLY for emissive moments
+   (primary button, active step chip, active job row stripe).
+*/
+
+/* ── Local palette overrides scoped to the B shell.
+   These tokens override the shared :root tokens for everything inside
+   .b-shell, so we don't touch A or the Tweaks system. */
+.b-shell {
+  --bg-page:        #04070f;
+  --bg-card:        rgba(10, 14, 22, 0.72);
+  --bg-card-2:      rgba(20, 26, 40, 0.70);
+  --bg-input:       rgba(10, 14, 22, 0.85);
+  --bg-chip:        rgba(255, 255, 255, 0.04);
+
+  --border:         rgba(160, 178, 218, 0.12);
+  --border-strong:  rgba(160, 178, 218, 0.20);
+  --hairline:       rgba(160, 178, 218, 0.07);
+
+  --fg:    #f5f8ff;
+  --fg-2:  #c7cfdf;
+  --fg-3:  #8a93a8;
+  --fg-4:  #5e6677;
+
+  /* The accent itself — the same emissive blue from C / the landing */
+  --accent:         #4171ff;
+  --accent-strong:  #5a86ff;
+  --accent-soft:    rgba(48, 100, 255, 0.10);
+  --accent-fg:      #ffffff;
+  --accent-tint:    rgba(48, 100, 255, 0.14);
+
+  /* Glow color used by primary button + active step chip halos */
+  --accent-glow:    rgba(48, 100, 255, 0.45);
+
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  grid-auto-rows: 0;
+  height: 100%;
+  position: relative;
+  background:
+    /* Soft top halo (matches the landing) */
+    radial-gradient(900px 480px at 50% -10%, rgba(48, 100, 255, 0.05), transparent 60%),
+    linear-gradient(180deg, #04070f 0%, #02040a 40%, #000 100%);
+  overflow: hidden;
+}
+
+/* Single subtle blue orb behind the workspace */
+.b-shell::before {
+  content: "";
+  position: absolute;
+  top: -10rem; left: 28%;
+  width: 36rem; height: 36rem;
+  border-radius: 999px;
+  filter: blur(120px);
+  background: rgba(48, 100, 255, 0.09);
+  pointer-events: none;
+  z-index: 0;
+}
+.b-shell > * { position: relative; z-index: 1; }
+
+/* ── Top bar with step rail ───────────────────────────────────────────── */
+.b-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(4, 7, 15, 0.65);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.b-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.b-brand-mark {
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  background: transparent;
+  display: grid; place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+.b-brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.b-brand-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Step rail — full-width band under the topbar */
+.b-rail-row {
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(4, 7, 15, 0.45);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 55px;
+  z-index: 19;
+}
+.b-rail {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  justify-content: center;
+}
+.b-rail-step {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-3);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: color .15s, background .15s;
+}
+.b-rail-step:hover { color: var(--fg-2); background: rgba(255,255,255,0.025); }
+.b-rail-step[aria-selected="true"] {
+  color: var(--fg);
+  background: rgba(255,255,255,0.04);
+}
+.b-rail-num {
+  width: 20px; height: 20px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  display: grid; place-items: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  transition: all .15s;
+}
+
+/* Active step — the GLOWING emissive blue chip (parallel to the active step in C) */
+.b-rail-step[aria-selected="true"] .b-rail-num {
+  background: linear-gradient(180deg, var(--accent-strong), #114be9);
+  border-color: rgba(140, 175, 255, 0.45);
+  color: white;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.25),
+    0 0 14px -2px var(--accent-glow),
+    0 6px 14px -4px rgba(48, 100, 255, 0.35);
+}
+
+/* Done step — quiet green */
+.b-rail-step[data-done="true"] .b-rail-num {
+  background: rgba(127, 224, 176, 0.10);
+  border-color: rgba(127, 224, 176, 0.22);
+  color: var(--success);
+}
+
+.b-rail-divider { width: 14px; height: 1px; background: var(--hairline); }
+
+/* Topbar actions */
+.b-topbar-actions { display: flex; align-items: center; gap: 8px; }
+.b-account {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 12px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.025);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.b-account:hover { background: rgba(255,255,255,0.05); border-color: var(--border-strong); }
+.b-account-avatar {
+  width: 24px; height: 24px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(120, 150, 220, 0.35), transparent 60%),
+    linear-gradient(180deg, #1a1f2e, #0a0d16);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  display: grid; place-items: center;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+}
+.b-account-name { font-size: 12.5px; color: var(--fg-2); }
+.b-account-popover {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  width: 280px;
+  background: rgba(14, 18, 28, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px -20px rgba(0,0,0,0.7);
+  backdrop-filter: blur(12px);
+  padding: 14px;
+  z-index: 30;
+  cursor: default;
+}
+.b-account-pop-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 10px;
+}
+.b-account-pop-meta {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+
+/* ── Hero band ────────────────────────────────────────────────────────── */
+.b-hero {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px;
+  padding: 18px 28px;
+  background: linear-gradient(180deg,
+    rgba(48, 100, 255, 0.04),
+    transparent);
+  border-bottom: 1px solid var(--hairline);
+  position: relative;
+}
+.b-hero-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--fg);
+}
+.b-hero-sub { color: var(--fg-3); font-size: 13px; margin-top: 4px; }
+.b-hero-stats { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.b-hero-stat {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px; color: var(--fg-2);
+  letter-spacing: -0.005em;
+}
+.b-hero-stat strong { color: var(--fg-3); font-weight: 500; }
+
+/* ── Main canvas ──────────────────────────────────────────────────────── */
+.b-canvas {
+  padding: 24px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow: auto;
+}
+
+.b-region {
+  display: flex; flex-direction: column;
+  gap: 16px;
+}
+.b-region-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-region-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+.b-region-sub { color: var(--fg-3); font-size: 12.5px; margin-top: 3px; }
+.b-region-tag {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.08em;
+}
+
+/* ── Resume tab ───────────────────────────────────────────────────────── */
+.b-resume-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.b-resume-input {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  position: relative;
+  backdrop-filter: blur(6px);
+}
+.b-resume-input::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  border-radius: 14px 14px 0 0;
+}
+
+.b-mode-pill { display: flex; gap: 18px; }
+.b-mode-link {
+  background: transparent; border: 0;
+  font-size: 13px; color: var(--fg-3); padding: 0 0 5px;
+  font-weight: 500;
+  border-bottom: 1.5px solid transparent;
+  transition: color .15s, border-color .15s;
+  letter-spacing: -0.005em;
+}
+.b-mode-link:hover { color: var(--fg-2); }
+.b-mode-link[data-active="true"] {
+  color: var(--fg);
+  border-bottom-color: var(--accent-strong);
+}
+
+.b-drop {
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  padding: 32px 20px;
+  text-align: center;
+  background: rgba(255,255,255,0.015);
+}
+
+.b-profile {
+  display: flex; flex-direction: column;
+  gap: 20px;
+}
+.b-profile-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-profile-name {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--fg);
+}
+.b-profile-title { color: var(--fg-2); font-size: 14px; }
+.b-profile-meta { color: var(--fg-3); font-size: 12.5px; margin-top: 4px; }
+
+.b-figrow { display: flex; gap: 36px; }
+.b-fig-num {
+  font-family: var(--font-display);
+  font-size: 26px; font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--fg);
+  line-height: 1;
+}
+.b-fig-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  letter-spacing: 0.08em;
+  margin-top: 6px;
+}
+
+.b-section { display: flex; flex-direction: column; gap: 10px; }
+.b-section-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--fg-3);
+  font-weight: 600;
+}
+
+.b-experience-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-experience-row:last-child { border-bottom: 0; }
+.b-experience-title { font-size: 13.5px; font-weight: 600; color: var(--fg); letter-spacing: -0.005em; }
+.b-experience-org { color: var(--fg-3); font-size: 12.5px; }
+.b-experience-period { font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-3); align-self: center; }
+
+/* ── Job search ───────────────────────────────────────────────────────── */
+.b-search-bar {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1.4fr) 1px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0;
+  padding: 0 12px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  height: 50px;
+  transition: border-color .15s;
+}
+.b-search-bar:focus-within { border-color: rgba(90, 134, 255, 0.35); }
+.b-search-bar input {
+  background: transparent;
+  border: 0;
+  outline: none;
+  height: 100%;
+  padding: 0 12px;
+  color: var(--fg);
+  font-size: 14px;
+  letter-spacing: -0.005em;
+}
+.b-search-bar input::placeholder { color: var(--fg-4); }
+.b-search-divider { width: 1px; height: 22px; background: var(--hairline); }
+.b-search-icon { color: var(--fg-3); display: grid; place-items: center; }
+.b-search-bar .rd-btn { margin-right: 4px; }
+
+.b-search-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  font-size: 12.5px;
+  color: var(--fg-3);
+}
+.b-search-filters { display: flex; gap: 14px; align-items: center; }
+
+/* ── Saved jobs drawer (B) ────────────────────────────────────────────── */
+.b-saved-section {
+  border: 1px solid var(--hairline);
+  background: rgba(48, 100, 255, 0.035);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.b-saved-toggle {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  background: transparent; border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  color: var(--fg);
+  text-align: left;
+}
+.b-saved-caret {
+  transition: transform .15s ease;
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.b-saved-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg);
+}
+.b-saved-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  letter-spacing: 0.04em;
+}
+.b-saved-toggle:hover .b-saved-title { color: rgba(140, 170, 255, 1); }
+.b-saved-empty {
+  margin-top: 10px;
+  padding: 12px;
+  font-size: 12.5px;
+  color: var(--fg-3);
+  border: 1px dashed var(--hairline);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.15);
+}
+.b-results-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: 8px;
+}
+
+.b-job-list {
+  display: flex; flex-direction: column;
+  gap: 0;
+  border-top: 1px solid var(--hairline);
+}
+.b-job-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 16px 12px;
+  border-bottom: 1px solid var(--hairline);
+  cursor: pointer;
+  transition: background 120ms ease;
+  margin: 0 -8px;
+  border-radius: 8px;
+  position: relative;
+}
+.b-job-row:hover { background: rgba(255,255,255,0.025); }
+.b-job-row[data-active="true"] {
+  background: rgba(48, 100, 255, 0.06);
+}
+.b-job-row[data-active="true"] .b-job-row-title { color: var(--fg); }
+.b-job-row[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 14px; bottom: 14px;
+  width: 2px;
+  background: var(--accent-strong);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.b-job-row-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.b-job-row-title { font-family: var(--font-display); font-size: 14.5px; font-weight: 600; letter-spacing: -0.015em; color: var(--fg); }
+.b-job-row-company { color: var(--fg-3); font-size: 12.5px; }
+.b-job-row-summary {
+  font-size: 13px; color: var(--fg-2); line-height: 1.55;
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+  margin-top: 2px;
+}
+.b-job-row-meta { display: flex; gap: 10px; align-items: center; color: var(--fg-3); font-size: 12px; margin-top: 4px; }
+.b-job-row-aside { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 90px; }
+.b-job-row-saved {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em;
+  color: var(--accent-strong);
+}
+
+/* ── JD review ────────────────────────────────────────────────────────── */
+.b-jd-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.b-jd-input {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  position: relative;
+  backdrop-filter: blur(6px);
+}
+.b-jd-input::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  border-radius: 14px 14px 0 0;
+}
+.b-jd-input textarea { min-height: 360px; }
+
+.b-jd-display { display: flex; flex-direction: column; gap: 24px; }
+.b-jd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+.b-jd-title { font-family: var(--font-display); font-size: 22px; font-weight: 600; letter-spacing: -0.03em; color: var(--fg); }
+.b-jd-company { color: var(--fg-3); font-size: 13px; margin-top: 4px; }
+
+.b-jd-figrow { display: flex; gap: 40px; padding: 6px 0 16px; border-bottom: 1px solid var(--hairline); }
+
+.b-jd-block { display: flex; flex-direction: column; gap: 10px; }
+.b-jd-block + .b-jd-block { padding-top: 18px; border-top: 1px solid var(--hairline); }
+.b-jd-block-title { font-family: var(--font-display); font-weight: 600; font-size: 13.5px; letter-spacing: -0.01em; }
+.b-jd-block-body { font-size: 13.5px; line-height: 1.7; color: var(--fg-2); }
+
+/* ── Analysis tab ─────────────────────────────────────────────────────── */
+.b-run-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  position: relative;
+  backdrop-filter: blur(6px);
+}
+.b-run-bar::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  border-radius: 14px 14px 0 0;
+}
+
+.b-pipeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.b-pipeline-stage {
+  flex: 1;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  border-left: 3px solid rgba(255,255,255,0.06);
+  position: relative;
+  transition: border-color .15s;
+}
+.b-pipeline-stage[data-state="done"] {
+  border-left-color: var(--success);
+}
+.b-pipeline-stage[data-state="active"] {
+  border-left-color: var(--accent-strong);
+  box-shadow: 0 0 0 1px rgba(48, 100, 255, 0.18), 0 14px 32px -16px var(--accent-glow);
+}
+.b-pipeline-stage-name { font-size: 13px; font-weight: 600; color: var(--fg); letter-spacing: -0.005em; }
+.b-pipeline-stage-detail { font-size: 11.5px; color: var(--fg-3); }
+.b-pipeline-stage-bar { height: 2px; border-radius: 2px; background: rgba(255,255,255,0.06); margin-top: 4px; overflow: hidden; }
+.b-pipeline-stage-bar > span { display: block; height: 100%; background: var(--accent-strong); box-shadow: 0 0 6px var(--accent-glow); }
+.b-pipeline-stage[data-state="done"] .b-pipeline-stage-bar > span { background: var(--success); box-shadow: none; }
+
+/* ── Artifact tabs + body (mirrors Direction A's pattern) ─────────── */
+.b-artifact-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 16px;
+}
+.b-artifact-tab {
+  background: transparent;
+  border: 0;
+  padding: 10px 16px;
+  font-size: 13.5px;
+  color: var(--fg-3);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.b-artifact-tab:hover { color: var(--fg-2); }
+.b-artifact-tab[aria-selected="true"] {
+  color: var(--fg);
+  border-bottom-color: var(--accent-strong);
+  /* Subtle glow under the active tab — keeps the emissive theme */
+  box-shadow: 0 4px 14px -8px var(--accent-glow);
+}
+
+.b-artifact-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  align-items: start;
+}
+
+.b-artifact-doc {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 28px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--fg-2);
+  white-space: pre-wrap;
+  max-height: 540px;
+  overflow: auto;
+}
+
+.b-artifact-aside {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px 18px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  position: relative;
+  backdrop-filter: blur(6px);
+}
+.b-artifact-aside::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  border-radius: 12px 12px 0 0;
+}
+.b-artifact-aside-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+  margin: 0;
+}
+.b-artifact-aside-text {
+  font-size: 12.5px;
+  color: var(--fg-2);
+  line-height: 1.6;
+  margin: 0;
+}
+.b-artifact-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Premium primary button (the one true blue moment) ────────────────── */
+/* Override the shared rd-btn-primary just within the B shell so all primary
+   actions get the emissive glow halo we added in C. */
+.b-shell .rd-btn-primary {
+  position: relative;
+  background: linear-gradient(180deg, var(--accent-strong) 0%, #114be9 100%);
+  color: white;
+  border: 1px solid rgba(140, 175, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20),
+    0 0 0 3px rgba(48, 100, 255, 0.10),
+    0 12px 28px -8px rgba(48, 100, 255, 0.55);
+  transition: transform .15s, box-shadow .15s;
+}
+.b-shell .rd-btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 14px;
+  background: radial-gradient(closest-side, rgba(48, 100, 255, 0.40), transparent 70%);
+  filter: blur(10px);
+  z-index: -1;
+  opacity: 0.75;
+  pointer-events: none;
+}
+.b-shell .rd-btn-primary:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, #6e94ff 0%, #2257ff 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20),
+    0 0 0 4px rgba(48, 100, 255, 0.14),
+    0 16px 36px -8px rgba(48, 100, 255, 0.65);
+}
+
+/* Quiet ghost buttons get a touch nicer hover */
+.b-shell .rd-btn-ghost {
+  background: rgba(255,255,255,0.02);
+  border-color: var(--border);
+  color: var(--fg-2);
+}
+.b-shell .rd-btn-ghost:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+/* Chips inside B — quiet monochrome (NO blue paint on data chips) */
+.b-shell .rd-chip {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  color: var(--fg-2);
+  height: 26px;
+}
+.b-shell .rd-chip-skill {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--border);
+  color: var(--fg-2);
+}
+
+/* Status pip — the "Live" / "Parsed" / "Outputs ready" label
+   Restrained: small dot, no oversized halo. */
+.b-shell .rd-pip {
+  font-size: 11.5px;
+  color: var(--fg-2);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.b-shell .rd-pip-live::before {
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(127, 224, 176, 0.18);
+}
+
+/* Inputs inside B — match deep-dark surface */
+.b-shell .rd-input,
+.b-shell .rd-textarea,
+.b-shell .rd-select {
+  background: rgba(0,0,0,0.35);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.b-shell .rd-input:focus,
+.b-shell .rd-textarea:focus,
+.b-shell .rd-select:focus {
+  border-color: rgba(90, 134, 255, 0.45);
+  background: rgba(0,0,0,0.5);
+}
+
+/* ── Floating assistant (B-scoped only — A keeps its own) ─────────────── */
+.b-shell .rd-fab {
+  position: absolute;
+  bottom: 22px; right: 22px;
+  width: 52px; height: 52px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 175, 255, 0.4);
+  background: linear-gradient(180deg, var(--accent-strong), #114be9);
+  color: white;
+  display: grid; place-items: center;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.25),
+    0 0 0 4px rgba(48, 100, 255, 0.10),
+    0 18px 40px -12px rgba(48, 100, 255, 0.55);
+  cursor: pointer;
+  z-index: 30;
+  transition: transform 140ms ease;
+}
+.b-shell .rd-fab::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(48, 100, 255, 0.45), transparent 70%);
+  filter: blur(12px);
+  z-index: -1;
+  pointer-events: none;
+}
+.b-shell .rd-fab:hover { transform: translateY(-2px) scale(1.04); }
+.b-shell .rd-fab-dot {
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 9px; height: 9px;
+  border-radius: 999px;
+  background: var(--success);
+  border: 2px solid #04070f;
+}
+
+.b-shell .rd-assistant {
+  position: absolute;
+  bottom: 86px; right: 22px;
+  width: 380px;
+  max-height: calc(100% - 120px);
+  background: rgba(14, 18, 28, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px -20px rgba(0,0,0,0.7);
+  backdrop-filter: blur(12px);
+  display: flex; flex-direction: column;
+  z-index: 30;
+  overflow: hidden;
+  animation: rd-pop 200ms ease;
+}
+@keyframes rd-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.b-shell .rd-assistant-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-shell .rd-assistant-title {
+  font-family: var(--font-display); font-weight: 600; font-size: 14px;
+  letter-spacing: -0.015em; color: var(--fg);
+}
+.b-shell .rd-assistant-sub { color: var(--fg-3); font-size: 11.5px; }
+.b-shell .rd-assistant-close {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-3);
+  display: grid; place-items: center;
+  font-size: 18px;
+  line-height: 1;
+}
+.b-shell .rd-assistant-close:hover { background: rgba(255,255,255,0.04); color: var(--fg); }
+.b-shell .rd-assistant-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.b-shell .rd-bubble {
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 85%;
+}
+.b-shell .rd-bubble-user {
+  background: linear-gradient(180deg, var(--accent-strong), #114be9);
+  color: white;
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 8px 20px -8px var(--accent-glow);
+}
+.b-shell .rd-bubble-assistant {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--fg-2);
+  border-bottom-left-radius: 4px;
+}
+.b-shell .rd-suggestions {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 0 16px 10px;
+}
+.b-shell .rd-suggestion {
+  text-align: left;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--border);
+  color: var(--fg-2);
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  transition: border-color .15s, background .15s;
+}
+.b-shell .rd-suggestion:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+.b-shell .rd-assistant-form {
+  border-top: 1px solid var(--hairline);
+  padding: 12px;
+  display: flex; gap: 8px;
+}
+.b-shell .rd-assistant-input {
+  flex: 1;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 12px;
+  resize: none;
+  min-height: 36px; max-height: 120px;
+  font-size: 13px;
+  color: var(--fg);
+  outline: none;
+}
+.b-shell .rd-assistant-input:focus { border-color: rgba(90, 134, 255, 0.45); }
+.b-shell .rd-assistant-send {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  border: 1px solid rgba(140, 175, 255, 0.4);
+  background: linear-gradient(180deg, var(--accent-strong), #114be9);
+  color: white;
+  display: grid; place-items: center;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.25),
+    0 6px 14px -4px var(--accent-glow);
+}
+
+/* Job tile — fall through to shared a-job styles, just add a subtle override
+   so cards in B's job grid feel native against the deep dark background. */
+.b-shell .a-job {
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  position: relative;
+  transition: border-color .15s, background .15s, transform .12s;
+}
+.b-shell .a-job::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  border-radius: 12px 12px 0 0;
+}
+.b-shell .a-job:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-card-2);
+  transform: translateY(-1px);
+}
+.b-shell .a-job[data-active="true"] {
+  border-color: rgba(90, 134, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(48, 100, 255, 0.20), 0 16px 36px -16px var(--accent-glow);
+}
+.b-shell .a-job-title { color: var(--fg); }
+.b-shell .a-saved-mark {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent-strong);
+  letter-spacing: 0.08em;
+}
+
+/* ── Resume tab — refined hero (parsed-result presentation card) ───── */
+.b-resume-hero {
+  position: relative;
+  padding: 26px 28px 24px;
+  /* Match the artifact-doc's deep, rich surface — no washed blue/grey,
+     just a true dark layer with a hint of warmth from the page beneath. */
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.b-resume-hero::before {
+  /* Quiet emissive accent at the top — kept, but very subtle */
+  content: ""; position: absolute;
+  top: 0; left: 24px; right: 24px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(120, 155, 230, 0.32), transparent);
+  pointer-events: none;
+}
+.b-resume-hero > * { position: relative; }
+
+.b-resume-hero-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 11px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--fg-3);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+.b-resume-hero-pill::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 6px rgba(90, 134, 255, 0.55);
+}
+.b-resume-hero-title {
+  margin: 14px 0 10px;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  color: var(--fg);
+}
+.b-resume-hero-meta {
+  display: flex; flex-wrap: wrap; gap: 18px;
+  font-size: 12.5px; color: var(--fg-3);
+}
+.b-resume-hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
+.b-resume-hero-actions {
+  margin-top: 22px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+}
+
+/* Inline metric tiles inside the JD hero — quiet, not loud */
+.b-jd-metrics {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+.b-jd-metric {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.b-jd-metric-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.b-jd-metric-value {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--fg);
+  line-height: 1;
+}
+.b-jd-metric-unit {
+  font-size: 13px;
+  color: var(--fg-3);
+  font-weight: 500;
+  margin-left: 2px;
+}
+
+/* Intake panel — header with mode toggle on the right */
+.b-intake-panel {
+  display: flex; flex-direction: column;
+  padding: 18px 20px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.b-intake-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-intake-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  margin-top: 4px;
+}
+.b-intake-modes { display: inline-flex; gap: 2px; padding: 3px; background: rgba(255,255,255,0.03); border: 1px solid var(--hairline); border-radius: 8px; }
+.b-intake-mode {
+  background: transparent; border: 0;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.b-intake-mode:hover { color: var(--fg-2); }
+.b-intake-mode[data-active="true"] {
+  background: rgba(48, 100, 255, 0.10);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px rgba(90, 134, 255, 0.25);
+}
+
+/* Two-up grid mirroring C */
+.b-resume-twoup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.b-twoup-section {
+  padding: 18px 20px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex; flex-direction: column;
+}
+.b-twoup-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-twoup-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.b-twoup-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Skill chips — denser, B's emissive palette */
+.b-skill-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.b-skill-chip {
+  font-size: 11.5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
+  color: var(--fg-2);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+.b-skill-chip[data-tone="bold"] {
+  background: rgba(48, 100, 255, 0.10);
+  border-color: rgba(90, 134, 255, 0.25);
+  color: var(--fg);
+}
+
+/* Experience cards inside the two-up */
+.b-experience-card {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--hairline);
+}
+.b-experience-card .b-experience-title { font-size: 13px; font-weight: 600; color: var(--fg); }
+.b-experience-card .b-experience-org { font-size: 12px; color: var(--fg-3); margin-top: 2px; }
+.b-experience-card .b-experience-period {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  letter-spacing: 0.02em;
+}
+
+
+/* ── Command palette affordance in topbar ──────────────────────────────
+   A persistent ⌘K button that signals "this is an AI-native app".
+   Lives between the step rail and account, replaces "Reload workspace". */
+.b-cmd-trigger {
+  display: inline-flex; align-items: center; gap: 10px;
+  height: 30px;
+  padding: 0 10px 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--fg-3);
+  font-size: 12px;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+  min-width: 200px;
+}
+.b-cmd-trigger:hover {
+  border-color: var(--border-strong);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--fg-2);
+}
+.b-cmd-trigger-icon {
+  display: grid; place-items: center;
+  width: 14px; height: 14px;
+  color: var(--fg-3);
+}
+.b-cmd-trigger-text { flex: 1; text-align: left; }
+.b-cmd-trigger-keys {
+  display: inline-flex; gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+}
+.b-cmd-key {
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg-2);
+  font-weight: 500;
+  min-width: 14px;
+  text-align: center;
+}
+
+/* Command palette overlay */
+.b-cmd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: start center;
+  padding-top: 12vh;
+  z-index: 100;
+  animation: b-cmd-fade .15s ease;
+}
+@keyframes b-cmd-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.b-cmd-panel {
+  width: 100%;
+  max-width: 580px;
+  background: rgba(8, 11, 18, 0.96);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 1px rgba(90, 134, 255, 0.10),
+    0 30px 80px rgba(0, 0, 0, 0.6),
+    0 0 60px rgba(48, 100, 255, 0.08);
+  overflow: hidden;
+  animation: b-cmd-pop .18s cubic-bezier(.2,.8,.2,1.05);
+}
+@keyframes b-cmd-pop {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.b-cmd-input-wrap {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-cmd-input-icon { color: var(--fg-3); }
+.b-cmd-input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--fg);
+  font-size: 15px;
+  font-family: inherit;
+  letter-spacing: -0.005em;
+}
+.b-cmd-input::placeholder { color: var(--fg-4); }
+.b-cmd-esc {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  padding: 3px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+.b-cmd-list {
+  display: flex; flex-direction: column;
+  padding: 8px;
+  max-height: 380px;
+  overflow: auto;
+}
+.b-cmd-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--fg-4);
+  padding: 10px 10px 6px;
+  text-transform: uppercase;
+}
+.b-cmd-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .1s;
+}
+.b-cmd-item[data-active="true"] {
+  background: rgba(90, 134, 255, 0.10);
+  color: var(--fg);
+}
+.b-cmd-item-icon {
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.b-cmd-item[data-active="true"] .b-cmd-item-icon {
+  background: rgba(90, 134, 255, 0.16);
+  border-color: rgba(90, 134, 255, 0.30);
+  color: var(--accent-strong);
+}
+.b-cmd-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.b-cmd-item-title { color: inherit; font-weight: 500; letter-spacing: -0.005em; }
+.b-cmd-item-sub { font-size: 11.5px; color: var(--fg-3); }
+.b-cmd-item-shortcut {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+.b-cmd-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-top: 1px solid var(--hairline);
+  font-size: 11px;
+  color: var(--fg-4);
+}
+.b-cmd-footer-keys { display: inline-flex; gap: 8px; }
+.b-cmd-footer-key {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+/* ── Connected to Claude live indicator ────────────────────────────────
+   Persistent system-status pip in topbar. Pulses to signal life. */
+.b-live-indicator {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 0 10px 0 12px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(127, 224, 176, 0.06);
+  border: 1px solid rgba(127, 224, 176, 0.18);
+  color: var(--success);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+.b-live-indicator-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  position: relative;
+  animation: b-live-pulse 2.4s ease-in-out infinite;
+}
+.b-live-indicator-dot::after {
+  content: "";
+  position: absolute; inset: -3px;
+  border-radius: 50%;
+  background: var(--success);
+  opacity: 0.35;
+  animation: b-live-ring 2.4s ease-out infinite;
+}
+@keyframes b-live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@keyframes b-live-ring {
+  0% { transform: scale(0.8); opacity: 0.4; }
+  70%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* ── Active pipeline stage pulse ───────────────────────────────────────
+   When a stage is "active" (in progress), its bar fill slowly breathes. */
+.b-pipeline-stage[data-state="active"] .b-pipeline-stage-bar > span {
+  animation: b-stage-breathe 1.8s ease-in-out infinite;
+}
+@keyframes b-stage-breathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--accent-glow); }
+  50% { opacity: 0.7; box-shadow: 0 0 14px var(--accent-glow); }
+}
+.b-pipeline-stage[data-state="active"]::after {
+  content: "";
+  position: absolute;
+  top: 14px; right: 14px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 8px var(--accent-glow);
+  animation: b-live-pulse 1.4s ease-in-out infinite;
+}
+.b-pipeline-stage { position: relative; }
+
+/* ── Top-match job emphasis ────────────────────────────────────────────
+   The single highest-match job gets elevated treatment: thicker accent
+   border, "Top match" badge with glow, slightly larger title. */
+.b-shell .a-job[data-top-match="true"] {
+  background:
+    linear-gradient(180deg, rgba(48, 100, 255, 0.06) 0%, rgba(48, 100, 255, 0) 30%),
+    rgba(0, 0, 0, 0.45);
+  border-color: rgba(90, 134, 255, 0.32);
+  box-shadow:
+    0 0 0 1px rgba(90, 134, 255, 0.18),
+    0 20px 50px -20px rgba(48, 100, 255, 0.40);
+}
+.b-shell .a-job[data-top-match="true"]::before {
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(90, 134, 255, 0.5),
+    rgba(90, 134, 255, 0.5),
+    transparent);
+}
+.b-top-match-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(90, 134, 255, 0.18), rgba(48, 100, 255, 0.10));
+  border: 1px solid rgba(90, 134, 255, 0.30);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 0 12px rgba(48, 100, 255, 0.20);
+}
+.b-top-match-badge svg { width: 10px; height: 10px; }
+
+/* ── Streaming text caret on artifact-doc ──────────────────────────────
+   Once the artifact streams in, a blinking caret on the active line. */
+.b-artifact-doc.is-streaming::after {
+  content: "▋";
+  display: inline-block;
+  color: var(--accent-strong);
+  animation: b-caret-blink 0.8s steps(2) infinite;
+  margin-left: 2px;
+  font-weight: 400;
+}
+@keyframes b-caret-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* Streaming chip — small "Streaming…" label */
+.b-streaming-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+.b-streaming-chip-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 6px var(--accent-glow);
+  animation: b-live-pulse 1s ease-in-out infinite;
+}
