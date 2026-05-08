@@ -30,7 +30,7 @@ const LINKEDIN_URL = "https://www.linkedin.com/in/leander-antony-a-176319147";
 const WORKBENCH_STEPS = [
   {
     eyebrow: "01 · Resume",
-    title: "Drop a resume — or chat one into existence.",
+    title: "Drop a resume — or chat one into existence",
     body:
       "Upload a PDF, Word doc, or text file and our AI pulls out everything that matters — your skills, experience, projects, publications. The layout adapts to your career stage so students lead with education and seniors lead with experience.",
     aside:
@@ -38,7 +38,7 @@ const WORKBENCH_STEPS = [
   },
   {
     eyebrow: "02 · Job Search",
-    title: "Search 12,000+ open roles in one place.",
+    title: "Search 12,000+ open roles in one place",
     body:
       "Live listings from Greenhouse, Lever, Ashby, and Workday — refreshed every 30 minutes so you always see what's actually open. Filter by company, work mode, role type, or how recent the posting is. Sort by best match, newest, or alphabetically.",
     aside:
@@ -46,7 +46,7 @@ const WORKBENCH_STEPS = [
   },
   {
     eyebrow: "03 · Job Detail",
-    title: "See exactly what each role is asking for.",
+    title: "See exactly what each role is asking for",
     body:
       "Our AI reads the full posting and pulls out the must-have skills, the nice-to-haves, and a clean summary. The original wording stays intact, so nothing gets lost in translation.",
     aside:
@@ -54,7 +54,7 @@ const WORKBENCH_STEPS = [
   },
   {
     eyebrow: "04 · Analysis",
-    title: "Get a tailored resume and cover letter — fast.",
+    title: "Get a tailored resume and cover letter — fast",
     body:
       "Our AI rewrites your resume to highlight what matters most for the role, then writes a personalized cover letter to match. Pick from two clean themes and download as Word or PDF — whichever your application portal asks for.",
     aside:
@@ -336,7 +336,7 @@ function LandingHero({
               className="l-fade-up l-hero-title-accent"
               style={{ animationDelay: "300ms" }}
             >
-              AI workbench.
+              AI workbench
             </span>
           </h1>
 
@@ -459,7 +459,7 @@ function WorkbenchSection() {
       <div className="l-section-head">
         <span className="l-eyebrow">Four steps · One flow</span>
         <h2 className="l-section-title">
-          From a fresh resume to job ready application.
+          From a fresh resume to job ready application
         </h2>
       </div>
 
@@ -725,7 +725,7 @@ function BentoSection() {
       <div className="l-section-head">
         <span className="l-eyebrow">Built into the workbench</span>
         <h2 className="l-section-title">
-          Everything else worth knowing about.
+          Everything else worth knowing about
         </h2>
       </div>
 
@@ -751,7 +751,7 @@ function BentoSection() {
 
           <article className="l-bento-tile">
             <span className="l-bento-eyebrow">Polished exports</span>
-            <h3 className="l-bento-title">Two themes, two formats.</h3>
+            <h3 className="l-bento-title">Two themes, two formats</h3>
             <p className="l-bento-body">
               Pick a clean ATS-safe layout or a more polished neutral look.
               Download as Word or PDF — both are identical, so use whichever
@@ -768,7 +768,7 @@ function BentoSection() {
 
           <article className="l-bento-tile">
             <span className="l-bento-eyebrow">No resume? No problem.</span>
-            <h3 className="l-bento-title">Chat one into existence.</h3>
+            <h3 className="l-bento-title">Chat one into existence</h3>
             <p className="l-bento-body">
               Don&apos;t have a resume yet? Chat with our AI — answer
               questions naturally, change your mind whenever, and we&apos;ll
@@ -791,7 +791,7 @@ function BentoSection() {
           <article className="l-bento-tile">
             <span className="l-bento-eyebrow">Built-in AI assistant</span>
             <h3 className="l-bento-title">
-              Get instant answers about your application.
+              Get instant answers about your application
             </h3>
             <p className="l-bento-body">
               Ask anything — which skills to highlight, how to phrase your
