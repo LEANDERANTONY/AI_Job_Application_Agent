@@ -267,8 +267,6 @@ export function LandingPage() {
 
         <BentoSection />
 
-        <BuiltInPublicSection />
-
         <FinalCtaSection
           authStatus={authStatus}
           isSignedIn={isSignedIn}
@@ -780,31 +778,15 @@ function BentoSection() {
 
   return (
     <section className="l-bento" id="bento">
+      {/* Section head matches the workbench pattern: eyebrow centered
+          above title, title centered below. Arrows live below the
+          carousel beside the dots — keeps the head clean and matches
+          the standard carousel pattern. */}
       <div className="l-section-head">
         <span className="l-eyebrow">Built into the workbench</span>
         <h2 className="l-section-title">
           Everything else worth knowing about.
         </h2>
-        <div className="l-bento-nav">
-          <button
-            type="button"
-            className="l-bento-nav-btn"
-            onClick={() => scrollToIndex(activeIndex - 1)}
-            disabled={activeIndex === 0}
-            aria-label="Previous"
-          >
-            <ArrowGlyph direction="left" />
-          </button>
-          <button
-            type="button"
-            className="l-bento-nav-btn"
-            onClick={() => scrollToIndex(activeIndex + 1)}
-            disabled={activeIndex === BENTO_TILES_COUNT - 1}
-            aria-label="Next"
-          >
-            <ArrowGlyph direction="right" />
-          </button>
-        </div>
       </div>
 
       <div className="l-bento-strip-wrap">
@@ -907,20 +889,41 @@ SELECT * FROM cached_jobs
           </article>
         </div>
 
-        {/* Dot indicators sit centered under the strip. Click jumps to
-            that tile; the active dot animates wider. */}
-        <div className="l-bento-dots" role="tablist" aria-label="Carousel">
-          {Array.from({ length: BENTO_TILES_COUNT }).map((_, i) => (
-            <button
-              key={i}
-              type="button"
-              role="tab"
-              aria-selected={i === activeIndex}
-              aria-label={`Go to slide ${i + 1}`}
-              className={`l-bento-dot ${i === activeIndex ? "is-active" : ""}`}
-              onClick={() => scrollToIndex(i)}
-            />
-          ))}
+        {/* Carousel nav row — prev arrow, dots, next arrow. Centered
+            below the strip. Active dot widens into a pill; arrows
+            disable at the ends. */}
+        <div className="l-bento-controls">
+          <button
+            type="button"
+            className="l-bento-nav-btn"
+            onClick={() => scrollToIndex(activeIndex - 1)}
+            disabled={activeIndex === 0}
+            aria-label="Previous"
+          >
+            <ArrowGlyph direction="left" />
+          </button>
+          <div className="l-bento-dots" role="tablist" aria-label="Carousel">
+            {Array.from({ length: BENTO_TILES_COUNT }).map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                role="tab"
+                aria-selected={i === activeIndex}
+                aria-label={`Go to slide ${i + 1}`}
+                className={`l-bento-dot ${i === activeIndex ? "is-active" : ""}`}
+                onClick={() => scrollToIndex(i)}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            className="l-bento-nav-btn"
+            onClick={() => scrollToIndex(activeIndex + 1)}
+            disabled={activeIndex === BENTO_TILES_COUNT - 1}
+            aria-label="Next"
+          >
+            <ArrowGlyph direction="right" />
+          </button>
         </div>
       </div>
     </section>
@@ -949,78 +952,6 @@ function ArrowGlyph({ direction }: { direction: "left" | "right" }) {
   );
 }
 
-// ─── Built in public ──────────────────────────────────────────────────
-
-function BuiltInPublicSection() {
-  const stack = [
-    "Next.js 16",
-    "FastAPI",
-    "Supabase",
-    "OpenAI Responses API",
-    "WeasyPrint",
-    "python-docx",
-    "pg_cron",
-    "pg_net",
-  ];
-
-  return (
-    <section className="l-public">
-      <div className="l-public-inner">
-        <div className="l-public-head">
-          <span className="l-eyebrow">Built in public · MIT licensed</span>
-          <h2 className="l-public-title">
-            One developer, eight months, one workspace.
-          </h2>
-          <p className="l-public-sub">
-            Every architectural decision is documented in a 16-entry ADR set;
-            every shipped day is in a public DEVLOG.
-          </p>
-        </div>
-
-        <div className="l-public-stack" aria-label="Tech stack">
-          {stack.map((item, idx) => (
-            <span
-              key={item}
-              className="l-public-chip"
-              style={{ animationDelay: `${idx * 60}ms` }}
-            >
-              {item}
-            </span>
-          ))}
-        </div>
-
-        <div className="l-public-actions">
-          <a
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="l-btn l-btn-ghost"
-          >
-            <GitHubGlyph />
-            Star on GitHub
-          </a>
-          <a
-            href={`${GITHUB_URL}/blob/main/DEVLOG.md`}
-            target="_blank"
-            rel="noreferrer"
-            className="l-btn l-btn-quiet"
-          >
-            Read the DEVLOG →
-          </a>
-          <a
-            href={`${GITHUB_URL}/tree/main/docs/adr`}
-            target="_blank"
-            rel="noreferrer"
-            className="l-btn l-btn-quiet"
-          >
-            Browse 16 ADRs →
-          </a>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 // ─── Final CTA ────────────────────────────────────────────────────────
 
 type FinalCtaProps = Omit<HeroProps, "authError">;
@@ -1045,10 +976,12 @@ function FinalCtaSection({
   return (
     <section className="l-final">
       <div className="l-final-inner">
-        <span className="l-eyebrow">Ready to tailor?</span>
-        <h2 className="l-final-title">
-          One workspace from raw resume to recruiter-ready DOCX.
-        </h2>
+        {/* "Ready to tailor?" promoted from a tiny eyebrow to the
+            primary headline so it visually carries weight against the
+            big primary button below. The earlier sub line ("One
+            workspace from raw resume to…") was removed — it just
+            repeated what the hero already said. */}
+        <h2 className="l-final-title">Ready to tailor?</h2>
         <div className="l-final-actions">
           <button
             className="l-btn l-btn-primary l-btn-lg"
