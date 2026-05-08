@@ -291,28 +291,69 @@ def test_orchestrator_retries_failing_agent_and_recovers():
     assert result.cover_letter.opening_paragraph.startswith("I am excited to apply")
 
 
-def test_orchestrator_falls_back_when_agent_fails_twice():
-    """If an agent fails on BOTH the original attempt and the retry,
-    the orchestrator should propagate the AgentExecutionError up to
-    the outer try/except, which then falls back to deterministic
-    mode for the whole run. This is the existing fallback behavior
-    — the per-agent retry buys ONE more shot but doesn't loop
-    forever."""
+def test_orchestrator_per_agent_fallback_isolates_a_failing_agent():
+    """When one agent's LLM attempts both fail (original + retry),
+    that agent's deterministic fallback runs for THAT agent only —
+    downstream agents still try the LLM path. Previously, one
+    failing agent cascaded to "downgrade the whole run to
+    deterministic" even though the rest would have succeeded."""
+    # Tailoring fails twice (2 LLM calls burned), then per-agent
+    # fallback kicks in for Tailoring. Review / ResumeGen / Cover
+    # Letter all succeed first try (3 more LLM calls). Total: 5.
     queue = [
-        AgentExecutionError("first failure"),
-        AgentExecutionError("second failure (retry also failed)"),
+        AgentExecutionError("first tailoring failure"),
+        AgentExecutionError("retry tailoring also failed"),
+        _review_response(),
+        _resume_generation_response(),
+        _cover_letter_response(),
     ]
     flaky = FlakyOpenAIService(queue)
     orchestrator = ApplicationOrchestrator(openai_service=flaky)
 
     result = orchestrator.run(_build_candidate_profile(), _build_job_description())
 
-    # Outer pipeline catches and falls back to deterministic.
+    # Pipeline as a whole stays in assisted mode — the LLM ran
+    # successfully for 3 of the 4 agents.
+    assert result.mode == "openai", (
+        "Pipeline should remain assisted when only one agent fell back per-agent."
+    )
+    assert result.attempted_assisted is True
+    # Exactly 5 LLM attempts: 2 failed tailoring + 3 successful
+    # downstream agents (review / resume gen / cover letter).
+    # NOT 2 (the old whole-pipeline-fallback behavior).
+    assert flaky.call_count == 5
+    # Tailoring output came from the deterministic fallback path
+    # (TailoringAgent(None)._fallback), but the downstream LLM
+    # outputs still populate.
+    assert result.tailoring is not None
+    assert result.review.approved is True
+    assert result.resume_generation.professional_summary == \
+        "Final tailored summary for the generated resume."
+    assert result.cover_letter.opening_paragraph.startswith("I am excited to apply")
+
+
+def test_orchestrator_marks_mode_deterministic_when_every_agent_fell_back():
+    """If EVERY agent's LLM attempts fail and they all fall back to
+    deterministic per-agent, the pipeline still completes (no
+    cascade to whole-pipeline fallback) — but the result.mode
+    should honestly reflect that no agent actually used the LLM.
+
+    Auto-downgrade: result.mode flips from "openai" to
+    "deterministic_fallback" when llm_success_count == 0.
+    """
+    # Every LLM call raises. With per-agent fallback, each agent's
+    # deterministic path runs successfully → 4 agents complete with
+    # zero LLM successes.
+    queue = [AgentExecutionError(f"failure {i}") for i in range(20)]
+    flaky = FlakyOpenAIService(queue)
+    orchestrator = ApplicationOrchestrator(openai_service=flaky)
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    # Pipeline completed but no agent succeeded with LLM, so mode
+    # must reflect that.
     assert result.mode == "deterministic_fallback"
     assert result.attempted_assisted is True
-    # Exactly 2 LLM attempts were made before giving up — the
-    # original + 1 retry. NOT 3 or more.
-    assert flaky.call_count == 2
 
 
 def test_orchestrator_falls_back_if_ai_execution_fails():
