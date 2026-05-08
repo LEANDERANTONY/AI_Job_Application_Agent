@@ -58,7 +58,6 @@ Each agent follows the same operating shape: deterministic baseline first, LLM-a
 - 37 focused Python test files cover parsing, normalization, fitting, tailoring, orchestration, builders, exports, auth, quotas, persistence, and backend routes.
 - 12 ADRs in `docs/adr/` record product and architecture decisions, including the Streamlit-first to Next.js + FastAPI transition.
 - Architecture details live in [docs/architecture.md](docs/architecture.md).
-- Deployment notes live in [docs/next-fastapi-transition.md](docs/next-fastapi-transition.md).
 
 ## Deployment Shape
 
