@@ -535,22 +535,38 @@ function WorkbenchVisual0({ active }: { active: boolean }) {
       className={`l-workbench-mock l-mock-resume ${active ? "is-active" : ""}`}
     >
       <div className="l-mock-eyebrow">STEP 01 · RESUME</div>
-      <div className="l-mock-dropzone">
-        <div className="l-mock-file">resume_v3.pdf</div>
-        <div className="l-mock-file-meta">2.1 MB · parsed</div>
+      <div className="l-mock-file-pill">
+        <span className="l-mock-file-name">resume_v3.pdf</span>
+        <span className="l-mock-file-tag">PARSED</span>
       </div>
-      <div className="l-mock-fields">
-        <div className="l-mock-field">
-          <span className="l-mock-field-label">Name</span>
-          <span className="l-mock-field-value">Aria Patel</span>
+      <div className="l-mock-hero">
+        <div className="l-mock-hero-name">Aria Patel</div>
+        <div className="l-mock-hero-meta">
+          Staff ML Engineer · San Francisco
         </div>
-        <div className="l-mock-field">
-          <span className="l-mock-field-label">Role</span>
-          <span className="l-mock-field-value">Staff ML Engineer</span>
+      </div>
+      <div className="l-mock-stats">
+        <div className="l-mock-stat">
+          <span className="l-mock-stat-num">12</span>
+          <span className="l-mock-stat-label">roles</span>
         </div>
-        <div className="l-mock-field">
-          <span className="l-mock-field-label">Skills</span>
-          <span className="l-mock-field-value">Python, PyTorch, CUDA + 14</span>
+        <div className="l-mock-stat">
+          <span className="l-mock-stat-num">27</span>
+          <span className="l-mock-stat-label">skills</span>
+        </div>
+        <div className="l-mock-stat">
+          <span className="l-mock-stat-num">9</span>
+          <span className="l-mock-stat-label">years</span>
+        </div>
+      </div>
+      <div className="l-mock-skills-block">
+        <div className="l-mock-skills-head">SKILLS DETECTED</div>
+        <div className="l-mock-skills">
+          <span className="l-mock-chip l-mock-chip-hard">Python</span>
+          <span className="l-mock-chip l-mock-chip-hard">PyTorch</span>
+          <span className="l-mock-chip l-mock-chip-hard">CUDA</span>
+          <span className="l-mock-chip l-mock-chip-hard">Triton</span>
+          <span className="l-mock-chip l-mock-chip-hard">+12 more</span>
         </div>
       </div>
     </div>
@@ -566,12 +582,16 @@ function WorkbenchVisual1({ active }: { active: boolean }) {
       <div className="l-mock-search-bar">
         <span className="l-mock-search-icon">⌕</span>
         <span className="l-mock-search-text">machine learning engineer</span>
+        <span className="l-mock-search-divider" />
+        <span className="l-mock-search-loc">Remote</span>
       </div>
       <div className="l-mock-filters">
-        <span className="l-mock-filter">Source · 2 selected</span>
-        <span className="l-mock-filter">Work mode · Remote</span>
-        <span className="l-mock-filter">Sort · Most recent</span>
+        <span className="l-mock-filter">Source · 2</span>
+        <span className="l-mock-filter">Mode · Remote</span>
+        <span className="l-mock-filter">Posted · 7d</span>
+        <span className="l-mock-filter">Sort · Best match</span>
       </div>
+      <div className="l-mock-matches-head">47 MATCHES · BY RELEVANCE</div>
       <div className="l-mock-results">
         <div className="l-mock-result l-mock-result-top">
           <span className="l-mock-result-badge">★ TOP MATCH</span>
@@ -599,13 +619,29 @@ function WorkbenchVisual2({ active }: { active: boolean }) {
       <div className="l-mock-eyebrow">STEP 03 · JOB DETAIL</div>
       <div className="l-mock-jd-title">Senior ML Engineer, Inference</div>
       <div className="l-mock-jd-sub">Anthropic · San Francisco · Hybrid</div>
+      <div className="l-mock-metrics">
+        <div className="l-mock-metric l-mock-metric-accent">
+          <div className="l-mock-metric-num">
+            87<span className="l-mock-metric-unit">%</span>
+          </div>
+          <div className="l-mock-metric-label">Match score</div>
+        </div>
+        <div className="l-mock-metric">
+          <div className="l-mock-metric-num">12</div>
+          <div className="l-mock-metric-label">Hard skills</div>
+        </div>
+        <div className="l-mock-metric">
+          <div className="l-mock-metric-num">5+</div>
+          <div className="l-mock-metric-label">Years req</div>
+        </div>
+      </div>
       <div className="l-mock-skills-block">
-        <div className="l-mock-skills-head">HARD SKILLS</div>
+        <div className="l-mock-skills-head">HARD SKILLS · 5 OF 12</div>
         <div className="l-mock-skills">
           <span className="l-mock-chip l-mock-chip-hard">Python</span>
           <span className="l-mock-chip l-mock-chip-hard">CUDA</span>
           <span className="l-mock-chip l-mock-chip-hard">Triton</span>
-          <span className="l-mock-chip l-mock-chip-hard">Distributed systems</span>
+          <span className="l-mock-chip l-mock-chip-hard">Distributed</span>
           <span className="l-mock-chip l-mock-chip-hard">Postgres</span>
         </div>
       </div>
@@ -627,31 +663,48 @@ function WorkbenchVisual3({ active }: { active: boolean }) {
       className={`l-workbench-mock l-mock-analysis ${active ? "is-active" : ""}`}
     >
       <div className="l-mock-eyebrow">STEP 04 · ANALYSIS</div>
-      <div className="l-mock-timeline">
-        <div className="l-mock-timeline-row">
-          <span className="l-mock-timeline-dot l-mock-timeline-dot-done" />
-          Tailoring · 0:02
+      <div className="l-mock-pipeline">
+        <div className="l-mock-stage l-mock-stage-done">
+          <span className="l-mock-stage-dot l-mock-stage-dot-done">✓</span>
+          <div className="l-mock-stage-body">
+            <div className="l-mock-stage-row">
+              <span className="l-mock-stage-title">Matchmaker</span>
+              <span className="l-mock-stage-pct">100%</span>
+            </div>
+            <div className="l-mock-stage-detail">Scored role fit</div>
+          </div>
         </div>
-        <div className="l-mock-timeline-row">
-          <span className="l-mock-timeline-dot l-mock-timeline-dot-done" />
-          Review · 0:04
+        <div className="l-mock-stage l-mock-stage-done">
+          <span className="l-mock-stage-dot l-mock-stage-dot-done">✓</span>
+          <div className="l-mock-stage-body">
+            <div className="l-mock-stage-row">
+              <span className="l-mock-stage-title">Forge agent</span>
+              <span className="l-mock-stage-pct">100%</span>
+            </div>
+            <div className="l-mock-stage-detail">Drafted tailored resume</div>
+          </div>
         </div>
-        <div className="l-mock-timeline-row l-mock-timeline-row-active">
-          <span className="l-mock-timeline-dot l-mock-timeline-dot-running" />
-          Resume generation · running
+        <div className="l-mock-stage l-mock-stage-running">
+          <span className="l-mock-stage-dot l-mock-stage-dot-running" />
+          <div className="l-mock-stage-body">
+            <div className="l-mock-stage-row">
+              <span className="l-mock-stage-title">Gatekeeper</span>
+              <span className="l-mock-stage-pct">62%</span>
+            </div>
+            <div className="l-mock-stage-detail">Reviewing outputs…</div>
+            <div className="l-mock-stage-bar">
+              <div className="l-mock-stage-fill" />
+            </div>
+          </div>
         </div>
-        <div className="l-mock-timeline-row l-mock-timeline-row-pending">
-          <span className="l-mock-timeline-dot" />
-          Cover letter
-        </div>
-      </div>
-      <div className="l-mock-doc">
-        <div className="l-mock-doc-name">Tailored Resume · Aria Patel</div>
-        <div className="l-mock-doc-line" />
-        <div className="l-mock-doc-line l-mock-doc-line-short" />
-        <div className="l-mock-doc-line" />
-        <div className="l-mock-doc-line l-mock-doc-line-mid">
-          <span className="l-artifact-caret" />
+        <div className="l-mock-stage l-mock-stage-pending">
+          <span className="l-mock-stage-dot" />
+          <div className="l-mock-stage-body">
+            <div className="l-mock-stage-row">
+              <span className="l-mock-stage-title">Cover letter agent</span>
+              <span className="l-mock-stage-pct">standby</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

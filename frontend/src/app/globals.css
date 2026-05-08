@@ -3475,57 +3475,79 @@ code {
   text-transform: uppercase;
 }
 
-/* Step 01 — Resume mock */
-.l-mock-dropzone {
-  border: 1px dashed var(--l-line-strong);
-  border-radius: 10px;
-  padding: 22px;
-  /* Match the JD review block treatment — `rgba(0, 0, 0, 0.40)`
-     overlay (was `rgba(48, 100, 255, 0.04)`, which read as faintly
-     blue-lit instead of "deep dark card"). */
+/* Step 01 — Resume mock
+   Models the workspace's parsed-profile hero: filename pill at the
+   top, name + role + location, then a stats row and a skills chip
+   cluster. Replaces the old "Name / Role / Skills" three-row form
+   layout, which read as a generic data table rather than the actual
+   ResumeIntake page. */
+.l-mock-file-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 12px;
   background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line-strong);
+  border-radius: 999px;
+}
+.l-mock-file-name {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: var(--l-fg);
+}
+.l-mock-file-tag {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  padding: 2px 7px;
+  background: rgba(127, 224, 176, 0.16);
+  color: #9be8c0;
+  border-radius: 999px;
+}
+.l-mock-hero {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  align-items: center;
 }
-.l-mock-file {
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 13px;
+.l-mock-hero-name {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--l-fg);
 }
-.l-mock-file-meta {
-  font-size: 11px;
+.l-mock-hero-meta {
+  font-size: 12.5px;
   color: var(--l-fg-3);
 }
-.l-mock-fields {
-  display: flex;
-  flex-direction: column;
+.l-mock-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
-.l-mock-field {
+.l-mock-stat {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  flex-direction: column;
+  gap: 2px;
   padding: 10px 12px;
-  /* Match `.b-jd-block` — solid dark overlay rather than the faint
-     white tint the mock fields used before. */
   background: rgba(0, 0, 0, 0.40);
   border: 1px solid var(--l-line);
   border-radius: 8px;
-  font-size: 12.5px;
 }
-.l-mock-field-label {
+.l-mock-stat-num {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--l-fg);
+  line-height: 1;
+}
+.l-mock-stat-label {
   font-family: var(--font-geist-mono), monospace;
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
   color: var(--l-fg-3);
-  width: 64px;
-  flex-shrink: 0;
-}
-.l-mock-field-value {
-  color: var(--l-fg);
 }
 
 /* Step 02 — Search mock */
@@ -3540,7 +3562,24 @@ code {
   font-size: 13px;
 }
 .l-mock-search-icon { color: var(--l-fg-3); }
-.l-mock-search-text { color: var(--l-fg-2); }
+.l-mock-search-text { color: var(--l-fg-2); flex: 1 1 auto; }
+.l-mock-search-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--l-line-strong);
+}
+.l-mock-search-loc {
+  font-size: 12px;
+  color: var(--l-fg-3);
+  white-space: nowrap;
+}
+.l-mock-matches-head {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  color: var(--l-fg-3);
+  margin-top: 2px;
+}
 .l-mock-filters {
   display: flex;
   gap: 6px;
@@ -3611,6 +3650,51 @@ code {
   color: var(--l-fg-3);
   margin-top: -6px;
 }
+/* Three big-number metric tiles — match the JDReview page's
+   "Match score 87% · Hard skills 12 · Years 5+" hero strip. The
+   leftmost tile (`-accent`) is the eye-catcher, tinted blue like the
+   workspace's match-score chip. */
+.l-mock-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+.l-mock-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line);
+  border-radius: 10px;
+}
+.l-mock-metric-accent {
+  background: rgba(48, 100, 255, 0.12);
+  border-color: rgba(48, 100, 255, 0.32);
+}
+.l-mock-metric-num {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--l-fg);
+  line-height: 1;
+}
+.l-mock-metric-accent .l-mock-metric-num { color: #cfddff; }
+.l-mock-metric-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--l-fg-2);
+  margin-left: 2px;
+}
+.l-mock-metric-label {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+}
 .l-mock-skills-block {
   display: flex;
   flex-direction: column;
@@ -3643,63 +3727,102 @@ code {
   color: #cfddff;
 }
 
-/* Step 04 — Analysis mock */
-.l-mock-timeline {
+/* Step 04 — Analysis mock
+   Models the AnalysisRunner page's pipeline of agent cards. Each row
+   is a stage card with a status dot, agent title, percent on the
+   right, and a one-line detail. The active (running) stage gets a
+   tinted background, a pulsing dot, and a progress bar. Replaces the
+   old "Tailoring / Review / Resume gen" timeline + faux doc preview,
+   which was generic and didn't match what the user actually sees. */
+.l-mock-pipeline {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.l-mock-timeline-row {
+.l-mock-stage {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  font-size: 12.5px;
-  color: var(--l-fg-2);
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line);
+  border-radius: 8px;
 }
-.l-mock-timeline-row-active { color: var(--l-fg); }
-.l-mock-timeline-row-pending { color: var(--l-fg-4); }
-.l-mock-timeline-dot {
-  width: 8px;
-  height: 8px;
+.l-mock-stage-running {
+  background: rgba(48, 100, 255, 0.10);
+  border-color: rgba(48, 100, 255, 0.32);
+}
+.l-mock-stage-pending {
+  opacity: 0.55;
+}
+.l-mock-stage-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid var(--l-line-strong);
+  font-size: 9px;
+  color: transparent;
+  flex-shrink: 0;
+  margin-top: 1px;
 }
-.l-mock-timeline-dot-done {
-  background: #7fe0b0;
-  box-shadow: 0 0 8px rgba(127, 224, 176, 0.4);
+.l-mock-stage-dot-done {
+  background: rgba(127, 224, 176, 0.18);
+  border-color: rgba(127, 224, 176, 0.45);
+  color: #9be8c0;
+  font-weight: 700;
 }
-.l-mock-timeline-dot-running {
+.l-mock-stage-dot-running {
   background: var(--accent-strong);
-  box-shadow: 0 0 0 4px rgba(48, 100, 255, 0.18);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 4px rgba(48, 100, 255, 0.20);
   animation: lPulse 1400ms var(--l-ease) infinite;
 }
-.l-mock-doc {
-  margin-top: 6px;
-  padding: 14px;
-  background: rgba(0, 0, 0, 0.30);
-  border: 1px solid var(--l-line);
-  border-radius: 10px;
+.l-mock-stage-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  /* Same change as .l-mock-results — stop flex-growing into the stage
-     and let the doc preview size to its line placeholders. */
-  flex: 0 1 auto;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
-.l-mock-doc-name {
+.l-mock-stage-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.l-mock-stage-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-fg);
+}
+.l-mock-stage-pct {
   font-family: var(--font-geist-mono), monospace;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--l-fg-3);
-  letter-spacing: 0.06em;
-  margin-bottom: 4px;
+  letter-spacing: 0.04em;
 }
-.l-mock-doc-line {
-  height: 7px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.10);
+.l-mock-stage-running .l-mock-stage-pct { color: #cfddff; }
+.l-mock-stage-detail {
+  font-size: 11.5px;
+  color: var(--l-fg-3);
 }
-.l-mock-doc-line-short { width: 60%; }
-.l-mock-doc-line-mid { width: 80%; display: flex; align-items: center; }
+.l-mock-stage-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.l-mock-stage-fill {
+  width: 62%;
+  height: 100%;
+  background: var(--accent-strong);
+  border-radius: 999px;
+}
 
 /* The right-column scroll narrative — four blocks each ~viewport-tall. */
 .l-workbench-steps {
