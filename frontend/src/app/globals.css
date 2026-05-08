@@ -3372,7 +3372,13 @@ code {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* Top-align so the visual stage sits at the top of its sticky
+     container, parallel to the step text on the right (which is also
+     `justify-content: flex-start`). Centering the visual created a
+     mismatch where step 01's text sat way above the card at the start
+     of the section. */
+  justify-content: flex-start;
+  padding-top: 12px;
   gap: 24px;
 }
 .l-workbench-visual-stage {
