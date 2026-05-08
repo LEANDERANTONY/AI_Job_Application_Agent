@@ -433,14 +433,26 @@ export function WorkspaceShell() {
   }
 
   // ── Step gating + active-tab metadata ───────────────────────────
+  // Resume / Job Search / Job Detail are independently accessible —
+  // a user might paste a JD they care about before they have a resume,
+  // or browse listings without uploading anything. The only step that
+  // truly needs prerequisites is Analysis (it can't run without both
+  // a resume and a JD), and that's enforced in AnalysisRunner.tsx via
+  // the page-level "Upload a resume to proceed" affordance, not by
+  // hiding the rail step.
+  //
+  // Earlier this gated `jobs` on `currentProfile` and `jd` on
+  // `currentProfile || activeJob`, which forced an upload-resume-first
+  // flow even when the user just wanted to look around. The lock
+  // surfaced as "Upload a resume to unlock" tooltips on the rail.
   const stepReady = useMemo(
     () => ({
       resume: true,
-      jobs: Boolean(currentProfile),
-      jd: Boolean(currentProfile) || Boolean(activeJob),
+      jobs: true,
+      jd: true,
       analysis: Boolean(resumeText.trim() && manualJobText.trim()),
     }),
-    [activeJob, currentProfile, manualJobText, resumeText],
+    [manualJobText, resumeText],
   );
 
   const stepDone = useMemo(
@@ -1658,10 +1670,12 @@ export function WorkspaceShell() {
             (step) => step !== mainTab && stepReady[step] && !stepDone[step],
           );
           // Honest tooltip per step state — locked steps explain WHY.
+          // Resume / Job Search / Job Detail are independently
+          // accessible (see stepReady above). Only Analysis is gated.
           const lockReason: Record<WorkspaceMainTab, string> = {
             resume: "",
-            jobs: "Upload a resume to unlock.",
-            jd: "Upload a resume to unlock.",
+            jobs: "",
+            jd: "",
             analysis: "Need a parsed resume + job description first.",
           };
           return (

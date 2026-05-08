@@ -119,9 +119,7 @@ export function CommandPalette({
         id: "nav-jobs",
         group: "Navigate",
         title: "Go to Job Search",
-        sub: navigation.jobs
-          ? "Step 02 · Roles & filters"
-          : "Upload a resume first",
+        sub: "Step 02 · Roles & filters",
         icon: <SearchIcon />,
         shortcut: "2",
         disabled: !navigation.jobs,
@@ -134,9 +132,7 @@ export function CommandPalette({
         id: "nav-jd",
         group: "Navigate",
         title: "Go to Job Description",
-        sub: navigation.jd
-          ? "Step 03 · Parsed JD"
-          : "Upload a resume first",
+        sub: "Step 03 · Parsed JD",
         icon: <SparkleIcon />,
         shortcut: "3",
         disabled: !navigation.jd,
