@@ -278,3 +278,5 @@ reports/
 
 # Local design/planning notes
 VISUAL_LOOP_MVP.md
+# Claude Code session state + worktrees (harness-managed, not source)
+.claude/
