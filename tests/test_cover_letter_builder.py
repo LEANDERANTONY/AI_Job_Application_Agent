@@ -2,7 +2,6 @@ from src.cover_letter_builder import build_cover_letter_artifact
 from src.schemas import (
     AgentWorkflowResult,
     CoverLetterAgentOutput,
-    FitAgentOutput,
     ReviewAgentOutput,
     StrategyAgentOutput,
     TailoringAgentOutput,
@@ -63,11 +62,6 @@ def test_build_cover_letter_artifact_uses_agentic_signals_when_available():
     agent_result = AgentWorkflowResult(
         mode="openai",
         model="gpt-test",
-        fit=FitAgentOutput(
-            fit_summary="Strong fit overall with one cloud gap.",
-            top_matches=["Python", "SQL", "Docker"],
-            key_gaps=["AWS"],
-        ),
         tailoring=TailoringAgentOutput(
             professional_summary="Grounded tailored summary.",
             rewritten_bullets=["Built production ML APIs using Python and Docker."],

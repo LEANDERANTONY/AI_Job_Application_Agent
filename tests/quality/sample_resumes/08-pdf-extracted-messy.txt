@@ -1,0 +1,45 @@
+Sarah  Mitchell
+Product   Manager  |  Boston,   MA
+
+sarah.mitchell.pm@gmail.com    (617)  555-0144    linkedin.com/in/sarahmitchellpm
+
+
+SUMMARY
+
+PM with 5 years bridging engineering and design at consumer-software
+companies. Shipped features used by 3M+ DAU.
+
+
+
+EXPERIENCE
+
+
+Wayfair
+Senior Product Manager
+Boston,  MA      •      Jan  2022  -  Present
+
+   Led the search-relevance team (4 engineers + 1 data scientist).
+   Drove a 12% lift in search-to-purchase conversion via re-ranking model.
+   Owned the migration from Solr to Elasticsearch over 8 months.
+
+
+
+HubSpot
+Product Manager
+Cambridge, MA      •     Jul 2019 - Dec 2021
+
+   Owned the email-marketing analytics dashboard used by 80k SMBs.
+   Wrote PRDs, ran research interviews, partnered with design + eng.
+   Shipped scheduled-send feature (top customer request for 2 years).
+
+
+EDUCATION
+
+Harvard Business School      MBA, 2019
+Boston University            B.A. in Economics, 2015
+
+
+SKILLS
+
+Product strategy, A/B testing, SQL, Looker, Figma, JIRA, Productboard,
+user research, roadmapping, stakeholder communication, agile / scrum

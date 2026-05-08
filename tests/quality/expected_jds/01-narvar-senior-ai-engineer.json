@@ -1,0 +1,14 @@
+{
+  "title_must_include": "Senior AI Engineer",
+  "location_must_include": "Remote",
+  "salary_must_include": "",
+  "experience_requirement_must_include": "",
+  "hard_skills_must_include": [
+    "Python",
+    "TypeScript",
+    "RAG"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Live JD from Narvar — agentic AI / conversational AI engineer role. No explicit numeric years requirement (uses 'senior' qualifier). Tests skill detection on AI-specific vocabulary (RAG, agent frameworks, LLM, tool calling). The body uses arrows (→) for emphasis and 'Day-to-day' / 'What We're Looking For' / 'Bonus points' as sub-headings rather than the canonical 'Requirements / Nice to haves'."
+}

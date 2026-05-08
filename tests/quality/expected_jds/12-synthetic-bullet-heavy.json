@@ -1,0 +1,18 @@
+{
+  "title_must_include": "Site Reliability Engineer",
+  "location_must_include": "Remote",
+  "salary_must_include": "$170K",
+  "experience_requirement_must_include": "5+ years",
+  "hard_skills_must_include": [
+    "Kubernetes",
+    "Terraform",
+    "Ansible",
+    "Python",
+    "Go",
+    "AWS",
+    "GCP"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Synthetic JD — Senior SRE role. Uses round-bullet '•' markers throughout (not hyphens). Mentions niche tools that ARE in our taxonomy (Prometheus is missing, Grafana is missing — these are observability platforms, not in HARD_SKILL_KEYWORDS). 'on-call rotations' is a culturally-specific phrase that may or may not be detected. Tests bullet-marker handling."
+}

@@ -53,17 +53,15 @@ def _build_view_model():
     )
 
 
-def test_assistant_fallback_explains_report_vs_resume():
+def test_assistant_fallback_explains_resume_and_cover_letter():
     service = AssistantService()
 
     response = service.answer(
-        "What is the difference between the report and the resume?",
+        "How does the cover letter fit alongside the tailored resume?",
         current_page="Manual JD Input",
         app_context={},
     )
 
-    assert "tailored resume" in response.answer.lower()
-    assert "report" in response.answer.lower()
     assert "cover letter" in response.answer.lower()
     assert response.sources
 
@@ -158,7 +156,6 @@ def test_assistant_fallback_explains_gaps():
         "What are my biggest gaps?",
         current_page="Manual JD Input",
         workflow_view_model=view_model,
-        report=None,
         artifact=SimpleNamespace(highlighted_skills=["Python", "SQL"], validation_notes=[]),
     )
 
@@ -174,7 +171,6 @@ def test_assistant_requires_context_when_inputs_missing():
         "Is this safe to submit?",
         current_page="Manual JD Input",
         workflow_view_model=empty_view_model,
-        report=None,
         artifact=None,
     )
 
@@ -189,7 +185,6 @@ def test_assistant_fallback_supports_broader_resume_coaching():
         "How can I show cross-functional collaboration without formal work experience?",
         current_page="Manual JD Input",
         workflow_view_model=view_model,
-        report=None,
         artifact=SimpleNamespace(highlighted_skills=["Python", "SQL"], validation_notes=[]),
     )
 
@@ -207,7 +202,6 @@ def test_assistant_fallback_handles_string_fit_analysis():
         "What are my biggest gaps?",
         current_page="Workspace",
         workflow_view_model=view_model,
-        report=None,
         artifact=SimpleNamespace(highlighted_skills=["Python", "FastAPI"], validation_notes=[]),
     )
 
@@ -232,13 +226,13 @@ def test_assistant_falls_back_when_model_returns_blank_answer():
     service = AssistantService(openai_service=FakeOpenAIService())
 
     response = service.answer(
-        "How do I use the report?",
+        "How does the cover letter fit in?",
         current_page="Manual JD Input",
         app_context={},
     )
 
     assert response.answer
-    assert "report" in response.answer.lower()
+    assert "cover letter" in response.answer.lower()
 
 
 def test_assistant_uses_fast_fail_request_shape():
@@ -300,7 +294,6 @@ def test_assistant_uses_single_assistant_task_for_package_questions():
         current_page="Manual JD Input",
         workflow_view_model=view_model,
         artifact=SimpleNamespace(highlighted_skills=["Python"], validation_notes=[]),
-        report=SimpleNamespace(summary="Application strategy summary"),
     )
 
     assert response.answer
@@ -378,7 +371,6 @@ def test_prepare_session_returns_last_response_id_from_openai_usage_snapshot():
 
 def test_application_qa_context_is_compact():
     view_model = _build_view_model()
-    report = SimpleNamespace(summary="Application report summary")
     artifact = SimpleNamespace(
         summary="Tailored resume summary",
         validation_notes=["Check AWS claim wording"],
@@ -400,7 +392,6 @@ def test_application_qa_context_is_compact():
 
     context = AssistantService._build_application_qa_context(
         view_model,
-        report=report,
         artifact=artifact,
     )
 
@@ -409,7 +400,6 @@ def test_application_qa_context_is_compact():
         "candidate",
         "fit",
         "tailored_resume",
-        "report_summary",
         "cover_letter_summary",
         "review",
     }
@@ -445,7 +435,6 @@ def test_build_application_qa_context_includes_review_and_skill_signals():
 
     context = AssistantService._build_application_qa_context(
         workflow_view_model,
-        report=SimpleNamespace(summary="Report summary"),
         artifact=artifact,
     )
 
@@ -455,7 +444,7 @@ def test_build_application_qa_context_includes_review_and_skill_signals():
 
 
 def test_retrieve_product_knowledge_matches_export_questions():
-    matches = retrieve_product_knowledge("How do PDF and ZIP downloads work?", current_page="Manual JD Input")
+    matches = retrieve_product_knowledge("How do PDF and Markdown downloads work?", current_page="Manual JD Input")
 
     assert matches
     assert matches[0]["topic"] == "exports"

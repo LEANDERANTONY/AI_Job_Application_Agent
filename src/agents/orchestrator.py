@@ -15,7 +15,6 @@ from src.schemas import (
 from src.services.fit_service import build_fit_analysis
 from src.services.tailoring_service import build_tailored_resume_draft
 
-from .fit_agent import FitAgent
 from .cover_letter_agent import CoverLetterAgent
 from .resume_generation_agent import ResumeGenerationAgent
 from .review_agent import ReviewAgent
@@ -152,6 +151,27 @@ class ApplicationOrchestrator:
         total_stage_count = 5
         stage_index = 0
 
+        # Per-agent outcome counters. The orchestrator was previously
+        # all-or-nothing — one failing agent meant the whole pipeline
+        # downgraded to deterministic. With the per-agent fallback
+        # path that's no longer true, but we still need to know
+        # whether ANY agent used the LLM so the result.mode honestly
+        # reflects what happened. A run where every agent fell back
+        # per-agent shouldn't claim to be "openai".
+        #
+        # `first_llm_error` captures the first AgentExecutionError
+        # that triggered a per-agent fallback. If reconciliation at
+        # the end of the pipeline flips mode to deterministic_fallback
+        # (i.e. zero llm successes), we surface this error's
+        # user_message + details as the fallback_reason — preserving
+        # the contract that consumers reading fallback_reason get the
+        # specific exception message that caused the downgrade.
+        agent_outcomes = {
+            "llm_success_count": 0,
+            "per_agent_fallback_count": 0,
+            "first_llm_error": None,
+        }
+
         def stage_progress(current_stage_index):
             if total_stage_count <= 1:
                 return 95
@@ -167,54 +187,227 @@ class ApplicationOrchestrator:
                 stage_progress(stage_index),
             )
 
-        def run_agent_step(agent_name, runner, **context):
+        def run_agent_step(
+            agent_name,
+            runner,
+            *,
+            deterministic_fallback_runner=None,
+            **context,
+        ):
+            # Three-tier failure handling per agent:
+            #
+            # 1. Try `runner()` (the LLM path). If it succeeds, done.
+            # 2. If it raises AgentExecutionError, retry once after
+            #    a small delay. If the retry succeeds, done.
+            # 3. If the retry ALSO fails AND a deterministic fallback
+            #    runner is provided, run that and return its output —
+            #    keeping the rest of the pipeline running on LLM. This
+            #    is the per-agent fallback isolation: previously, one
+            #    failing agent cascaded to "downgrade the whole run
+            #    to deterministic" — including agents that would have
+            #    succeeded on the LLM path. Now only the failing
+            #    agent's output is deterministic; downstream agents
+            #    still try the LLM.
+            #
+            # The retry + per-agent fallback both fire only in
+            # mode="openai". In deterministic mode the agents skip the
+            # LLM path internally so retry/fallback never trigger.
+            #
+            # Only AgentExecutionError is retried/fallback'd. Other
+            # exceptions (bugs, contract violations) propagate
+            # immediately — they wouldn't change on retry.
+            agent_retry_delay_seconds = 0.4
             started_at = time.perf_counter()
-            try:
-                result = runner()
-            except Exception as exc:
+            last_exc = None
+            for attempt_index in range(2):
+                attempt_started_at = time.perf_counter()
+                try:
+                    result = runner()
+                except AgentExecutionError as exc:
+                    last_exc = exc
+                    if attempt_index == 0 and mode == "openai":
+                        log_event(
+                            LOGGER,
+                            logging.WARNING,
+                            "agent_run_retry",
+                            "Agent run failed; retrying once before falling back.",
+                            agent=agent_name,
+                            mode=mode,
+                            model=model_name,
+                            attempt_duration_ms=round(
+                                (time.perf_counter() - attempt_started_at) * 1000,
+                                2,
+                            ),
+                            error_type=type(exc).__name__,
+                            details=exc.details or "",
+                            retry_delay_seconds=agent_retry_delay_seconds,
+                            **context,
+                        )
+                        time.sleep(agent_retry_delay_seconds)
+                        continue
+                    # Both LLM attempts exhausted. If a per-agent
+                    # deterministic fallback was provided, run it
+                    # for THIS agent only; the rest of the pipeline
+                    # keeps trying the LLM path.
+                    if (
+                        mode == "openai"
+                        and deterministic_fallback_runner is not None
+                    ):
+                        log_event(
+                            LOGGER,
+                            logging.WARNING,
+                            "agent_run_per_agent_fallback",
+                            "LLM attempts exhausted for this agent; using its deterministic fallback. Other agents continue with the LLM path.",
+                            agent=agent_name,
+                            mode=mode,
+                            model=model_name,
+                            llm_duration_ms=round(
+                                (time.perf_counter() - started_at) * 1000, 2
+                            ),
+                            llm_attempts=attempt_index + 1,
+                            error_type=type(exc).__name__,
+                            details=exc.details or "",
+                            **context,
+                        )
+                        try:
+                            fallback_result = deterministic_fallback_runner()
+                        except Exception as fb_exc:
+                            # The per-agent deterministic fallback
+                            # itself failed — that's our own code, not
+                            # the LLM. Log and re-raise the original
+                            # LLM error so the orchestrator's outer
+                            # try/except catches it and falls back to
+                            # the whole-pipeline deterministic path
+                            # (the existing safety net).
+                            log_event(
+                                LOGGER,
+                                logging.ERROR,
+                                "agent_run_failed",
+                                "Per-agent deterministic fallback also failed; cascading to whole-pipeline fallback.",
+                                agent=agent_name,
+                                mode=mode,
+                                model=model_name,
+                                duration_ms=round(
+                                    (time.perf_counter() - started_at) * 1000, 2
+                                ),
+                                llm_attempts=attempt_index + 1,
+                                fallback_error_type=type(fb_exc).__name__,
+                                fallback_details=str(fb_exc),
+                                **context,
+                            )
+                            raise
+                        agent_outcomes["per_agent_fallback_count"] += 1
+                        if agent_outcomes["first_llm_error"] is None:
+                            agent_outcomes["first_llm_error"] = exc
+                        log_event(
+                            LOGGER,
+                            logging.INFO,
+                            "agent_run_completed",
+                            "Agent run completed via per-agent deterministic fallback.",
+                            agent=agent_name,
+                            mode=mode,
+                            model=model_name,
+                            duration_ms=round(
+                                (time.perf_counter() - started_at) * 1000, 2
+                            ),
+                            llm_attempts=attempt_index + 1,
+                            fell_back_to_deterministic=True,
+                            **context,
+                        )
+                        return fallback_result
+                    # No per-agent fallback runner provided (or we're
+                    # in deterministic mode). Cascade up.
+                    log_event(
+                        LOGGER,
+                        logging.ERROR,
+                        "agent_run_failed",
+                        "Agent run failed (after assisted-mode retry).",
+                        agent=agent_name,
+                        mode=mode,
+                        model=model_name,
+                        duration_ms=round(
+                            (time.perf_counter() - started_at) * 1000, 2
+                        ),
+                        attempts=attempt_index + 1,
+                        error_type=type(exc).__name__,
+                        **context,
+                    )
+                    raise
+                except Exception as exc:
+                    # Non-AgentExecutionError exceptions (bugs in our
+                    # code, contract violations, etc.) — retrying
+                    # won't change the outcome. Log and re-raise
+                    # immediately.
+                    log_event(
+                        LOGGER,
+                        logging.ERROR,
+                        "agent_run_failed",
+                        "Agent run failed with unexpected exception.",
+                        agent=agent_name,
+                        mode=mode,
+                        model=model_name,
+                        duration_ms=round(
+                            (time.perf_counter() - started_at) * 1000, 2
+                        ),
+                        attempts=attempt_index + 1,
+                        error_type=type(exc).__name__,
+                        **context,
+                    )
+                    raise
+                # Success path. If this was the second attempt, the
+                # retry saved the run — reflect that in the log so we
+                # can see how often it actually pays off.
+                #
+                # Only count toward llm_success when the pipeline is
+                # actually in assisted mode. In deterministic mode the
+                # agent's own internal fallback ran (no LLM call), so
+                # crediting it as an LLM success would mislead the
+                # mode-reconciliation logic at the end of the pipeline.
+                if mode == "openai":
+                    agent_outcomes["llm_success_count"] += 1
                 log_event(
                     LOGGER,
-                    logging.ERROR,
-                    "agent_run_failed",
-                    "Agent run failed.",
+                    logging.INFO,
+                    "agent_run_completed",
+                    "Agent run completed.",
                     agent=agent_name,
                     mode=mode,
                     model=model_name,
                     duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
-                    error_type=type(exc).__name__,
+                    attempts=attempt_index + 1,
+                    recovered_via_retry=attempt_index > 0,
                     **context,
                 )
-                raise
-            log_event(
-                LOGGER,
-                logging.INFO,
-                "agent_run_completed",
-                "Agent run completed.",
-                agent=agent_name,
-                mode=mode,
-                model=model_name,
-                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
-                **context,
+                return result
+            # Unreachable: every iteration of the loop either returns
+            # or raises. Defensive raise so a future edit can't silently
+            # produce None.
+            raise last_exc if last_exc else AgentExecutionError(
+                "Agent run exited the retry loop without producing a result."
             )
-            return result
 
+        # Matchmaker agent: the deterministic build_fit_analysis() above
+        # already computed matched/missing skills, score, and grounded
+        # gaps + recommendations. No LLM step needed here — TailoringAgent
+        # reads the structured FitAnalysis directly. Keep the stage label
+        # so the UI progress indicator still renders the matchmaker step.
         begin_stage(
             "Matchmaker agent",
             "Comparing both sides, scoring overlap, and flagging the real gaps.",
-        )
-        fit_output = run_agent_step(
-            "fit",
-            lambda: FitAgent(openai_service).run(
-                candidate_profile,
-                job_description,
-                fit_analysis,
-            ),
         )
 
         begin_stage(
             "Forge agent",
             "Rewriting the draft so it speaks directly to this role.",
         )
+        # Each call site supplies a deterministic_fallback_runner that
+        # constructs a fresh agent instance with openai_service=None.
+        # The agent classes already short-circuit to their internal
+        # _fallback() when no service is configured (see e.g.
+        # TailoringAgent.run's `if self._openai_service` gate), so this
+        # gives us the deterministic output for THIS agent only.
+        # Downstream agents still try the LLM path on the values
+        # produced here — exactly the per-agent isolation we want.
         tailoring_output = run_agent_step(
             "tailoring",
             lambda: tailoring_agent.run(
@@ -222,7 +415,12 @@ class ApplicationOrchestrator:
                 job_description,
                 fit_analysis,
                 tailored_draft,
-                fit_output,
+            ),
+            deterministic_fallback_runner=lambda: TailoringAgent(None).run(
+                candidate_profile,
+                job_description,
+                fit_analysis,
+                tailored_draft,
             ),
         )
         begin_stage(
@@ -232,6 +430,13 @@ class ApplicationOrchestrator:
         review_output = run_agent_step(
             "review",
             lambda: review_agent.run(
+                candidate_profile,
+                job_description,
+                fit_analysis,
+                tailored_draft,
+                tailoring_output,
+            ),
+            deterministic_fallback_runner=lambda: ReviewAgent(None).run(
                 candidate_profile,
                 job_description,
                 fit_analysis,
@@ -248,6 +453,14 @@ class ApplicationOrchestrator:
         resume_generation_output = run_agent_step(
             "resume_generation",
             lambda: ResumeGenerationAgent(openai_service).run(
+                candidate_profile,
+                job_description,
+                fit_analysis,
+                tailored_draft,
+                final_tailoring_output,
+                review_output,
+            ),
+            deterministic_fallback_runner=lambda: ResumeGenerationAgent(None).run(
                 candidate_profile,
                 job_description,
                 fit_analysis,
@@ -274,18 +487,60 @@ class ApplicationOrchestrator:
                     review_output,
                     resume_generation_output,
                 ),
+                deterministic_fallback_runner=lambda: CoverLetterAgent(None).run(
+                    candidate_profile,
+                    job_description,
+                    fit_analysis,
+                    tailored_draft,
+                    final_tailoring_output,
+                    review_output,
+                    resume_generation_output,
+                ),
                 review_approved=True,
             )
+
+        # Reconcile the reported mode with what actually happened. If
+        # the pipeline was started as openai but every single agent
+        # fell back per-agent (zero llm_success_count), the run was
+        # functionally deterministic — pretending it was "openai"
+        # would mislead consumers that watch the mode field. Flip
+        # mode AND model to the deterministic-fallback values in
+        # that case, and surface the first LLM error as the
+        # fallback_reason (preserves the historical contract that
+        # whole-pipeline-fallback consumers read).
+        reported_mode = mode
+        reported_model = model_name
+        reported_fallback_reason = fallback_reason
+        reported_fallback_details = fallback_details
+        if (
+            mode == "openai"
+            and agent_outcomes["llm_success_count"] == 0
+            and agent_outcomes["per_agent_fallback_count"] > 0
+        ):
+            reported_mode = "deterministic_fallback"
+            reported_model = "fallback"
+            first_error = agent_outcomes["first_llm_error"]
+            if first_error is not None:
+                if not reported_fallback_reason:
+                    reported_fallback_reason = first_error.user_message
+                if not reported_fallback_details:
+                    reported_fallback_details = first_error.details or ""
+            if not reported_fallback_reason:
+                reported_fallback_reason = (
+                    "Every assisted agent fell back to deterministic output."
+                )
 
         log_event(
             LOGGER,
             logging.INFO,
             "orchestrator_completed",
             "Application orchestration completed.",
-            mode=mode,
-            model=model_name,
+            mode=reported_mode,
+            model=reported_model,
             review_passes=1,
             approved=review_output.approved if review_output else False,
+            llm_success_count=agent_outcomes["llm_success_count"],
+            per_agent_fallback_count=agent_outcomes["per_agent_fallback_count"],
         )
 
         ApplicationOrchestrator._emit_progress(
@@ -296,9 +551,8 @@ class ApplicationOrchestrator:
         )
 
         return AgentWorkflowResult(
-            mode=mode,
-            model=model_name,
-            fit=fit_output,
+            mode=reported_mode,
+            model=reported_model,
             tailoring=final_tailoring_output,
             review=review_output,
             profile=ProfileAgentOutput(),
@@ -308,6 +562,6 @@ class ApplicationOrchestrator:
             cover_letter=cover_letter_output,
             review_history=[],
             attempted_assisted=attempted_assisted,
-            fallback_reason=fallback_reason,
-            fallback_details=fallback_details,
+            fallback_reason=reported_fallback_reason,
+            fallback_details=reported_fallback_details,
         )

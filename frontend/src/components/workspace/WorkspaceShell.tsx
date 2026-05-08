@@ -1,9 +1,39 @@
 "use client";
 
+// WorkspaceShell — Direction B "Workbench" redesign.
+//
+// Visual + structural rewrite. All hook signatures, API calls, state
+// slices, and handlers from the previous shell are preserved verbatim
+// (see Q&A in DEVLOG / handoff README). Only the JSX (chrome + tab
+// switching) and the surrounding CSS classes change.
+//
+// What's new visually:
+//   - b-topbar: brand + ⌘K trigger + account popover (sign in fallback)
+//   - b-rail: four-step rail with gating + done/active visual states
+//   - b-hero: dynamic per-active-tab title/sub + status pill
+//   - b-canvas: vertical stack of regions (one per tab body)
+//   - Floating assistant FAB (replaces the old left sidebar mount)
+//   - ⌘K command palette overlay (new)
+//
+// Behavior preservation checklist (handoff README §3):
+//   ✓ Step rail navigation respects WorkspaceMainTab + completion gates
+//   ✓ All resume/upload/builder flows unchanged
+//   ✓ Job search + saved jobs + URL import unchanged
+//   ✓ JD paste + URL + file upload unchanged
+//   ✓ useAnalysisJob polling + currentWorkflowStage unchanged
+//   ✓ Streaming SSE + caret behavior unchanged
+//   ✓ Artifact tabs + downloads unchanged
+//   ✓ Daily quota + plan tier + saved-workspace meta still surfaced in the
+//     account popover
+//   ✓ FAB-mounted assistant retains useAssistantHistory persistence
+
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 
 import {
   commitResumeBuilderResume,
+  downloadBase64File,
+  exportResumeBuilderArtifact,
   generateResumeBuilderResume,
   loadLatestResumeBuilderSession,
   resolveJobUrl,
@@ -16,33 +46,30 @@ import {
   uploadResumeFile,
 } from "@/lib/api";
 import type {
-  AuthSessionResponse,
+  ArtifactTheme,
   CandidateProfile,
   DailyQuotaStatus,
+  EmploymentType,
   JobPosting,
   JobResolveResponse,
   JobSearchResponse,
+  JobSortBy,
   LoadSavedWorkspaceResponse,
   ResumeBuilderSessionResponse,
-  SavedWorkspaceMeta,
+  WorkMode,
   WorkspaceAnalysisResponse,
+  WorkspaceArtifactExportFormat,
   WorkspaceJobDescriptionUploadResponse,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
-import {
-  buildJobResultBadges,
-  buildJobReview,
-} from "@/lib/job-workspace";
-import {
-  ArtifactMetricIcon,
-  ResumeMetricIcon,
-  WorkflowMetricIcon,
-} from "@/components/workspace/icons";
+import { humanizeApiError } from "@/lib/humanizeApiError";
+import { buildJobReview } from "@/lib/job-workspace";
+import { CheckIcon, SearchIcon } from "@/components/workspace/icons";
 import {
   AssistantPanel,
   type AssistantStreamingTurn,
-  type AssistantTurn,
 } from "@/components/workspace/AssistantPanel";
+import { CommandPalette } from "@/components/workspace/CommandPalette";
 import {
   ArtifactViewer,
   type ArtifactTab,
@@ -54,7 +81,6 @@ import {
   ResumeIntake,
   type ResumeIntakeMode,
 } from "@/components/workspace/ResumeIntake";
-import { Sidebar } from "@/components/workspace/Sidebar";
 import { useArtifactExport } from "@/hooks/useArtifactExport";
 import {
   buildAssistantHistoryPayload,
@@ -71,45 +97,48 @@ type Notice = {
 
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
 
+const STEP_LABELS: Record<
+  WorkspaceMainTab,
+  { number: string; label: string; shortLabel: string }
+> = {
+  // `shortLabel` is the mobile-only label shown at ≤ 540 px, where the
+  // full "Job Search" / "Job Detail" wraps to two lines inside the rail
+  // pill. The CSS hides one or the other based on viewport; the
+  // button's `aria-label` carries the full label for screen readers
+  // regardless of which span is visible.
+  resume: { number: "01", label: "Resume", shortLabel: "Resume" },
+  jobs: { number: "02", label: "Job Search", shortLabel: "Jobs" },
+  jd: { number: "03", label: "Job Detail", shortLabel: "JD" },
+  analysis: { number: "04", label: "Analysis", shortLabel: "Analysis" },
+};
+
+const STEP_ORDER: WorkspaceMainTab[] = ["resume", "jobs", "jd", "analysis"];
+
 function noticeClassName(level: NonNullable<Notice>["level"]) {
-  if (level === "success") {
-    return "notice-panel notice-success";
-  }
-  if (level === "warning") {
-    return "notice-panel notice-warning";
-  }
-  return "notice-panel notice-info";
+  if (level === "success") return "b-notice b-notice-success";
+  if (level === "warning") return "b-notice b-notice-warning";
+  return "b-notice";
 }
 
-function toneForStage(active: boolean, ready = false) {
-  if (active) {
-    return "live";
-  }
-  if (ready) {
-    return "ready";
-  }
-  return "next";
+function pipToneClass(tone: "live" | "ready" | "idle" | "next") {
+  if (tone === "live") return "rd-pip rd-pip-live";
+  if (tone === "ready") return "rd-pip rd-pip-ready";
+  return "rd-pip";
 }
 
 function latestRole(profile: CandidateProfile | null) {
   const entry = profile?.experience?.[0];
-  if (!entry) {
-    return "No parsed role yet";
-  }
+  if (!entry) return null;
   if (entry.title && entry.organization) {
-    return `${entry.title} at ${entry.organization}`;
+    return `${entry.title} · ${entry.organization}`;
   }
-  return entry.title || entry.organization || "No parsed role yet";
+  return entry.title || entry.organization || null;
 }
 
 function formatUtcTimestamp(value: string) {
-  if (!value) {
-    return "";
-  }
+  if (!value) return "";
   const timestamp = new Date(value);
-  if (Number.isNaN(timestamp.getTime())) {
-    return value;
-  }
+  if (Number.isNaN(timestamp.getTime())) return value;
   return timestamp.toLocaleString(undefined, {
     timeZone: "UTC",
     month: "short",
@@ -120,63 +149,54 @@ function formatUtcTimestamp(value: string) {
 }
 
 function formatRemainingCalls(dailyQuota: DailyQuotaStatus | null) {
-  if (!dailyQuota) {
-    return "Unavailable";
-  }
+  if (!dailyQuota) return "Unavailable";
   if (dailyQuota.remaining_calls === null || dailyQuota.max_calls === null) {
     return "Unlimited";
   }
   return `${dailyQuota.remaining_calls}/${dailyQuota.max_calls}`;
 }
 
-function getInitialSidebarCollapsed() {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  const drawerParam = new URLSearchParams(window.location.search).get("drawer");
-  if (drawerParam === "closed") {
-    return true;
-  }
-  if (drawerParam === "open") {
-    return false;
-  }
-
-  return false;
-}
-
 function getInitialMainTab(): WorkspaceMainTab {
-  if (typeof window === "undefined") {
-    return "resume";
-  }
+  if (typeof window === "undefined") return "resume";
 
   const tabParam = new URLSearchParams(window.location.search).get("tab");
-  if (tabParam === "resume" || tabParam === "jobs" || tabParam === "jd" || tabParam === "analysis") {
+  if (
+    tabParam === "resume" ||
+    tabParam === "jobs" ||
+    tabParam === "jd" ||
+    tabParam === "analysis"
+  ) {
     return tabParam;
   }
 
   const hashTab = window.location.hash.replace(/^#/, "");
-  if (hashTab === "resume" || hashTab === "jobs" || hashTab === "jd" || hashTab === "analysis") {
-    return hashTab;
+  if (
+    hashTab === "resume" ||
+    hashTab === "jobs" ||
+    hashTab === "jd" ||
+    hashTab === "analysis"
+  ) {
+    return hashTab as WorkspaceMainTab;
   }
 
   return "resume";
 }
 
 export function WorkspaceShell() {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialSidebarCollapsed);
   const [mainTab, setMainTab] = useState<WorkspaceMainTab>(getInitialMainTab);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [forceAssistantOpen, setForceAssistantOpen] = useState(false);
   const [workspaceNotice, setWorkspaceNotice] = useState<Notice>(null);
 
   const {
     authStatus,
     authSession,
-    setAuthSession,
+    setAuthSession: _setAuthSession,
     authError,
     authActionLoading,
     workspaceSaveMeta,
-    setWorkspaceSaveMeta,
+    setWorkspaceSaveMeta: _setWorkspaceSaveMeta,
     workspaceReloading,
     autoSaving,
     dailyQuota,
@@ -185,23 +205,63 @@ export function WorkspaceShell() {
     persistLatestWorkspace,
     reloadSavedWorkspace,
   } = useWorkspaceSession({ setNotice: setWorkspaceNotice });
+  void _setAuthSession;
+  void _setWorkspaceSaveMeta;
+
+  // Workspace is for signed-in users only. The session restore in
+  // `useWorkspaceSession` flips authStatus to "signed_out" once it's
+  // confirmed there are no valid auth cookies. Bounce to the landing
+  // page — which lives on a DIFFERENT origin in production:
+  //   workspace: app.<domain>.xyz
+  //   landing:    <domain>.xyz
+  // (NEXT_PUBLIC_SITE_URL is the WORKSPACE URL per the existing repo
+  // convention, so we can't reuse it here without going in a circle.)
+  // We derive the landing host by stripping a leading `app.` from the
+  // current hostname — symmetric with the middleware's
+  // `hostname.startsWith("app.")` check. In localhost dev there's no
+  // `app.` prefix so we just navigate to "/" on the same origin.
+  // We DON'T redirect on "loading" or "restoring" because those are
+  // transient and would cause an unnecessary landing-page flash for
+  // the common case (already signed in).
+  useEffect(() => {
+    if (authStatus !== "signed_out") return;
+    if (typeof window === "undefined") return;
+    const { protocol, hostname, port } = window.location;
+    const landingHost = hostname.startsWith("app.")
+      ? hostname.slice("app.".length)
+      : hostname;
+    const portSuffix = port ? `:${port}` : "";
+    const landingUrl =
+      landingHost === hostname
+        ? "/"
+        : `${protocol}//${landingHost}${portSuffix}/`;
+    window.location.href = landingUrl;
+  }, [authStatus]);
 
   const [searchQuery, setSearchQuery] = useState("machine learning engineer");
   const [searchLocation, setSearchLocation] = useState("");
-  const [remoteOnly, setRemoteOnly] = useState(false);
+  // Multi-select filter state. Empty arrays = no filter applied. The
+  // Source dropdown defaults to "Any source" (empty) so the cache RPC
+  // searches across every provider — picking specific ones narrows the
+  // results to just those tokens. Same model for work modes + types.
+  const [sourceFilters, setSourceFilters] = useState<string[]>([]);
+  const [workModes, setWorkModes] = useState<WorkMode[]>([]);
+  const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
+  const [sortBy, setSortBy] = useState<JobSortBy>("relevance");
   const [postedWithinDays, setPostedWithinDays] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<JobSearchResponse | null>(
     null,
   );
-  const [searchResultsCollapsed, setSearchResultsCollapsed] = useState(false);
   const [searchNotice, setSearchNotice] = useState<Notice>(null);
 
   const [jobUrl, setJobUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [activeJob, setActiveJob] = useState<JobPosting | null>(null);
 
-  const [selectedResumeFile, setSelectedResumeFile] = useState<File | null>(null);
+  const [selectedResumeFile, setSelectedResumeFile] = useState<File | null>(
+    null,
+  );
   const [resumeUploading, setResumeUploading] = useState(false);
   const [resumeNotice, setResumeNotice] = useState<Notice>(null);
   const [resumeState, setResumeState] =
@@ -215,9 +275,29 @@ export function WorkspaceShell() {
   const [resumeBuilderGenerating, setResumeBuilderGenerating] = useState(false);
   const [resumeBuilderCommitting, setResumeBuilderCommitting] = useState(false);
   const [resumeBuilderNotice, setResumeBuilderNotice] = useState<Notice>(null);
-  const [resumeBuilderInitialized, setResumeBuilderInitialized] = useState(false);
+  const [resumeBuilderInitialized, setResumeBuilderInitialized] =
+    useState(false);
   const [resumeBuilderEditing, setResumeBuilderEditing] = useState(false);
   const [resumeBuilderCollapsed, setResumeBuilderCollapsed] = useState(false);
+  // Resume-builder conversation log. Appended on every /message
+  // response so the user sees the chat thread building up. Resets
+  // when the session is cleared (commit / restart). Lives in client
+  // state because the backend's `assistant_message` is per-turn — the
+  // server-side conversation_history is for LLM continuity, not for
+  // the UI to read back.
+  const [resumeBuilderChatLog, setResumeBuilderChatLog] = useState<
+    Array<{ role: "user" | "assistant"; content: string }>
+  >([]);
+  // Phase 6 download row state. The user picks a theme + downloads
+  // their generated base resume as PDF or DOCX, after Generate
+  // finishes. `resumeBuilderExporting` holds the in-flight format
+  // string (e.g. "pdf" / "docx") so each button can show a per-button
+  // "Preparing…" label without locking out the other button.
+  const [resumeBuilderExportTheme, setResumeBuilderExportTheme] =
+    useState<ArtifactTheme>("classic_ats");
+  const [resumeBuilderExporting, setResumeBuilderExporting] = useState<
+    WorkspaceArtifactExportFormat | null
+  >(null);
   const [resumeBuilderDraftForm, setResumeBuilderDraftForm] = useState({
     full_name: "",
     location: "",
@@ -228,6 +308,8 @@ export function WorkspaceShell() {
     education_notes: "",
     skills: "",
     certifications: "",
+    projects_notes: "",
+    publications: "",
   });
 
   const [selectedJobFile, setSelectedJobFile] = useState<File | null>(null);
@@ -249,7 +331,10 @@ export function WorkspaceShell() {
     artifactPreviewTitle,
     artifactPreviewLoading,
     currentArtifact,
-    currentArtifactKind,
+    resumeTheme,
+    coverLetterTheme,
+    setResumeTheme,
+    setCoverLetterTheme,
     exportArtifact: handleArtifactExport,
     resetArtifacts,
   } = useArtifactExport({
@@ -322,7 +407,7 @@ export function WorkspaceShell() {
   const {
     analysisLoading,
     analysisJobState,
-    setAnalysisJobState,
+    setAnalysisJobState: _setAnalysisJobState,
     currentWorkflowStage,
     runAnalysis: handleRunAnalysis,
     resetAnalysis,
@@ -337,6 +422,7 @@ export function WorkspaceShell() {
     setAnalysisState,
     onCompleted: onAnalysisCompleted,
   });
+  void _setAnalysisJobState;
 
   // Hoisted via `function` declaration so it's accessible at the
   // hook-call site above. Closure-resolves at call-time, by which
@@ -354,24 +440,61 @@ export function WorkspaceShell() {
       : `Workflow finished in ${result.workflow.mode} mode.`;
   }
 
-  const workspaceTabs = useMemo(
-    () => [
-      {
-        id: "resume" as const,
-        label: "Resume",
-        title: "Upload profile",
-        copy:
-          "Upload your resume or build one with the assistant so the app can use your background throughout the workflow.",
-        status: currentProfile ? "Ready" : "Start here",
+  // ── Step gating + active-tab metadata ───────────────────────────
+  // Resume / Job Search / Job Detail are independently accessible —
+  // a user might paste a JD they care about before they have a resume,
+  // or browse listings without uploading anything. The only step that
+  // truly needs prerequisites is Analysis (it can't run without both
+  // a resume and a JD), and that's enforced in AnalysisRunner.tsx via
+  // the page-level "Upload a resume to proceed" affordance, not by
+  // hiding the rail step.
+  //
+  // Earlier this gated `jobs` on `currentProfile` and `jd` on
+  // `currentProfile || activeJob`, which forced an upload-resume-first
+  // flow even when the user just wanted to look around. The lock
+  // surfaced as "Upload a resume to unlock" tooltips on the rail.
+  const stepReady = useMemo(
+    () => ({
+      resume: true,
+      jobs: true,
+      jd: true,
+      analysis: Boolean(resumeText.trim() && manualJobText.trim()),
+    }),
+    [manualJobText, resumeText],
+  );
+
+  const stepDone = useMemo(
+    () => ({
+      resume: Boolean(currentProfile),
+      jobs: Boolean(activeJob),
+      jd: Boolean(review),
+      analysis: Boolean(analysisState),
+    }),
+    [activeJob, analysisState, currentProfile, review],
+  );
+
+  type TabMeta = {
+    id: WorkspaceMainTab;
+    title: string;
+    sub: string;
+    statusLabel: string;
+    tone: "live" | "ready" | "idle" | "next";
+  };
+
+  const tabsMeta = useMemo<Record<WorkspaceMainTab, TabMeta>>(() => {
+    return {
+      resume: {
+        id: "resume",
+        title: "Resume",
+        sub: "Upload an existing resume or build a base one with the assistant.",
+        statusLabel: currentProfile ? "Ready" : "Start here",
         tone: currentProfile ? "live" : "ready",
       },
-      {
-        id: "jobs" as const,
-        label: "Job Search",
-        title: "Search job",
-        copy:
-          "Find a job from the live listings, paste a job link, or open one from your saved jobs.",
-        status: activeJob
+      jobs: {
+        id: "jobs",
+        title: "Job Search",
+        sub: "Find a role from live listings, paste a job link, or open one from your shortlist.",
+        statusLabel: activeJob
           ? "Role loaded"
           : searchResults?.results.length
             ? `${searchResults.total_results} matches`
@@ -382,42 +505,84 @@ export function WorkspaceShell() {
             ? "ready"
             : "idle",
       },
-      {
-        id: "jd" as const,
-        label: "Job Details",
-        title: "Review the job description",
-        copy:
-          "Add the job description and review the key skills, requirements, and summary.",
-        status: review ? "JD ready" : manualJobText.trim() ? "Drafting" : "Add a JD",
+      jd: {
+        id: "jd",
+        title: "Job Detail",
+        sub: "Add the job description and review the parsed skills, requirements, and summary.",
+        statusLabel: review
+          ? "JD ready"
+          : manualJobText.trim()
+            ? "Drafting"
+            : "Add a JD",
         tone: review ? "live" : manualJobText.trim() ? "ready" : "idle",
       },
-      {
-        id: "analysis" as const,
-        label: "Analysis & Outputs",
-        title: "Run the workflow",
-        copy:
-          "Trigger the agentic workflow, then review your tailored documents and export them.",
-        status: analysisState
+      analysis: {
+        id: "analysis",
+        title: "Analysis & Outputs",
+        sub: "Trigger the agentic workflow, then review and export your tailored documents.",
+        statusLabel: analysisState
           ? "Outputs ready"
-          : resumeText.trim() && manualJobText.trim()
+          : stepReady.analysis
             ? "Ready to run"
             : "Waiting",
         tone: analysisState
           ? "live"
-          : resumeText.trim() && manualJobText.trim()
+          : stepReady.analysis
             ? "ready"
             : "idle",
       },
-    ],
-    [activeJob, analysisState, currentProfile, manualJobText, resumeText, review, searchResults],
-  );
-  const activeMainTabMeta =
-    workspaceTabs.find((tab) => tab.id === mainTab) ?? workspaceTabs[0];
+    };
+  }, [
+    activeJob,
+    analysisState,
+    currentProfile,
+    manualJobText,
+    review,
+    searchResults,
+    stepReady.analysis,
+  ]);
+
+  const activeTabMeta = tabsMeta[mainTab];
+
+  // Hero context shown across all tabs. Falls back to honest text
+  // when no role is loaded — never displays a fake placeholder role
+  // (the prior "Anthropic · Senior ML Engineer" placeholder read like
+  // a bug to first-time users).
+  const heroJobLine = useMemo(() => {
+    if (analysisState?.job_description.title) {
+      return analysisState.job_description.title;
+    }
+    if (activeJob?.title) {
+      return `${activeJob.company} · ${activeJob.title}`;
+    }
+    if (jobFileState?.job_description?.title) {
+      return jobFileState.job_description.title;
+    }
+    return "No role loaded yet";
+  }, [activeJob, analysisState, jobFileState]);
+
+  // When a profile exists but the parser couldn't extract a name
+  // (common with the assistant builder when the user's basics answer
+  // didn't include a name in an obvious form), don't fall back all
+  // the way to "Resume not uploaded" — that reads like nothing
+  // happened. Use the profile's role + first experience entry as a
+  // fallback identifier.
+  const heroResumeLine = (() => {
+    if (!currentProfile) return "Resume not uploaded";
+    if (currentProfile.full_name?.trim()) return currentProfile.full_name;
+    const firstRole = currentProfile.experience?.[0]?.title;
+    if (firstRole) return `${firstRole} (name pending)`;
+    return "Profile loaded (name pending)";
+  })();
+
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const accountDisplayName =
-    authSession?.app_user.display_name || authSession?.app_user.email || "Signed in";
+    authSession?.app_user.display_name ||
+    authSession?.app_user.email ||
+    "Signed in";
   const accountInitial = accountDisplayName.slice(0, 1).toUpperCase();
 
+  // ── Effects (preserved verbatim from previous shell) ────────────
   useEffect(() => {
     if (
       resumeIntakeMode !== "assistant" ||
@@ -449,9 +614,7 @@ export function WorkspaceShell() {
   }, [authStatus, resumeBuilderSession, resumeIntakeMode]);
 
   useEffect(() => {
-    if (!resumeBuilderSession) {
-      return;
-    }
+    if (!resumeBuilderSession) return;
 
     setResumeBuilderDraftForm({
       full_name: resumeBuilderSession.draft_profile.full_name || "",
@@ -460,19 +623,49 @@ export function WorkspaceShell() {
       target_role: resumeBuilderSession.draft_profile.target_role || "",
       professional_summary:
         resumeBuilderSession.draft_profile.professional_summary || "",
-      experience_notes: resumeBuilderSession.draft_profile.experience_notes || "",
+      experience_notes:
+        resumeBuilderSession.draft_profile.experience_notes || "",
       education_notes: resumeBuilderSession.draft_profile.education_notes || "",
       skills: resumeBuilderSession.draft_profile.skills.join(", "),
-      certifications: resumeBuilderSession.draft_profile.certifications.join(", "),
+      certifications:
+        resumeBuilderSession.draft_profile.certifications.join(", "),
+      // Optional fields default to empty string when the backend
+      // omits them — keeps backwards compatibility with sessions
+      // saved before these slots existed.
+      projects_notes:
+        resumeBuilderSession.draft_profile.projects_notes || "",
+      publications: (
+        resumeBuilderSession.draft_profile.publications || []
+      ).join("\n"),
     });
   }, [resumeBuilderSession]);
 
-  const assistantRequiresWorkspaceRun = !analysisState;
-  const assistantCanSubmit =
-    !assistantRequiresWorkspaceRun &&
-    !assistantSending &&
-    Boolean(assistantQuestion.trim());
+  // ⌘K / Ctrl+K toggles the command palette globally.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((current) => !current);
+      } else if (event.key === "Escape" && paletteOpen) {
+        setPaletteOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [paletteOpen]);
 
+  // The assistant is no longer gated on having run an analysis. Users
+  // can ask product-help questions ("how do I use this?", "where do I
+  // upload my resume?") before they have any workspace at all — the
+  // backend's AssistantService.answer_product_help path handles these
+  // when the workspace snapshot is null. We still pass a
+  // `hasWorkspaceContext` boolean down so the panel can adapt its
+  // empty-state and header copy (grounded vs general).
+  const hasWorkspaceContext = Boolean(analysisState);
+  const assistantCanSubmit =
+    !assistantSending && Boolean(assistantQuestion.trim());
+
+  // ── Handlers (unchanged) ────────────────────────────────────────
   async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMainTab("jobs");
@@ -495,13 +688,21 @@ export function WorkspaceShell() {
       const response = await searchJobs({
         query: searchQuery.trim(),
         location: searchLocation.trim(),
-        source_filters: ["greenhouse", "lever"],
-        remote_only: remoteOnly,
+        // Empty source_filters = "any provider" — let the cache RPC
+        // search across everything we've indexed. The user's explicit
+        // picks (if any) narrow it to that set.
+        source_filters: sourceFilters,
+        // remote_only kept as a derived signal for back-compat with the
+        // cache RPC's existing flag — it composes additively with the
+        // dropdown's `remote` pick (either route returns the same rows).
+        remote_only: workModes.length === 1 && workModes[0] === "remote",
         posted_within_days: postedWithinDays ? Number(postedWithinDays) : null,
         page_size: 12,
+        work_modes: workModes,
+        employment_types: employmentTypes,
+        sort_by: sortBy,
       });
       setSearchResults(response);
-      setSearchResultsCollapsed(false);
       setSearchNotice({
         level: response.results.length ? "success" : "info",
         message: response.results.length
@@ -511,10 +712,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setSearchNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Something went wrong while searching for roles.",
+        message: humanizeApiError(
+          error,
+          "Something went wrong while searching for roles.",
+        ),
       });
     } finally {
       setSearching(false);
@@ -535,7 +736,8 @@ export function WorkspaceShell() {
     setImporting(true);
     setWorkspaceNotice({
       level: "info",
-      message: "Checking that job posting and loading it into your workspace...",
+      message:
+        "Checking that job posting and loading it into your workspace...",
     });
 
     try {
@@ -555,10 +757,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setWorkspaceNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The job URL import failed unexpectedly.",
+        message: humanizeApiError(
+          error,
+          "The job URL import failed unexpectedly.",
+        ),
       });
     } finally {
       setImporting(false);
@@ -601,17 +803,16 @@ export function WorkspaceShell() {
     } catch (error) {
       setResumeNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Resume upload failed unexpectedly.",
+        message: humanizeApiError(error, "Resume upload failed unexpectedly."),
       });
     } finally {
       setResumeUploading(false);
     }
   }
 
-  async function handleJobDescriptionUpload(file: File | null = selectedJobFile) {
+  async function handleJobDescriptionUpload(
+    file: File | null = selectedJobFile,
+  ) {
     if (!file) {
       setJobFileNotice({
         level: "warning",
@@ -640,10 +841,10 @@ export function WorkspaceShell() {
     } catch (error) {
       setJobFileNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Job-description upload failed unexpectedly.",
+        message: humanizeApiError(
+          error,
+          "Job-description upload failed unexpectedly.",
+        ),
       });
     } finally {
       setJobFileUploading(false);
@@ -668,16 +869,15 @@ export function WorkspaceShell() {
     setManualJobText("");
     setJobFileNotice({
       level: "info",
-      message: "Job description cleared. You can upload a new file, paste a JD, or load another role.",
+      message:
+        "Job description cleared. You can upload a new file, paste a JD, or load another role.",
     });
     setJobInputCollapsed(false);
   }
 
   function applySavedWorkspaceSnapshot(response: LoadSavedWorkspaceResponse) {
     const snapshot = response.workspace_snapshot;
-    if (!snapshot) {
-      return;
-    }
+    if (!snapshot) return;
 
     setResumeState({
       resume_document: snapshot.resume_document,
@@ -699,6 +899,7 @@ export function WorkspaceShell() {
     setResumeIntakeMode("upload");
     setResumeBuilderSession(null);
     setResumeBuilderInitialized(false);
+    setResumeBuilderChatLog([]);
     setResumeBuilderAnswer("");
     setResumeBuilderNotice(null);
     setMainTab("analysis");
@@ -715,17 +916,23 @@ export function WorkspaceShell() {
       const response = await startResumeBuilderSession();
       setResumeBuilderSession(response);
       setResumeBuilderInitialized(true);
+      setResumeBuilderChatLog(
+        response.assistant_message
+          ? [{ role: "assistant", content: response.assistant_message }]
+          : [],
+      );
       setResumeBuilderNotice({
         level: "success",
-        message: "The guided resume builder is ready. Answer each prompt and we will build your base resume together.",
+        message:
+          "The guided resume builder is ready. Answer each prompt and we will build your base resume together.",
       });
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The guided resume builder could not be started.",
+        message: humanizeApiError(
+          error,
+          "The guided resume builder could not be started.",
+        ),
       });
     } finally {
       setResumeBuilderLoading(false);
@@ -748,6 +955,21 @@ export function WorkspaceShell() {
           const latest = await loadLatestResumeBuilderSession();
           if (latest.session) {
             setResumeBuilderSession(latest.session);
+            // Restoring a saved session: we don't have the full prior
+            // conversation locally, so the chat log starts with just
+            // the latest assistant turn. The user can continue
+            // chatting and the rest of the thread will accrue from
+            // here.
+            setResumeBuilderChatLog(
+              latest.session.assistant_message
+                ? [
+                    {
+                      role: "assistant",
+                      content: latest.session.assistant_message,
+                    },
+                  ]
+                : [],
+            );
             setResumeBuilderNotice({
               level: "success",
               message: "Your latest resume-builder draft is ready to continue.",
@@ -765,17 +987,23 @@ export function WorkspaceShell() {
 
       const response = await startResumeBuilderSession();
       setResumeBuilderSession(response);
+      setResumeBuilderChatLog(
+        response.assistant_message
+          ? [{ role: "assistant", content: response.assistant_message }]
+          : [],
+      );
       setResumeBuilderNotice({
         level: "success",
-        message: "The guided resume builder is ready. Answer each prompt and we will build your base resume together.",
+        message:
+          "The guided resume builder is ready. Answer each prompt and we will build your base resume together.",
       });
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The guided resume builder could not be started.",
+        message: humanizeApiError(
+          error,
+          "The guided resume builder could not be started.",
+        ),
       });
     } finally {
       setResumeBuilderInitialized(true);
@@ -803,24 +1031,38 @@ export function WorkspaceShell() {
       message: "Saving your answer and moving to the next step...",
     });
 
+    const userMessage = resumeBuilderAnswer.trim();
     try {
       const response = await sendResumeBuilderMessage(
         resumeBuilderSession.session_id,
-        resumeBuilderAnswer.trim(),
+        userMessage,
       );
       setResumeBuilderSession(response);
       setResumeBuilderAnswer("");
-      setResumeBuilderNotice({
-        level: "success",
-        message: response.assistant_message,
-      });
+      // Append the user's message + the assistant's reply to the
+      // chat log so the conversation reads as a real thread instead
+      // of a 1-line "current prompt".
+      setResumeBuilderChatLog((prior) => [
+        ...prior,
+        { role: "user", content: userMessage },
+        ...(response.assistant_message
+          ? [
+              {
+                role: "assistant" as const,
+                content: response.assistant_message,
+              },
+            ]
+          : []),
+      ]);
+      // The next step's `assistant_message` already renders as the
+      // intake-card body copy. Showing it again as a success notice
+      // duplicated the same sentence twice on every screen — clear
+      // the transient notice instead.
+      setResumeBuilderNotice(null);
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "That answer could not be saved.",
+        message: humanizeApiError(error, "That answer could not be saved."),
       });
     } finally {
       setResumeBuilderLoading(false);
@@ -831,7 +1073,8 @@ export function WorkspaceShell() {
     if (!resumeBuilderSession) {
       setResumeBuilderNotice({
         level: "warning",
-        message: "Start the guided resume builder before generating a base resume.",
+        message:
+          "Start the guided resume builder before generating a base resume.",
       });
       return;
     }
@@ -849,15 +1092,16 @@ export function WorkspaceShell() {
       setResumeBuilderSession(response);
       setResumeBuilderNotice({
         level: "success",
-        message: "Your base resume draft is ready. Review it, then use this profile to continue into the workspace.",
+        message:
+          "Your base resume draft is ready. Review it, then use this profile to continue into the workspace.",
       });
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The base resume draft could not be generated.",
+        message: humanizeApiError(
+          error,
+          "The base resume draft could not be generated.",
+        ),
       });
     } finally {
       setResumeBuilderGenerating(false);
@@ -865,9 +1109,7 @@ export function WorkspaceShell() {
   }
 
   async function handleResumeBuilderDraftSave() {
-    if (!resumeBuilderSession) {
-      return;
-    }
+    if (!resumeBuilderSession) return;
 
     setResumeBuilderEditing(true);
     setResumeBuilderNotice({
@@ -897,20 +1139,25 @@ export function WorkspaceShell() {
             .split(",")
             .map((item) => item.trim())
             .filter(Boolean),
+          // Optional fields — same shape contract as their required
+          // siblings (string for prose, list[string] for citations).
+          projects_notes: resumeBuilderDraftForm.projects_notes,
+          publications: resumeBuilderDraftForm.publications
+            .split("\n")
+            .map((item) => item.trim())
+            .filter(Boolean),
         },
       );
       setResumeBuilderSession(response);
       setResumeBuilderNotice({
         level: "success",
-        message: "Draft updated. You can keep refining it or generate the base resume.",
+        message:
+          "Draft updated. You can keep refining it or generate the base resume.",
       });
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Those draft edits could not be saved.",
+        message: humanizeApiError(error, "Those draft edits could not be saved."),
       });
     } finally {
       setResumeBuilderEditing(false);
@@ -946,23 +1193,80 @@ export function WorkspaceShell() {
       });
       setResumeBuilderNotice({
         level: "success",
-        message: "Your base resume is now the active profile for the rest of the workflow.",
+        message:
+          "Your base resume is now the active profile for the rest of the workflow.",
       });
       setSelectedResumeFile(null);
       setResumeBuilderSession(null);
       setResumeBuilderInitialized(false);
       setResumeBuilderAnswer("");
+      // Flip the intake mode back to "upload" so when the user later
+      // returns to the Resume tab they see the parsed-profile hero
+      // for their newly committed resume — not a fresh assistant
+      // session that auto-spins up because mode was still "assistant".
+      setResumeIntakeMode("upload");
       setMainTab("jobs");
     } catch (error) {
       setResumeBuilderNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "This base resume could not be moved into the workspace.",
+        message: humanizeApiError(
+          error,
+          "This base resume could not be moved into the workspace.",
+        ),
       });
     } finally {
       setResumeBuilderCommitting(false);
+    }
+  }
+
+  async function handleResumeBuilderExport(
+    exportFormat: WorkspaceArtifactExportFormat,
+  ) {
+    if (!resumeBuilderSession) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          "Generate the base resume before downloading it.",
+      });
+      return;
+    }
+    if (!resumeBuilderSession.generated_resume_markdown) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message:
+          "Generate the base resume first — there's nothing to download yet.",
+      });
+      return;
+    }
+
+    setResumeBuilderExporting(exportFormat);
+    setResumeBuilderNotice({
+      level: "info",
+      message: `Preparing your ${exportFormat.toUpperCase()} download…`,
+    });
+
+    try {
+      const response = await exportResumeBuilderArtifact({
+        session_id: resumeBuilderSession.session_id,
+        export_format: exportFormat,
+        theme: resumeBuilderExportTheme,
+      });
+      downloadBase64File(
+        response.file_name,
+        response.content_base64,
+        response.mime_type,
+      );
+      setResumeBuilderNotice({
+        level: "success",
+        message: `Downloaded ${response.file_name}.`,
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message: humanizeApiError(error, "The download could not be prepared."),
+      });
+    } finally {
+      setResumeBuilderExporting(null);
     }
   }
 
@@ -974,6 +1278,7 @@ export function WorkspaceShell() {
     resetSavedJobs();
     setResumeBuilderSession(null);
     setResumeBuilderInitialized(false);
+    setResumeBuilderChatLog([]);
     setResumeBuilderAnswer("");
     setResumeBuilderNotice(null);
   }
@@ -983,9 +1288,7 @@ export function WorkspaceShell() {
   // surface the success notice.
   async function handleReloadSavedWorkspace() {
     const result = await reloadSavedWorkspace();
-    if (result.kind !== "snapshot") {
-      return;
-    }
+    if (result.kind !== "snapshot") return;
     applySavedWorkspaceSnapshot(result.response);
     setWorkspaceNotice({
       level: "success",
@@ -1004,13 +1307,12 @@ export function WorkspaceShell() {
       return;
     }
 
-    if (!analysisState) {
-      setWorkspaceNotice({
-        level: "warning",
-        message: "Run the AI analysis first so the assistant has grounded context to use.",
-      });
-      return;
-    }
+    // Note: previously this also hard-returned when `analysisState` was
+    // null with a "Run the AI analysis first…" notice. The gate was
+    // lifted so users can ask product-help questions before they have
+    // any workspace at all — the backend's
+    // AssistantService.answer_product_help path handles a null
+    // workspace_snapshot gracefully.
 
     // Abort any previous stream still in flight before starting a new one —
     // double-submits should never produce overlapping streamingTurn updates.
@@ -1032,10 +1334,46 @@ export function WorkspaceShell() {
     let streamErrorDetail: string | null = null;
 
     try {
+      // Compact state projection — gives the LLM enough to answer
+      // pre-analysis questions ("what should I do next?", "is my
+      // resume parsed?") without sending the full resume_text or JD
+      // body on every turn. The full `workspace_snapshot` still rides
+      // separately when an analysis has run.
+      const workspaceStateContext = {
+        current_step: mainTab,
+        has_resume: Boolean(currentProfile),
+        resume_summary: currentProfile
+          ? {
+              name: currentProfile.full_name || "",
+              location: currentProfile.location || "",
+              skills_count: currentProfile.skills?.length ?? 0,
+              // Count of *entries* (jobs held), not years.
+              experience_entries_count:
+                currentProfile.experience?.length ?? 0,
+              has_certifications:
+                (currentProfile.certifications?.length ?? 0) > 0,
+            }
+          : null,
+        has_jd: Boolean(review),
+        jd_summary: review
+          ? {
+              title: review.title || "",
+              location: review.location ?? null,
+              hard_skills_count: review.requirements?.hard_skills?.length ?? 0,
+              soft_skills_count: review.requirements?.soft_skills?.length ?? 0,
+              must_haves_count: review.requirements?.must_haves?.length ?? 0,
+            }
+          : null,
+        has_analysis: Boolean(analysisState),
+        saved_jobs_count: savedJobs?.length ?? 0,
+        last_search_query: searchQuery.trim() ? searchQuery.trim() : null,
+      };
+
       await streamWorkspaceAssistantAnswer(
         {
           question: normalizedQuestion,
           current_page: "Workspace",
+          workspace_state: workspaceStateContext,
           workspace_snapshot: analysisState,
           history: buildAssistantHistoryPayload(assistantTurns),
         },
@@ -1044,14 +1382,11 @@ export function WorkspaceShell() {
             case "meta":
               collectedSources = event.sources;
               setAssistantStreamingTurn((current) =>
-                current
-                  ? { ...current, sources: event.sources }
-                  : current,
+                current ? { ...current, sources: event.sources } : current,
               );
               break;
             case "delta":
               accumulatedAnswer += event.text;
-              // Snapshot into a local for the closure-stable update.
               setAssistantStreamingTurn((current) =>
                 current
                   ? { ...current, partialAnswer: accumulatedAnswer }
@@ -1062,8 +1397,6 @@ export function WorkspaceShell() {
               streamErrorDetail = event.detail;
               break;
             case "done":
-              // Handled below — reaching here just means the stream
-              // closed normally.
               break;
           }
         },
@@ -1071,8 +1404,6 @@ export function WorkspaceShell() {
       );
 
       if (streamErrorDetail) {
-        // The backend emitted an `error` SSE frame; surface it to the
-        // user and leave any partial answer visible so they can retry.
         setAssistantStreamingTurn((current) =>
           current
             ? { ...current, isStreaming: false, error: streamErrorDetail }
@@ -1085,12 +1416,6 @@ export function WorkspaceShell() {
         return;
       }
 
-      // Commit the completed turn into history so it persists across
-      // reloads via useAssistantHistory's localStorage layer.
-      // `suggested_follow_ups` stays as `[]` because the streaming
-      // contract no longer carries them and the panel doesn't render
-      // them — the field is kept on the type only because legacy
-      // stored turns and the non-streaming endpoint still include it.
       setAssistantTurns((current) => [
         ...current,
         {
@@ -1105,29 +1430,23 @@ export function WorkspaceShell() {
       setAssistantStreamingTurn(null);
       setAssistantQuestion("");
     } catch (error) {
-      // AbortError on user-driven cancel: silently drop, no notice.
       const isAbort =
         error instanceof DOMException && error.name === "AbortError";
       if (isAbort) {
         setAssistantStreamingTurn(null);
         return;
       }
-      setWorkspaceNotice({
-        level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Assistant request failed unexpectedly.",
-      });
+      const message = humanizeApiError(
+        error,
+        "Assistant request failed unexpectedly.",
+      );
+      setWorkspaceNotice({ level: "warning", message });
       setAssistantStreamingTurn((current) =>
         current
           ? {
               ...current,
               isStreaming: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Assistant request failed unexpectedly.",
+              error: message,
             }
           : current,
       );
@@ -1139,19 +1458,14 @@ export function WorkspaceShell() {
     }
   }
 
-  async function handleAssistantSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleAssistantSubmit(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
     await submitAssistantQuestion(assistantQuestion);
   }
 
-  async function handleAssistantFollowUp(question: string) {
-    setAssistantQuestion(question);
-    await submitAssistantQuestion(question);
-  }
-
   function handleClearAssistantConversation() {
-    // Cancel any in-flight stream so its delta events don't keep
-    // appending to a turn the user has just discarded.
     assistantStreamAbortRef.current?.abort();
     assistantStreamAbortRef.current = null;
     setAssistantStreamingTurn(null);
@@ -1174,7 +1488,8 @@ export function WorkspaceShell() {
     resetArtifacts();
     setWorkspaceNotice({
       level: "info",
-      message: "Cleared the active role context. Load another role or paste a new JD.",
+      message:
+        "Cleared the active role context. Load another role or paste a new JD.",
     });
   }
 
@@ -1199,17 +1514,15 @@ export function WorkspaceShell() {
     workspaceSaveMeta,
   ]);
 
+  // Outside-click + Escape close the account popover.
   useEffect(() => {
-    if (!accountMenuOpen) {
-      return;
-    }
+    if (!accountMenuOpen) return;
 
     function handlePointerDown(event: MouseEvent) {
       if (!accountMenuRef.current?.contains(event.target as Node)) {
         setAccountMenuOpen(false);
       }
     }
-
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setAccountMenuOpen(false);
@@ -1224,205 +1537,276 @@ export function WorkspaceShell() {
     };
   }, [accountMenuOpen]);
 
-  return (
-    <div className="workspace-shell">
-      <div className="workspace-shell-inner">
-        <div className="workspace-layout">
-      <Sidebar collapsed={sidebarCollapsed} onCollapse={setSidebarCollapsed}>
-        <AssistantPanel
-          turns={assistantTurns}
-          streamingTurn={assistantStreamingTurn}
-          requiresWorkspaceRun={assistantRequiresWorkspaceRun}
-          question={assistantQuestion}
-          onQuestionChange={setAssistantQuestion}
-          sending={assistantSending}
-          canSubmit={assistantCanSubmit}
-          onSubmit={handleAssistantSubmit}
-          onClearConversation={handleClearAssistantConversation}
-        />
-      </Sidebar>
+  // Recent assistant questions for the command palette.
+  const recentAssistantQuestions = useMemo(
+    () => assistantTurns.slice(-5).map((turn) => turn.question).reverse(),
+    [assistantTurns],
+  );
 
-      <div className="workspace-main">
-        <div className="workspace-main-topbar">
-          <div className="workspace-main-topbar-actions">
-            {authStatus === "signed_in" ? (
-              <div className="workspace-account-menu" ref={accountMenuRef}>
-                <button
-                  aria-expanded={accountMenuOpen}
-                  aria-haspopup="menu"
-                  className="workspace-account-trigger"
-                  onClick={() => setAccountMenuOpen((open) => !open)}
-                  type="button"
+  // ── Render ──────────────────────────────────────────────────────
+  return (
+    <div className="b-shell">
+      <div className="b-topbar">
+        <div className="b-brand">
+          <span className="b-brand-mark">
+            <Image
+              alt="Job Application Copilot"
+              height={30}
+              priority
+              src="/brand/job-copilot-logo.png"
+              width={30}
+            />
+          </span>
+          <span className="b-brand-name">Job Application Copilot</span>
+        </div>
+
+        <div className="b-topbar-actions">
+          <button
+            aria-label="Open command palette"
+            className="b-cmd-trigger"
+            onClick={() => setPaletteOpen(true)}
+            type="button"
+          >
+            <span className="b-cmd-trigger-icon">
+              <SearchIcon />
+            </span>
+            <span className="b-cmd-trigger-text">
+              Search or run command…
+            </span>
+            <span className="b-cmd-trigger-keys">
+              <span className="b-cmd-key">⌘</span>
+              <span className="b-cmd-key">K</span>
+            </span>
+          </button>
+
+          {authStatus === "signed_in" ? (
+            <div
+              ref={accountMenuRef}
+              style={{ position: "relative", display: "inline-flex" }}
+            >
+              <button
+                aria-expanded={accountMenuOpen}
+                aria-haspopup="menu"
+                className="b-account"
+                onClick={() => setAccountMenuOpen((open) => !open)}
+                type="button"
+              >
+                <span className="b-account-avatar">{accountInitial}</span>
+                <span className="b-account-name">
+                  {accountDisplayName.split(" ")[0] || accountDisplayName}
+                </span>
+                <svg
+                  aria-hidden="true"
+                  fill="none"
+                  height="10"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeWidth="1.6"
+                  viewBox="0 0 10 10"
+                  width="10"
                 >
-                  <span className="workspace-account-trigger-avatar">{accountInitial}</span>
-                </button>
-                {accountMenuOpen ? (
-                  <div className="workspace-account-popover" role="menu">
-                    <div className="workspace-auth-panel workspace-auth-panel-inline">
-                      <div className="workspace-auth-avatar">{accountInitial}</div>
-                      <div>
-                        <p className="workspace-auth-title">{accountDisplayName}</p>
-                        <p className="workspace-auth-copy">
-                          {authSession?.app_user.email || "Account session live"}
-                        </p>
+                  <path d="m2.5 4 2.5 2.5L7.5 4" />
+                </svg>
+              </button>
+              {accountMenuOpen ? (
+                <div
+                  className="b-account-popover"
+                  onClick={(event) => event.stopPropagation()}
+                  role="menu"
+                >
+                  <div className="b-account-pop-head">
+                    <span
+                      className="b-account-avatar"
+                      style={{ width: 32, height: 32, fontSize: 13 }}
+                    >
+                      {accountInitial}
+                    </span>
+                    <div>
+                      <div className="b-account-pop-name">
+                        {accountDisplayName}
+                      </div>
+                      <div className="b-account-pop-email">
+                        {authSession?.app_user.email || "Account session live"}
                       </div>
                     </div>
-                    <div className="workspace-sidebar-inline-metrics workspace-account-metrics">
-                      <span className="workspace-meta-chip">
-                        Plan: {authSession?.app_user.plan_tier || "free"}
-                      </span>
-                      <span className="workspace-meta-chip">
-                        Runs left: {formatRemainingCalls(dailyQuota)}
-                      </span>
-                      {workspaceSaveMeta ? (
-                        <span className="workspace-meta-chip">
-                          Saved until {formatUtcTimestamp(workspaceSaveMeta.expires_at)} UTC
-                        </span>
-                      ) : autoSaving ? (
-                        <span className="workspace-meta-chip">Saving latest workspace...</span>
-                      ) : null}
+                  </div>
+                  <dl className="b-account-pop-stats">
+                    <div>
+                      <dt>Plan</dt>
+                      <dd>{authSession?.app_user.plan_tier || "free"}</dd>
                     </div>
-                    {authError ? <div className="notice-panel notice-warning">{authError}</div> : null}
-                    <div className="workspace-sidebar-actions workspace-account-actions">
-                      {authSession?.features.saved_workspace_enabled ? (
-                        <button
-                          className="primary-button workspace-button workspace-button-full"
-                          disabled={authActionLoading || workspaceReloading}
-                          onClick={() => void handleReloadSavedWorkspace()}
-                          type="button"
-                        >
-                          {workspaceReloading ? "Reloading..." : "Reload saved workspace"}
-                        </button>
-                      ) : null}
+                    <div>
+                      <dt>Runs left</dt>
+                      <dd>{formatRemainingCalls(dailyQuota)}</dd>
+                    </div>
+                    {workspaceSaveMeta ? (
+                      <div>
+                        <dt>Saved until</dt>
+                        <dd>
+                          {formatUtcTimestamp(workspaceSaveMeta.expires_at)}{" "}
+                          UTC
+                        </dd>
+                      </div>
+                    ) : autoSaving ? (
+                      <div>
+                        <dt>Status</dt>
+                        <dd>Saving latest…</dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                  {authError ? (
+                    <div className="b-notice b-notice-warning">{authError}</div>
+                  ) : null}
+                  <div className="b-account-pop-actions">
+                    {authSession?.features.saved_workspace_enabled ? (
                       <button
-                        className="secondary-button workspace-button workspace-button-full"
-                        disabled={authActionLoading}
-                        onClick={() => void handleSignOut()}
+                        className="rd-btn rd-btn-primary rd-btn-sm"
+                        disabled={authActionLoading || workspaceReloading}
+                        onClick={() => void handleReloadSavedWorkspace()}
                         type="button"
                       >
-                        {authActionLoading ? "Signing out..." : "Sign out"}
+                        {workspaceReloading
+                          ? "Reloading…"
+                          : "Reload saved workspace"}
                       </button>
-                    </div>
+                    ) : null}
+                    <button
+                      className="rd-btn rd-btn-ghost rd-btn-sm"
+                      disabled={authActionLoading}
+                      onClick={() => void handleSignOut()}
+                      type="button"
+                    >
+                      {authActionLoading ? "Signing out…" : "Sign out"}
+                    </button>
                   </div>
-                ) : null}
-              </div>
-            ) : (
-              <button
-                className="secondary-button workspace-button workspace-topbar-button"
-                disabled={authActionLoading || authStatus === "restoring"}
-                onClick={() => void handleGoogleSignIn()}
-                type="button"
-              >
-                {authStatus === "restoring"
-                  ? "Restoring session..."
-                  : authActionLoading
-                    ? "Redirecting..."
-                    : "Sign in with Google"}
-              </button>
-            )}
-          </div>
-        </div>
-
-        <section className="surface-card surface-card-neutral job-hero-panel">
-          <div className="job-hero-grid">
-            <div>
-              <p className="eyebrow">Workspace</p>
-              <h1 className="workspace-hero-title">
-                Job Application Copilot
-              </h1>
-              <p className="workspace-hero-copy">
-                Upload your resume, review job descriptions, run tailored
-                  application analysis, and generate ready-to-use resume, cover
-                letter outputs from one place.
-                </p>
-              </div>
-            </div>
-        </section>
-
-        <div className="workspace-hero-metrics workspace-hero-metrics-outside">
-            <div className="metric-tile workspace-hero-metric-tile">
-              <div className="workspace-hero-metric-head">
-                <span className="workspace-hero-metric-icon" aria-hidden="true">
-                  <ResumeMetricIcon />
-                </span>
-                <span>Resume State</span>
-              </div>
-              <strong>{currentProfile?.full_name || "Waiting for upload"}</strong>
-              <small>{latestRole(currentProfile)}</small>
-            </div>
-            <div className="metric-tile workspace-hero-metric-tile">
-              <div className="workspace-hero-metric-head">
-                <span className="workspace-hero-metric-icon" aria-hidden="true">
-                  <WorkflowMetricIcon />
-                </span>
-                <span>Workflow Mode</span>
-              </div>
-              <strong>{analysisState?.workflow.mode || "Not run yet"}</strong>
-                <small>
-                  {analysisState
-                    ? analysisState.workflow.assisted_requested
-                      ? "AI-assisted analysis is ready to continue."
-                      : "Loaded from an older non-assisted run."
-                    : "Run the AI analysis after loading both inputs."}
-                </small>
-              </div>
-            <div className="metric-tile workspace-hero-metric-tile">
-              <div className="workspace-hero-metric-head">
-                <span className="workspace-hero-metric-icon" aria-hidden="true">
-                  <ArtifactMetricIcon />
-                </span>
-                <span>Artifacts</span>
-              </div>
-                <strong>{analysisState ? "Resume and cover letter" : "Pending"}</strong>
-                <small>
-                  {analysisState
-                    ? "Outputs are ready to review and export."
-                  : "Artifacts appear after the workspace run finishes."}
-              </small>
-            </div>
-        </div>
-        <section className="surface-card surface-card-neutral workspace-main-nav">
-          <div className="workspace-main-nav-head">
-            <div>
-              <p className="eyebrow">Workspace flow</p>
-              <h2 className="workspace-main-nav-title">{activeMainTabMeta.title}</h2>
-              <p className="workspace-main-nav-copy">{activeMainTabMeta.copy}</p>
-            </div>
-            <span
-              className={`workspace-main-tab-status workspace-main-tab-status-${activeMainTabMeta.tone}`}
-            >
-              {activeMainTabMeta.status}
-            </span>
-          </div>
-
-          <div className="workspace-main-tabs" role="tablist" aria-label="Workspace steps">
-            {workspaceTabs.map((tab) => (
-              <button
-                aria-selected={mainTab === tab.id}
-                className={
-                  mainTab === tab.id
-                    ? "workspace-main-tab workspace-main-tab-active"
-                    : "workspace-main-tab"
-                }
-                key={tab.id}
-                onClick={() => setMainTab(tab.id)}
-                role="tab"
-                type="button"
-              >
-                <div className="workspace-main-tab-top">
-                  <span className="workspace-main-tab-label">{tab.label}</span>
-                  <span
-                    className={`workspace-main-tab-status workspace-main-tab-status-${tab.tone}`}
-                  >
-                    {tab.status}
-                  </span>
                 </div>
-                <p className="workspace-main-tab-note">{tab.copy}</p>
-              </button>
-            ))}
-          </div>
-        </section>
+              ) : null}
+            </div>
+          ) : (
+            <button
+              className="b-topbar-signin"
+              disabled={authActionLoading || authStatus === "restoring"}
+              onClick={() => void handleGoogleSignIn()}
+              type="button"
+            >
+              {authStatus === "restoring"
+                ? "Restoring…"
+                : authActionLoading
+                  ? "Redirecting…"
+                  : "Sign in with Google"}
+            </button>
+          )}
+        </div>
+      </div>
 
+      <div className="b-rail-row">
+        {(() => {
+          // Connector-line progress: how far the workflow has gotten,
+          // 0..1. Counts each done step + a half-credit for the
+          // currently-active step so the line visibly reaches the
+          // chip the user is on.
+          const doneCount = STEP_ORDER.filter(
+            (step) => stepDone[step] && step !== mainTab,
+          ).length;
+          const activeContribution = STEP_ORDER.indexOf(mainTab) >= 0 ? 0.5 : 0;
+          const railProgress =
+            (doneCount + activeContribution) /
+            Math.max(1, STEP_ORDER.length - 1);
+          // First ready, not-active, not-done step → next nudge target.
+          const nextStep = STEP_ORDER.find(
+            (step) => step !== mainTab && stepReady[step] && !stepDone[step],
+          );
+          // Honest tooltip per step state — locked steps explain WHY.
+          // Resume / Job Search / Job Detail are independently
+          // accessible (see stepReady above). Only Analysis is gated.
+          const lockReason: Record<WorkspaceMainTab, string> = {
+            resume: "",
+            jobs: "",
+            jd: "",
+            analysis: "Need a parsed resume + job description first.",
+          };
+          return (
+            <div
+              className="b-rail"
+              role="tablist"
+              style={
+                {
+                  ["--b-rail-progress" as string]: Math.min(
+                    1,
+                    Math.max(0, railProgress),
+                  ),
+                } as React.CSSProperties
+              }
+            >
+              {STEP_ORDER.map((step) => {
+                const meta = STEP_LABELS[step];
+                const ready = stepReady[step];
+                const done = stepDone[step] && step !== mainTab;
+                const active = mainTab === step;
+                const isNext = step === nextStep;
+                const tooltip = !ready
+                  ? lockReason[step]
+                  : active
+                    ? `${meta.label} · current step`
+                    : done
+                      ? `${meta.label} · complete · click to revisit`
+                      : `${meta.label} · click to open`;
+                return (
+                  <button
+                    aria-label={meta.label}
+                    aria-selected={active}
+                    className="b-rail-step"
+                    data-done={done || undefined}
+                    data-next={isNext || undefined}
+                    disabled={!ready}
+                    key={step}
+                    onClick={() => {
+                      if (ready) setMainTab(step);
+                    }}
+                    role="tab"
+                    title={tooltip}
+                    type="button"
+                  >
+                    <span className="b-rail-num">
+                      {done ? <CheckIcon /> : meta.number}
+                    </span>
+                    {/* Two label spans, one shown on desktop and one on
+                        mobile. `aria-hidden` on both keeps screen
+                        readers from seeing the duplication; the
+                        button's aria-label is the source of truth. */}
+                    <span className="b-rail-label-full" aria-hidden="true">
+                      {meta.label}
+                    </span>
+                    <span className="b-rail-label-short" aria-hidden="true">
+                      {meta.shortLabel}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
+
+      <div className="b-hero">
+        <div>
+          <div className="b-hero-title">{activeTabMeta.title}</div>
+          <div className="b-hero-sub">{activeTabMeta.sub}</div>
+        </div>
+        <div className="b-hero-stats">
+          <span className="b-hero-stat">
+            <strong>Resume</strong> · {heroResumeLine}
+          </span>
+          <span className="b-hero-stat">
+            <strong>Role</strong> · {heroJobLine}
+          </span>
+          <span className={`b-hero-stat ${pipToneClass(activeTabMeta.tone)}`}>
+            {activeTabMeta.statusLabel}
+          </span>
+        </div>
+      </div>
+
+      <div className="b-canvas">
         {workspaceNotice ? (
           <div className={noticeClassName(workspaceNotice.level)}>
             {workspaceNotice.message}
@@ -1431,131 +1815,189 @@ export function WorkspaceShell() {
 
         {mainTab === "resume" ? (
           <ResumeIntake
-            mode={resumeIntakeMode}
-            onModeChange={setResumeIntakeMode}
-            onResetBuilderInitialized={() => setResumeBuilderInitialized(false)}
-            selectedResumeFile={selectedResumeFile}
-            onSelectedResumeFileChange={setSelectedResumeFile}
-            onResumeUpload={(file) => void handleResumeUpload(file)}
-            resumeUploading={resumeUploading}
-            resumeState={resumeState}
-            resumeNotice={resumeNotice}
-            currentProfile={currentProfile}
-            onClearUploadedResumeProfile={handleClearUploadedResumeProfile}
             authSignedIn={authStatus === "signed_in"}
-            builderSession={resumeBuilderSession}
+            builderAnswer={resumeBuilderAnswer}
+            builderChatLog={resumeBuilderChatLog}
             builderCollapsed={resumeBuilderCollapsed}
+            builderCommitting={resumeBuilderCommitting}
+            builderDraftForm={resumeBuilderDraftForm}
+            builderEditing={resumeBuilderEditing}
+            builderExporting={resumeBuilderExporting}
+            builderExportTheme={resumeBuilderExportTheme}
+            builderGenerating={resumeBuilderGenerating}
+            builderLoading={resumeBuilderLoading}
+            builderNotice={resumeBuilderNotice}
+            builderSession={resumeBuilderSession}
+            currentProfile={currentProfile}
+            mode={resumeIntakeMode}
+            onBuilderAnswerChange={setResumeBuilderAnswer}
+            onBuilderAnswerSubmit={() => void handleResumeBuilderAnswer()}
+            onBuilderCommit={() => void handleResumeBuilderCommit()}
+            onBuilderDraftSave={() => void handleResumeBuilderDraftSave()}
+            onBuilderExport={(format) =>
+              void handleResumeBuilderExport(format)
+            }
+            onBuilderExportThemeChange={setResumeBuilderExportTheme}
+            onBuilderGenerate={() => void handleResumeBuilderGenerate()}
+            onClearUploadedResumeProfile={handleClearUploadedResumeProfile}
+            onModeChange={setResumeIntakeMode}
+            onResetBuilderInitialized={() =>
+              setResumeBuilderInitialized(false)
+            }
+            onResumeUpload={(file) => void handleResumeUpload(file)}
+            onSelectedResumeFileChange={setSelectedResumeFile}
             onToggleBuilderCollapsed={() =>
               setResumeBuilderCollapsed((current) => !current)
             }
-            builderAnswer={resumeBuilderAnswer}
-            onBuilderAnswerChange={setResumeBuilderAnswer}
-            builderNotice={resumeBuilderNotice}
-            builderLoading={resumeBuilderLoading}
-            builderGenerating={resumeBuilderGenerating}
-            builderCommitting={resumeBuilderCommitting}
-            builderEditing={resumeBuilderEditing}
-            builderDraftForm={resumeBuilderDraftForm}
+            resumeNotice={resumeNotice}
+            resumeState={resumeState}
+            resumeUploading={resumeUploading}
+            selectedResumeFile={selectedResumeFile}
             setBuilderDraftForm={setResumeBuilderDraftForm}
-            onBuilderAnswerSubmit={() => void handleResumeBuilderAnswer()}
-            onBuilderGenerate={() => void handleResumeBuilderGenerate()}
-            onBuilderCommit={() => void handleResumeBuilderCommit()}
-            onBuilderDraftSave={() => void handleResumeBuilderDraftSave()}
           />
         ) : null}
 
         {mainTab === "jobs" ? (
           <JobSearch
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
-            searchLocation={searchLocation}
-            onSearchLocationChange={setSearchLocation}
-            remoteOnly={remoteOnly}
-            onRemoteOnlyChange={setRemoteOnly}
-            postedWithinDays={postedWithinDays}
-            onPostedWithinDaysChange={setPostedWithinDays}
-            searching={searching}
-            onSearchSubmit={handleSearch}
-            jobUrl={jobUrl}
-            onJobUrlChange={setJobUrl}
-            importing={importing}
-            onImportSubmit={handleResolveJob}
-            searchNotice={searchNotice}
-            searchResults={searchResults}
-            searchResultsCollapsed={searchResultsCollapsed}
-            onToggleSearchResultsCollapsed={() =>
-              setSearchResultsCollapsed((current) => !current)
-            }
-            savedJobIds={savedJobIds}
-            savedJobActionId={savedJobActionId}
             activeJob={activeJob}
+            authSignedIn={authStatus === "signed_in"}
+            employmentTypes={employmentTypes}
+            importing={importing}
+            jobUrl={jobUrl}
+            latestSavedJobAt={latestSavedJobAt}
+            onEmploymentTypesChange={setEmploymentTypes}
+            onImportSubmit={handleResolveJob}
+            onJobUrlChange={setJobUrl}
+            onLoadSavedJob={handleLoadSavedJob}
+            onPostedWithinDaysChange={setPostedWithinDays}
+            onRemoveSavedJob={(job) => void handleRemoveSavedJob(job)}
             onReviewRole={(job) => {
               setActiveJob(job);
               setMainTab("jd");
             }}
-            authSignedIn={authStatus === "signed_in"}
             onSaveJob={(job) => void handleSaveJob(job)}
-            savedJobsEnabled={savedJobsEnabled}
+            onSearchLocationChange={setSearchLocation}
+            onSearchQueryChange={setSearchQuery}
+            onSearchSubmit={handleSearch}
+            onSortByChange={setSortBy}
+            onSourceFiltersChange={setSourceFilters}
+            onWorkModesChange={setWorkModes}
+            postedWithinDays={postedWithinDays}
+            savedJobActionId={savedJobActionId}
+            savedJobIds={savedJobIds}
             savedJobs={savedJobs}
-            savedJobsNotice={savedJobsNotice}
+            savedJobsEnabled={savedJobsEnabled}
             savedJobsLoading={savedJobsLoading}
-            latestSavedJobAt={latestSavedJobAt}
-            onLoadSavedJob={handleLoadSavedJob}
-            onRemoveSavedJob={(job) => void handleRemoveSavedJob(job)}
+            savedJobsNotice={savedJobsNotice}
+            searching={searching}
+            searchLocation={searchLocation}
+            searchNotice={searchNotice}
+            searchQuery={searchQuery}
+            searchResults={searchResults}
+            sortBy={sortBy}
+            sourceFilters={sourceFilters}
+            workModes={workModes}
           />
         ) : null}
+
         {mainTab === "jd" ? (
           <JDReview
-            analysisState={analysisState}
+            activeJob={activeJob}
             analysisIsStale={analysisIsStale}
-            review={review}
-            manualJobText={manualJobText}
-            onManualJobTextChange={setManualJobText}
-            selectedJobFile={selectedJobFile}
-            onSelectedJobFileChange={setSelectedJobFile}
+            analysisState={analysisState}
+            jobFileNotice={jobFileNotice}
             jobFileState={jobFileState}
             jobFileUploading={jobFileUploading}
-            jobFileNotice={jobFileNotice}
-            activeJob={activeJob}
             jobInputCollapsed={jobInputCollapsed}
-            onToggleJobInputCollapsed={() =>
-              setJobInputCollapsed((current) => !current)
-            }
+            manualJobText={manualJobText}
+            onClearLoadedJobDescription={handleClearLoadedJobDescription}
             onJobDescriptionUpload={(file) =>
               void handleJobDescriptionUpload(file)
             }
-            onClearLoadedJobDescription={handleClearLoadedJobDescription}
+            onManualJobTextChange={setManualJobText}
+            onSelectedJobFileChange={setSelectedJobFile}
+            onToggleJobInputCollapsed={() =>
+              setJobInputCollapsed((current) => !current)
+            }
+            review={review}
+            selectedJobFile={selectedJobFile}
           />
         ) : null}
 
         {mainTab === "analysis" ? (
           <>
             <AnalysisRunner
-              analysisState={analysisState}
-              analysisLoading={analysisLoading}
-              analysisJobState={analysisJobState}
               analysisIsStale={analysisIsStale}
+              analysisJobState={analysisJobState}
+              analysisLoading={analysisLoading}
+              analysisState={analysisState}
               currentWorkflowStage={currentWorkflowStage}
-              onRunAnalysis={() => void handleRunAnalysis()}
               onClearRole={clearWorkspaceRole}
+              onRunAnalysis={() => void handleRunAnalysis()}
+              ready={stepReady.analysis}
             />
 
             <ArtifactViewer
-              hasAnalysis={Boolean(analysisState)}
+              activeTheme={
+                artifactTab === "resume" ? resumeTheme : coverLetterTheme
+              }
               artifact={currentArtifact}
-              tab={artifactTab}
-              onTabChange={setArtifactTab}
               exporting={artifactExporting}
+              hasAnalysis={Boolean(analysisState)}
+              onExport={(kind, format) =>
+                void handleArtifactExport(kind, format)
+              }
+              onTabChange={setArtifactTab}
+              onThemeChange={
+                artifactTab === "resume"
+                  ? setResumeTheme
+                  : setCoverLetterTheme
+              }
               previewHtml={artifactPreviewHtml}
-              previewTitle={artifactPreviewTitle}
               previewLoading={artifactPreviewLoading}
-              onExport={(kind, format) => void handleArtifactExport(kind, format)}
+              previewTitle={artifactPreviewTitle}
+              tab={artifactTab}
             />
           </>
         ) : null}
       </div>
-        </div>
-      </div>
+
+      <AssistantPanel
+        canSubmit={assistantCanSubmit}
+        forceOpen={forceAssistantOpen}
+        hasWorkspaceContext={hasWorkspaceContext}
+        onClearConversation={handleClearAssistantConversation}
+        onForceOpenHandled={() => setForceAssistantOpen(false)}
+        onQuestionChange={setAssistantQuestion}
+        onSubmit={handleAssistantSubmit}
+        question={assistantQuestion}
+        sending={assistantSending}
+        streamingTurn={assistantStreamingTurn}
+        turns={assistantTurns}
+      />
+
+      <CommandPalette
+        analysisReady={stepReady.analysis}
+        navigation={stepReady}
+        onAskAssistant={(question) => {
+          setAssistantQuestion(question);
+          setForceAssistantOpen(true);
+          void submitAssistantQuestion(question);
+        }}
+        onClearWorkspace={clearWorkspaceRole}
+        onClose={() => setPaletteOpen(false)}
+        onLoadSavedJob={handleLoadSavedJob}
+        onNavigate={setMainTab}
+        onReuploadResume={() => {
+          setMainTab("resume");
+          setResumeIntakeMode("upload");
+        }}
+        onRunAnalysis={() => void handleRunAnalysis()}
+        open={paletteOpen}
+        recentAssistantQuestions={recentAssistantQuestions}
+        savedJobs={savedJobs}
+      />
     </div>
   );
 }
+

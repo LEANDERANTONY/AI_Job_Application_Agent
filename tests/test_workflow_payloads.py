@@ -64,7 +64,6 @@ def _malformed_workspace_snapshot():
             "model": "gpt-test",
             "profile": {"positioning_headline": "ML engineer", "evidence_highlights": [], "strengths": [], "cautions": []},
             "job": {"requirement_summary": "Python-heavy role", "priority_skills": [], "must_have_themes": [], "messaging_guidance": []},
-            "fit": {"fit_summary": "Good fit", "top_matches": [], "key_gaps": []},
             "tailoring": {
                 "professional_summary": "Backend engineer focused on ML tooling.",
                 "rewritten_bullets": ["Built APIs for AI workflows"],

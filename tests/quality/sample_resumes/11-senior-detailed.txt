@@ -1,0 +1,71 @@
+Michael Chen
+VP of Engineering, Platform | San Francisco Bay Area
+michael@mchen.io | (650) 555-0411 | linkedin.com/in/michaelchen-eng | mchen.io
+
+EXECUTIVE SUMMARY
+
+Engineering leader with 18 years of experience scaling platform organizations at high-growth
+SaaS companies. Built and led teams of 50-150 engineers across infrastructure, data, and
+security. Track record of three successful 0-to-IPO journeys and one post-IPO scale-out.
+
+LEADERSHIP EXPERIENCE
+
+Datadog
+VP of Engineering, Platform Group  ·  Jul 2022 - Present
+- Lead a 92-person organization across 7 teams (Compute, Storage, Networking, Observability,
+  Security, Internal Platform, Developer Productivity).
+- Reduced platform infrastructure cost-per-event by 31% over 18 months while doubling event
+  throughput.
+- Drove the multi-region failover strategy that achieved Datadog's first regional disaster
+  recovery in under 11 minutes (RTO).
+- Hired and onboarded 4 directors; promoted 14 staff engineers and 7 first-time managers.
+
+Stripe
+Director of Engineering, Payments Infrastructure  ·  Mar 2018 - Jun 2022
+- Owned the payments-acceptance backbone processing $640B annually across 47 countries.
+- Led the re-architecture from a monolithic Ruby application onto a service mesh of
+  Go services + Kafka, reducing 95th percentile latency from 240ms to 38ms.
+- Stood up Stripe's first Tokyo engineering hub (12 engineers in year 1, 38 by year 4).
+- Authored Stripe's internal engineering ladder for L7+ ICs (Staff/Principal/Distinguished).
+
+Atlassian
+Engineering Manager → Senior EM  ·  Sep 2014 - Feb 2018
+- Promoted from EM to Senior EM after 18 months running the Bitbucket Pipelines team.
+- Shipped Bitbucket Pipelines from internal beta to GA across 3 regions; 40k DAU at launch.
+- Led the post-mortem and remediation for Atlassian's Apr 2017 Trello outage.
+
+Netflix
+Senior Software Engineer  ·  Mar 2010 - Aug 2014
+- Founding engineer on the Spinnaker continuous-delivery platform (now CNCF graduated).
+- Authored the original Bakery service for AMI generation; still in production a decade later.
+
+Microsoft
+Software Development Engineer II  ·  Jul 2006 - Feb 2010
+- Worked on the Windows Live Messenger backend (300M+ MAU at peak).
+
+EDUCATION
+
+Massachusetts Institute of Technology
+Master of Engineering in Computer Science  ·  2004 - 2006
+
+University of California, Berkeley
+B.S. in Electrical Engineering & Computer Science  ·  2000 - 2004
+Highest Honors
+
+CORE SKILLS
+
+Engineering leadership, organisational design, large-scale distributed systems, microservices,
+event-driven architecture, observability, incident response, hiring and performance
+management, executive communication, M&A integration
+
+PUBLICATIONS & TALKS
+
+Chen, M. (2021). "Lessons from scaling Stripe's payments platform 100x." QCon SF 2021.
+Chen, M., Jakubowicz, P. (2019). "Choosing service-mesh boundaries that survive contact with
+reality." InfoQ feature article.
+Chen, M. (2017). "Why your post-mortems aren't working." LeadDev Berlin 2017.
+
+ADVISORY BOARDS
+
+- Cribl, Inc. (advisor since 2020)
+- Sourcegraph, Inc. (advisor since 2019)

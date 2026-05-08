@@ -1,4 +1,5 @@
 import type {
+  ArtifactTheme,
   AuthSessionResponse,
   BackendHealth,
   GoogleSignInStartResponse,
@@ -10,6 +11,7 @@ import type {
   LoadSavedWorkspaceResponse,
   RemoveSavedJobResponse,
   ResumeBuilderCommitResponse,
+  ResumeBuilderExportResponse,
   ResumeBuilderSessionResponse,
   SavedJobsResponse,
   SaveWorkspaceResponse,
@@ -19,6 +21,7 @@ import type {
   WorkspaceAnalysisJobCreatedResponse,
   WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
+  WorkspaceArtifactExportFormat,
   WorkspaceArtifactExportRequest,
   WorkspaceArtifactExportResponse,
   WorkspaceArtifactPreviewRequest,
@@ -40,6 +43,31 @@ const FILE_MIME_FALLBACKS: Record<string, string> = {
   txt: "text/plain",
   md: "text/markdown",
 };
+
+/** Decode a base64 file payload (returned by the backend's export
+ *  routes) and trigger a browser download. Shared between the
+ *  workspace artifact viewer and the resume builder download row so
+ *  both surfaces produce identically-shaped downloads. */
+export function downloadBase64File(
+  filename: string,
+  contentBase64: string,
+  mimeType: string,
+) {
+  const binary = atob(contentBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  const blob = new Blob([bytes], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // credentials: "include" makes the browser send and accept the
@@ -275,6 +303,23 @@ export async function commitResumeBuilderResume(sessionId: string) {
       session_id: sessionId,
     }),
   });
+}
+
+export async function exportResumeBuilderArtifact(payload: {
+  session_id: string;
+  export_format: WorkspaceArtifactExportFormat;
+  theme: ArtifactTheme;
+}) {
+  return request<ResumeBuilderExportResponse>(
+    "/workspace/resume-builder/export",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function uploadJobDescriptionFile(file: File) {

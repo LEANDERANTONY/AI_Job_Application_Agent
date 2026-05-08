@@ -1,0 +1,19 @@
+{
+  "title_must_include": "Senior Data Scientist",
+  "location_must_include": "Remote",
+  "salary_must_include": "$145,000",
+  "experience_requirement_must_include": "5+ years",
+  "hard_skills_must_include": [
+    "Python",
+    "SQL",
+    "Snowflake",
+    "BigQuery",
+    "Looker",
+    "Tableau",
+    "Pandas",
+    "Scikit-learn"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Synthetic JD with PREAMBLE before the title. The first non-empty line is 'Job Posting · Posted 3 days ago · 47 applicants' — the deterministic parser's `lines[0]` heuristic would extract that as the title. Real title is on line 4. This is a known-brittle case for the deterministic parser. Should fail title detection."
+}

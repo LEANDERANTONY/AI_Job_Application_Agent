@@ -155,6 +155,7 @@ def build_cover_letter_artifact(
     fit_analysis: FitAnalysis,
     tailored_draft: TailoredResumeDraft,
     agent_result: Optional[AgentWorkflowResult] = None,
+    theme: str = "classic_ats",
 ) -> CoverLetterArtifact:
     role = job_description.title or tailored_draft.target_role or "Target Role"
     title = "{name} - {role} Cover Letter".format(
@@ -184,6 +185,7 @@ def build_cover_letter_artifact(
             summary=summary,
             markdown=markdown,
             plain_text=markdown_to_text(markdown, strip_bold=True),
+            theme=theme,
         )
     markdown_parts.extend(
         [
@@ -203,4 +205,5 @@ def build_cover_letter_artifact(
         summary=summary,
         markdown=markdown,
         plain_text=markdown_to_text(markdown, strip_bold=True),
+        theme=theme,
     )

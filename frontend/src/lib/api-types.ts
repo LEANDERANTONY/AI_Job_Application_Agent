@@ -16,6 +16,25 @@ export type BackendHealth = {
   };
 };
 
+/** Canonical work-mode values the backend accepts on the dropdown
+ *  filter. Anything outside this union gets dropped server-side, so
+ *  keep this in sync with `_ALLOWED_WORK_MODES` in cached_jobs_store.py. */
+export type WorkMode = "remote" | "hybrid" | "onsite";
+
+/** Canonical employment-type values. Mirrors `_ALLOWED_EMPLOYMENT_TYPES`
+ *  in cached_jobs_store.py — derived from the `employment_type_norm`
+ *  generated column on cached_jobs. */
+export type EmploymentType =
+  | "fulltime"
+  | "parttime"
+  | "contract"
+  | "internship"
+  | "temporary";
+
+/** Sort key sent to the search_cached_jobs_ranked RPC. Unknown values
+ *  coerce to "relevance" both client- and server-side. */
+export type JobSortBy = "relevance" | "newest" | "oldest" | "company_az";
+
 export type JobSearchRequest = {
   query: string;
   location?: string;
@@ -23,6 +42,12 @@ export type JobSearchRequest = {
   remote_only?: boolean;
   posted_within_days?: number | null;
   page_size?: number;
+  /** Multi-select dropdown. Empty / omitted = no filter applied. */
+  work_modes?: WorkMode[];
+  /** Multi-select dropdown. Empty / omitted = no filter applied. */
+  employment_types?: EmploymentType[];
+  /** Single-select sort. Defaults to "relevance" when omitted. */
+  sort_by?: JobSortBy;
 };
 
 export type JobPosting = {
@@ -40,6 +65,13 @@ export type JobPosting = {
   metadata: Record<string, unknown>;
   saved_at?: string;
   updated_at?: string;
+  /** True when the upstream board (Greenhouse / Lever) is still
+   *  returning this listing in its periodic refresh. False when the
+   *  listing was tombstoned by the cache-cleanup pass — the job is
+   *  no longer accepting applications. Optional + defaults to true
+   *  on the frontend so old responses (before this field landed) and
+   *  jobs from sources we don't cache stay rendered as active. */
+  is_listing_active?: boolean;
 };
 
 export type JobSearchResponse = {
@@ -186,12 +218,6 @@ export type JobAgentOutput = {
   messaging_guidance: string[];
 };
 
-export type FitAgentOutput = {
-  fit_summary: string;
-  top_matches: string[];
-  key_gaps: string[];
-};
-
 export type TailoringAgentOutput = {
   professional_summary: string;
   rewritten_bullets: string[];
@@ -218,7 +244,6 @@ export type ReviewAgentOutput = {
 export type AgentWorkflowResult = {
   mode: string;
   model: string;
-  fit: FitAgentOutput;
   tailoring: TailoringAgentOutput;
   review: ReviewAgentOutput;
   profile: ProfileAgentOutput;
@@ -227,14 +252,6 @@ export type AgentWorkflowResult = {
   attempted_assisted: boolean;
   fallback_reason: string;
   fallback_details: string;
-};
-
-export type ReportArtifact = {
-  title: string;
-  filename_stem: string;
-  summary: string;
-  markdown: string;
-  plain_text: string;
 };
 
 export type CoverLetterArtifact = {
@@ -274,6 +291,12 @@ export type TailoredResumeArtifact = {
   experience_entries: ResumeExperienceEntry[];
   education_entries: EducationEntry[];
   certifications: string[];
+  /** Canonical section ids in render order: 'summary', 'skills',
+   *  'experience', 'projects', 'education', 'publications',
+   *  'certifications'. Backend picks per-profile (students lead with
+   *  Education + Projects; academics with Publications; seniors with
+   *  Experience). Empty list = render with backend's default order. */
+  section_order: string[];
   change_log: string[];
   validation_notes: string[];
 };
@@ -293,7 +316,20 @@ export type ResumeBuilderDraftProfile = {
   education_notes: string;
   skills: string[];
   certifications: string[];
+  /** Optional — free-form prose describing side projects / portfolio
+   *  pieces. Captured verbatim by the LLM intake; the structuring
+   *  pass converts it into ProjectEntry objects on the artifact. */
+  projects_notes: string;
+  /** Optional — list of publication / paper / talk citation strings.
+   *  Like certifications: each item is a single line of citation
+   *  text, no further structuring. */
+  publications: string[];
 };
+
+export type ResumeBuilderPersistenceStatus =
+  | "saved"
+  | "skipped"
+  | "unauthenticated";
 
 export type ResumeBuilderSessionResponse = {
   session_id: string;
@@ -308,6 +344,17 @@ export type ResumeBuilderSessionResponse = {
   generated_resume_plain_text: string;
   ready_to_generate: boolean;
   ready_to_commit: boolean;
+  /** Outcome of the Supabase upsert that the route ran after the
+   *  service mutation. Optional because /resume-builder/latest
+   *  doesn't include it (a session loaded from latest is implicitly
+   *  saved if it exists). */
+  persistence_status?: ResumeBuilderPersistenceStatus;
+  /** ISO timestamp at which the persisted draft will be GC'd by the
+   *  Supabase cron (cleanup-expired-resume-builder-sessions) and
+   *  hidden by RLS. Only present when persistence_status === 'saved';
+   *  the TTL refreshes on every save so an active user keeps their
+   *  draft alive. */
+  expires_at?: string;
   resume_document?: ResumeDocument;
   candidate_profile?: CandidateProfile;
 };
@@ -323,6 +370,20 @@ export type ResumeBuilderCommitResponse = {
   generated_resume_markdown: string;
   generated_resume_plain_text: string;
   builder_session_id: string;
+};
+
+/** Phase 5 of the DOCX export plan: download the resume builder's
+ *  generated base resume as PDF or DOCX. Mirrors the shape of
+ *  `WorkspaceArtifactExportResponse` so the same `downloadBase64File`
+ *  helper handles both surfaces. */
+export type ResumeBuilderExportResponse = {
+  status: string;
+  export_format: WorkspaceArtifactExportFormat;
+  file_name: string;
+  mime_type: string;
+  content_base64: string;
+  theme: ArtifactTheme;
+  artifact_title: string;
 };
 
 export type WorkspaceJobDescriptionUploadResponse = {
@@ -342,7 +403,6 @@ export type WorkspaceWorkflow = {
 export type WorkspaceArtifacts = {
   tailored_resume: TailoredResumeArtifact;
   cover_letter: CoverLetterArtifact;
-  report: ReportArtifact;
 };
 
 export type WorkspaceAnalysisResponse = {
@@ -436,26 +496,81 @@ export type WorkspaceAnalysisRequest = {
   run_assisted: boolean;
 };
 
+/**
+ * Compact projection of the live workspace state, sent on every
+ * assistant query so the LLM can answer state-aware questions
+ * ("what should I do next?", "is my resume parsed?", "why is
+ * analysis locked?") even before the full `workspace_snapshot`
+ * exists.
+ *
+ * Intentionally small — name + counts + booleans, no resume text or
+ * full JD body. The full snapshot still rides separately when an
+ * analysis has run; this object covers the pre-analysis gap.
+ */
+export type WorkspaceStateContext = {
+  /** Which step the user is currently looking at. */
+  current_step: "resume" | "jobs" | "jd" | "analysis";
+  /** Has a CandidateProfile been parsed from the user's resume? */
+  has_resume: boolean;
+  /** Small projection of the parsed resume — null until parsed.
+   *  `experience_entries_count` is the number of work-experience
+   *  *entries* on the resume (e.g. 4 jobs held), NOT years of total
+   *  experience. The earlier name `experience_count` led the model
+   *  to answer "how many years?" with the entry count. */
+  resume_summary: {
+    name: string;
+    location: string;
+    skills_count: number;
+    experience_entries_count: number;
+    has_certifications: boolean;
+  } | null;
+  /** Has the user pasted/imported a JD that's been at least
+   *  scaffolded into a JobDescription? */
+  has_jd: boolean;
+  /** Small projection of the parsed JD — null until present. */
+  jd_summary: {
+    title: string;
+    location: string | null;
+    hard_skills_count: number;
+    soft_skills_count: number;
+    must_haves_count: number;
+  } | null;
+  /** True once an analysis has run and produced a fit score. */
+  has_analysis: boolean;
+  /** How many jobs the user has saved to their shortlist. */
+  saved_jobs_count: number;
+  /** What they last typed in the search box, if anything. */
+  last_search_query: string | null;
+};
+
 export type WorkspaceAssistantRequest = {
   question: string;
   current_page: string;
+  workspace_state?: WorkspaceStateContext | null;
   workspace_snapshot?: WorkspaceAnalysisResponse | null;
   history?: WorkspaceAssistantHistoryTurn[];
 };
 
 export type WorkspaceArtifactKind =
   | "tailored_resume"
-  | "cover_letter"
-  | "report"
-  | "bundle";
+  | "cover_letter";
 
-export type WorkspaceArtifactExportFormat = "markdown" | "pdf" | "zip";
+// DOCX replaced the markdown download in Phase 2 of the DOCX export
+// plan. PDF stays for printable copies.
+export type WorkspaceArtifactExportFormat = "pdf" | "docx";
+
+/** Each artifact has its own theme so the user can pick a different
+ *  treatment for the resume vs the cover letter (e.g. classic_ats for
+ *  the resume on a startup application but professional_neutral for the
+ *  cover letter on a bank application). */
+export type ArtifactTheme = "classic_ats" | "professional_neutral";
 
 export type WorkspaceArtifactExportRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;
   artifact_kind: WorkspaceArtifactKind;
   export_format: WorkspaceArtifactExportFormat;
-  resume_theme?: string;
+  resume_theme?: ArtifactTheme;
+  cover_letter_theme?: ArtifactTheme;
 };
 
 export type WorkspaceArtifactExportResponse = {
@@ -466,19 +581,22 @@ export type WorkspaceArtifactExportResponse = {
   mime_type: string;
   content_base64: string;
   resume_theme: string;
+  cover_letter_theme: string;
   artifact_title: string;
 };
 
 export type WorkspaceArtifactPreviewRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;
-  artifact_kind: Exclude<WorkspaceArtifactKind, "bundle">;
-  resume_theme?: string;
+  artifact_kind: WorkspaceArtifactKind;
+  resume_theme?: ArtifactTheme;
+  cover_letter_theme?: ArtifactTheme;
 };
 
 export type WorkspaceArtifactPreviewResponse = {
   status: string;
-  artifact_kind: Exclude<WorkspaceArtifactKind, "bundle">;
+  artifact_kind: WorkspaceArtifactKind;
   resume_theme: string;
+  cover_letter_theme: string;
   artifact_title: string;
   html: string;
 };

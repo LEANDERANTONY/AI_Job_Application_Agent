@@ -41,6 +41,7 @@ import type {
   SavedWorkspaceMeta,
   WorkspaceAnalysisResponse,
 } from "@/lib/api-types";
+import { humanizeApiError } from "@/lib/humanizeApiError";
 import {
   buildAuthRedirectUrl,
   clearAuthQueryParams,
@@ -171,9 +172,7 @@ export function useWorkspaceSession({
             setAuthSession(null);
             setAuthStatus("signed_out");
             setAuthError(
-              error instanceof Error
-                ? error.message
-                : "Workspace handoff failed unexpectedly.",
+              humanizeApiError(error, "Workspace handoff failed unexpectedly."),
             );
           }
         } finally {
@@ -208,9 +207,7 @@ export function useWorkspaceSession({
             setAuthSession(null);
             setAuthStatus("signed_out");
             setAuthError(
-              error instanceof Error
-                ? error.message
-                : "Google sign-in failed unexpectedly.",
+              humanizeApiError(error, "Google sign-in failed unexpectedly."),
             );
           }
         } finally {
@@ -258,18 +255,12 @@ export function useWorkspaceSession({
       );
       window.location.href = response.url;
     } catch (error) {
-      setAuthError(
-        error instanceof Error
-          ? error.message
-          : "Google sign-in could not be started.",
+      const message = humanizeApiError(
+        error,
+        "Google sign-in could not be started.",
       );
-      setNotice({
-        level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Google sign-in could not be started.",
-      });
+      setAuthError(message);
+      setNotice({ level: "warning", message });
       setAuthActionLoading(false);
     }
   }
@@ -314,10 +305,10 @@ export function useWorkspaceSession({
     } catch (error) {
       setNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The latest workspace could not be saved.",
+        message: humanizeApiError(
+          error,
+          "The latest workspace could not be saved.",
+        ),
       });
       return null;
     } finally {
@@ -355,10 +346,10 @@ export function useWorkspaceSession({
     } catch (error) {
       setNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Saved workspace reload failed unexpectedly.",
+        message: humanizeApiError(
+          error,
+          "Saved workspace reload failed unexpectedly.",
+        ),
       });
       return { kind: "unavailable" };
     } finally {

@@ -22,5 +22,13 @@ def health_check():
                 "configured": settings.lever_site_count > 0,
                 "site_count": settings.lever_site_count,
             },
+            "ashby": {
+                "configured": settings.ashby_board_count > 0,
+                "board_count": settings.ashby_board_count,
+            },
+            "workday": {
+                "configured": settings.workday_board_count > 0,
+                "board_count": settings.workday_board_count,
+            },
         },
     }

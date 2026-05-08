@@ -1,0 +1,41 @@
+Senior Backend Engineer (Payments Platform)
+
+München, Deutschland · Berlin, Deutschland · Remote (EU only)
+
+About the company
+
+We're a Series-B fintech building cross-border payment rails for European SMEs. Backed
+by Index Ventures, Accel, and Earlybird. 180 people across Munich, Berlin, and Paris.
+
+The role
+
+You'll join the Payments Platform team — 12 engineers building the core ledger,
+settlement, and reconciliation systems that move €4B/year across our customers. You'll
+report to the Tech Lead Manager and work closely with our Compliance and Treasury teams.
+
+What we're looking for
+
+We expect at least 5 years of professional experience building production payment or
+financial-services systems.
+
+You should have:
+- Strong proficiency in Java, Kotlin, or Go.
+- Experience with PostgreSQL or similar relational databases at scale.
+- Hands-on with event-driven architectures (Kafka, Pulsar, or RabbitMQ).
+- Comfort with regulated environments (PCI DSS, PSD2, AML/KYC).
+- Fluent business English; German is a plus but not required.
+
+You might also have:
+- Prior work at a fintech, neobank, or payment-services provider.
+- Experience with double-entry accounting concepts.
+- Track record of integrating with banking partners (SWIFT, SEPA, ACH).
+
+What we offer
+
+- Base salary: €95,000 - €130,000 depending on experience.
+- Equity in a fast-growing Series-B company.
+- 30 days of paid leave per year.
+- Annual learning budget of €2,500.
+- Visa sponsorship for relocation candidates.
+
+We are an equal-opportunity employer and welcome candidates from all backgrounds.

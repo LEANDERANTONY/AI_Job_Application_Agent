@@ -1,0 +1,116 @@
+Senior AI Engineer
+Remote - Canada
+
+Narvar is Growing! We’re building Navi — Narvar’s agentic AI that automates post-purchase resolution for the world’s leading retailers. Hundreds of millions of consumers interact with Narvar every year. Navi is our agentic AI that resolves delivery issues, returns, and refunds through natural conversation — powered by IRIS and 74 billion consumer touchpoints.
+
+We're looking for senior AI engineers to own this system end-to-end: architecture, model selection, production operations. You'll help decide what gets built and how.
+
+Day-to-day
+
+- Design and build conversational AI agents for returns, claims, and customer service experiences
+
+- Own agent systems from architecture → implementation → evaluation → production operations
+
+- Build RAG / context graph retrieval pipelines that ground agent responses in real company and customer data
+
+- Design agent orchestration for multi-step workflows that interact with identity, risk, order, and loyalty systems
+
+- Create evaluation frameworks to measure task completion, accuracy, safety, and user satisfaction
+
+- Implement guardrails and safety mechanisms — content moderation, hallucination detection, graceful fallbacks
+
+- Integrate conversational experiences across web, mobile, SMS, and email channels
+
+- Make real decisions around prompt design, model selection, latency/cost/quality tradeoffs, and failure modes
+
+- Collaborate with product, design, and ML teams to build systems that are technically sound and product-aware
+
+What We’re Looking For
+
+We care more about judgment and ownership than credentials.
+
+You’re likely a strong fit if you:
+
+- Have shipped conversational AI or agent-based systems used by real users in production
+
+- Have built production systems on top of LLM APIs and agent frameworks — not just prompt playgrounds, but real integrations involving tool orchestration, context management, and reliability at scale
+
+- Have a point of view on model selection tradeoffs — when to use frontier APIs vs. open-weight models (Qwen, Llama, Mistral), and understand the cost, latency, privacy, and capability tradeoffs of each
+
+- Understand prompt engineering beyond basics: structured outputs, few-shot learning, chain-of-thought, tool calling
+
+- Have built context graph pipelines that go beyond naive retrieval — entity resolution, relationship modeling, and dynamic context assembly from structured and unstructured data
+
+- Have designed agent architectures that use function calling, tool execution, or multi-step reasoning
+
+- Have strong programming skills in Python or TypeScript
+
+- Have experience building and integrating APIs and backend services
+
+- Are comfortable reasoning about evaluation, safety, and reliability in non-deterministic systems
+
+- Take initiative naturally and are comfortable operating with ambiguity
+
+Bonus points
+
+These aren’t hard requirements, but strong indicators:
+
+- You’ve worked in startup or high-ownership environments
+
+- You’ve built and operated AI systems in production, including monitoring and incident response
+
+- You’ve evaluated and iterated on LLM systems for accuracy, hallucination, latency, and cost
+
+- You’ve built or integrated MCP servers or similar tool-use infrastructure
+
+- You’ve influenced technical direction by earning trust, not by mandate
+
+- You use modern tooling (including AI-assisted development workflows) to increase leverage, not outsource thinking
+
+(Note: we care about outcome and judgment, not how flashy your tools are.)
+
+Why AI at Narvar?
+
+Because post-purchase is one of the highest-leverage applications of conversational AI.
+
+We’re building AI agents where:
+
+- The problem space is well-defined but complex — returns, claims, and support have clear business logic but messy real-world edge cases
+
+- Scale is real — hundreds of millions of consumer interactions per year across major global retailers
+
+- Impact is measurable — resolution rates, customer satisfaction, cost savings, not vanity metrics
+
+- The work is greenfield — you’re not maintaining a legacy chatbot, you’re building the next generation
+
+You’ll help define where and how AI agents should operate, not just implement someone else’s spec.
+
+Why Narvar ( from an Engineer's perspective?)
+
+- Real scale, real customers, real consequences
+
+- Startup-level ownership with platform-level impact
+
+- Teams that value thinking, judgment, and responsibility
+
+- Low ego, high trust, and room to do your best work
+
+Why Narvar?
+
+We're on a mission to simplify the everyday lives of consumers. Post-purchase is a critical phase of the customer journey. That's why we created Narvar - a platform focused on driving customer loyalty through seamless post-purchase experiences that allow retailers to retain, engage, and delight customers. If you've ever bought something online, there's a good chance you've used our platform!
+
+From the hottest new direct-to-consumer companies to retail’s most renowned brands, Narvar works with GameStop, Neiman Marcus, Sonos, Nike, and 1300+ other brands. With hubs in San Francisco, Atlanta, London, and Bangalore, we've served over 125 million consumers worldwide across 10+ billion interactions, 38 countries, and 55 languages.
+
+Pioneering the post-purchase movement means navigating into the unknown. Our team thrives on this sense of adventure while nurturing a mindset of innovation. We're a home for big hearts and we leave our egos at the door. We work hard but we always make time to celebrate professional wins, baby showers, birthday parties, and everything in between.
+
+We are an equal-opportunity employer and value diversity at our company. We do not discriminate on the basis of race, religion, color, national origin, gender, sexual orientation, age, marital status, veteran status, or disability status.
+
+#LI-BB1
+
+#LI-Remote
+Below is the estimated annual salary for this position and does not include the other components that make up a Narvar offer including: annual bonus, equity, and benefits.The range reflects the minimum and maximum target for new hire salaries for the position across the US. Within the range, individual compensation packages are based on factors unique to each candidate, including but not limited to, skill set, education and certifications, and work location.
+Narvar Pay Range
+$180,000—$230,000 CAD
+
+Please read our Privacy Policy to learn what personal information we collect in connection with your job application, and how we may use and share it.
+

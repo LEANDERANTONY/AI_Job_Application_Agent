@@ -1,0 +1,16 @@
+{
+  "title_must_include": "Senior Backend Engineer",
+  "location_must_include": "München",
+  "salary_must_include": "€95,000",
+  "experience_requirement_must_include": "5 years",
+  "hard_skills_must_include": [
+    "Java",
+    "Kotlin",
+    "Go",
+    "PostgreSQL",
+    "Kafka"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Synthetic JD — international (German) role. Tests location detection on accented German city names ('München, Deutschland · Berlin, Deutschland · Remote (EU only)') and Euro currency ('€95,000 - €130,000'). Experience requirement is in narrative form ('We expect at least 5 years of professional experience...') — the regex looks for 'X+ years' pattern, so this might not match cleanly."
+}

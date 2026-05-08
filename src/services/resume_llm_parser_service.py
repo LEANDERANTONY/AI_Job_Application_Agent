@@ -27,6 +27,9 @@ def _coerce_string_list(value: Any, *, limit: int = 24) -> list[str]:
     return cleaned
 
 
+_LIST_VALUED_ENTRY_KEYS = {"links", "bullets", "technologies"}
+
+
 def _coerce_entry_list(value: Any, allowed_keys: list[str], *, limit: int = 12) -> list[dict[str, str | list[str]]]:
     if not isinstance(value, list):
         return []
@@ -38,15 +41,15 @@ def _coerce_entry_list(value: Any, allowed_keys: list[str], *, limit: int = 12) 
         normalized: dict[str, str | list[str]] = {}
         for key in allowed_keys:
             raw_value = item.get(key)
-            if key == "links":
-                normalized[key] = _coerce_string_list(raw_value, limit=6)
+            if key in _LIST_VALUED_ENTRY_KEYS:
+                normalized[key] = _coerce_string_list(raw_value, limit=8)
             else:
                 normalized[key] = _coerce_string(raw_value)
 
         if any(
             normalized.get(key)
             for key in allowed_keys
-            if key != "links"
+            if key not in _LIST_VALUED_ENTRY_KEYS
         ):
             entries.append(normalized)
         if len(entries) >= limit:
@@ -66,12 +69,17 @@ def _build_resume_llm_parser_prompt(resume_document: ResumeDocument) -> dict[str
             "array of objects with keys title, organization, location, start, end, description"
         ),
         "projects": (
-            "array of objects with keys title, organization, start, end, description, links"
+            "array of objects with keys title, description, bullets (array of strings),"
+            " technologies (array of strings), start, end, links"
         ),
         "education": (
             "array of objects with keys institution, degree, field_of_study, start, end"
         ),
         "certifications": "array of strings",
+        "publications": (
+            "array of strings — each one is a free-form citation (paper/article/talk),"
+            " keep author list, title, venue, and year together when present"
+        ),
         "source_signals": "array of short grounded notes about what was found in the resume",
     }
     contract_lines = "\n".join(
@@ -87,6 +95,16 @@ def _build_resume_llm_parser_prompt(resume_document: ResumeDocument) -> dict[str
         "Keep project names exactly when possible. "
         "Do not place project links in contact_lines. "
         "Separate projects from work experience whenever the resume treats them as projects. "
+        # Canonicalization: parser output on the resume side is compared
+        # against parser output on the job-description side via string
+        # equality, so synonym variants ('Postgres' vs 'PostgreSQL',
+        # 'k8s' vs 'Kubernetes') would silently fall on opposite sides.
+        # Ask the LLM to emit the formal canonical name. A small
+        # alias map (src/taxonomy.py) catches the rest.
+        "For skills, prefer the formal canonical name: write 'PostgreSQL' "
+        "(not 'Postgres'), 'Kubernetes' (not 'k8s'), 'JavaScript' (not 'JS'), "
+        "'TypeScript' (not 'TS'), 'Node.js' (not 'NodeJS' / 'node js'), "
+        "'TensorFlow' (not 'TF'), 'scikit-learn' (not 'sklearn'). "
         "Return JSON only with exactly these top-level keys:\n"
         f"{contract_lines}"
     )
@@ -153,7 +171,7 @@ class ResumeLLMParserService:
             ),
             "projects": _coerce_entry_list(
                 payload.get("projects"),
-                ["title", "organization", "start", "end", "description", "links"],
+                ["title", "description", "bullets", "technologies", "start", "end", "links"],
                 limit=16,
             ),
             "education": _coerce_entry_list(
@@ -162,6 +180,7 @@ class ResumeLLMParserService:
                 limit=8,
             ),
             "certifications": _coerce_string_list(payload.get("certifications"), limit=16),
+            "publications": _coerce_string_list(payload.get("publications"), limit=24),
             "source_signals": _coerce_string_list(payload.get("source_signals"), limit=12),
         }
 

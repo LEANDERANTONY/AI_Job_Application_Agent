@@ -14,7 +14,7 @@ The app helps a candidate:
 - run a grounded agentic workflow
 - review a tailored resume and cover letter
 - ask grounded follow-up questions in the workspace assistant
-- export Markdown or PDF versions of the generated documents
+- export DOCX or PDF versions of the generated documents (the earlier Markdown export path was removed in 2026-05; see [ADR-015](adr/ADR-015-docx-first-artifact-export-with-theme-palette.md))
 
 ## Runtime Shape
 
@@ -33,13 +33,13 @@ This is no longer a Streamlit runtime. The old Streamlit shell and related deplo
 2. The user signs in with Google through Supabase-backed auth endpoints.
 3. The user uploads a resume.
 4. The backend parses the resume and builds a normalized candidate profile.
-5. The user can search configured Greenhouse and Lever sources, paste a supported job URL, or continue manually with JD text.
+5. The user can search configured Greenhouse, Lever, Ashby, and Workday sources via the Supabase-cached job index (or paste a supported job URL, or continue manually with JD text).
 6. The app builds a structured JD summary for review.
 7. The user explicitly triggers the agentic workflow.
-8. The orchestrator runs `fit`, `tailoring`, `review`, `resume_generation`, and `cover_letter`.
+8. The orchestrator runs `tailoring`, `review`, `resume_generation`, and `cover_letter`. The earlier `fit` and `strategy` stages were removed from the live workflow; the deterministic fit-scoring service in `src/services/fit_service.py` is still available as a building block for `tailoring` but is no longer a visible workflow stage.
 9. Builders assemble the tailored resume and cover letter.
 10. The workspace assistant answers grounded questions from the current workspace state.
-11. Export helpers produce Markdown and PDF files for the current document.
+11. Export helpers produce DOCX and PDF files for the current document; both formats share the same theme palette (`classic_ats`, `professional_neutral`).
 12. For authenticated users, the latest workspace snapshot and saved jobs are persisted in Supabase.
 
 ## Main Modules
@@ -48,13 +48,15 @@ This is no longer a Streamlit runtime. The old Streamlit shell and related deplo
 
 Owns the user-facing workspace:
 
-- account state and sign-in flow
-- resume intake
+- account state and sign-in flow (signed-out users hitting `/workspace` get redirected to the landing page; cross-origin host strip mirrors the existing app-subdomain middleware)
+- resume intake (Upload mode + Build with assistant conversational chat; see [ADR-016](adr/ADR-016-conversational-llm-resume-builder.md))
 - job search and saved jobs
 - JD review
 - workflow progress UI
 - document preview and export actions
-- assistant chat
+- assistant chat — not gated; answers product-help questions from the first visit and grounded package questions once an analysis has run; see [ADR-017](adr/ADR-017-workspace-assistant-state-aware-context.md)
+
+Step rail navigation: Resume / Job Search / Job Detail are independently accessible — a user can paste a JD without a resume, or browse listings without uploading anything. Only Analysis is gated (it requires both a parsed resume and a parsed JD); the rail-level lock is a hint, and the AnalysisRunner page surfaces what's missing when the user lands there early. See [ADR-019](adr/ADR-019-independent-step-navigation.md).
 
 ### `backend/`
 
@@ -62,18 +64,20 @@ Owns the FastAPI API surface:
 
 - `backend/app.py` bootstraps the API
 - `backend/routers/health.py` exposes deployment smoke signals
-- `backend/routers/jobs.py` exposes search and direct job-resolution endpoints
+- `backend/routers/jobs.py` exposes the cache-backed search, the `?live=true` escape-hatch fan-out, direct job-resolution endpoints, and the bearer-protected `POST /admin/refresh-cache` endpoint that drives the cached-jobs refresh worker
 - `backend/routers/auth.py` owns auth/session endpoints
-- `backend/routers/workspace.py` owns resume, JD, workflow, assistant, persistence, preview, and export endpoints
+- `backend/routers/workspace.py` owns resume, JD, workflow, assistant (both non-streaming and SSE), persistence, preview, export, resume-builder chat, and resume-builder export endpoints
+- `backend/services/job_cache_service.py` runs the per-source refresh + smart-cleanup worker invoked by the admin endpoint
 
 ### `src/services/`
 
 Owns deterministic business logic:
 
-- candidate-profile construction from resume input
-- JD normalization
-- fit scoring
-- first-pass tailoring guidance
+- candidate-profile construction from resume input (`profile_service.py`)
+- JD normalization (`job_service.py`) plus a `jd_summary_service.py` view layer
+- LLM-hybrid resume + JD parsers (`resume_llm_parser_service.py`, `jd_llm_parser_service.py`) — pure-LLM source of truth with a deterministic fallback
+- fit scoring (`fit_service.py`) — still used by tailoring, no longer a visible workflow stage
+- first-pass tailoring guidance (`tailoring_service.py`)
 
 These services are transport-agnostic and do not depend on Next.js or FastAPI.
 
@@ -83,13 +87,14 @@ Owns the supervised orchestration layer.
 
 The active orchestrator path runs:
 
-- fit
 - tailoring
 - review
 - resume generation
 - cover letter
 
-The earlier strategy stage is no longer part of the live workflow.
+The earlier `fit` and `strategy` stages are no longer part of the live workflow. The `TailoringAgent` consumes the structured `FitAnalysis` produced by `src/services/fit_service.py` directly — no FitAgent narration step. Each agent has a Tier-2/Tier-3 quality runner under `tests/quality/` that scores it on fixture (resume, JD) pairs.
+
+**Per-agent retry + fallback isolation.** Each agent step inside the orchestrator gets its own retry budget and its own fallback path. If an agent's LLM call raises `AgentExecutionError` (after the OpenAI service's own SDK + app-level retries exhaust), the orchestrator retries the agent's full `.run(...)` once with a 400 ms delay. If the retry also fails, only THAT agent's deterministic fallback runs — downstream agents continue trying the LLM path. A single bad packet during the Forge agent no longer cascades to "downgrade the whole pipeline to deterministic." The whole-pipeline deterministic fallback remains as a safety net for the unusual case where a per-agent deterministic path itself errors out. If every agent ended up falling back per-agent (zero LLM successes), `result.mode` is honestly downgraded to `deterministic_fallback`. See [ADR-018](adr/ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md).
 
 ### `src/prompts.py`
 
@@ -102,36 +107,37 @@ Owns the thin OpenAI wrapper used by the workflow and assistant layers.
 Responsibilities include:
 
 - task-aware model routing
-- Responses API calls
+- Responses API calls (JSON-contract path via `run_json_prompt`, streaming prose path via `run_text_stream`)
 - GPT-5 reasoning-effort routing
 - usage accounting metadata
 - optional persisted usage-event callbacks
 - daily-quota preflight checks
-- incomplete-response retry handling
+- output-budget retry handling (when responses are truncated due to insufficient `max_output_tokens`)
+- application-level retry on top of the OpenAI Python SDK's own retries (`max_retries=2`) — adds one extra attempt on the narrow allow-list `APIConnectionError` / `APITimeoutError` / `InternalServerError`. Every `responses.create` in the codebase routes through `_create_response_with_app_retry`, so the resume parser, JD parser, JD summary, all four supervised-workflow agents, and the assistant chat all inherit the retry layer for free. See [ADR-018](adr/ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md).
 
 ### `src/assistant_service.py`
 
-Owns the single in-app assistant behavior.
+Owns the single in-app assistant behavior. The chat is **not gated** on having run an analysis — it answers product-help questions ("how do I use this?", "what's step 03 for?") from the very first visit and grounded package questions ("summarize my fit") once an analysis has run. See [ADR-017](adr/ADR-017-workspace-assistant-state-aware-context.md).
 
 Responsibilities include:
 
 - routing between product-help questions and grounded package questions
-- compact workspace-context assembly
+- compact workspace-context assembly, including a `workspace_state` projection (`current_step`, `has_resume`, `resume_summary`, `has_jd`, `jd_summary`, `has_analysis`, `saved_jobs_count`, `last_search_query`) sent on every query so the LLM can answer state-aware questions before any analysis exists
 - deterministic fallback behavior when assisted execution is unavailable
 
 ### Builders and Exporters
 
 - `src/resume_builder.py`: deterministic tailored-resume assembly
 - `src/cover_letter_builder.py`: deterministic grounded cover-letter assembly
-- `src/report_builder.py`: internal report assembly still available for backend use and diagnostics
-- `src/exporters.py`: Markdown/PDF export helpers and HTML preview generation
+- `src/exporters.py`: DOCX/PDF export helpers (`export_docx_bytes`, `export_pdf_bytes`) plus HTML preview generation, sharing a theme palette across formats; see [ADR-015](adr/ADR-015-docx-first-artifact-export-with-theme-palette.md)
+- `src/job_sources/`: per-provider adapter implementations (Greenhouse, Lever, Ashby, Workday) feeding the cached-jobs refresh worker
 
 The user-facing workspace is now centered on two visible outputs:
 
 - tailored resume
 - cover letter
 
-The resume export path has been simplified to one standard ATS-friendly format.
+Both ship in two themes (`classic_ats`, `professional_neutral`) and both formats (DOCX, PDF). The earlier Markdown export path was removed in 2026-05 alongside the DOCX rollout. The earlier internal report builder was removed when the FitAgent + bundle endpoint were retired.
 
 ### Auth and Persistence Modules
 
@@ -141,6 +147,8 @@ The resume export path has been simplified to one standard ATS-friendly format.
 - `src/quota_service.py`: computes daily quota state from persisted usage
 - `src/saved_workspace_store.py`: persists and loads the latest reloadable workspace snapshot
 - `src/saved_jobs_store.py`: persists and loads shortlisted jobs
+- `src/cached_jobs_store.py`: service-role-backed access layer for the global `cached_jobs` index — bulk upsert, smart cleanup, ranked search via Postgres RPC; see [ADR-013](adr/ADR-013-cached-jobs-cache-layer-with-scheduled-refresh.md) and [ADR-014](adr/ADR-014-postgres-rpc-for-ranked-search.md)
+- `src/resume_builder_store.py`: persists and loads conversational resume-builder draft sessions (`resume_builder_sessions` table) with the 7-day TTL + active-user refresh policy; see [ADR-016](adr/ADR-016-conversational-llm-resume-builder.md)
 
 ### `src/config.py`
 
@@ -176,14 +184,19 @@ Owns shared typed models for:
 The runtime uses a split state model:
 
 - browser state for the current workspace session
-- Supabase Postgres for authenticated persistence
+- Supabase Postgres for authenticated persistence and the global cached-jobs index
 
-Persistent authenticated state includes:
+Per-user persistent state:
 
 - `app_users`
 - `usage_events`
 - `saved_workspaces`
 - `saved_jobs`
+- `resume_builder_sessions`
+
+Global (non-user-scoped) state:
+
+- `cached_jobs` — the indexed set of upstream postings refreshed every ~30 min by the backend's `refresh_cached_jobs` worker; see [ADR-013](adr/ADR-013-cached-jobs-cache-layer-with-scheduled-refresh.md)
 
 Each `saved_workspaces` row stores one latest snapshot per user, including enough data to restore the current resume/JD/workflow state.
 
@@ -196,23 +209,35 @@ Each `saved_jobs` row stores one shortlisted posting per user and normalized job
 - provider metadata
 - saved and updated timestamps
 
+Each `resume_builder_sessions` row stores one in-progress conversational resume-builder draft per user with a 7-day TTL refreshed on every save. A `pg_cron` job (`cleanup-expired-resume-builder-sessions`) hard-deletes expired rows every 5 min and RLS hides expired rows from per-user queries; see [ADR-016](adr/ADR-016-conversational-llm-resume-builder.md).
+
+Each `cached_jobs` row holds one upstream posting keyed on `(source, job_id)`. The table has GENERATED STORED columns (`work_mode`, `employment_type_norm`) backing the dropdown filters and `removed_at` tombstones for upstream-closed jobs the user has bookmarked. A `pg_cron` + `pg_net` schedule POSTs to `/admin/refresh-cache` every ~30 min (see `docs/job_cache_cron_setup.sql`); ranked search reads from this table via the `search_cached_jobs_ranked` RPC, per [ADR-014](adr/ADR-014-postgres-rpc-for-ranked-search.md).
+
 ## Testing Model
 
 The repo includes focused tests for:
 
 - resume parsing
-- JD parsing
+- JD parsing (deterministic + LLM-hybrid)
 - profile normalization
 - job normalization
-- fit scoring
 - tailoring guidance
 - orchestrator behavior
 - resume and cover-letter building
-- export formatting
+- DOCX + PDF export formatting
 - auth and quota behavior
 - saved-workspace persistence
 - saved-job persistence
+- cached-jobs store + RPC arg shape
+- cached-jobs refresh worker (per-source isolation, cleanup gating, status reporting)
+- per-provider job source adapters (Greenhouse, Lever, Ashby, Workday)
+- conversational resume-builder turn handling + structuring pass
 - backend workspace routes
+- assistant SSE streaming endpoint
+- OpenAI application-level retry contract (`tests/test_openai_app_retry.py`): retries on the narrow allow-list `APIConnectionError` / `APITimeoutError` / `InternalServerError`, does NOT retry on 4xx / auth / persistent rate-limit, returns success after retry, raises on double-failure
+- per-agent orchestrator behavior (`tests/test_orchestrator.py`): per-agent retry recovers a flaky agent, per-agent fallback isolates a single failing agent (downstream agents still use LLM), `result.mode` reconciles to `deterministic_fallback` when no agent succeeded with LLM
+
+Tier-2 / Tier-3 quality runners under `tests/quality/` evaluate LLM-driven components (resume parser, JD parser, renderer fidelity, skill canonicalization, tailoring, review, resume generation, cover letter, resume builder, assistant, end-to-end orchestrator) on fixture sets with weighted scorecards and a `--include-llm` cost gate.
 
 ## Current Constraints
 

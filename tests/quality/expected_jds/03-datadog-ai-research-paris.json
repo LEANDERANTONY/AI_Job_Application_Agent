@@ -1,0 +1,14 @@
+{
+  "title_must_include": "AI Research Engineer",
+  "location_must_include": "Paris",
+  "salary_must_include": "",
+  "experience_requirement_must_include": "",
+  "hard_skills_must_include": [
+    "Python",
+    "PyTorch",
+    "JAX"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Live JD from Datadog — AI research role in Paris. Title has parens '(DAIR)' which may break naive title-extraction. Skills mention 'a systems language (e.g., Rust, C++, or Go)' as a 'familiar with' qualifier — those should NOT be claimed as required hard skills."
+}

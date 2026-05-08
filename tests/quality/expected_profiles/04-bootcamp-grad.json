@@ -1,0 +1,41 @@
+{
+  "full_name": "Maya Johnson",
+  "location": "Brooklyn, NY",
+  "contact_lines": [
+    "maya.johnson.dev@gmail.com",
+    "(347) 555-0098",
+    "github.com/mayaj-dev"
+  ],
+  "skills_must_include": [
+    "JavaScript", "TypeScript", "React", "Node.js", "PostgreSQL",
+    "Tailwind CSS", "Git", "REST APIs"
+  ],
+  "experience_count": 2,
+  "experience_titles": [
+    "Frontend Engineer Intern",
+    "Marketing Analytics Manager"
+  ],
+  "experience_organizations_must_include": [
+    "Klarna",
+    "Warby Parker"
+  ],
+  "education": [
+    {
+      "institution_must_include": "General Assembly",
+      "degree_must_include": "Software Engineering Immersive"
+    },
+    {
+      "institution_must_include": "Cornell University",
+      "degree_must_include": "Bachelor of Arts"
+    }
+  ],
+  "certifications_must_include": [],
+  "projects_count_min": 2,
+  "projects_names_must_include": [
+    "Indie Reviews",
+    "Recipe Mixer"
+  ],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "Bootcamp + career switcher. Mixed signals — internship + non-tech corporate role + bootcamp + 4-year degree + projects. Tests bootcamp parsing in Education and an internship that should land in Experience (not Projects). Contact lines are on separate lines, not pipe-separated."
+}

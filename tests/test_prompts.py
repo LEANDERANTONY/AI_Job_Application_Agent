@@ -2,13 +2,13 @@ from src.prompts import (
     build_assistant_prompt,
     build_application_qa_assistant_prompt,
     build_cover_letter_agent_prompt,
-    build_fit_agent_prompt,
     build_resume_generation_agent_prompt,
     build_review_agent_prompt,
+    build_tailoring_agent_prompt,
 )
 
 
-def test_fit_prompt_compacts_large_sections_and_emits_budget_metadata():
+def test_tailoring_prompt_compacts_large_sections_and_emits_budget_metadata():
     candidate_profile = {
         "summary": "A" * 5000,
         "experience": [
@@ -28,10 +28,15 @@ def test_fit_prompt_compacts_large_sections_and_emits_budget_metadata():
         "strengths": ["D" * 900 for _ in range(6)],
         "gaps": ["E" * 900 for _ in range(6)],
     }
-    prompt = build_fit_agent_prompt(
+    tailored_draft = {
+        "professional_summary": "F" * 800,
+        "priority_bullets": ["G" * 600 for _ in range(8)],
+    }
+    prompt = build_tailoring_agent_prompt(
         candidate_profile,
         job_description,
         fit_analysis,
+        tailored_draft,
     )
 
     assert int(prompt["metadata"]["estimated_input_chars"]) == len(prompt["user"])

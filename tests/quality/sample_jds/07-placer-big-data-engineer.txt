@@ -1,0 +1,85 @@
+Big Data Engineer
+Ramat Gan, Israel
+
+ABOUT PLACER.AI:
+
+Placer.ai is transforming how organizations understand the physical world. Our location analytics platform provides unprecedented visibility into locations, markets, and consumer behavior. Placer empowers thousands of customers—from Fortune 500 companies, to local governments and nonprofits— to make smarter, data-driven decisions.What sets us apart? We've built the most advanced location intelligence platform in the market while maintaining an uncompromising commitment to privacy, proving that powerful analytics and responsible data practices can coexist.Our growth reflects the market's demand: we reached $100M in annual recurring revenue within just 6 years of launching, achieved unicorn status with a $1B+ valuation in 2022, and continue to expand rapidly as one of North America's fastest-growing tech companies. We're creating a $100B+ market opportunity, and we're just getting started.Named one of Forbes America's Best Startup Employers and a Deloitte Technology Fast 500 company, we're building a culture where innovation thrives, collaboration is the norm, and every team member contributes to reshaping how the world understands location.
+
+SUMMARY:
+
+- As a Senior Big Data Engineer, working within Placer.ai's Mobility Group, you will play a pivotal role in designing, developing, and maintaining the data infrastructure that powers our location analytics platform.
+
+RESPONSIBILITIES:
+
+- Data Pipeline Architecture and Development: Design, build, and optimize robust and scalable data pipelines to process, transform, and integrate large volumes of data from various sources into our analytics platform.
+
+- Data Quality Assurance: Implement data validation, cleansing, and enrichment techniques to ensure high-quality and consistent data across the platform.
+
+- Performance Optimization: Identify performance bottlenecks and optimize data processing and storage mechanisms to enhance overall system performance and reduce latency.
+
+- Cloud Infrastructure: Work extensively with cloud-based technologies (GCP and AWS), to design and manage scalable data infrastructure.
+
+- Collaboration: Collaborate with cross-functional teams including Data Analysts, Data Scientists, Product Managers, and Software Engineers to understand requirements and deliver solutions that meet business needs.
+
+- Data Governance: Implement and enforce data governance practices, ensuring compliance with relevant regulations and best practices related to data privacy and security.
+
+- Monitoring and Maintenance: Monitor the health and performance of data pipelines, troubleshoot issues, and ensure high availability of data infrastructure.
+
+- Mentorship: Provide technical guidance and mentorship to junior data engineers, fostering a culture of learning and growth within the team.
+
+REQUIREMENTS:
+
+- Bachelor's or Master's degree in Computer Science, Engineering, or a related field.
+
+- 5+ years of professional experience in software development, with at least 3 years as a Data Engineer.
+
+- Spark expertise (mandatory): Strong proficiency in Apache Spark, including hands-on experience with building data processing applications and pipelines using Spark's core libraries.
+
+- PySpark/Scala (Mandatory): Proficiency in either PySpark (Python API for Spark) or Scala for Spark development.
+
+- Data Engineering: Proven track record in designing and implementing ETL pipelines, data integration, and data transformation processes.
+
+- Cloud Platforms: Hands-on experience with cloud platforms such as AWS, GCP, or Azure.
+
+- SQL and Data Modeling: Solid understanding of SQL, relational databases, and data modeling.
+
+- Big Data Technologies: Familiarity with big data technologies beyond Spark, such as Hadoop ecosystem components, data serialization formats (Parquet, Delta), and distributed computing concepts.
+
+- Programming Languages: Proficiency in programming languages like Python, Java, or Scala.
+
+- ETL Tools and Orchestration: Familiarity with ETL tools and frameworks, such as Apache Airflow.
+
+- Problem-Solving: Strong analytical and problem-solving skills.
+
+- Collaboration and Communication: Effective communication skills and collaboration within cross-functional teams.
+
+- Geospatial Domain (Preferred): Prior experience in the geospatial or location analytics domain is a plus.
+
+WHY JOIN PLACER.AI?
+
+- Join a rocketship! We are pioneers of a new market that we are creating
+
+- Take a central and critical role at Placer.ai
+
+- Work with, and learn from, top-notch talent
+
+- Competitive salary
+
+- Excellent benefits
+
+NOTEWORTHY LINKS TO LEARN MORE ABOUT PLACER
+
+- Placer.ai's $100M round C funding (unicorn valuation!)
+
+- See our data in action at The Anchor
+
+- Placer.ai in the news
+
+- Video: About Placer for Commercial Real Estate
+
+- Video Playlist: Placer Brand & Explainer Videos
+
+Placer.ai is committed to maintaining a drug-free workplace and promoting a safe, healthy working environment for all employees.
+
+Placer.ai is an equal opportunity employer and has a global remote workforce. Placer.ai’s applicants are considered solely based on their qualifications, without regard to an applicant’s disability or need for accommodation. Any Placer.ai applicant who requires reasonable accommodations during the application process should contact Placer.ai’s Human Resources Department to make the need for an accommodation known.
+

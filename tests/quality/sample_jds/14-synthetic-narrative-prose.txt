@@ -1,0 +1,38 @@
+Director of Product, Platform
+
+Hi! We're a small, fast-growing infrastructure startup. We're looking for our first
+Director of Product to own the platform roadmap as we scale from 12 to 35 engineers
+over the next two years.
+
+This isn't a traditional PM job. We don't have separate "PM" and "engineering" tracks
+— our PMs are deeply technical, ship features themselves where appropriate, and own
+their products end-to-end. If you're drawn to high-ambiguity environments and want to
+build the product function from the ground up, you'll thrive here.
+
+About you
+
+You've been in product at an infrastructure or developer-tools company for at least
+seven years, and you've shipped products that engineers love. You've worked closely with
+deeply technical founders and you've translated big technical ideas into roadmaps that
+ship.
+
+You should be comfortable with the messiness of an early-stage startup. We don't have
+a polished playbook. We have customers, real revenue, and a strong technical foundation,
+but a lot of how product gets built here is still being figured out.
+
+What you'll do
+
+You'll own the platform roadmap end-to-end. You'll write PRDs, run customer interviews,
+prioritize backlogs, and partner with engineering leads on technical execution. You'll
+also be the most senior product hire, so you'll set the bar for how we hire and develop
+the rest of the product team as we grow.
+
+We particularly value candidates with experience at companies like Stripe, Vercel,
+Datadog, or Snowflake. Familiarity with Kubernetes, Terraform, or developer-experience
+products is a plus.
+
+About the company
+
+We're based in San Francisco. We have an office in SOMA but most of our team works
+hybrid. We offer competitive comp, equity, and full benefits. The salary range for
+this role is $260K-$325K base plus equity.

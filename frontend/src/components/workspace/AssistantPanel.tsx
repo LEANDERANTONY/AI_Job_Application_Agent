@@ -1,21 +1,33 @@
 "use client";
 
-// Assistant chat surface extracted from `job-application-workspace.tsx`
-// as part of the Item 2 frontend split (see
-// `docs/NEXT-STEPS-FRONTEND.md`).
+// Floating assistant — Direction B redesign.
 //
-// Item 3 added the streaming surface: while a question is in flight,
-// the parent passes a `streamingTurn` describing the current partial
-// answer (sources from the `meta` event, text growing with each
-// `delta` event). On `done`, the parent commits the turn into the
-// regular `turns` array and clears `streamingTurn` to null.
+// The component used to render as a sidebar card inside the (now
+// removed) Sidebar slot. It now mounts itself as a fixed-position FAB
+// at the bottom-right corner of the workspace, expanding into a 380px
+// popover anchored to the same corner.
 //
-// Note: the suggested-follow-up panel was removed in commit 9138ead
-// per the user's intentional product decision. Do not restore it here
-// without re-confirming.
+// The streaming surface and clear-conversation behavior are preserved
+// verbatim (see WorkspaceShell.handleAssistantSubmit /
+// handleClearAssistantConversation). The previous `requiresWorkspaceRun`
+// gate that locked the assistant until an analysis had run was lifted —
+// users can now ask product-help questions ("how do I use this?",
+// "what's step 03 for?") before they have any workspace at all. The
+// backend's AssistantService.answer_product_help path handles those
+// gracefully when no workspace snapshot is attached. The remaining
+// `hasWorkspaceContext` prop only controls cosmetic copy (grounded vs
+// general).
+//
+// The suggested-follow-up panel was intentionally removed in commit
+// 9138ead and is not restored here.
 
-import type { FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import {
+  CloseIcon,
+  SendIcon,
+  SparkleIcon,
+} from "@/components/workspace/icons";
 import type { WorkspaceAssistantResponse } from "@/lib/api-types";
 
 export type AssistantTurn = {
@@ -45,128 +57,226 @@ export type AssistantPanelProps = {
   /** In-flight streaming turn, or null when no request is open. */
   streamingTurn?: AssistantStreamingTurn | null;
   /**
-   * `true` while the workspace has not yet been analyzed; the assistant
-   * is gated on a successful analysis run for the application-Q&A surface.
+   * `true` once the user has run an analysis (i.e. there's a workspace
+   * snapshot the assistant can ground answers in). Affects only the
+   * cosmetic header sub-line and the empty-state copy — the assistant
+   * is *not* gated on this. Without a workspace, the assistant routes
+   * through the product-help path on the backend.
    */
-  requiresWorkspaceRun: boolean;
+  hasWorkspaceContext: boolean;
   question: string;
   onQuestionChange: (value: string) => void;
   sending: boolean;
   canSubmit: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClearConversation: () => void;
+  /**
+   * Optional controlled-open hook so the parent (e.g. the command
+   * palette "Ask assistant" action) can pop the panel open. The
+   * component still owns its own boolean when this prop is omitted.
+   */
+  forceOpen?: boolean;
+  onForceOpenHandled?: () => void;
 };
 
 export function AssistantPanel({
   turns,
   streamingTurn = null,
-  requiresWorkspaceRun,
+  hasWorkspaceContext,
   question,
   onQuestionChange,
   sending,
   canSubmit,
   onSubmit,
   onClearConversation,
+  forceOpen,
+  onForceOpenHandled,
 }: AssistantPanelProps) {
+  const [open, setOpen] = useState(false);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (forceOpen) {
+      setOpen(true);
+      onForceOpenHandled?.();
+    }
+  }, [forceOpen, onForceOpenHandled]);
+
+  // Auto-scroll to the latest message whenever the thread grows.
+  useEffect(() => {
+    if (!open) return;
+    const el = bodyRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [open, turns.length, streamingTurn?.partialAnswer]);
+
   const hasContent = turns.length > 0 || streamingTurn !== null;
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    onSubmit(event);
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (canSubmit) {
+        const form = event.currentTarget.form;
+        if (form) form.requestSubmit();
+      }
+    }
+  }
+
   return (
-    <div className="workspace-sidebar-card workspace-assistant-card">
-      <p className="eyebrow">Assistant</p>
+    <>
+      <button
+        aria-label={open ? "Close assistant" : "Open assistant"}
+        className="rd-fab"
+        onClick={() => setOpen((current) => !current)}
+        onMouseLeave={(event) => {
+          // Reset the cursor-tracking highlight position when the
+          // pointer leaves so the gradient doesn't get stuck off-axis.
+          event.currentTarget.style.removeProperty("--rd-fab-x");
+          event.currentTarget.style.removeProperty("--rd-fab-y");
+        }}
+        onMouseMove={(event) => {
+          // Update CSS vars with the pointer's relative position so the
+          // inner highlight gradient follows the cursor — small but
+          // makes the FAB feel alive on hover.
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = ((event.clientX - rect.left) / rect.width) * 100;
+          const y = ((event.clientY - rect.top) / rect.height) * 100;
+          event.currentTarget.style.setProperty("--rd-fab-x", `${x}%`);
+          event.currentTarget.style.setProperty("--rd-fab-y", `${y}%`);
+        }}
+        type="button"
+      >
+        <SparkleIcon />
+        {!open ? <span className="rd-fab-dot" /> : null}
+      </button>
 
-      <div className="workspace-assistant-thread">
-        {hasContent ? (
-          <div className="workspace-chat-history">
-            {turns.map((turn, index) => (
-              <div
-                className="workspace-chat-turn"
-                key={`${index}-${turn.question.slice(0, 18)}`}
-              >
-                <div className="workspace-chat-bubble workspace-chat-user">
-                  {turn.question}
-                </div>
-                <div className="workspace-chat-bubble workspace-chat-assistant">
-                  {turn.response.answer}
-                </div>
+      {open ? (
+        <div
+          aria-label="Workspace assistant"
+          className="rd-assistant"
+          role="dialog"
+        >
+          <div className="rd-assistant-head">
+            <div>
+              <div className="rd-assistant-title">Assistant</div>
+              <div className="rd-assistant-sub">
+                {hasWorkspaceContext
+                  ? "Grounded in your active workspace."
+                  : "Ask anything — product help or workspace Q&A."}
               </div>
-            ))}
-            {streamingTurn ? (
-              <div
-                className="workspace-chat-turn workspace-chat-turn-streaming"
-                key="streaming"
+            </div>
+            <div className="rd-assistant-head-actions">
+              <button
+                aria-label="Clear chat"
+                className="rd-assistant-iconbtn"
+                disabled={!turns.length && !streamingTurn}
+                onClick={onClearConversation}
+                title="Clear chat"
+                type="button"
               >
-                <div className="workspace-chat-bubble workspace-chat-user">
-                  {streamingTurn.question}
-                </div>
-                <div className="workspace-chat-bubble workspace-chat-assistant">
-                  {streamingTurn.error ? (
-                    <span className="workspace-chat-error">
-                      {streamingTurn.error}
-                    </span>
-                  ) : (
-                    <>
-                      {streamingTurn.partialAnswer}
-                      {streamingTurn.isStreaming ? (
-                        <span
-                          aria-hidden="true"
-                          className="workspace-chat-cursor"
-                        >
-                          |
-                        </span>
-                      ) : null}
-                      {!streamingTurn.partialAnswer && streamingTurn.isStreaming ? (
-                        <span className="workspace-chat-thinking">
-                          Thinking...
-                        </span>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              </div>
-            ) : null}
+                <CloseIcon />
+              </button>
+              <button
+                aria-label="Close"
+                className="rd-assistant-iconbtn"
+                onClick={() => setOpen(false)}
+                type="button"
+              >
+                <span aria-hidden="true">−</span>
+              </button>
+            </div>
           </div>
-        ) : !requiresWorkspaceRun ? (
-          <div className="workspace-empty-state workspace-empty-state-compact">
-            Ask about your tailored resume, cover letter, or the current
-            package.
-          </div>
-        ) : null}
-      </div>
 
-      <form className="workspace-assistant-form" onSubmit={onSubmit}>
-        <textarea
-          className="workspace-assistant-textarea"
-          disabled={requiresWorkspaceRun || sending}
-          onChange={(event) => onQuestionChange(event.target.value)}
-          placeholder={
-            requiresWorkspaceRun
-              ? "Assistant unlocks after your first workspace run."
-              : "Ask about your package, resume, cover letter, or the current outputs..."
-          }
-          value={question}
-        />
-        <div className="workspace-sidebar-actions">
-          <button
-            className="primary-button workspace-button workspace-button-full"
-            disabled={!canSubmit}
-            type="submit"
-          >
-            {sending
-              ? "Sending..."
-              : requiresWorkspaceRun
-                ? "Awaiting workspace run"
-                : "Send to assistant"}
-          </button>
-          <button
-            className="secondary-button workspace-button workspace-button-full"
-            disabled={!turns.length && !streamingTurn}
-            onClick={onClearConversation}
-            type="button"
-          >
-            Clear chat
-          </button>
+          <div className="rd-assistant-body" ref={bodyRef}>
+            {hasContent ? (
+              <>
+                {turns.map((turn, index) => (
+                  <div
+                    className="rd-assistant-turn"
+                    key={`${index}-${turn.question.slice(0, 18)}`}
+                  >
+                    <div className="rd-bubble rd-bubble-user">
+                      {turn.question}
+                    </div>
+                    <div className="rd-bubble rd-bubble-assistant">
+                      {turn.response.answer}
+                    </div>
+                  </div>
+                ))}
+                {streamingTurn ? (
+                  <div className="rd-assistant-turn" key="streaming">
+                    <div className="rd-bubble rd-bubble-user">
+                      {streamingTurn.question}
+                    </div>
+                    <div
+                      className={
+                        streamingTurn.error
+                          ? "rd-bubble rd-bubble-error"
+                          : "rd-bubble rd-bubble-assistant"
+                      }
+                    >
+                      {streamingTurn.error ? (
+                        streamingTurn.error
+                      ) : (
+                        <>
+                          {streamingTurn.partialAnswer}
+                          {streamingTurn.isStreaming ? (
+                            <span
+                              aria-hidden="true"
+                              className="rd-bubble-cursor"
+                            >
+                              ▋
+                            </span>
+                          ) : null}
+                          {!streamingTurn.partialAnswer &&
+                          streamingTurn.isStreaming ? (
+                            <span className="rd-bubble-thinking">
+                              Thinking…
+                            </span>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="rd-assistant-empty">
+                {hasWorkspaceContext
+                  ? "Ask about your tailored resume, cover letter, or the current package."
+                  : "Ask how to use the workspace, what each step does, or what to do next. Once you've run an analysis, you can ask about your tailored package too."}
+              </div>
+            )}
+          </div>
+
+          <form className="rd-assistant-form" onSubmit={handleSubmit}>
+            <textarea
+              className="rd-assistant-input"
+              disabled={sending}
+              onChange={(event) => onQuestionChange(event.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                hasWorkspaceContext
+                  ? "Ask about your package, resume, cover letter, or outputs…"
+                  : "Ask how to use the workspace, what each step does…"
+              }
+              value={question}
+            />
+            <button
+              aria-label="Send"
+              className="rd-assistant-send"
+              disabled={!canSubmit}
+              type="submit"
+            >
+              <SendIcon />
+            </button>
+          </form>
         </div>
-      </form>
-    </div>
+      ) : null}
+    </>
   );
 }

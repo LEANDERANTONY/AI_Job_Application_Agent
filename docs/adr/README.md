@@ -13,11 +13,18 @@ These ADRs are historical records. Several earlier entries describe the old Stre
 - [ADR-010: Single-pass review corrections and task-tuned model budgets](ADR-010-single-pass-review-corrections-and-task-tuned-model-budgets.md)
 - [ADR-011: Unified grounded assistant surface](ADR-011-unified-grounded-assistant-surface.md)
 - [ADR-012: Next.js workspace and FastAPI runtime baseline](ADR-012-nextjs-workspace-and-fastapi-runtime-baseline.md)
+- [ADR-013: Cached jobs cache layer with scheduled refresh](ADR-013-cached-jobs-cache-layer-with-scheduled-refresh.md)
+- [ADR-014: Postgres RPC for ranked job search](ADR-014-postgres-rpc-for-ranked-search.md)
+- [ADR-015: DOCX-first artifact export with theme palette](ADR-015-docx-first-artifact-export-with-theme-palette.md)
+- [ADR-016: Conversational LLM resume builder](ADR-016-conversational-llm-resume-builder.md)
+- [ADR-017: Workspace assistant — ungated and state-aware context](ADR-017-workspace-assistant-state-aware-context.md)
+- [ADR-018: Three-layer LLM retry and per-agent fallback isolation](ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md)
+- [ADR-019: Independent step navigation in the workspace](ADR-019-independent-step-navigation.md)
 
 ## Superseded
 
 - [ADR-003: Streamlit session state for navigation and persistence](ADR-003-streamlit-session-state-for-navigation-and-persistence.md) — superseded by ADR-012
 - [ADR-004: LinkedIn data export ingestion instead of direct API access](ADR-004-linkedin-data-export-ingestion-instead-of-direct-api-access.md) — superseded by ADR-007
 - [ADR-005: Streamlit-first, backend-ready delivery strategy](ADR-005-streamlit-first-backend-ready-delivery.md) — superseded by ADR-012
-- [ADR-006: Playwright-first PDF export with ReportLab fallback](ADR-006-playwright-first-pdf-export.md) — superseded by current WeasyPrint export pipeline
+- [ADR-006: Playwright-first PDF export with ReportLab fallback](ADR-006-playwright-first-pdf-export.md) — superseded by ADR-015
 - [ADR-008: Two-mode grounded assistant panel](ADR-008-two-mode-grounded-assistant-panel.md) — superseded by ADR-011

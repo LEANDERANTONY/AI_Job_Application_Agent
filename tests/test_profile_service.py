@@ -76,9 +76,17 @@ def test_build_candidate_profile_from_resume_extracts_projects_education_and_cer
 
     profile = build_candidate_profile_from_resume(document)
 
-    assert len(profile.experience) >= 3
-    assert any(entry.title == "Credit Card Fraud Detection" for entry in profile.experience)
-    assert any("LangChain" in entry.description for entry in profile.experience)
+    # Projects now land in profile.projects (their own ProjectEntry list)
+    # rather than falling back into profile.experience — that makes
+    # Projects renderable as its own resume section without polluting
+    # the Experience section for student/early-career candidates.
+    assert len(profile.projects) >= 3
+    assert any(entry.name == "Credit Card Fraud Detection" for entry in profile.projects)
+    assert any(
+        "LangChain" in " ".join(entry.bullets)
+        for entry in profile.projects
+    )
+    assert profile.experience == []  # no Experience section in the input
     assert len(profile.education) >= 2
     assert any("Master of Science in AI/ML" in entry.degree for entry in profile.education)
     assert any(entry.institution == "Liverpool John Moores University" for entry in profile.education)
@@ -172,9 +180,11 @@ def test_build_candidate_profile_from_resume_auto_uses_llm_projects_when_availab
 
     assert profile.full_name == "Leander Antony A"
     assert "Python" in profile.skills
-    assert len(profile.experience) == 2
-    assert profile.experience[0].title == "Grounded RAG Q&A System for Long Documents"
-    assert profile.experience[0].organization == "Project Portfolio"
+    # LLM projects now populate profile.projects (ProjectEntry list)
+    # rather than getting merged into profile.experience.
+    assert profile.experience == []
+    assert len(profile.projects) == 2
+    assert profile.projects[0].name == "Grounded RAG Q&A System for Long Documents"
     assert any("LLM parser" in signal for signal in profile.source_signals)
 
 

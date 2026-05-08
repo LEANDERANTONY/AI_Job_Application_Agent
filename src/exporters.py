@@ -5,7 +5,6 @@ import os
 import re
 import sys
 import warnings
-import zipfile
 from io import BytesIO
 
 from markdown_it import MarkdownIt
@@ -13,7 +12,7 @@ from markdown_it.tree import SyntaxTreeNode
 
 from src.errors import ExportError
 from src.logging_utils import get_logger, log_event
-from src.schemas import ApplicationReport, CoverLetterArtifact, TailoredResumeArtifact
+from src.schemas import CoverLetterArtifact, ProjectEntry, TailoredResumeArtifact
 
 
 _MARKDOWN = MarkdownIt("commonmark", {"html": False})
@@ -51,23 +50,17 @@ def _configure_weasyprint_windows_runtime():
             continue
 
 
-def export_markdown_bytes(report: ApplicationReport | CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
-    return report.markdown.encode("utf-8")
-
-
-def export_text_bytes(report: ApplicationReport | CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
+def export_text_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
     return report.plain_text.encode("utf-8")
 
 
-def export_pdf_bytes(report: ApplicationReport | CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
+def export_pdf_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
     try:
         theme = getattr(report, "theme", None)
         document_kind = (
             "tailored_resume"
             if isinstance(report, TailoredResumeArtifact)
             else "cover_letter"
-            if isinstance(report, CoverLetterArtifact)
-            else "report"
         )
         artifact = report if isinstance(report, TailoredResumeArtifact) else None
         return generate_pdf(
@@ -100,68 +93,16 @@ def build_resume_preview_html(artifact: TailoredResumeArtifact) -> str:
     )
 
 
-def build_report_preview_html(report: ApplicationReport) -> str:
-    return _build_report_html(report.markdown, title=report.title)
-
-
 def build_cover_letter_preview_html(artifact: CoverLetterArtifact) -> str:
-    return _build_cover_letter_html(artifact.markdown, title=artifact.title)
-
-
-def export_zip_bundle_bytes(file_map: dict[str, bytes]) -> bytes:
-    buffer = BytesIO()
-    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for filename, payload in file_map.items():
-            archive.writestr(filename, payload)
-    return buffer.getvalue()
+    return _build_cover_letter_html(
+        artifact.markdown,
+        title=artifact.title,
+        theme=getattr(artifact, "theme", "classic_ats"),
+    )
 
 
 def _paragraph_text(text):
     return html.escape(text or "")
-
-
-def _style_report_intro_block(body_html: str) -> str:
-    match = re.match(
-        r"\s*(<h1>.*?</h1>)(\s*<p>.*?</p>)?",
-        body_html or "",
-        flags=re.DOTALL,
-    )
-    if not match:
-        return body_html
-
-    intro_html = "".join(part for part in match.groups() if part)
-    wrapped_intro = '<section class="report-intro">{content}</section>'.format(content=intro_html)
-    return (body_html or "").replace(match.group(0), wrapped_intro, 1)
-
-
-def _split_application_report_title(title: str) -> tuple[str, str]:
-    normalized_title = str(title or "AI Job Application Package").strip() or "AI Job Application Package"
-    if " - " in normalized_title and normalized_title.lower().endswith(" application package"):
-        name, role_with_suffix = normalized_title.split(" - ", 1)
-        role = role_with_suffix[: -len(" Application Package")].strip()
-        return name.strip() or normalized_title, role or ""
-    return normalized_title, ""
-
-
-def _style_report_intro_block_with_header(body_html: str, title: str) -> str:
-    match = re.match(
-        r"\s*(<h1>.*?</h1>)(\s*<p>.*?</p>)?",
-        body_html or "",
-        flags=re.DOTALL,
-    )
-    if not match:
-        return body_html
-
-    header_title, header_subtitle = _split_application_report_title(title)
-    intro_parts = ['<h1>{title}</h1>'.format(title=html.escape(header_title))]
-    if header_subtitle:
-        intro_parts.append(
-            '<p class="report-intro-role">{subtitle}</p>'.format(subtitle=html.escape(header_subtitle))
-        )
-    if match.group(2):
-        intro_parts.append(match.group(2).strip())
-    wrapped_intro = '<section class="report-intro">{content}</section>'.format(content="".join(intro_parts))
-    return (body_html or "").replace(match.group(0), wrapped_intro, 1)
 
 
 def _style_cover_letter_body(body_html: str) -> str:
@@ -200,10 +141,46 @@ def _split_cover_letter_title(title: str) -> tuple[str, str]:
     return normalized_title, ""
 
 
-def _build_cover_letter_html(text, title="Cover Letter"):
+_COVER_LETTER_THEME_PALETTES = {
+    # Default — warm cream paper + brown accents, matched to the resume
+    # classic theme so the two read as a single set of stationery.
+    "classic_ats": {
+        "ink": "#221912",
+        "muted": "#6b5648",
+        "accent": "#8f6845",
+        "line": "#d7c2af",
+        "paper": "#fffdf9",
+        "surface": "#fffdfa",
+        "strong_color": "#17100b",
+        "header_border_width": "3px",
+    },
+    # Conservative B&W — pure black ink on white paper. Body stays
+    # Georgia (serif still feels right for letter prose) but every
+    # accent collapses to grayscale.
+    "professional_neutral": {
+        "ink": "#0a0a0a",
+        "muted": "#555555",
+        "accent": "#0a0a0a",
+        "line": "#bfbfbf",
+        "paper": "#ffffff",
+        "surface": "#ffffff",
+        "strong_color": "#0a0a0a",
+        "header_border_width": "2px",
+    },
+}
+
+
+def _resolve_cover_letter_palette(theme: str | None) -> dict:
+    return _COVER_LETTER_THEME_PALETTES.get(
+        theme or "classic_ats", _COVER_LETTER_THEME_PALETTES["classic_ats"]
+    )
+
+
+def _build_cover_letter_html(text, title="Cover Letter", theme="classic_ats"):
     safe_title = html.escape(title or "Cover Letter")
     header_title, header_subtitle = _split_cover_letter_title(title)
     body_html = _style_cover_letter_body(_MARKDOWN.render(text or ""))
+    palette = _resolve_cover_letter_palette(theme)
 
     return """
 <!DOCTYPE html>
@@ -212,23 +189,22 @@ def _build_cover_letter_html(text, title="Cover Letter"):
     <meta charset="utf-8" />
     <title>{title}</title>
     <style>
+        /* Theme-keyed palette: classic_ats keeps the warm-brown letter
+           feel; professional_neutral drops to pure black/white/gray for
+           conservative recipients while keeping the same Georgia letter
+           prose. */
         :root {{
-            --ink: #221912;
-            --muted: #6b5648;
-            --accent: #8f6845;
-            --line: #d7c2af;
-            --paper: #fffdf9;
-            --surface: #fffdfa;
+            --ink: {ink};
+            --muted: {muted};
+            --accent: {accent};
+            --line: {line};
+            --paper: {paper};
+            --surface: {surface};
         }}
 
-        @page {{
-            size: A4;
-            margin: 0;
-        }}
+        @page {{ size: A4; margin: 0; }}
 
-        * {{
-            box-sizing: border-box;
-        }}
+        * {{ box-sizing: border-box; }}
 
         body {{
             margin: 0;
@@ -246,9 +222,7 @@ def _build_cover_letter_html(text, title="Cover Letter"):
             padding: 18mm 16mm 18mm;
         }}
 
-        .cover-letter-header {{
-            margin: 0 0 18px;
-        }}
+        .cover-letter-header {{ margin: 0 0 18px; }}
 
         .cover-letter-title {{
             margin: 0;
@@ -268,38 +242,18 @@ def _build_cover_letter_html(text, title="Cover Letter"):
 
         .cover-letter-greeting-break {{
             width: auto;
-            border-top: 3px solid var(--accent);
+            border-top: {header_border_width} solid var(--accent);
             margin: 8px -16mm 14px;
         }}
 
-        .cover-letter-signoff p {{
-            margin: 0 0 6px;
-        }}
+        .cover-letter-signoff p {{ margin: 0 0 6px; }}
+        .cover-letter-signoff p:last-child {{ margin-bottom: 0; }}
 
-        .cover-letter-signoff p:last-child {{
-            margin-bottom: 0;
-        }}
-
-        p {{
-            margin: 0 0 12px;
-        }}
-
-        strong {{
-            color: #17100b;
-        }}
-
-        em {{
-            color: var(--muted);
-        }}
-
-        ul, ol {{
-            margin: 0 0 12px 1.25rem;
-            padding: 0;
-        }}
-
-        li {{
-            margin: 0 0 6px;
-        }}
+        p {{ margin: 0 0 12px; }}
+        strong {{ color: {strong_color}; }}
+        em {{ color: var(--muted); }}
+        ul, ol {{ margin: 0 0 12px 1.25rem; padding: 0; }}
+        li {{ margin: 0 0 6px; }}
     </style>
 </head>
 <body>
@@ -313,219 +267,18 @@ def _build_cover_letter_html(text, title="Cover Letter"):
 </body>
 </html>
 """.format(
-                                title=safe_title,
-                                header_title=html.escape(header_title),
-                                header_subtitle=(
-                                                '<p class="cover-letter-role">{subtitle}</p>'.format(
-                                                                subtitle=html.escape(header_subtitle)
-                                                )
-                                                if header_subtitle
-                                                else ""
-                                ),
-                                body=body_html,
-                )
-
-
-def _build_report_html(text, title="AI Job Application Package"):
-    body_html = _MARKDOWN.render(text or "")
-    body_html = _style_report_intro_block_with_header(body_html, title)
-    safe_title = html.escape(title or "AI Job Application Package")
-
-    return """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>{title}</title>
-  <style>
-    :root {{
-      --ink: #142033;
-      --muted: #5b6b83;
-            --accent: #1b2a46;
-        --subsection-accent: #4f78b5;
-      --accent-strong: #2563eb;
-      --line: #d9e0e7;
-            --section-line: #1b2a46;
-            --paper: #ffffff;
-            --surface: #ffffff;
-      --surface-soft: #eef4ff;
-    }}
-
-    @page {{
-      size: A4;
-            margin: 0;
-    }}
-
-    * {{
-      box-sizing: border-box;
-    }}
-
-    body {{
-      margin: 0;
-      font-family: "Segoe UI", Arial, sans-serif;
-      color: var(--ink);
-            background: var(--paper);
-      line-height: 1.62;
-      font-size: 10.6pt;
-    }}
-
-    .report-shell {{
-            width: 100%;
-            min-height: 100vh;
-            background: var(--surface);
-            padding: 16mm 14mm 18mm;
-    }}
-
-        .report-intro {{
-            background: linear-gradient(180deg, #070a10 0%, #0b1220 100%);
-            border: 0;
-            border-bottom: 1px solid #1b2a46;
-            border-radius: 0;
-            padding: 16mm 14mm 12mm;
-            margin: -16mm -14mm 18px;
-        }}
-
-        .report-intro h1 {{
-            color: #e8eef8;
-            font-size: 17.5pt;
-            margin-bottom: 10px;
-        }}
-
-        .report-intro-role {{
-            margin: -2px 0 10px;
-            font-size: 10.8pt;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: #cfdced;
-        }}
-
-        .report-intro p {{
-            color: #cfdced;
-        }}
-
-        .report-intro p:last-child {{
-            margin-bottom: 0;
-        }}
-
-    .report-shell::before {{
-            content: none;
-    }}
-
-    h1, h2, h3 {{
-      color: var(--ink);
-      margin-top: 0;
-      break-after: avoid;
-      page-break-after: avoid;
-    }}
-
-    h1 {{
-      font-size: 24pt;
-      line-height: 1.15;
-      margin-bottom: 16px;
-      letter-spacing: -0.02em;
-    }}
-
-    h2 {{
-      font-size: 15pt;
-            color: var(--accent);
-      margin-top: 22px;
-      margin-bottom: 10px;
-            padding: 0 14mm 9px;
-            margin-left: -14mm;
-            margin-right: -14mm;
-            border-bottom: 2.5px solid var(--section-line);
-    }}
-
-    h3 {{
-      font-size: 11.8pt;
-      margin-top: 14px;
-      margin-bottom: 6px;
-            color: var(--subsection-accent);
-    }}
-
-    p {{
-      margin: 0 0 10px;
-    }}
-
-    ul, ol {{
-      margin: 0 0 12px 1.3rem;
-      padding: 0;
-    }}
-
-    li {{
-      margin: 0 0 6px;
-      break-inside: avoid;
-    }}
-
-    strong {{
-      color: #0f172a;
-    }}
-
-    blockquote {{
-      margin: 0 0 12px;
-      padding: 8px 12px;
-      border-left: 4px solid #93c5fd;
-      background: var(--surface-soft);
-      border-radius: 0 10px 10px 0;
-      color: var(--muted);
-    }}
-
-    code {{
-      font-family: Consolas, monospace;
-      font-size: 0.95em;
-      background: #f3f6fb;
-      border: 1px solid #dce5f0;
-      border-radius: 4px;
-      padding: 0.08rem 0.3rem;
-    }}
-
-    pre {{
-      background: #f3f6fb;
-      border: 1px solid #dce5f0;
-      border-radius: 10px;
-      padding: 12px 14px;
-      white-space: pre-wrap;
-            overflow-wrap: anywhere;
-      overflow: hidden;
-      margin: 0 0 12px;
-      font-family: Consolas, monospace;
-      font-size: 9.4pt;
-      line-height: 1.5;
-    }}
-
-    table {{
-      width: 100%;
-      border-collapse: collapse;
-      margin: 0 0 12px;
-      font-size: 10pt;
-    }}
-
-    th, td {{
-      border: 1px solid var(--line);
-      padding: 8px 9px;
-      text-align: left;
-      vertical-align: top;
-    }}
-
-    th {{
-      background: #f8fbff;
-      font-weight: 700;
-    }}
-
-    hr {{
-      border: 0;
-            border-top: 2.5px solid var(--section-line);
-      margin: 16px 0;
-    }}
-  </style>
-</head>
-<body>
-  <main class="report-shell">
-    {body}
-  </main>
-</body>
-</html>
-""".format(title=safe_title, body=body_html)
+        title=safe_title,
+        header_title=html.escape(header_title),
+        header_subtitle=(
+            '<p class="cover-letter-role">{subtitle}</p>'.format(
+                subtitle=html.escape(header_subtitle)
+            )
+            if header_subtitle
+            else ""
+        ),
+        body=body_html,
+        **palette,
+    )
 
 
 def _build_resume_section_list(items, empty_state, ordered=False, class_name=""):
@@ -574,8 +327,13 @@ def _build_resume_experience_html(experience_entries):
             </article>
             """.format(
                 title=title,
+                # Each meta_part was already individually escaped above
+                # (organization, location). Joining and re-escaping
+                # would double-escape — '<acme>' becomes
+                # '&amp;lt;acme&amp;gt;' on the page. Keep the join
+                # plain.
                 meta=(
-                    '<p class="resume-role-meta">{meta}</p>'.format(meta=html.escape(" | ".join(meta_parts)))
+                    '<p class="resume-role-meta">{meta}</p>'.format(meta=" | ".join(meta_parts))
                     if meta_parts
                     else ""
                 ),
@@ -585,6 +343,66 @@ def _build_resume_experience_html(experience_entries):
                     else ""
                 ),
                 bullets=bullets_html,
+            )
+        )
+    return "".join(cards)
+
+
+def _build_resume_projects_html(project_entries: list[ProjectEntry]) -> str:
+    if not project_entries:
+        return ""
+    cards: list[str] = []
+    for project in project_entries:
+        name = html.escape(project.name or "Project")
+        date_parts = [part for part in [project.start, project.end] if part]
+        date_text = html.escape(" - ".join(date_parts)) if date_parts else ""
+        description = html.escape(project.description or "")
+        bullets_html = ""
+        if project.bullets:
+            bullets_html = _build_resume_section_list(
+                project.bullets,
+                "",
+                class_name="resume-bullet-list",
+            )
+        meta_parts: list[str] = []
+        if project.technologies:
+            meta_parts.append(
+                "Tech: " + html.escape(", ".join(project.technologies))
+            )
+        if project.link:
+            meta_parts.append("Link: " + html.escape(project.link))
+        meta_html = (
+            '<p class="resume-role-meta">{meta}</p>'.format(meta=" | ".join(meta_parts))
+            if meta_parts
+            else ""
+        )
+        cards.append(
+            """
+            <article class="resume-project-card">
+                <div class="resume-role-row">
+                    <div>
+                        <h3>{name}</h3>
+                        {description}
+                    </div>
+                    {dates}
+                </div>
+                {bullets}
+                {meta}
+            </article>
+            """.format(
+                name=name,
+                description=(
+                    '<p class="resume-role-meta">{description}</p>'.format(description=description)
+                    if description
+                    else ""
+                ),
+                dates=(
+                    '<p class="resume-role-dates">{dates}</p>'.format(dates=date_text)
+                    if date_text
+                    else ""
+                ),
+                bullets=bullets_html,
+                meta=meta_html,
             )
         )
     return "".join(cards)
@@ -634,60 +452,240 @@ def _build_resume_contact_inline_html(contact_lines):
     return '<p class="resume-contact-inline">{items}</p>'.format(items=" | ".join(values))
 
 
-def _build_resume_skills_inline_html(skills):
+def _build_resume_skills_inline_html(skills, skill_categories=None):
+    """Render skills either as a flat pipe-list or, when categories are
+    present, as one row per category ('Languages & Tools: Python, SQL').
+
+    Categories take precedence — they're emitted only when the
+    structuring pass found 8+ skills clustering naturally, so when
+    they're present the flat list would be redundant. Falls back to
+    flat for sparse skill sets, the JD-driven path, and any artifact
+    built before this field existed.
+    """
+    if skill_categories:
+        rows: list[str] = []
+        for label, items in skill_categories.items():
+            label_clean = str(label or "").strip()
+            cleaned = [
+                html.escape(str(item or "").strip())
+                for item in items
+                if str(item or "").strip()
+            ]
+            if not label_clean or not cleaned:
+                continue
+            rows.append(
+                '<p class="resume-skill-category">'
+                '<strong>{label}:</strong> {items}'
+                '</p>'.format(label=html.escape(label_clean), items=", ".join(cleaned))
+            )
+        if rows:
+            return "".join(rows)
+
     values = [html.escape(str(item or "").strip()) for item in skills if str(item or "").strip()]
     if not values:
         return '<p class="resume-empty">No highlighted skills were generated.</p>'
     return '<p class="resume-skill-inline">{items}</p>'.format(items=" | ".join(values))
 
 
+_DEFAULT_RESUME_SECTION_ORDER = (
+    "summary",
+    "skills",
+    "experience",
+    "projects",
+    "education",
+    "publications",
+    "certifications",
+)
+
+
 def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
+    # Summary, Core Skills, Education always render even when sparse —
+    # Summary because the workflow always generates one (placeholder
+    # surfaces a failure), Skills and Education because both are
+    # user-supplied content the resume requires.
+    #
+    # Experience, Projects, Publications, Certifications drop entirely
+    # when empty: students / early-career candidates may legitimately
+    # have any combination of these missing, and a placeholder reads as
+    # awkward filler rather than as a useful diagnostic. Internships
+    # are modelled as regular Experience entries (no separate
+    # Internships section).
+    #
+    # Section order is honored from artifact.section_order when set
+    # (resume_builder picks it from the agent's resume_generation
+    # output or the deterministic per-profile heuristic). Falls back
+    # to the standard professional ordering for legacy callers that
+    # build artifacts directly without going through resume_builder.
     name = html.escape(artifact.header.full_name or artifact.title or "Candidate")
     contact_values = []
     if artifact.header.location:
         contact_values.append(artifact.header.location)
     contact_values.extend(item for item in artifact.header.contact_lines if str(item or "").strip())
     contact_html = _build_resume_contact_inline_html(contact_values)
-    skills_html = _build_resume_skills_inline_html(artifact.highlighted_skills)
-    certifications_html = _build_resume_section_list(
-        artifact.certifications,
-        "No certifications listed.",
-        class_name="resume-plain-list",
-    )
 
-    return """
-    <section class="resume-classic-header">
-        <h1>{name}</h1>
-        {contact_block}
-    </section>
+    summary_block = """
     <section class="resume-classic-section resume-classic-section--plain-head">
         <h2>Summary</h2>
-        <p>{summary}</p>
+        <p class="resume-summary">{summary}</p>
     </section>
+    """.format(
+        summary=html.escape(artifact.professional_summary or "No professional summary generated."),
+    )
+
+    skills_block = """
     <section class="resume-classic-section resume-classic-section--plain-head">
         <h2>Core Skills</h2>
         {skills}
     </section>
+    """.format(
+        skills=_build_resume_skills_inline_html(
+            artifact.highlighted_skills,
+            skill_categories=getattr(artifact, "skill_categories", None) or None,
+        )
+    )
+
+    experience_entries = list(artifact.experience_entries or [])
+    experience_block = ""
+    if experience_entries:
+        experience_block = """
     <section class="resume-classic-section">
         <h2>Experience</h2>
         {experience}
     </section>
+        """.format(experience=_build_resume_experience_html(experience_entries))
+
+    project_entries = list(artifact.project_entries or [])
+    projects_block = ""
+    if project_entries:
+        projects_block = """
+    <section class="resume-classic-section">
+        <h2>Projects</h2>
+        {projects}
+    </section>
+        """.format(projects=_build_resume_projects_html(project_entries))
+
+    education_block = """
     <section class="resume-classic-section">
         <h2>Education</h2>
         {education}
     </section>
+    """.format(education=_build_resume_education_html(artifact.education_entries))
+
+    publication_entries = [item for item in (artifact.publication_entries or []) if str(item or "").strip()]
+    publications_block = ""
+    if publication_entries:
+        publications_block = """
+    <section class="resume-classic-section">
+        <h2>Publications</h2>
+        {publications}
+    </section>
+        """.format(
+            publications=_build_resume_section_list(
+                publication_entries,
+                "",
+                class_name="resume-plain-list",
+            )
+        )
+
+    certifications = [item for item in artifact.certifications if str(item or "").strip()]
+    certifications_block = ""
+    if certifications:
+        certifications_block = """
     <section class="resume-classic-section">
         <h2>Certifications</h2>
         {certifications}
     </section>
-    """.format(
-        name=name,
-        contact_block=contact_html,
-        summary=html.escape(artifact.professional_summary or "No professional summary generated."),
-        skills=skills_html,
-        certifications=certifications_html,
-        experience=_build_resume_experience_html(artifact.experience_entries),
-        education=_build_resume_education_html(artifact.education_entries),
+        """.format(
+            certifications=_build_resume_section_list(
+                certifications,
+                "",
+                class_name="resume-plain-list",
+            )
+        )
+
+    section_blocks = {
+        "summary": summary_block,
+        "skills": skills_block,
+        "experience": experience_block,
+        "projects": projects_block,
+        "education": education_block,
+        "publications": publications_block,
+        "certifications": certifications_block,
+    }
+
+    order = list(artifact.section_order) if artifact.section_order else list(_DEFAULT_RESUME_SECTION_ORDER)
+    seen: set[str] = set()
+    ordered_blocks: list[str] = []
+    for section_name in order:
+        if section_name in seen:
+            continue
+        seen.add(section_name)
+        block = section_blocks.get(section_name, "")
+        if block:
+            ordered_blocks.append(block)
+    # Append any sections the agent forgot to mention so we never lose
+    # rendered content when the agent emits a partial order.
+    for section_name in _DEFAULT_RESUME_SECTION_ORDER:
+        if section_name in seen:
+            continue
+        block = section_blocks.get(section_name, "")
+        if block:
+            ordered_blocks.append(block)
+
+    header_html = """
+    <section class="resume-classic-header">
+        <h1>{name}</h1>
+        {contact_block}
+    </section>
+    """.format(name=name, contact_block=contact_html)
+
+    return header_html + "\n".join(ordered_blocks)
+
+
+_RESUME_THEME_PALETTES = {
+    # Default — warm cream paper + brown accents. Editorial pairing:
+    # Arial body for scannability + Georgia for the prose-y bits
+    # (summary, bullets) to harmonise with the cover letter.
+    "classic_ats": {
+        "ink": "#221912",
+        "muted": "#6b5648",
+        "accent": "#8f6845",
+        "accent_soft": "rgba(143, 104, 69, 0.10)",
+        "line": "#d7c2af",
+        "paper": "#fffdf9",
+        "surface": "#fffdfa",
+        "body_font_family": "Arial, Helvetica, sans-serif",
+        "h1_font_family": 'Georgia, "Times New Roman", serif',
+        "prose_font_family": 'Georgia, "Times New Roman", serif',
+        "prose_line_height": "1.55",
+        "header_border_width": "3px",
+        "code_bg": "rgba(143, 104, 69, 0.10)",
+    },
+    # Conservative B&W — pure ATS-template look. Body uses Georgia so
+    # the resume reads as the same family as the cover letter (which
+    # is also Georgia in both themes); Arial felt cold and template-y
+    # at the small sizes this layout uses.
+    "professional_neutral": {
+        "ink": "#0a0a0a",
+        "muted": "#555555",
+        "accent": "#0a0a0a",
+        "accent_soft": "rgba(0, 0, 0, 0.04)",
+        "line": "#bfbfbf",
+        "paper": "#ffffff",
+        "surface": "#ffffff",
+        "body_font_family": 'Georgia, "Times New Roman", serif',
+        "h1_font_family": 'Georgia, "Times New Roman", serif',
+        "prose_font_family": 'Georgia, "Times New Roman", serif',
+        "prose_line_height": "1.55",
+        "header_border_width": "2px",
+        "code_bg": "rgba(0, 0, 0, 0.04)",
+    },
+}
+
+
+def _resolve_resume_palette(theme: str | None) -> dict:
+    return _RESUME_THEME_PALETTES.get(
+        theme or "classic_ats", _RESUME_THEME_PALETTES["classic_ats"]
     )
 
 
@@ -696,6 +694,7 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
     if artifact is not None:
         body_html = _build_structured_resume_body_classic(artifact)
     safe_title = html.escape(title or "Tailored Resume")
+    palette = _resolve_resume_palette(theme)
 
     return """
 <!DOCTYPE html>
@@ -705,46 +704,67 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
     <title>{title}</title>
     <style>
         @page {{ size: A4; margin: 0; }}
+        /* Theme-keyed palette: classic_ats ships warm-brown + Georgia
+           prose so the resume reads as a set with the cover letter;
+           professional_neutral collapses to pure black/white/gray with
+           all-Arial body for conservative recruiters / B&W printing. */
         :root {{
-            --ink: #221912;
-            --muted: #4f678c;
-            --accent: #2563eb;
-            --accent-soft: #dbeafe;
-            --line: #bfd6f7;
-            --surface: #ffffff;
+            --ink: {ink};
+            --muted: {muted};
+            --accent: {accent};
+            --accent-soft: {accent_soft};
+            --line: {line};
+            --paper: {paper};
+            --surface: {surface};
         }}
         * {{ box-sizing: border-box; }}
         html, body {{ margin: 0; padding: 0; }}
-        body {{ font-family: Arial, Helvetica, sans-serif; color: var(--ink); background: #fffdf9; font-size: 10pt; line-height: 1.42; }}
-        .resume-shell {{ position: relative; min-height: 297mm; background: #fffdfa; padding: 13mm 15mm 13mm; overflow: hidden; }}
+        body {{ font-family: {body_font_family}; color: var(--ink); background: var(--paper); font-size: 10.5pt; line-height: 1.5; }}
+        /* Editorial pairing: in classic_ats the prose-y parts (summary,
+           bullets) shift to Georgia so the resume harmonizes with the
+           cover letter; professional_neutral keeps Arial throughout. */
+        .resume-summary, .resume-bullet-list li {{ font-family: {prose_font_family}; line-height: {prose_line_height}; }}
+        /* min-height keeps short resumes filling a single A4 page;
+           overflow-x: hidden prevents the negative-margin h2 trick from
+           leaking past the page edge horizontally while letting
+           WeasyPrint paginate vertically when the resume runs long. */
+        .resume-shell {{ position: relative; min-height: 297mm; background: var(--surface); padding: 13mm 15mm 13mm; overflow-x: hidden; }}
+        .resume-experience-card, .resume-education-card, .resume-project-card {{ page-break-inside: avoid; break-inside: avoid; }}
+        h2, h3 {{ page-break-after: avoid; break-after: avoid; }}
         .resume-shell::before {{ content: none; }}
         .resume-shell::after {{ content: none; }}
-        h1 {{ font-size: 17.5pt; margin: 0 0 5px; letter-spacing: 0.1em; color: #0f172a; text-transform: uppercase; }}
-        h2 {{ font-size: 10pt; margin: 0 -15mm 6px; text-transform: uppercase; letter-spacing: 0.18em; color: #9a7350; padding: 0 15mm 3px; border-bottom: 2px solid #d4beab; }}
-        h3 {{ font-size: 10.5pt; margin: 10px 0 4px; color: #5d4330; }}
+        /* Name is the resume's title — bold, mixed-case, light tracking.
+           Font family is theme-keyed so neutral stays all-Arial. */
+        h1 {{ font-family: {h1_font_family}; font-size: 22pt; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.005em; color: var(--ink); text-transform: none; }}
+        h2 {{ font-size: 10pt; margin: 0 -15mm 6px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--accent); padding: 0 15mm 3px; border-bottom: 2px solid var(--line); }}
+        h3 {{ font-size: 10.5pt; margin: 10px 0 4px; color: var(--accent); }}
         p {{ margin: 0 0 6px; }}
         ul {{ margin: 0 0 8px 1rem; padding: 0; }}
         li {{ margin: 0 0 3px; }}
-        strong {{ color: #0f172a; }}
+        strong {{ color: var(--ink); }}
         em {{ color: var(--muted); }}
-        code {{ background: #eef5ff; border: 1px solid #d3e5ff; border-radius: 4px; padding: 0.08rem 0.28rem; }}
+        code {{ background: {code_bg}; border: 1px solid var(--line); border-radius: 4px; padding: 0.08rem 0.28rem; }}
         hr {{ border: 0; border-top: 1px solid var(--line); margin: 14px 0; }}
-        blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: #24497b; }}
-        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: 3px solid #8f6845; }}
-        .resume-classic-role {{ font-size: 10.2pt; color: #3d5a80; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; }}
-        .resume-contact-inline {{ color: #314760; font-size: 9.2pt; line-height: 1.5; max-width: 88%; }}
-        .resume-skill-inline {{ color: #0f172a; font-size: 9.5pt; line-height: 1.7; }}
+        blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: var(--muted); }}
+        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: {header_border_width} solid var(--accent); }}
+        .resume-classic-role {{ font-size: 10.2pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; }}
+        .resume-contact-inline {{ color: var(--muted); font-size: 9.6pt; line-height: 1.55; max-width: 88%; }}
+        .resume-skill-inline {{ color: var(--ink); font-size: 9.8pt; line-height: 1.7; }}
+        .resume-skill-category {{ color: var(--ink); font-size: 9.8pt; line-height: 1.7; margin: 0 0 2px; }}
+        .resume-skill-category strong {{ color: var(--accent); font-weight: 700; }}
         .resume-classic-section {{ position: relative; z-index: 1; margin-top: 12px; }}
         .resume-classic-section--plain-head h2 {{ border-bottom: 0; padding-bottom: 0; }}
-        .resume-experience-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
+        .resume-experience-card, .resume-project-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
         .resume-education-card {{ background: transparent; border: 0; border-radius: 0; padding: 0; }}
         .resume-role-row {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
         .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 4px; }}
-        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: #6b5648; font-size: 9.2pt; }}
+        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.5pt; }}
         .resume-bullet-list, .resume-contact-list, .resume-plain-list {{ margin: 0; padding-left: 1rem; }}
-        .resume-empty {{ color: #6b5648; font-style: italic; }}
-        .resume-experience-card + .resume-experience-card {{ position: relative; margin-top: 10px; padding-top: 10px; }}
-        .resume-experience-card + .resume-experience-card::before {{ content: ""; position: absolute; top: 0; left: 12px; right: 12px; border-top: 1px solid #d4beab; }}
+        .resume-empty {{ color: var(--muted); font-style: italic; }}
+        .resume-experience-card + .resume-experience-card,
+        .resume-project-card + .resume-project-card {{ position: relative; margin-top: 10px; padding-top: 10px; }}
+        .resume-experience-card + .resume-experience-card::before,
+        .resume-project-card + .resume-project-card::before {{ content: ""; position: absolute; top: 0; left: 12px; right: 12px; border-top: 1px solid var(--line); }}
         .resume-education-card + .resume-education-card {{ margin-top: 10px; }}
         @media all and (max-width: 720px) {{ .resume-classic-header {{ padding: 0 15mm 10px; margin: 0 -15mm; }} .resume-contact-inline {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
     </style>
@@ -753,7 +773,7 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
     <main class="resume-shell resume-shell--classic">{body}</main>
 </body>
 </html>
-""".format(title=safe_title, body=body_html)
+""".format(title=safe_title, body=body_html, **palette)
 
 
 def _inline_to_markup(inline_node):
@@ -1003,7 +1023,7 @@ def _generate_pdf_with_reportlab(text, title):
         leftMargin=44,
         topMargin=48,
         bottomMargin=42,
-        title=title or "AI Job Application Package",
+        title=title or "Tailored Resume",
     )
 
     flowables = []
@@ -1076,26 +1096,22 @@ def _generate_pdf_with_reportlab(text, title):
     return buffer
 
 
-def _build_pdf_html(text, title, theme=None, document_kind="report"):
+def _build_pdf_html(text, title, theme=None, document_kind="cover_letter"):
     return (
         _build_resume_html(text, title=title, theme=theme or "classic_ats")
         if document_kind == "tailored_resume"
-        else _build_cover_letter_html(text, title=title)
-        if document_kind == "cover_letter"
-        else _build_report_html(text, title=title)
+        else _build_cover_letter_html(text, title=title, theme=theme or "classic_ats")
     )
 
 
-def _generate_pdf_with_weasyprint(text, title, theme=None, document_kind="report", artifact: TailoredResumeArtifact | None = None):
+def _generate_pdf_with_weasyprint(text, title, theme=None, document_kind="cover_letter", artifact: TailoredResumeArtifact | None = None):
     _configure_weasyprint_windows_runtime()
     from weasyprint import HTML
 
     html_document = (
         _build_resume_html(text, title=title, theme=theme or "classic_ats", artifact=artifact)
         if document_kind == "tailored_resume"
-        else _build_cover_letter_html(text, title=title)
-        if document_kind == "cover_letter"
-        else _build_report_html(text, title=title)
+        else _build_cover_letter_html(text, title=title, theme=theme or "classic_ats")
     )
 
     return BytesIO(HTML(string=html_document).write_pdf())
@@ -1130,8 +1146,711 @@ def _generate_pdf_with_reportlab_fallback(text, title, renderer_error=None):
         ) from error
 
 
-def generate_pdf(text, title="AI Job Application Package", theme=None, document_kind="report", artifact: TailoredResumeArtifact | None = None):
+def generate_pdf(text, title="Tailored Resume", theme=None, document_kind="cover_letter", artifact: TailoredResumeArtifact | None = None):
     try:
         return _generate_pdf_with_weasyprint(text, title, theme=theme, document_kind=document_kind, artifact=artifact)
     except Exception as renderer_error:
         return _generate_pdf_with_reportlab_fallback(text, title, renderer_error=renderer_error)
+
+
+# ---------------------------------------------------------------------------
+# DOCX export
+#
+# Mirrors the structural decomposition used by
+# `_build_structured_resume_body_classic` (resume) and
+# `_build_cover_letter_html` (cover letter) so the DOCX reads as the
+# same document, not a different format. We pull from the structured
+# artifact fields (header, experience_entries, etc.) for the resume —
+# NOT from the markdown — because Phase 2 of the DOCX export plan
+# removes markdown export entirely.
+#
+# Phase 1 implements the `classic_ats` theme only; `professional_neutral`
+# lands in Phase 4.
+# ---------------------------------------------------------------------------
+
+
+# Per-theme DOCX palettes — kept structurally parallel with
+# `_RESUME_THEME_PALETTES` in this file but using OOXML-safe hex
+# strings (no '#' prefix) and only the keys the DOCX renderer reads.
+#
+# - classic_ats: warm-cream paper / brown accents. Arial body for
+#   scannability, Georgia for the prose summary + headings.
+# - professional_neutral: pure black / gray / white. Georgia
+#   throughout because Arial felt cold + template-y at the small body
+#   sizes a conservative resume uses, and the cover letter is also
+#   Georgia in both themes.
+_DOCX_THEME_PALETTES: dict[str, dict[str, str]] = {
+    "classic_ats": {
+        "ink": "221912",  # body text
+        "muted": "6B5648",  # meta lines (organization, dates)
+        "accent": "8F6845",  # section headings + header underline
+        "line": "D7C2AF",  # softer underline tone
+        "body_font": "Arial",
+        "heading_font": "Georgia",
+        "prose_font": "Georgia",
+    },
+    "professional_neutral": {
+        "ink": "0A0A0A",
+        "muted": "555555",
+        "accent": "0A0A0A",  # accent collapses to ink — no warm tone
+        "line": "BFBFBF",
+        "body_font": "Georgia",
+        "heading_font": "Georgia",
+        "prose_font": "Georgia",
+    },
+}
+
+
+def _resolve_docx_palette(theme: str | None) -> dict[str, str]:
+    """Pick the DOCX palette by name. Unknown / blank values fall back
+    to classic_ats so the renderer never crashes on an unexpected
+    artifact.theme — same fallback policy as `_resolve_resume_theme`
+    in artifact_export_service."""
+    return _DOCX_THEME_PALETTES.get(
+        str(theme or "").strip(),
+        _DOCX_THEME_PALETTES["classic_ats"],
+    )
+
+# Default page margins (in inches). Matches the ~18mm @page margin the
+# WeasyPrint renderer uses for the classic_ats resume shell.
+_DOCX_PAGE_MARGIN_INCHES = 0.7
+
+
+def _docx_add_bottom_border(paragraph, *, color_hex: str, size_eighths_pt: int = 6):
+    """Add a bottom border to a paragraph by injecting raw OOXML.
+
+    python-docx doesn't expose paragraph borders directly. The widget
+    we want is `<w:pBdr><w:bottom w:val="single" w:sz="6"
+    w:color="8F6845"/></w:pBdr>` inside the paragraph properties.
+    `size_eighths_pt` is in eighths of a point, so 6 = 0.75pt, 8 = 1pt.
+    """
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    p_pr = paragraph._p.get_or_add_pPr()
+    # Remove any existing bottom border so re-runs don't stack.
+    for existing in p_pr.findall(qn("w:pBdr")):
+        p_pr.remove(existing)
+    bdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), str(size_eighths_pt))
+    bottom.set(qn("w:space"), "1")
+    bottom.set(qn("w:color"), color_hex)
+    bdr.append(bottom)
+    p_pr.append(bdr)
+
+
+def _docx_apply_run_font(run, *, family: str, size_pt: float, color_hex: str | None = None, bold: bool = False, italic: bool = False, small_caps: bool = False):
+    """Set the common font attrs on a run.
+
+    Called per-run so each piece of text picks up the right family /
+    size / color, since python-docx doesn't inherit cleanly from
+    style overrides when we add multiple runs to one paragraph.
+    """
+    from docx.shared import Pt, RGBColor
+
+    run.font.name = family
+    run.font.size = Pt(size_pt)
+    run.bold = bold
+    run.italic = italic
+    if color_hex:
+        run.font.color.rgb = RGBColor.from_string(color_hex)
+    if small_caps:
+        run.font.small_caps = True
+
+
+def _docx_set_page_margins(document, *, inches: float):
+    """Apply equal margins (top/bottom/left/right) on the active section."""
+    from docx.shared import Inches
+
+    for section in document.sections:
+        section.top_margin = Inches(inches)
+        section.bottom_margin = Inches(inches)
+        section.left_margin = Inches(inches)
+        section.right_margin = Inches(inches)
+
+
+def _docx_resume_section_heading(document, label: str, *, palette: dict):
+    """Add a section H2 with accent color + thin bottom border.
+
+    Matches the visual weight of the `.resume-classic-section h2` HTML
+    rule (small-caps letterspaced look, accent-colored underline)."""
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = _docx_pt(8)
+    paragraph.paragraph_format.space_after = _docx_pt(2)
+    run = paragraph.add_run(label.upper())
+    _docx_apply_run_font(
+        run,
+        family=palette["heading_font"],
+        size_pt=11.5,
+        color_hex=palette["accent"],
+        bold=True,
+        small_caps=False,
+    )
+    _docx_add_bottom_border(
+        paragraph,
+        color_hex=palette["line"],
+        size_eighths_pt=4,
+    )
+    return paragraph
+
+
+def _docx_pt(value: float):
+    """Pt(...) wrapper that imports lazily so module-level test discovery
+    doesn't need to bring in docx.shared just to enumerate names."""
+    from docx.shared import Pt
+
+    return Pt(value)
+
+
+def _docx_inches(value: float):
+    from docx.shared import Inches
+
+    return Inches(value)
+
+
+def _docx_add_resume_header(document, artifact: TailoredResumeArtifact, *, palette: dict):
+    name = (artifact.header.full_name or artifact.title or "Candidate").strip()
+
+    name_paragraph = document.add_paragraph()
+    name_paragraph.paragraph_format.space_after = _docx_pt(2)
+    # Header alignment matches the HTML/PDF builder: left-aligned, same
+    # margin as every section heading. The earlier centred header was
+    # inconsistent with the body and with the PDF rendering of the same
+    # artifact — both readers should see the same layout.
+    name_paragraph.alignment = _docx_alignment("left")
+    run = name_paragraph.add_run(name)
+    _docx_apply_run_font(
+        run,
+        family=palette["heading_font"],
+        size_pt=20,
+        color_hex=palette["ink"],
+        bold=True,
+    )
+
+    contact_values = []
+    if artifact.header.location:
+        contact_values.append(artifact.header.location.strip())
+    contact_values.extend(
+        item.strip()
+        for item in (artifact.header.contact_lines or [])
+        if str(item or "").strip()
+    )
+    if contact_values:
+        contact_paragraph = document.add_paragraph()
+        contact_paragraph.alignment = _docx_alignment("left")
+        contact_paragraph.paragraph_format.space_after = _docx_pt(6)
+        contact_run = contact_paragraph.add_run(" | ".join(contact_values))
+        _docx_apply_run_font(
+            contact_run,
+            family=palette["body_font"],
+            size_pt=10,
+            color_hex=palette["muted"],
+        )
+    else:
+        # Still want the underline below the name even when contact is
+        # empty, so add it on the name paragraph itself.
+        contact_paragraph = name_paragraph
+
+    # Accent underline below the contact line (or name when contact is
+    # missing) gives the resume header its editorial identity.
+    _docx_add_bottom_border(
+        contact_paragraph,
+        color_hex=palette["accent"],
+        size_eighths_pt=8,
+    )
+
+
+def _docx_alignment(name: str):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    return {
+        "left": WD_ALIGN_PARAGRAPH.LEFT,
+        "center": WD_ALIGN_PARAGRAPH.CENTER,
+        "right": WD_ALIGN_PARAGRAPH.RIGHT,
+        "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+    }.get(name, WD_ALIGN_PARAGRAPH.LEFT)
+
+
+def _docx_add_role_row(document, *, title: str, dates: str, palette: dict):
+    """Title on the left, dates right-aligned via tab stop. Mirrors the
+    `.resume-role-row` flex layout."""
+    from docx.enum.text import WD_TAB_ALIGNMENT
+
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = _docx_pt(4)
+    paragraph.paragraph_format.space_after = _docx_pt(0)
+    paragraph.paragraph_format.tab_stops.add_tab_stop(
+        _docx_inches(7.1 - 2 * _DOCX_PAGE_MARGIN_INCHES),
+        WD_TAB_ALIGNMENT.RIGHT,
+    )
+
+    title_run = paragraph.add_run(title)
+    _docx_apply_run_font(
+        title_run,
+        family=palette["body_font"],
+        size_pt=11.5,
+        color_hex=palette["ink"],
+        bold=True,
+    )
+    if dates:
+        tab_run = paragraph.add_run("\t")
+        _docx_apply_run_font(
+            tab_run,
+            family=palette["body_font"],
+            size_pt=11,
+            color_hex=palette["muted"],
+        )
+        dates_run = paragraph.add_run(dates)
+        _docx_apply_run_font(
+            dates_run,
+            family=palette["body_font"],
+            size_pt=10.5,
+            color_hex=palette["muted"],
+        )
+
+
+def _docx_add_meta_line(document, text: str, *, palette: dict, italic: bool = True):
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = _docx_pt(2)
+    run = paragraph.add_run(text)
+    _docx_apply_run_font(
+        run,
+        family=palette["body_font"],
+        size_pt=10.5,
+        color_hex=palette["muted"],
+        italic=italic,
+    )
+
+
+def _docx_add_bullet(document, text: str, *, palette: dict):
+    """Bulleted list item using Word's built-in 'List Bullet' style so
+    the file opens with proper bullet formatting in Word + Google Docs.
+    The style is part of the default template; no extra wiring needed."""
+    paragraph = document.add_paragraph(style="List Bullet")
+    paragraph.paragraph_format.space_after = _docx_pt(2)
+    run = paragraph.add_run(text)
+    _docx_apply_run_font(
+        run,
+        family=palette["body_font"],
+        size_pt=10.5,
+        color_hex=palette["ink"],
+    )
+
+
+def _docx_add_paragraph_text(document, text: str, *, palette: dict, font_key: str = "body_font", size_pt: float = 11, italic: bool = False, color_key: str = "ink"):
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = _docx_pt(4)
+    run = paragraph.add_run(text)
+    _docx_apply_run_font(
+        run,
+        family=palette[font_key],
+        size_pt=size_pt,
+        color_hex=palette[color_key],
+        italic=italic,
+    )
+    return paragraph
+
+
+def _docx_resume_summary_block(document, artifact: TailoredResumeArtifact, *, palette: dict):
+    _docx_resume_section_heading(document, "Summary", palette=palette)
+    # Prose summary uses the prose font (Georgia in both themes) so
+    # the headline reads more like a written paragraph than a body
+    # bullet, regardless of theme.
+    _docx_add_paragraph_text(
+        document,
+        artifact.professional_summary or "No professional summary generated.",
+        palette=palette,
+        font_key="prose_font",
+        size_pt=11,
+        color_key="ink",
+    )
+
+
+def _docx_resume_skills_block(document, artifact: TailoredResumeArtifact, *, palette: dict):
+    _docx_resume_section_heading(document, "Core Skills", palette=palette)
+    categories = getattr(artifact, "skill_categories", None) or {}
+    if categories:
+        # One paragraph per category, with a bold accent-colored label
+        # ("Languages & Tools: Python, SQL, ..."). Mirrors the HTML's
+        # .resume-skill-category styling.
+        for label, items in categories.items():
+            label_clean = str(label or "").strip()
+            cleaned = [str(item or "").strip() for item in items if str(item or "").strip()]
+            if not label_clean or not cleaned:
+                continue
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.space_before = _docx_pt(0)
+            paragraph.paragraph_format.space_after = _docx_pt(2)
+            label_run = paragraph.add_run(f"{label_clean}: ")
+            _docx_apply_run_font(
+                label_run,
+                family=palette["body_font"],
+                size_pt=11,
+                color_hex=palette["accent"],
+                bold=True,
+            )
+            value_run = paragraph.add_run(", ".join(cleaned))
+            _docx_apply_run_font(
+                value_run,
+                family=palette["body_font"],
+                size_pt=11,
+                color_hex=palette["ink"],
+            )
+        return
+
+    skills = [str(s).strip() for s in (artifact.highlighted_skills or []) if str(s or "").strip()]
+    if skills:
+        _docx_add_paragraph_text(
+            document,
+            " | ".join(skills),
+            palette=palette,
+            font_key="body_font",
+            size_pt=11,
+            color_key="ink",
+        )
+    else:
+        _docx_add_paragraph_text(
+            document,
+            "No highlighted skills were generated.",
+            palette=palette,
+            font_key="body_font",
+            size_pt=10.5,
+            italic=True,
+            color_key="muted",
+        )
+
+
+def _docx_resume_experience_block(document, artifact: TailoredResumeArtifact, *, palette: dict) -> bool:
+    entries = list(artifact.experience_entries or [])
+    if not entries:
+        return False
+    _docx_resume_section_heading(document, "Experience", palette=palette)
+    for entry in entries:
+        title = (entry.title or "Relevant Experience").strip()
+        date_parts = [part for part in [entry.start, entry.end] if part]
+        dates = " - ".join(date_parts) if date_parts else ""
+        _docx_add_role_row(document, title=title, dates=dates, palette=palette)
+        meta_parts = [part for part in [entry.organization, entry.location] if part]
+        if meta_parts:
+            _docx_add_meta_line(document, " | ".join(meta_parts), palette=palette)
+        bullets = [str(b).strip() for b in (entry.bullets or []) if str(b or "").strip()]
+        if bullets:
+            for bullet in bullets:
+                _docx_add_bullet(document, bullet, palette=palette)
+        else:
+            _docx_add_paragraph_text(
+                document,
+                "No grounded bullet points were generated for this role.",
+                palette=palette,
+                font_key="body_font",
+                size_pt=10.5,
+                italic=True,
+                color_key="muted",
+            )
+    return True
+
+
+def _docx_resume_projects_block(document, artifact: TailoredResumeArtifact, *, palette: dict) -> bool:
+    projects = list(artifact.project_entries or [])
+    if not projects:
+        return False
+    _docx_resume_section_heading(document, "Projects", palette=palette)
+    for project in projects:
+        name = (project.name or "Project").strip()
+        date_parts = [part for part in [project.start, project.end] if part]
+        dates = " - ".join(date_parts) if date_parts else ""
+        _docx_add_role_row(document, title=name, dates=dates, palette=palette)
+        if project.description:
+            _docx_add_meta_line(document, project.description, palette=palette, italic=False)
+        bullets = [str(b).strip() for b in (project.bullets or []) if str(b or "").strip()]
+        for bullet in bullets:
+            _docx_add_bullet(document, bullet, palette=palette)
+        meta_parts = []
+        if project.technologies:
+            meta_parts.append("Tech: " + ", ".join(project.technologies))
+        if project.link:
+            meta_parts.append("Link: " + project.link)
+        if meta_parts:
+            _docx_add_meta_line(document, " | ".join(meta_parts), palette=palette, italic=True)
+    return True
+
+
+def _docx_resume_education_block(document, artifact: TailoredResumeArtifact, *, palette: dict):
+    _docx_resume_section_heading(document, "Education", palette=palette)
+    entries = list(artifact.education_entries or [])
+    if not entries:
+        _docx_add_paragraph_text(
+            document,
+            "No education entries were available.",
+            palette=palette,
+            font_key="body_font",
+            size_pt=10.5,
+            italic=True,
+            color_key="muted",
+        )
+        return
+    for entry in entries:
+        institution = (entry.institution or "Education").strip()
+        degree_parts = [part for part in [entry.degree, entry.field_of_study] if part]
+        date_parts = [part for part in [entry.start, entry.end] if part]
+        dates = " - ".join(date_parts) if date_parts else ""
+        _docx_add_role_row(document, title=institution, dates=dates, palette=palette)
+        if degree_parts:
+            _docx_add_meta_line(document, " - ".join(degree_parts), palette=palette, italic=False)
+
+
+def _docx_resume_publications_block(document, artifact: TailoredResumeArtifact, *, palette: dict) -> bool:
+    items = [str(item).strip() for item in (artifact.publication_entries or []) if str(item or "").strip()]
+    if not items:
+        return False
+    _docx_resume_section_heading(document, "Publications", palette=palette)
+    for item in items:
+        _docx_add_bullet(document, item, palette=palette)
+    return True
+
+
+def _docx_resume_certifications_block(document, artifact: TailoredResumeArtifact, *, palette: dict) -> bool:
+    items = [str(item).strip() for item in (artifact.certifications or []) if str(item or "").strip()]
+    if not items:
+        return False
+    _docx_resume_section_heading(document, "Certifications", palette=palette)
+    for item in items:
+        _docx_add_bullet(document, item, palette=palette)
+    return True
+
+
+def _build_resume_docx(artifact: TailoredResumeArtifact) -> bytes:
+    """Render a structured TailoredResumeArtifact to DOCX bytes.
+
+    Mirrors the section ordering / empty-section policy of
+    `_build_structured_resume_body_classic`: Summary, Skills, Education
+    always render even when sparse; Experience, Projects, Publications,
+    Certifications drop entirely when empty. Section order honors
+    `artifact.section_order` and falls back to
+    `_DEFAULT_RESUME_SECTION_ORDER` for legacy callers.
+
+    Theme is read from `artifact.theme`; supported values are
+    `classic_ats` (warm-cream / brown accents, Arial body) and
+    `professional_neutral` (pure black / gray, Georgia body). Unknown
+    values fall back to `classic_ats`.
+    """
+    from docx import Document
+
+    palette = _resolve_docx_palette(artifact.theme)
+    document = Document()
+    _docx_set_page_margins(document, inches=_DOCX_PAGE_MARGIN_INCHES)
+
+    # Default style baseline so paragraphs without a per-run font fall
+    # back cleanly when opened in Word's Style pane.
+    normal_style = document.styles["Normal"]
+    normal_style.font.name = palette["body_font"]
+    from docx.shared import Pt as _Pt
+
+    normal_style.font.size = _Pt(11)
+
+    _docx_add_resume_header(document, artifact, palette=palette)
+
+    section_renderers = {
+        "summary": lambda: (_docx_resume_summary_block(document, artifact, palette=palette), True)[1],
+        "skills": lambda: (_docx_resume_skills_block(document, artifact, palette=palette), True)[1],
+        "experience": lambda: _docx_resume_experience_block(document, artifact, palette=palette),
+        "projects": lambda: _docx_resume_projects_block(document, artifact, palette=palette),
+        "education": lambda: (_docx_resume_education_block(document, artifact, palette=palette), True)[1],
+        "publications": lambda: _docx_resume_publications_block(document, artifact, palette=palette),
+        "certifications": lambda: _docx_resume_certifications_block(document, artifact, palette=palette),
+    }
+
+    order = list(artifact.section_order) if artifact.section_order else list(_DEFAULT_RESUME_SECTION_ORDER)
+    seen: set[str] = set()
+    for section_name in order:
+        if section_name in seen:
+            continue
+        seen.add(section_name)
+        renderer = section_renderers.get(section_name)
+        if renderer is not None:
+            renderer()
+    # Append any sections the agent forgot to mention so we never lose
+    # rendered content when the agent emits a partial order.
+    for section_name in _DEFAULT_RESUME_SECTION_ORDER:
+        if section_name in seen:
+            continue
+        renderer = section_renderers.get(section_name)
+        if renderer is not None:
+            renderer()
+
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def _build_cover_letter_docx(artifact: CoverLetterArtifact) -> bytes:
+    """Render a CoverLetterArtifact to DOCX bytes.
+
+    The cover letter artifact only exposes a flat `markdown` field (the
+    structured paragraphs live upstream in `CoverLetterAgentOutput` and
+    aren't on the artifact). Parse the markdown into blocks via the
+    existing `_parse_markdown_blocks` helper and emit each block as a
+    matching DOCX paragraph / list. Title is split via
+    `_split_cover_letter_title` so the heading + role-eyebrow read the
+    same way as the HTML render.
+
+    Theme is read from `artifact.theme`; both classic_ats and
+    professional_neutral use the prose font (Georgia) for the body
+    because the cover letter is letter-shaped prose in either palette.
+    The theme switch only changes ink / muted / accent / line colors
+    + the small-caps eyebrow font (which is body_font).
+    """
+    from docx import Document
+
+    palette = _resolve_docx_palette(artifact.theme)
+    document = Document()
+    _docx_set_page_margins(document, inches=_DOCX_PAGE_MARGIN_INCHES)
+
+    normal_style = document.styles["Normal"]
+    normal_style.font.name = palette["prose_font"]
+    from docx.shared import Pt as _Pt
+
+    normal_style.font.size = _Pt(11.4)
+
+    header_title, header_subtitle = _split_cover_letter_title(artifact.title or "Cover Letter")
+
+    title_paragraph = document.add_paragraph()
+    title_paragraph.paragraph_format.space_after = _docx_pt(2)
+    title_run = title_paragraph.add_run(header_title)
+    _docx_apply_run_font(
+        title_run,
+        family=palette["heading_font"],
+        size_pt=18,
+        color_hex=palette["ink"],
+        bold=True,
+    )
+    if header_subtitle:
+        sub_paragraph = document.add_paragraph()
+        sub_paragraph.paragraph_format.space_after = _docx_pt(8)
+        sub_run = sub_paragraph.add_run(header_subtitle.upper())
+        _docx_apply_run_font(
+            sub_run,
+            family=palette["body_font"],
+            size_pt=10,
+            color_hex=palette["muted"],
+        )
+    _docx_add_bottom_border(
+        title_paragraph if not header_subtitle else sub_paragraph,
+        color_hex=palette["accent"],
+        size_eighths_pt=8,
+    )
+
+    blocks = _parse_markdown_blocks(artifact.markdown or "")
+    # Drop the leading H1 (already rendered as the header) and any
+    # leading rule, mirroring the HTML render's title strip.
+    deferred_blocks = []
+    for index, (kind, payload) in enumerate(blocks):
+        if index == 0 and kind == "title":
+            continue
+        deferred_blocks.append((kind, payload))
+
+    for kind, payload in deferred_blocks:
+        if kind in {"heading", "subheading"}:
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.space_before = _docx_pt(8)
+            paragraph.paragraph_format.space_after = _docx_pt(2)
+            run = paragraph.add_run(_strip_inline_markup(str(payload or "")))
+            _docx_apply_run_font(
+                run,
+                family=palette["heading_font"],
+                size_pt=12.5,
+                color_hex=palette["ink"],
+                bold=True,
+            )
+            continue
+        if kind == "paragraph":
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.space_after = _docx_pt(8)
+            run = paragraph.add_run(_strip_inline_markup(str(payload or "")))
+            _docx_apply_run_font(
+                run,
+                family=palette["prose_font"],
+                size_pt=11.4,
+                color_hex=palette["ink"],
+            )
+            continue
+        if kind == "list":
+            for item in payload or []:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("kind") != "list_paragraph":
+                    continue
+                paragraph = document.add_paragraph(style="List Bullet")
+                paragraph.paragraph_format.space_after = _docx_pt(2)
+                run = paragraph.add_run(_strip_inline_markup(str(item.get("text", "") or "")))
+                _docx_apply_run_font(
+                    run,
+                    family=palette["prose_font"],
+                    size_pt=11.4,
+                    color_hex=palette["ink"],
+                )
+            continue
+        if kind == "rule":
+            divider = document.add_paragraph()
+            _docx_add_bottom_border(
+                divider,
+                color_hex=palette["line"],
+                size_eighths_pt=4,
+            )
+            continue
+        # Unhandled kind (code_block, etc.) — skip silently. The cover
+        # letter agent doesn't emit code blocks today, but if that
+        # changes we can extend this.
+
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+_INLINE_MARKUP_TAG = re.compile(r"<[^>]+>")
+
+
+def _strip_inline_markup(text: str) -> str:
+    """The markdown-it tree → block parser emits inline children with
+    HTML-style tags (`<b>...</b>`, `<i>...</i>`). DOCX runs don't take
+    raw HTML, so flatten the markup to plain text for now. Phase 1
+    accepts the loss of bold/italic styling inside paragraphs; if QA
+    flags it as a problem we can teach the parser to emit per-run
+    styling instead.
+    """
+    return _INLINE_MARKUP_TAG.sub("", text or "").strip()
+
+
+def export_docx_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
+    """Render an artifact to DOCX bytes.
+
+    Phase 1 implements the `classic_ats` theme only; the second theme
+    (`professional_neutral`) lands in Phase 4 with a palette switch.
+    """
+    try:
+        if isinstance(report, TailoredResumeArtifact):
+            return _build_resume_docx(report)
+        if isinstance(report, CoverLetterArtifact):
+            return _build_cover_letter_docx(report)
+        raise ExportError(
+            "Unsupported artifact type for DOCX export.",
+            details=type(report).__name__,
+        )
+    except ExportError:
+        raise
+    except Exception as error:
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            "docx_export_failed",
+            "DOCX export failed.",
+            report_title=getattr(report, "title", ""),
+            filename_stem=getattr(report, "filename_stem", ""),
+            error_type=type(error).__name__,
+        )
+        raise ExportError(
+            "DOCX export failed. Try the PDF download instead.",
+            details=str(error),
+        ) from error

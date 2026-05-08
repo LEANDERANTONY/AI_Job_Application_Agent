@@ -1,0 +1,37 @@
+{
+  "full_name": "Sarah Mitchell",
+  "location": "Boston, MA",
+  "contact_lines": [
+    "sarah.mitchell.pm@gmail.com",
+    "(617) 555-0144",
+    "linkedin.com/in/sarahmitchellpm"
+  ],
+  "skills_must_include": [
+    "SQL", "Looker", "Figma", "JIRA"
+  ],
+  "experience_count": 2,
+  "experience_titles": [
+    "Senior Product Manager",
+    "Product Manager"
+  ],
+  "experience_organizations_must_include": [
+    "Wayfair",
+    "HubSpot"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Harvard Business School",
+      "degree_must_include": "MBA"
+    },
+    {
+      "institution_must_include": "Boston University",
+      "degree_must_include": "B.A."
+    }
+  ],
+  "certifications_must_include": [],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "Realistic PDF-extraction artefacts: erratic whitespace (multi-space gaps), bullets without leading markers (just indentation), name on header line above title line. Education section uses two-column tabular layout 'Institution    Degree, Year'. Tests resilience to extraction noise."
+}

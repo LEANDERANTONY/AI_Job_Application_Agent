@@ -18,12 +18,14 @@ from src.errors import InputValidationError
 from src.openai_service import OpenAIService
 from src.parsers.jd import parse_jd_text
 from src.parsers.resume import parse_resume_document
-from src.report_builder import build_application_report
 from src.resume_builder import build_tailored_resume_artifact
 from src.schemas import AssistantResponse, ResumeDocument
 from src.services.fit_service import build_fit_analysis
 from src.services.jd_summary_service import generate_job_summary_view
-from src.services.job_service import build_job_description_from_text
+from src.services.job_service import (
+    build_job_description_from_text,
+    build_job_description_from_text_auto,
+)
 from src.services.profile_service import (
     build_candidate_profile_from_resume_auto,
 )
@@ -114,7 +116,9 @@ def parse_job_description_upload(*, filename: str, mime_type: str, content_base6
         mime_type=mime_type,
     )
     job_description_text = parse_jd_text(uploaded_file)
-    job_description = build_job_description_from_text(job_description_text)
+    # Production parsing path: LLM source-of-truth with deterministic
+    # fallback. Same architecture we use for resume parsing.
+    job_description = build_job_description_from_text_auto(job_description_text)
     jd_summary_view = generate_job_summary_view(
         openai_service=OpenAIService(),
         job_description=job_description,
@@ -146,7 +150,7 @@ def run_workspace_analysis(
     )
     candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
     job_description = _enrich_job_description_from_imported_posting(
-        build_job_description_from_text(job_description_text),
+        build_job_description_from_text_auto(job_description_text),
         imported_job_posting,
     )
     fit_analysis = build_fit_analysis(candidate_profile, job_description)
@@ -208,13 +212,6 @@ def run_workspace_analysis(
         tailored_draft,
         agent_result=agent_result,
     )
-    report = build_application_report(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-        tailored_draft,
-        agent_result=agent_result,
-    )
 
     review = getattr(agent_result, "review", None)
 
@@ -229,7 +226,6 @@ def run_workspace_analysis(
         "artifacts": {
             "tailored_resume": _serialize(tailored_resume_artifact),
             "cover_letter": _serialize(cover_letter_artifact),
-            "report": _serialize(report),
         },
         "workflow": {
             "mode": workflow_mode,
@@ -246,6 +242,7 @@ def answer_workspace_question(
     *,
     question: str,
     current_page: str,
+    workspace_state: dict[str, Any] | None = None,
     workspace_snapshot: dict[str, Any] | None,
     history: list[dict[str, str]] | None,
     access_token: str = "",
@@ -253,7 +250,6 @@ def answer_workspace_question(
 ):
     workflow_view_model = None
     artifact = None
-    report = None
     app_context = {
         "is_authenticated": False,
         "assistant_requires_login": False,
@@ -270,16 +266,32 @@ def answer_workspace_question(
         )
         artifacts = dict(workspace_snapshot.get("artifacts") or {})
         artifact = _namespace_value(artifacts.get("tailored_resume"))
-        report = _namespace_value(artifacts.get("report"))
         app_context.update(
             {
                 "has_resume": bool(workspace_snapshot.get("candidate_profile")),
                 "has_job_description": bool(workspace_snapshot.get("job_description")),
                 "has_tailored_resume": artifact is not None,
-                "has_report": report is not None,
                 "has_cover_letter": bool(artifacts.get("cover_letter")),
             }
         )
+
+    # Merge the live workspace-state projection (small, sent every
+    # turn) so the LLM sees pre-analysis context too. workspace_state
+    # is authoritative for has_resume/has_jd flags — the snapshot
+    # block above only fires when an analysis has run, but the user
+    # might have a parsed resume + JD without having run analysis.
+    if workspace_state:
+        app_context["workspace_state"] = workspace_state
+        app_context.setdefault("has_resume", bool(workspace_state.get("has_resume")))
+        app_context.setdefault(
+            "has_job_description", bool(workspace_state.get("has_jd"))
+        )
+        # If snapshot didn't fire above but workspace_state says so,
+        # still expose the flags (overriding the False defaults).
+        if workspace_state.get("has_resume"):
+            app_context["has_resume"] = True
+        if workspace_state.get("has_jd"):
+            app_context["has_job_description"] = True
 
     compact_history = [
         SimpleNamespace(
@@ -303,7 +315,6 @@ def answer_workspace_question(
         question,
         current_page=current_page,
         workflow_view_model=workflow_view_model,
-        report=report,
         artifact=artifact,
         history=compact_history,
         app_context=app_context,
@@ -357,8 +368,6 @@ def _compute_assistant_sources(
             sources.append("Tailored Resume Draft")
         if artifacts.get("cover_letter"):
             sources.append("Cover Letter")
-        if artifacts.get("report"):
-            sources.append("Application Package")
     seen: set[str] = set()
     deduped: list[str] = []
     for label in sources:
@@ -373,6 +382,7 @@ def stream_workspace_question(
     *,
     question: str,
     current_page: str,
+    workspace_state: dict[str, Any] | None = None,
     workspace_snapshot: dict[str, Any] | None,
     history: list[dict[str, str]] | None,
     access_token: str = "",
@@ -395,7 +405,6 @@ def stream_workspace_question(
     """
     workflow_view_model = None
     artifact = None
-    report = None
     app_context: dict[str, Any] = {
         "is_authenticated": False,
         "assistant_requires_login": False,
@@ -412,16 +421,24 @@ def stream_workspace_question(
         )
         artifacts = dict(workspace_snapshot.get("artifacts") or {})
         artifact = _namespace_value(artifacts.get("tailored_resume"))
-        report = _namespace_value(artifacts.get("report"))
         app_context.update(
             {
                 "has_resume": bool(workspace_snapshot.get("candidate_profile")),
                 "has_job_description": bool(workspace_snapshot.get("job_description")),
                 "has_tailored_resume": artifact is not None,
-                "has_report": report is not None,
                 "has_cover_letter": bool(artifacts.get("cover_letter")),
             }
         )
+
+    # Same merge as in answer_workspace_question — fold the live
+    # workspace-state projection into app_context so the LLM's
+    # system prompt sees pre-analysis state too.
+    if workspace_state:
+        app_context["workspace_state"] = workspace_state
+        if workspace_state.get("has_resume"):
+            app_context["has_resume"] = True
+        if workspace_state.get("has_jd"):
+            app_context["has_job_description"] = True
 
     compact_history = [
         SimpleNamespace(
@@ -468,7 +485,6 @@ def stream_workspace_question(
             question,
             current_page=current_page,
             workflow_view_model=workflow_view_model,
-            report=report,
             artifact=artifact,
             history=compact_history,
             app_context=app_context,

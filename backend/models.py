@@ -10,6 +10,17 @@ class JobSearchRequestModel(BaseModel):
     remote_only: bool = False
     posted_within_days: int | None = Field(default=None, ge=1, le=30)
     page_size: int = Field(default=20, ge=1, le=50)
+    # New filter dropdowns. work_modes is multi-select among
+    # ('remote', 'hybrid', 'onsite'). employment_types is multi-
+    # select among ('fulltime', 'parttime', 'contract', 'internship',
+    # 'temporary'). Empty list = no filter applied (all values pass).
+    work_modes: list[str] = Field(default_factory=list)
+    employment_types: list[str] = Field(default_factory=list)
+    # Single-select sort. 'relevance' (default — ts_rank then
+    # posted_at), 'newest' (posted_at DESC), 'oldest' (posted_at
+    # ASC), 'company_az' (alphabetical company). Unknown values
+    # coerce to 'relevance' downstream.
+    sort_by: str = Field(default="relevance", max_length=32)
 
     @field_validator("query", "location", mode="before")
     @classmethod
@@ -32,6 +43,24 @@ class JobSearchRequestModel(BaseModel):
             raise ValueError("source_filters must be a list")
         return [str(item).strip().lower() for item in value if str(item).strip()]
 
+    @field_validator("work_modes", "employment_types", mode="before")
+    @classmethod
+    def _normalize_dropdown_list(cls, value):
+        # Same pattern as source_filters — accept a list of strings,
+        # lower-case + strip empties. Whitelisting against the
+        # allowed-values set happens in CachedJobsStore.search()
+        # so the schema layer stays decoupled from RPC vocabulary.
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("must be a list of strings")
+        return [str(item).strip().lower() for item in value if str(item).strip()]
+
+    @field_validator("sort_by", mode="before")
+    @classmethod
+    def _normalize_sort_by(cls, value):
+        return str(value or "relevance").strip().lower() or "relevance"
+
     def to_domain(self) -> JobSearchQuery:
         return JobSearchQuery(
             query=self.query,
@@ -40,6 +69,9 @@ class JobSearchRequestModel(BaseModel):
             remote_only=self.remote_only,
             posted_within_days=self.posted_within_days,
             page_size=self.page_size,
+            work_modes=self.work_modes,
+            employment_types=self.employment_types,
+            sort_by=self.sort_by,
         )
 
 

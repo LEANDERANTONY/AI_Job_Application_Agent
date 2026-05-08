@@ -1,0 +1,38 @@
+{
+  "full_name": "Aanya Sharma",
+  "location": "Bengaluru, India",
+  "contact_lines": [
+    "aanya.sharma@iitb.ac.in",
+    "+91 98765 43210",
+    "linkedin.com/in/aanyasharma",
+    "github.com/aanya-s"
+  ],
+  "skills_must_include": [
+    "Python", "Go", "TypeScript", "React", "FastAPI", "PostgreSQL",
+    "Docker", "Kubernetes", "PyTorch"
+  ],
+  "experience_count": 0,
+  "experience_titles": [],
+  "education": [
+    {
+      "institution_must_include": "Indian Institute of Technology Bombay",
+      "degree_must_include": "B.Tech"
+    }
+  ],
+  "certifications_must_include": [
+    "AWS Certified Cloud Practitioner",
+    "Deep Learning Specialization"
+  ],
+  "projects_count_min": 3,
+  "projects_names_must_include": [
+    "DistKV",
+    "Search-as-you-type",
+    "ResumeRanker"
+  ],
+  "publications_count_min": 2,
+  "publications_must_include_substrings": [
+    "Lightweight neural rerankers",
+    "consistent hashing in geo-distributed"
+  ],
+  "notes": "Pure-student case. Zero formal Experience entries; everything is in Projects. Stress-tests the rule that Projects no longer falls back into Experience."
+}

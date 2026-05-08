@@ -2890,3 +2890,4869 @@ code {
     line-height: 1.7;
   }
 }
+
+/* =====================================================================
+   Landing redesign — "Workbench" narrative
+   Scoped under .l-shell. Reuses the shared :root tokens (--accent,
+   --text, --muted) at the top of this file, but adds local variables
+   for spacing + motion that only the landing needs.
+
+   Sections: topbar · hero · workbench (sticky scroll) · bento · public
+   · final CTA · footer.
+   ===================================================================== */
+
+.l-shell {
+  /* Local tokens layered on top of the global ones. Kept separate from
+     the workspace `.b-shell` block so the two surfaces can drift
+     visually without dragging each other along.
+
+     Card colors went through a "washed blue" phase where they were
+     `rgba(10–14, 14–20, 22–32, …)` — bluish-grey on the dark page that
+     read as muddy. The current values are near-pure-black so the
+     cards feel like cut-outs against the page rather than slightly
+     lighter blue rectangles on top of it. The blue accent comes back
+     in via the per-tile inner radial gradient (set per-tile, not on
+     the token). */
+  --l-radius:     14px;
+  --l-radius-lg:  20px;
+  --l-radius-sm:  10px;
+  --l-line:       rgba(255, 255, 255, 0.06);
+  --l-line-strong: rgba(255, 255, 255, 0.10);
+  --l-card:       #06080d;
+  --l-card-strong: #04060b;
+  --l-fg:         #f5f8ff;
+  --l-fg-2:       #c7cfdf;
+  --l-fg-3:       #8a93a8;
+  --l-fg-4:       #5e6677;
+  --l-ease:       cubic-bezier(0.16, 1, 0.30, 1);
+  --l-duration:   320ms;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  color: var(--l-fg);
+  background:
+    radial-gradient(900px 480px at 50% -10%, rgba(48, 100, 255, 0.07), transparent 60%),
+    linear-gradient(180deg, #04070f 0%, #02040a 50%, #000 100%);
+  font-family: var(--font-dm-sans), "DM Sans", system-ui, sans-serif;
+  letter-spacing: -0.005em;
+  /* `overflow-x: clip` (not `hidden`) so the orbs don't trigger
+     horizontal scroll WITHOUT also breaking sticky positioning on
+     descendants — `hidden` creates a scroll container that disables
+     `position: sticky` for everything inside it. */
+  overflow-x: clip;
+}
+
+.l-shell h1, .l-shell h2, .l-shell h3 {
+  font-family: var(--font-space-grotesk), "Space Grotesk", "Inter", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  margin: 0;
+}
+
+/* Soft accent orbs in the page background. Big + heavily blurred so
+   they read as ambience, not decoration. They're `position: fixed`
+   so they don't scroll-jitter. */
+.l-orb {
+  position: fixed;
+  border-radius: 999px;
+  filter: blur(110px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+}
+.l-orb-1 {
+  top: -20rem;
+  right: -10rem;
+  width: 36rem;
+  height: 36rem;
+  background: radial-gradient(circle, rgba(48, 100, 255, 0.30), transparent 70%);
+}
+.l-orb-2 {
+  bottom: 10rem;
+  left: -16rem;
+  width: 32rem;
+  height: 32rem;
+  background: radial-gradient(circle, rgba(70, 60, 200, 0.20), transparent 70%);
+  opacity: 0.45;
+}
+.l-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.7) 1px, transparent 1px);
+  background-size: 3px 3px;
+  mix-blend-mode: overlay;
+}
+
+/* ── Topbar ───────────────────────────────────────────────────────── */
+
+.l-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(14px) saturate(140%);
+  background: rgba(4, 7, 15, 0.65);
+  border-bottom: 1px solid var(--l-line);
+}
+.l-topbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 14px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.l-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--l-fg);
+}
+.l-brand-logo {
+  width: 32px;
+  height: 32px;
+}
+.l-brand-name {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  font-size: 15px;
+}
+.l-topbar-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.l-topbar-link {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13.5px;
+  color: var(--l-fg-3);
+  border-radius: 8px;
+  transition: color 160ms var(--l-ease), background 160ms var(--l-ease);
+}
+.l-topbar-link:hover {
+  color: var(--l-fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Visual-gap fix between the link cluster (Workflow / Features) and
+   the first button (Sign out, or Sign in with Google when logged
+   out). The nav uses `gap: 6px` and each link/button has 14 px
+   horizontal padding, which gives a 34 px text-to-text gap between
+   the two links — but the button's visible background starts
+   immediately at its 34 px box, so the EMPTY whitespace between
+   "Features" and the button's left edge is only 20 px (14 px link
+   pad + 6 px gap). Adding 14 px of left-margin to the first button
+   pushes its background-edge another 14 px right, so the empty
+   whitespace from "Features" matches the text-to-text gap before
+   it. Targets `button:first-of-type` so it works whether or not
+   "Sign out" is present (varies by auth state). */
+.l-topbar-nav > button:first-of-type {
+  margin-left: 14px;
+}
+
+/* Mobile hamburger button + dropdown panel. Hidden on desktop via
+   `display: none` here; the mobile media query below flips the
+   visibility (hide `.l-topbar-nav`, show `.l-topbar-burger`). The
+   panel itself only renders when `menuOpen` is true in JSX. */
+.l-topbar-burger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--l-line-strong);
+  border-radius: 8px;
+  color: var(--l-fg);
+  cursor: pointer;
+  transition: background 160ms var(--l-ease), border-color 160ms var(--l-ease),
+    transform 160ms var(--l-ease);
+}
+.l-topbar-burger:hover { background: rgba(255, 255, 255, 0.08); }
+.l-topbar-burger:active { transform: scale(0.96); }
+.l-topbar-burger:focus-visible {
+  outline: 2px solid rgba(48, 100, 255, 0.55);
+  outline-offset: 2px;
+}
+
+/* Backdrop is a button so taps anywhere outside the panel close the
+   menu. Fixed full-screen, sits between page content and the panel.
+   Strong dim (~70 % black) so the page underneath reads as clearly
+   backgrounded — at lower opacities the hero title was visible
+   "behind" the menu and the layering felt unclear. */
+.l-topbar-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  background: rgba(0, 0, 0, 0.70);
+  backdrop-filter: blur(4px);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  /* Reset default button styling so it reads as an invisible overlay. */
+  appearance: none;
+}
+
+/* Floating panel anchored under the topbar via fixed positioning.
+   `position: fixed; top: 64px` keeps it directly below the sticky
+   header even after the page is scrolled — `position: absolute` would
+   anchor to the topbar's in-flow box (top of page), not its visible
+   position. Spans full viewport width with small inset (matches the
+   common mobile drawer / dropdown pattern). Background is the page's
+   own tone at high alpha (`rgba(2, 4, 9, 0.97)`), which gives the
+   same visual color as the bento tile (rgba(0,0,0,0.40) on top of
+   page bg #04070f) but is opaque enough that nothing behind the menu
+   bleeds through — at 40 % alpha the hero title was readable
+   underneath, breaking the "this is a layered surface" cue. */
+.l-topbar-menu {
+  position: fixed;
+  top: 64px;
+  left: 12px;
+  right: 12px;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  background: rgba(2, 4, 9, 0.97);
+  backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid var(--l-line-strong);
+  border-radius: 14px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 48px rgba(0, 0, 0, 0.55);
+  animation: lFadeUp 200ms var(--l-ease);
+  animation-fill-mode: both;
+}
+.l-topbar-menu-link {
+  display: flex;
+  align-items: center;
+  /* Center the link text horizontally so the dropdown reads as a
+     stacked, centered menu (matches the centered Sign out + Enter
+     workspace buttons below the divider). */
+  justify-content: center;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--l-fg-2);
+  transition: background 160ms var(--l-ease), color 160ms var(--l-ease);
+}
+.l-topbar-menu-link:hover {
+  color: var(--l-fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+.l-topbar-menu-divider {
+  height: 1px;
+  background: var(--l-line);
+  margin: 4px 0;
+}
+.l-topbar-menu-action {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Eyebrow + buttons (used everywhere) ──────────────────────────── */
+
+.l-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+}
+.l-eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  box-shadow: 0 0 12px rgba(48, 100, 255, 0.55);
+}
+
+.l-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--l-fg);
+  background: transparent;
+  cursor: pointer;
+  transition: background 160ms var(--l-ease), border-color 160ms var(--l-ease),
+    box-shadow 160ms var(--l-ease), transform 160ms var(--l-ease);
+  white-space: nowrap;
+}
+.l-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.l-btn-primary {
+  background:
+    linear-gradient(180deg, rgba(70, 110, 255, 0.95), rgba(38, 78, 220, 0.95)),
+    var(--accent);
+  border-color: rgba(170, 195, 255, 0.30);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 24px rgba(48, 100, 255, 0.30);
+  color: #ffffff;
+}
+.l-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 32px rgba(48, 100, 255, 0.45);
+}
+.l-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--l-line-strong);
+}
+.l-btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(160, 178, 218, 0.30);
+}
+.l-btn-quiet {
+  background: transparent;
+  color: var(--l-fg-2);
+}
+.l-btn-quiet:hover {
+  color: var(--l-fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+.l-btn-sm {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.l-btn-lg {
+  height: 52px;
+  padding: 0 26px;
+  font-size: 15.5px;
+  border-radius: 12px;
+}
+.l-glyph {
+  flex-shrink: 0;
+}
+
+.l-notice {
+  border: 1px solid var(--l-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  color: var(--l-fg-2);
+}
+.l-notice-warning {
+  border-color: rgba(255, 162, 100, 0.32);
+  color: #ffd6a8;
+  background: rgba(255, 162, 100, 0.08);
+}
+
+/* ── Main + section heads ─────────────────────────────────────────── */
+
+.l-main {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+}
+
+.l-section-head {
+  max-width: 760px;
+  margin: 0 auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* 40px is the consistent gap between the section head and the
+     content that follows. Both the workbench and the bento use this
+     value so the spacing rhythm matches between the two sections. */
+  padding-bottom: 40px;
+}
+.l-section-title {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+  color: var(--l-fg);
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────── */
+
+.l-hero {
+  padding: 80px 32px 90px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+/* Single-column stacked layout: copy on top, artifact mock below at
+   full width. Replaces the earlier 2-col grid so the title gets the
+   centered stage and the screenshot reads bigger underneath. */
+.l-hero-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 56px;
+}
+.l-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+  text-align: center;
+  /* Wide enough to let the longest title line ("Tailor every job
+     application") fit on one row at the desktop font-size. */
+  max-width: 1080px;
+}
+.l-hero-eyebrow {
+  padding: 6px 12px 6px 10px;
+  border: 1px solid var(--l-line-strong);
+  border-radius: 999px;
+  background: rgba(48, 100, 255, 0.06);
+}
+.l-hero-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: clamp(40px, 5.6vw, 68px);
+  font-weight: 600;
+  letter-spacing: -0.030em;
+  line-height: 1.06;
+}
+.l-hero-title span {
+  display: inline-block;
+  /* Keep each of the three title lines on a single physical row.
+     We're explicitly choosing the breaks in JSX, not letting the
+     browser wrap the long line into a pyramid. */
+  white-space: nowrap;
+}
+.l-hero-title-accent {
+  background: linear-gradient(180deg, #ffffff 0%, #8db4ff 90%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.l-hero-sub {
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--l-fg-2);
+  max-width: 640px;
+  margin: 0;
+}
+.l-hero-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+.l-hero-pills {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--l-fg-3);
+}
+.l-hero-pills li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.l-hero-pills li::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--l-fg-4);
+}
+
+/* Stagger fade-up — used by hero text + everywhere else with the
+   .l-fade-up class. The `animation-fill-mode: backwards` keeps the
+   element invisible until its delay starts so the page doesn't flash
+   the un-animated state. */
+.l-fade-up {
+  opacity: 0;
+  transform: translateY(14px);
+  animation: lFadeUp 700ms var(--l-ease) forwards;
+  animation-fill-mode: both;
+}
+@keyframes lFadeUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hero artifact preview — the "live" mock of the workspace's artifact
+   viewer. Pure HTML/CSS so it scales pixel-perfectly. The streaming
+   caret blinks via @keyframes lBlink. */
+.l-hero-visual {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+.l-artifact {
+  position: relative;
+  width: 100%;
+  /* Wider than the title block above (1080px) so the artifact reads
+     as the showcase. ~20% wider than the previous 920px to flatten
+     the aspect ratio — user said it "felt too tall" after the
+     experience section was added. */
+  max-width: 1120px;
+  animation: lFadeUp 800ms var(--l-ease) 700ms;
+  animation-fill-mode: both;
+}
+.l-artifact-glow {
+  position: absolute;
+  inset: -40px;
+  border-radius: 32px;
+  /* Was 0.25 — produced a bright blue halo extending past the image
+     edges that, layered on top of the workspace's own `b-shell`
+     ambient orb baked into the screenshot PNG, read as a "whitish
+     hot spot" with serrated banding from the underlying noise
+     texture. Dropped to 0.10 so the glow only acts as a soft
+     framing edge rather than a competing light source. */
+  background: radial-gradient(60% 60% at 60% 40%, rgba(48, 100, 255, 0.10), transparent 70%);
+  filter: blur(40px);
+  z-index: 0;
+}
+/* Real workspace screenshot rendered inside the artifact wrapper.
+   Drop shadow + subtle border + rounded corners give it the same
+   "centerpiece card" feel the hand-built mock had, just sourced from
+   an actual product capture instead of HTML/CSS. */
+.l-artifact-image {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--l-radius-lg);
+  border: 1px solid var(--l-line-strong);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 28px 72px rgba(0, 0, 0, 0.55);
+  /* Keep the image inside the rounded corners. */
+  overflow: hidden;
+}
+
+/* Streaming caret — used in the hero artifact + a few other places. */
+.l-artifact-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  background: var(--accent-strong);
+  margin-left: 3px;
+  vertical-align: -2px;
+  animation: lBlink 1s step-end infinite;
+}
+@keyframes lBlink {
+  50% { opacity: 0; }
+}
+
+/* ── Workbench (sticky scroll narrative) ─────────────────────────── */
+
+.l-workbench {
+  padding: 90px 32px 60px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.l-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 80px;
+  align-items: start;
+}
+.l-workbench-visual {
+  position: sticky;
+  top: 92px;
+  /* Sticky container height is shorter than viewport (was
+     `100vh - 92px`). With `justify-content: center` below, the
+     stage's vertical center sits ~80px higher than viewport center,
+     which lines it up with where step 01's centered text appears on
+     first scroll into the section. The 200px subtrahend accounts for
+     the 92px sticky top + a 108px lift that puts the stage's center
+     close to step text center for both first-view and active state. */
+  height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Center-pin: the [stage + rail] group sits in the vertical middle
+     of the sticky container, which is one viewport tall. As the steps
+     scroll past on the right, the visual reads as floating at viewport
+     center the entire way down. Step start/end alignment with the
+     stage edges no longer matters because the stage is always
+     centered — earlier the stage was stretched (`flex: 1 1 auto`) to
+     match step 04's bottom, which left ~400px of dead dark space
+     inside the card since the mock content is fixed-size. */
+  justify-content: center;
+  gap: 24px;
+}
+.l-workbench-visual-stage {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  /* Fixed-aspect stage instead of flex-stretching to fill the sticky
+     container. 1/1 gives 480 × 480 on desktop — close to the natural
+     height of the mocks (~280–360px each) once the inner result/doc
+     containers stop flex-stretching, so empty space is minimal once
+     the mock is centered. The max-height cap keeps it from
+     overflowing on short viewports (e.g. laptop with bookmarks bar). */
+  flex: 0 0 auto;
+  aspect-ratio: 1 / 1;
+  max-height: calc(100vh - 200px);
+  border-radius: var(--l-radius-lg);
+  /* Same treatment as the workspace's JD review blocks
+     (`.b-jd-block`): a solid 40% black overlay over the page, with a
+     subtle border. The earlier blue corner-glow gradient was making
+     the stage feel "lit up" compared to the much darker, cleaner
+     cards on the live JD page. */
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line-strong);
+  overflow: hidden;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.l-workbench-rail {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--l-line);
+  border-radius: 999px;
+}
+.l-workbench-rail-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--l-fg-3);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 160ms var(--l-ease);
+}
+.l-workbench-rail-step:hover {
+  color: var(--l-fg);
+  background: rgba(255, 255, 255, 0.04);
+}
+.l-workbench-rail-step.is-active {
+  background: rgba(48, 100, 255, 0.20);
+  color: var(--l-fg);
+}
+
+/* The four step mocks live stacked inside .l-workbench-visual-stage —
+   only the active one has opacity 1, the others fade out. The crossfade
+   feels like the workspace itself walking through the steps. */
+.l-workbench-mock {
+  position: absolute;
+  inset: 0;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  /* Center content vertically so the four mocks read at the same
+     visual density even though their child counts vary (resume has 5
+     elements, search/analysis have ~7 each, JD has 4). Without this
+     the short mocks pile up at the top and leave a big dark gap at
+     the bottom of the 480 × 600 stage. */
+  justify-content: center;
+  gap: 14px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 360ms var(--l-ease), transform 360ms var(--l-ease);
+  pointer-events: none;
+}
+.l-workbench-mock.is-active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Per-step inline visual wrapper. On desktop the shared sticky visual
+   (`.l-workbench-visual`) is the source of truth, so this is hidden.
+   The mobile media query below flips: shared visual hidden, this one
+   shown — it provides each step's mock inline above its text. */
+.l-workbench-step-visual {
+  display: none;
+}
+
+.l-mock-eyebrow {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: var(--l-fg-3);
+  text-transform: uppercase;
+}
+
+/* Step 01 — Resume mock
+   Models the workspace's parsed-profile hero: filename pill at the
+   top, name + role + location, then a stats row and a skills chip
+   cluster. Replaces the old "Name / Role / Skills" three-row form
+   layout, which read as a generic data table rather than the actual
+   ResumeIntake page. */
+.l-mock-file-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 12px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line-strong);
+  border-radius: 999px;
+}
+.l-mock-file-name {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  color: var(--l-fg);
+}
+.l-mock-file-tag {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  padding: 2px 7px;
+  background: rgba(127, 224, 176, 0.16);
+  color: #9be8c0;
+  border-radius: 999px;
+}
+.l-mock-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.l-mock-hero-name {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--l-fg);
+}
+.l-mock-hero-meta {
+  font-size: 12.5px;
+  color: var(--l-fg-3);
+}
+.l-mock-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.l-mock-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line);
+  border-radius: 8px;
+}
+.l-mock-stat-num {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--l-fg);
+  line-height: 1;
+}
+.l-mock-stat-label {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+}
+
+/* Step 02 — Search mock */
+.l-mock-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--l-line-strong);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.l-mock-search-icon { color: var(--l-fg-3); }
+.l-mock-search-text { color: var(--l-fg-2); flex: 1 1 auto; }
+.l-mock-search-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--l-line-strong);
+}
+.l-mock-search-loc {
+  font-size: 12px;
+  color: var(--l-fg-3);
+  white-space: nowrap;
+}
+.l-mock-matches-head {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  color: var(--l-fg-3);
+  margin-top: 2px;
+}
+.l-mock-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.l-mock-filter {
+  padding: 4px 10px;
+  border: 1px solid var(--l-line-strong);
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--l-fg-2);
+}
+.l-mock-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Was `flex: 1` so the results list stretched to fill a 600+ stage.
+     With the smaller, naturally-sized stage we let it size to its
+     three result cards. Empty stretch made the bottom of the mock
+     read as dead dark space. */
+  flex: 0 1 auto;
+}
+.l-mock-result {
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.l-mock-result-top {
+  border-color: rgba(48, 100, 255, 0.45);
+  box-shadow: 0 0 0 1px rgba(48, 100, 255, 0.25);
+}
+.l-mock-result-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px 8px;
+  background: rgba(48, 100, 255, 0.18);
+  color: #c5d8ff;
+  border-radius: 6px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  margin-bottom: 4px;
+}
+.l-mock-result-title {
+  font-size: 13px;
+  color: var(--l-fg);
+  font-weight: 500;
+}
+.l-mock-result-meta {
+  font-size: 11.5px;
+  color: var(--l-fg-3);
+}
+
+/* Step 03 — JD mock */
+.l-mock-jd-title {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--l-fg);
+}
+.l-mock-jd-sub {
+  font-size: 12.5px;
+  color: var(--l-fg-3);
+  margin-top: -6px;
+}
+/* Three big-number metric tiles — match the JDReview page's
+   "Match score 87% · Hard skills 12 · Years 5+" hero strip. The
+   leftmost tile (`-accent`) is the eye-catcher, tinted blue like the
+   workspace's match-score chip. */
+.l-mock-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+.l-mock-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line);
+  border-radius: 10px;
+}
+.l-mock-metric-accent {
+  background: rgba(48, 100, 255, 0.12);
+  border-color: rgba(48, 100, 255, 0.32);
+}
+.l-mock-metric-num {
+  font-family: var(--font-space-grotesk), "Space Grotesk", system-ui, sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--l-fg);
+  line-height: 1;
+}
+.l-mock-metric-accent .l-mock-metric-num { color: #cfddff; }
+.l-mock-metric-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--l-fg-2);
+  margin-left: 2px;
+}
+.l-mock-metric-label {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+}
+.l-mock-skills-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.l-mock-skills-head {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  color: var(--l-fg-3);
+}
+.l-mock-skills {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.l-mock-chip {
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  border: 1px solid var(--l-line);
+}
+.l-mock-chip-hard {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--l-fg);
+}
+.l-mock-chip-soft {
+  background: rgba(48, 100, 255, 0.14);
+  border-color: rgba(48, 100, 255, 0.32);
+  color: #cfddff;
+}
+
+/* Step 04 — Analysis mock
+   Models the AnalysisRunner page's pipeline of agent cards. Each row
+   is a stage card with a status dot, agent title, percent on the
+   right, and a one-line detail. The active (running) stage gets a
+   tinted background, a pulsing dot, and a progress bar. Replaces the
+   old "Tailoring / Review / Resume gen" timeline + faux doc preview,
+   which was generic and didn't match what the user actually sees. */
+.l-mock-pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.l-mock-stage {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line);
+  border-radius: 8px;
+}
+.l-mock-stage-running {
+  background: rgba(48, 100, 255, 0.10);
+  border-color: rgba(48, 100, 255, 0.32);
+}
+.l-mock-stage-pending {
+  opacity: 0.55;
+}
+.l-mock-stage-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid var(--l-line-strong);
+  font-size: 9px;
+  color: transparent;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.l-mock-stage-dot-done {
+  background: rgba(127, 224, 176, 0.18);
+  border-color: rgba(127, 224, 176, 0.45);
+  color: #9be8c0;
+  font-weight: 700;
+}
+.l-mock-stage-dot-running {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 4px rgba(48, 100, 255, 0.20);
+  animation: lPulse 1400ms var(--l-ease) infinite;
+}
+.l-mock-stage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.l-mock-stage-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.l-mock-stage-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--l-fg);
+}
+.l-mock-stage-pct {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10.5px;
+  color: var(--l-fg-3);
+  letter-spacing: 0.04em;
+}
+.l-mock-stage-running .l-mock-stage-pct { color: #cfddff; }
+.l-mock-stage-detail {
+  font-size: 11.5px;
+  color: var(--l-fg-3);
+}
+.l-mock-stage-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.l-mock-stage-fill {
+  width: 62%;
+  height: 100%;
+  background: var(--accent-strong);
+  border-radius: 999px;
+}
+
+/* The right-column scroll narrative — four blocks each ~viewport-tall. */
+.l-workbench-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.l-workbench-step {
+  /* 48vh per step — enough scroll distance for the IntersectionObserver
+     to fire one step at a time without stacking. */
+  min-height: 48vh;
+  display: flex;
+  flex-direction: column;
+  /* Vertically center text inside each block so the step copy aligns
+     with the center-pinned visual on the left. With `flex-start`,
+     step 01's text sat at the very top of the column on first scroll
+     into the section, ~190px above the centered visual stage — they
+     read as off-axis. Centering pushes step 01 down to roughly the
+     middle of its block, much closer to the visual's vertical center.
+     Steps 02–04 are unchanged in feel because the IntersectionObserver
+     "active" state already triggers when each block crosses the
+     viewport's middle band, so centered text lines up with the
+     centered visual when active. */
+  justify-content: center;
+  gap: 18px;
+  padding: 8px 0 32px;
+  opacity: 0.45;
+  transition: opacity 360ms var(--l-ease);
+}
+.l-workbench-step.is-active {
+  opacity: 1;
+}
+.l-workbench-eyebrow {
+  display: inline-block;
+}
+.l-workbench-title {
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--l-fg);
+}
+.l-workbench-body {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--l-fg-2);
+  max-width: 480px;
+  margin: 0;
+}
+.l-workbench-aside {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--l-fg-3);
+  max-width: 480px;
+  padding-left: 14px;
+  border-left: 2px solid rgba(48, 100, 255, 0.32);
+  margin: 0;
+}
+
+/* ── Bento ────────────────────────────────────────────────────────── */
+
+.l-bento {
+  padding: 90px 32px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+/* Bento section head matches the workbench: eyebrow centered above
+   title, title centered below. Arrows live beside the dots row, not
+   in the head. The padding-bottom matches the workbench's exactly so
+   the section-head → content gap is identical between both sections. */
+.l-bento-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--l-line-strong);
+  color: var(--l-fg-2);
+  cursor: pointer;
+  transition: background 160ms var(--l-ease), border-color 160ms var(--l-ease),
+    color 160ms var(--l-ease), transform 160ms var(--l-ease),
+    opacity 160ms var(--l-ease);
+}
+.l-bento-nav-btn:hover:not(:disabled) {
+  background: rgba(48, 100, 255, 0.12);
+  border-color: rgba(48, 100, 255, 0.45);
+  color: var(--l-fg);
+}
+.l-bento-nav-btn:active:not(:disabled) { transform: scale(0.96); }
+.l-bento-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Strip wrapper holds the scrolling strip + the dot indicators. The
+   strip itself is overflow:auto with snap, so only the active tile is
+   visible; arrows + dots drive scroll position. */
+.l-bento-strip-wrap {
+  position: relative;
+}
+.l-bento-strip {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  scrollbar-width: none; /* Firefox */
+  /* No internal padding — each tile is exactly 100% of the strip's
+     visible width, so the snap points line up with tile boundaries. */
+}
+.l-bento-strip::-webkit-scrollbar { display: none; }
+
+.l-bento-tile {
+  position: relative;
+  /* One tile == one full strip width. Setting `min-width: 0` would
+     usually allow flex shrink, but with overflow-x scroll we want
+     each tile to keep its 100% width and scroll out. */
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  /* Match the workspace's .b-jd-block treatment — flat
+     rgba(0, 0, 0, 0.40) overlay with a subtle border. Drops the blue
+     corner glow so the carousel reads as the same surface family as
+     the workbench mock above. */
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--l-line-strong);
+  border-radius: var(--l-radius-lg);
+  padding: 36px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+  /* Tile is a "stage" so it gets some vertical breathing room; min
+     keeps the carousel a consistent height as the user clicks
+     through varying-content tiles. */
+  min-height: 360px;
+}
+
+/* Carousel controls row — prev arrow, dots, next arrow. Centered
+   below the strip. */
+.l-bento-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 28px;
+}
+.l-bento-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.l-bento-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: none;
+  background: var(--l-line-strong);
+  cursor: pointer;
+  padding: 0;
+  transition: width 200ms var(--l-ease), background 200ms var(--l-ease);
+}
+.l-bento-dot:hover {
+  background: rgba(160, 178, 218, 0.32);
+}
+.l-bento-dot.is-active {
+  width: 24px;
+  background: var(--accent-strong);
+  box-shadow: 0 0 12px rgba(48, 100, 255, 0.5);
+}
+.l-bento-eyebrow {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+}
+.l-bento-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--l-fg);
+}
+.l-bento-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--l-fg-2);
+  margin: 0;
+  flex: 1;
+}
+.l-bento-providers {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.l-bento-provider {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--l-line);
+  border-radius: 6px;
+  color: var(--l-fg-2);
+}
+.l-bento-format-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.l-bento-format {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  background: rgba(48, 100, 255, 0.15);
+  border: 1px solid rgba(48, 100, 255, 0.35);
+  border-radius: 8px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11.5px;
+  color: #cfddff;
+}
+.l-bento-format-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--l-line-strong);
+}
+.l-bento-format-tag {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  color: var(--l-fg-3);
+  padding: 4px 10px;
+  border: 1px solid var(--l-line);
+  border-radius: 6px;
+}
+.l-bento-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.l-bento-chat-turn {
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  max-width: 90%;
+}
+.l-bento-chat-turn-bot {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--l-line);
+  color: var(--l-fg-2);
+  align-self: flex-start;
+}
+.l-bento-chat-turn-user {
+  background: rgba(48, 100, 255, 0.18);
+  border: 1px solid rgba(48, 100, 255, 0.32);
+  color: var(--l-fg);
+  align-self: flex-end;
+}
+
+/* ── Final CTA ────────────────────────────────────────────────────── */
+
+.l-final {
+  padding: 120px 32px 110px;
+}
+.l-final-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  align-items: center;
+  text-align: center;
+}
+/* "Ready to tailor?" matches the other section titles
+   (`.l-section-title`) so the typographic rhythm stays consistent
+   across the workbench, bento, and final-CTA sections. The big
+   primary button below carries the visual weight of the call to
+   action — the headline doesn't need to compete. */
+.l-final-title {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+  color: var(--l-fg);
+}
+.l-final-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────── */
+
+.l-footer {
+  border-top: 1px solid var(--l-line);
+  padding: 44px 32px 64px;
+  background: rgba(0, 0, 0, 0.30);
+}
+.l-footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 40px;
+}
+.l-footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.l-footer-name {
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--l-fg);
+  margin: 0;
+}
+.l-footer-copy {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--l-fg-2);
+  max-width: 360px;
+  margin: 0;
+}
+.l-footer-credit {
+  font-size: 12px;
+  color: var(--l-fg-3);
+  margin: 8px 0 0;
+}
+.l-footer-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, auto));
+  gap: 48px;
+}
+.l-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.l-footer-heading {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--l-fg-3);
+  margin: 0 0 4px;
+}
+.l-footer-link {
+  font-size: 13.5px;
+  color: var(--l-fg-2);
+  transition: color 160ms var(--l-ease);
+}
+.l-footer-link:hover {
+  color: var(--l-fg);
+}
+
+/* ── Responsive (900 / 700 / 540 breakpoints) ─────────────────────── */
+/*
+   900: tablet/laptop divide. Workbench grid collapses to single column
+        and the sticky shared visual is replaced with inline per-step
+        visuals — without this, only the topmost visual is ever seen
+        once the page scrolls past it (sticky goes nowhere with no
+        column to anchor against).
+   700: full mobile pivot. Topbar swaps to a hamburger panel, hero
+        title is allowed to wrap, section heads move from centered to
+        left-aligned (centered headlines on a narrow phone column read
+        as awkwardly indented).
+   540: small phones. Hero buttons stack to full-width column, footer
+        moves to a single column with socials right-aligned. Tightens
+        section padding from 24 to 18 px.
+*/
+
+@media (max-width: 900px) {
+  .l-hero { padding: 60px 24px 80px; }
+  .l-hero-stack { gap: 40px; }
+  .l-workbench { padding: 60px 24px 40px; }
+  .l-workbench-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  /* The desktop sticky visual is hidden entirely on mobile. Each step
+     gets its own inline `.l-workbench-step-visual` instead, so the
+     visual stays paired with its prose as the user scrolls. */
+  .l-workbench-visual {
+    display: none;
+  }
+  .l-workbench-step {
+    min-height: auto;
+    padding: 8px 0 24px;
+    /* On desktop the inactive steps fade to 0.45 opacity so the
+       "active" one stands out against the sticky visual. With per-step
+       inline visuals on mobile, every step is its own focused card —
+       fading the others looks broken (they read as half-loaded). */
+    opacity: 1;
+  }
+  /* Per-step inline visual mirrors the desktop stage's chrome (40%
+     black overlay, 1px hairline border, the same drop shadow) so the
+     surface family stays consistent across breakpoints. The mocks
+     inside are `position: absolute; inset: 0` and were authored to
+     fill a 1/1 stage, so they continue to render correctly. */
+  .l-workbench-step-visual {
+    display: block;
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 1 / 1;
+    margin: 0 auto 18px;
+    border-radius: var(--l-radius-lg);
+    background: rgba(0, 0, 0, 0.40);
+    border: 1px solid var(--l-line-strong);
+    overflow: hidden;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 18px 44px rgba(0, 0, 0, 0.50);
+  }
+  /* Each step renders exactly one mock with `active` always true, so
+     it shows up immediately. The crossfade transition still applies
+     the first time but doesn't cause flicker since opacity starts
+     at 1 once `.is-active` is on. */
+  .l-bento { padding: 60px 24px; }
+  .l-bento-tile { padding: 30px 28px; min-height: 320px; }
+  .l-final { padding: 80px 24px; }
+}
+
+@media (max-width: 700px) {
+  /* Swap the desktop nav for the hamburger button. The dropdown panel
+     itself is rendered conditionally in JSX and styled at the global
+     scope above. */
+  .l-topbar-nav { display: none; }
+  .l-topbar-burger { display: inline-flex; }
+
+  /* Section heads — left-align on phones. Centered titles on a
+     narrow column read as floating; flush-left matches the rest of
+     the page's text rhythm and saves vertical space. */
+  .l-section-head {
+    align-items: flex-start;
+    text-align: left;
+    /* Drop the auto-centering since we want the head at the section's
+       left edge, in line with the body content. */
+    margin: 0;
+    max-width: 100%;
+  }
+
+  /* Hero — keep the desktop's centered, 3-line stacked title on
+     mobile, just at a smaller type size so "Tailor every job
+     application" still fits on a single row at iPhone width. We
+     INTENTIONALLY do NOT override `white-space` here: the desktop
+     `.l-hero-title span { white-space: nowrap }` rule cascades
+     through and forces the three lines to break exactly where the
+     JSX breaks them, instead of the browser auto-wrapping the long
+     line into an awkward 4-line stack. */
+  .l-hero-title {
+    font-size: clamp(22px, 6vw, 32px);
+  }
+  .l-hero-sub { max-width: 100%; }
+}
+
+@media (max-width: 540px) {
+  .l-topbar-inner { padding: 12px 18px; }
+  .l-hero { padding: 48px 18px 60px; }
+  .l-hero-actions { width: 100%; flex-direction: column; }
+  .l-hero-actions .l-btn { width: 100%; }
+  .l-workbench, .l-bento, .l-final { padding-left: 18px; padding-right: 18px; }
+  .l-bento-tile { padding: 24px 22px; min-height: 280px; }
+  .l-bento-title { font-size: 19px; }
+  .l-footer { padding: 36px 18px 48px; }
+  .l-footer-inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Two columns at the section's edges instead of two equal-width
+     columns hugging the left half. `auto auto` lets each column take
+     only the width it needs and `space-between` pushes them to the
+     ends — Navigation flush left, Socials flush right. Matches the
+     header-vs-footer rhythm. */
+  .l-footer-cols {
+    grid-template-columns: auto auto;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  /* Right-align the socials column's heading + links so its content
+     hugs the right edge instead of left-aligning under the heading. */
+  .l-footer-col:last-child {
+    text-align: right;
+  }
+}
+
+/* =====================================================================
+   Workspace redesign — Direction B "Workbench"
+   Scoped under .b-shell so it doesn't leak into landing-page styles.
+   ===================================================================== */
+
+.b-shell {
+  /* Surfaces */
+  --bg-page:        #04070f;
+  --bg-card:        rgba(10, 14, 22, 0.72);
+  --bg-card-2:      rgba(20, 26, 40, 0.70);
+  --bg-input:       rgba(10, 14, 22, 0.85);
+  --bg-chip:        rgba(255, 255, 255, 0.04);
+
+  /* Borders */
+  --border:         rgba(160, 178, 218, 0.12);
+  --border-strong:  rgba(160, 178, 218, 0.20);
+  --hairline:       rgba(160, 178, 218, 0.07);
+
+  /* Ink */
+  --fg:    #f5f8ff;
+  --fg-2:  #c7cfdf;
+  --fg-3:  #8a93a8;
+  --fg-4:  #5e6677;
+
+  /* Accent — emissive blue */
+  --accent:         #4171ff;
+  --accent-strong:  #5a86ff;
+  --accent-soft:    rgba(48, 100, 255, 0.10);
+  --accent-fg:      #ffffff;
+  --accent-tint:    rgba(48, 100, 255, 0.14);
+  --accent-glow:    rgba(48, 100, 255, 0.45);
+
+  /* Status */
+  --success:        #7fe0b0;
+  --success-soft:   rgba(127, 224, 176, 0.18);
+  --warning:        #ffcb94;
+  --warning-soft:   rgba(255, 203, 148, 0.16);
+  --danger:         #ff8b8b;
+  --danger-soft:    rgba(255, 139, 139, 0.16);
+
+  /* Type — match the landing page's pair (Space Grotesk display +
+     DM Sans body) so the workspace and marketing share one voice.
+     Mono stays Geist Mono — landing doesn't load a mono and this
+     reads well alongside both. */
+  --font-display:   var(--font-space-grotesk), "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body:      var(--font-dm-sans), "DM Sans", "Inter", system-ui, sans-serif;
+  --font-mono:      var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+
+  /* Radius / spacing */
+  --radius-sm: 6px;
+  --radius:    10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Motion tokens — used by transitions + entrance animations.
+     `--ease-out` is a fast-start, slow-end curve that reads as
+     responsive (Linear-style). `--ease-spring` adds a tiny overshoot
+     for celebratory transitions (palette + status flips). */
+  --ease-out:    cubic-bezier(0.16, 1, 0.30, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-base: 240ms;
+
+  /* Layout */
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  min-height: 100vh;
+  position: relative;
+  background:
+    radial-gradient(900px 480px at 50% -10%, rgba(48, 100, 255, 0.05), transparent 60%),
+    linear-gradient(180deg, #04070f 0%, #02040a 40%, #000 100%);
+  font-family: var(--font-body);
+  /* Bumped from 14px (the prototype's compact default) to 15.5px so
+     the dense workspace reads comfortably on standard 1080p+ displays
+     without redoing every per-element size. */
+  font-size: 15.5px;
+  color: var(--fg);
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+.b-shell, .b-shell *, .b-shell *::before, .b-shell *::after {
+  box-sizing: border-box;
+}
+
+.b-shell h1, .b-shell h2, .b-shell h3, .b-shell h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  margin: 0;
+  line-height: 1.15;
+}
+.b-shell p { margin: 0; color: var(--fg-2); }
+.b-shell button { font-family: inherit; font-size: inherit; cursor: pointer; }
+.b-shell input,
+.b-shell textarea,
+.b-shell select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+.b-shell ::-webkit-scrollbar { width: 10px; height: 10px; }
+.b-shell ::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid var(--bg-page);
+}
+.b-shell ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+.b-shell :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.b-shell::before {
+  content: "";
+  position: absolute;
+  top: -10rem; left: 28%;
+  width: 36rem; height: 36rem;
+  border-radius: 999px;
+  filter: blur(120px);
+  background: rgba(48, 100, 255, 0.09);
+  pointer-events: none;
+  z-index: 0;
+}
+/* Fine grain texture overlay — adds the same atmospheric depth that
+   premium SaaS pages get from a noise filter. SVG turbulence keeps
+   the file inline with no extra fetch. Opacity is dialled to barely
+   perceptible — readers feel "richer surface" without seeing noise. */
+.b-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1   0 0 0 0 1   0 0 0 0 1   0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/></svg>");
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 0;
+}
+.b-shell > * { position: relative; z-index: 1; }
+
+/* ── Shared atoms (rd-*) ───────────────────────────────────────── */
+.b-shell .rd-mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  letter-spacing: -0.01em;
+}
+.b-shell .rd-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  margin: 0;
+}
+.b-shell .rd-hairline {
+  height: 1px;
+  background: var(--hairline);
+  border: 0;
+  margin: 0;
+}
+
+/* Buttons */
+.b-shell .rd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-weight: 500;
+  font-size: 14.5px;
+  letter-spacing: -0.005em;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform .12s;
+  white-space: nowrap;
+}
+.b-shell .rd-btn:disabled,
+.b-shell .rd-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.b-shell .rd-btn-sm { height: 30px; padding: 0 12px; font-size: 13.5px; border-radius: 6px; }
+
+.b-shell .rd-btn-primary {
+  position: relative;
+  background: linear-gradient(180deg, var(--accent-strong) 0%, #114be9 100%);
+  color: white;
+  border: 1px solid rgba(140, 175, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20),
+    0 0 0 3px rgba(48, 100, 255, 0.10),
+    0 12px 28px -8px rgba(48, 100, 255, 0.55);
+}
+.b-shell .rd-btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 14px;
+  background: radial-gradient(closest-side, rgba(48, 100, 255, 0.40), transparent 70%);
+  filter: blur(10px);
+  z-index: -1;
+  opacity: 0.75;
+  pointer-events: none;
+}
+.b-shell .rd-btn-primary:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, #6e94ff 0%, #2257ff 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20),
+    0 0 0 4px rgba(48, 100, 255, 0.14),
+    0 16px 36px -8px rgba(48, 100, 255, 0.65);
+}
+
+.b-shell .rd-btn-ghost {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--border);
+  color: var(--fg-2);
+}
+.b-shell .rd-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+/* Soft accent button — middle tier between the loud emissive primary
+   and the quiet ghost. Used for secondary-but-on-brand actions
+   (Save draft edits, Re-run with new role, etc). Keeps the accent
+   colour on the page without dropping a full blue gradient every
+   time. */
+.b-shell .rd-btn-soft {
+  background: rgba(48, 100, 255, 0.10);
+  color: var(--accent-strong);
+  border: 1px solid rgba(90, 134, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.b-shell .rd-btn-soft:hover {
+  background: rgba(48, 100, 255, 0.16);
+  border-color: rgba(90, 134, 255, 0.45);
+  color: #cfdcff;
+}
+
+.b-shell .rd-btn-quiet {
+  background: transparent;
+  color: var(--fg-2);
+  border-color: transparent;
+  padding: 0 10px;
+}
+.b-shell .rd-btn-quiet:hover { color: var(--fg); background: rgba(255, 255, 255, 0.05); }
+
+.b-shell .rd-btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: rgba(255, 139, 139, 0.30);
+}
+.b-shell .rd-btn-danger:hover { background: rgba(255, 139, 139, 0.12); }
+
+/* Inputs */
+.b-shell .rd-input,
+.b-shell .rd-textarea,
+.b-shell .rd-select {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--fg);
+  outline: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.b-shell .rd-input:focus,
+.b-shell .rd-textarea:focus,
+.b-shell .rd-select:focus {
+  border-color: rgba(90, 134, 255, 0.45);
+  background: rgba(0, 0, 0, 0.5);
+}
+.b-shell .rd-input::placeholder,
+.b-shell .rd-textarea::placeholder { color: var(--fg-4); }
+.b-shell .rd-textarea {
+  resize: vertical;
+  min-height: 92px;
+  line-height: 1.6;
+}
+
+/* Chips */
+.b-shell .rd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Status pip */
+.b-shell .rd-pip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--fg-2);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.b-shell .rd-pip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--fg-4);
+}
+.b-shell .rd-pip-live::before    { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+.b-shell .rd-pip-ready::before   { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.b-shell .rd-pip-warning::before { background: var(--warning); box-shadow: 0 0 0 3px var(--warning-soft); }
+.b-shell .rd-pip-error::before   { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+
+/* Notice panels (info / success / warning / error) */
+.b-shell .b-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12.75px;
+  color: var(--fg-2);
+  line-height: 1.55;
+}
+.b-shell .b-notice-success {
+  border-color: rgba(127, 224, 176, 0.28);
+  background: rgba(127, 224, 176, 0.06);
+  color: var(--success);
+}
+.b-shell .b-notice-warning {
+  border-color: rgba(255, 203, 148, 0.28);
+  background: rgba(255, 203, 148, 0.06);
+  color: var(--warning);
+}
+.b-shell .b-notice-error {
+  border-color: rgba(255, 139, 139, 0.30);
+  background: rgba(255, 139, 139, 0.07);
+  color: var(--danger);
+}
+
+/* ── Topbar ────────────────────────────────────────────────────── */
+.b-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(4, 7, 15, 0.65);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.b-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.b-brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+.b-brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.b-brand-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15.5px;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.b-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.b-account {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  color: var(--fg-2);
+  font: inherit;
+}
+.b-account:hover { background: rgba(255, 255, 255, 0.05); border-color: var(--border-strong); }
+.b-account-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(120, 150, 220, 0.35), transparent 60%),
+    linear-gradient(180deg, #1a1f2e, #0a0d16);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+.b-account-name { font-size: 13.5px; color: var(--fg-2); }
+.b-account-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 320px;
+  /* Glassy near-black surface w/ a top emissive accent edge; matches
+     the same atmospheric treatment used by intake panels + heroes so
+     the popover feels native. */
+  background:
+    linear-gradient(180deg, rgba(48, 100, 255, 0.06), transparent 30%),
+    rgba(8, 11, 18, 0.96);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 1px rgba(90, 134, 255, 0.06),
+    0 24px 60px -20px rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(18px);
+  padding: 0;
+  z-index: 30;
+  cursor: default;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.b-account-popover::before {
+  /* Top emissive hairline — same trick used on intake/artifact cards. */
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(120, 155, 230, 0.32), transparent);
+  pointer-events: none;
+}
+/* Each popover section provides its own padding + hairline so the
+   dividers extend edge-to-edge for a clean Stripe-receipt feel. */
+.b-account-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-account-pop-name {
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.b-account-pop-email {
+  font-size: 11.5px;
+  color: var(--fg-3);
+  margin-top: 2px;
+}
+/* Account stats list — labelled key/value rows replacing the chip
+   pile. Reads as a deliberate profile sheet: mono uppercase eyebrow
+   on the left, value right-aligned in display ink. Lines feel like
+   a Stripe receipt or Linear settings panel. */
+.b-account-pop-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-account-pop-stats > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.b-account-pop-stats dt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  margin: 0;
+}
+.b-account-pop-stats dd {
+  margin: 0;
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: right;
+}
+.b-account-pop-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+}
+/* When an auth error notice is rendered between stats and actions, keep
+   it inset to match the surrounding section padding. */
+.b-account-popover > .b-notice { margin: 14px 16px 0; }
+
+/* Command palette trigger pill in topbar */
+.b-cmd-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 12px 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--fg-3);
+  font-size: 13px;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+  min-width: 240px;
+  font-family: inherit;
+}
+.b-cmd-trigger:hover {
+  border-color: var(--border-strong);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--fg-2);
+}
+.b-cmd-trigger-icon {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--fg-3);
+}
+.b-cmd-trigger-text { flex: 1; text-align: left; }
+.b-cmd-trigger-keys {
+  display: inline-flex;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+}
+.b-cmd-key {
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--fg-2);
+  font-weight: 500;
+  min-width: 14px;
+  text-align: center;
+}
+
+/* Sign-in fallback in the topbar (when no auth) */
+.b-topbar-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+.b-topbar-signin:hover { background: rgba(255, 255, 255, 0.07); border-color: var(--border-strong); }
+.b-topbar-signin:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── Step rail ──────────────────────────────────────────────────── */
+.b-rail-row {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(4, 7, 15, 0.45);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 55px;
+  z-index: 19;
+  display: flex;
+  justify-content: center;
+}
+/* The rail is a single pill-shaped container holding all 4 steps —
+   reads as ONE navigation control, not floating chips. A subtle
+   connector line behind the chips fills as the user makes progress
+   so the steps feel like a flowing sequence. */
+.b-rail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  position: relative;
+}
+/* Connector line behind the chips — tracks the wizard progress. The
+   filled portion uses --b-rail-progress (0..1) injected as inline
+   style from the parent. Defaults to 0 if missing. */
+.b-rail::before {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg,
+    rgba(90, 134, 255, 0.45) 0%,
+    rgba(90, 134, 255, 0.45) calc(var(--b-rail-progress, 0) * 100%),
+    rgba(255, 255, 255, 0.05) calc(var(--b-rail-progress, 0) * 100%),
+    rgba(255, 255, 255, 0.05) 100%);
+  z-index: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: background 360ms var(--ease-out);
+}
+.b-rail-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-3);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+  font-family: inherit;
+  position: relative;
+  z-index: 1;
+}
+/* Hover (only on enabled steps) — pill bg + accent ring + tiny lift.
+   The ring is the strongest "I'm clickable" cue; the lift adds depth. */
+.b-rail-step:hover:not(:disabled) {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(90, 134, 255, 0.30);
+  transform: translateY(-1px);
+}
+/* Gated — fade out the whole chip clearly so it doesn't look like an
+   un-clicked tab. Cursor + title attribute give the user a reason. */
+.b-rail-step:disabled {
+  opacity: 0.40;
+  cursor: not-allowed;
+}
+.b-rail-step[aria-selected="true"] {
+  color: var(--fg);
+  background: rgba(48, 100, 255, 0.10);
+  border-color: rgba(90, 134, 255, 0.30);
+}
+.b-rail-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg-3);
+  transition: all var(--duration-fast) var(--ease-out);
+  flex: 0 0 auto;
+}
+.b-rail-step[aria-selected="true"] .b-rail-num {
+  background: linear-gradient(180deg, var(--accent-strong), #114be9);
+  border-color: rgba(140, 175, 255, 0.45);
+  color: white;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 0 14px -2px var(--accent-glow),
+    0 6px 14px -4px rgba(48, 100, 255, 0.35);
+}
+.b-rail-step[data-done="true"] .b-rail-num {
+  background: rgba(127, 224, 176, 0.10);
+  border-color: rgba(127, 224, 176, 0.22);
+  color: var(--success);
+}
+/* Visual hint for the next-up step: subtle accent border + a small
+   pulsing dot off the upper-right corner so the user knows where to
+   click after finishing the current step. */
+.b-rail-step[data-next="true"] {
+  color: var(--fg-2);
+}
+.b-rail-step[data-next="true"] .b-rail-num {
+  border-color: rgba(90, 134, 255, 0.45);
+  color: var(--accent-strong);
+  position: relative;
+}
+.b-rail-step[data-next="true"] .b-rail-num::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 8px var(--accent-glow);
+  animation: b-live-pulse 1.6s ease-in-out infinite;
+}
+/* The pill rail uses a connector line behind the chips instead of
+   inter-chip divider hairlines, so the markup div carrying the
+   `.b-rail-divider` class collapses to nothing. */
+.b-rail-divider { display: none; }
+
+/* ── Hero band ──────────────────────────────────────────────────── */
+.b-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 28px;
+  background:
+    radial-gradient(560px 200px at 22% 0%, rgba(48, 100, 255, 0.10), transparent 70%),
+    linear-gradient(180deg, rgba(48, 100, 255, 0.04), transparent);
+  border-bottom: 1px solid var(--hairline);
+  position: relative;
+  /* Cap the reading width so on a 32" / 4K monitor the strip doesn't
+     stretch corner-to-corner and feel sparse. Same cap is applied to
+     .b-canvas below; both center as a coherent column. */
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+/* Thin emissive accent line at the top of the hero — the same trick
+   the artifact viewer + intake panel use, so the chrome reads as
+   layered surfaces instead of flat bands. */
+.b-hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 24px;
+  right: 24px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(120, 155, 230, 0.32),
+    rgba(120, 155, 230, 0.18),
+    transparent);
+  pointer-events: none;
+}
+.b-hero-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--fg);
+}
+.b-hero-sub {
+  color: var(--fg-3);
+  font-size: 14px;
+  margin-top: 4px;
+}
+.b-hero-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.b-hero-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--fg-2);
+  letter-spacing: -0.005em;
+}
+.b-hero-stat strong { color: var(--fg-3); font-weight: 500; }
+
+/* ── Canvas (the scrolling content area below the rail+hero) ──── */
+.b-canvas {
+  padding: 24px 28px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow: auto;
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.b-region {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.b-region-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-region-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.b-region-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+.b-region-sub {
+  color: var(--fg-3);
+  font-size: 13.5px;
+  margin-top: 4px;
+}
+.b-region-tag {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.08em;
+}
+.b-section-label {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--fg-3);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* ── Intake panel (used by Resume + JD tabs) ───────────────────── */
+.b-intake-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  position: relative;
+}
+.b-intake-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  border-radius: 14px 14px 0 0;
+}
+.b-intake-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-intake-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.b-intake-title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  margin-top: 4px;
+}
+.b-intake-modes {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.b-intake-mode {
+  background: transparent;
+  border: 0;
+  padding: 7px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.b-intake-mode:hover { color: var(--fg-2); }
+.b-intake-mode[data-active="true"] {
+  background: rgba(48, 100, 255, 0.10);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px rgba(90, 134, 255, 0.25);
+}
+
+.b-drop {
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  padding: 32px 20px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.015);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.b-drop-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  margin-bottom: 4px;
+}
+.b-drop-title { font-size: 15px; color: var(--fg); font-weight: 500; }
+.b-drop-sub { font-size: 13.5px; color: var(--fg-3); }
+.b-drop-meta { font-size: 13px; color: var(--fg-3); margin-top: 8px; }
+
+.b-intake-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--fg-3);
+}
+
+/* Compact intake row — replaces the full dropzone once a profile is
+   parsed so the canvas has room for the parsed hero + two-up + signals
+   without forcing the user to scroll past a tall empty dropzone. */
+.b-intake-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 4px;
+}
+.b-intake-compact-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.b-intake-compact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Parsed-result hero (Resume + JD share this) ───────────────── */
+.b-resume-hero {
+  position: relative;
+  padding: 32px 32px 28px;
+  /* Layered atmospheric surface — radial accent halo behind the title
+     + a quiet base wash. Feels cinematic without overpowering the
+     name/title typography. */
+  background:
+    radial-gradient(640px 240px at 18% 0%, rgba(48, 100, 255, 0.10), transparent 70%),
+    linear-gradient(180deg, rgba(48, 100, 255, 0.04), transparent 50%),
+    rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.b-resume-hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 24px;
+  right: 24px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(120, 155, 230, 0.40), rgba(120, 155, 230, 0.20), transparent);
+  pointer-events: none;
+}
+.b-resume-hero > * { position: relative; }
+.b-resume-hero-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.b-resume-hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 11px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--fg-3);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+.b-resume-hero-pill::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 6px rgba(90, 134, 255, 0.55);
+}
+.b-resume-hero-title {
+  margin: 16px 0 12px;
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  color: var(--fg);
+}
+.b-resume-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: 13.5px;
+  color: var(--fg-3);
+}
+.b-resume-hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
+.b-resume-hero-actions {
+  margin-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* JD hero metrics */
+.b-jd-metrics {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+.b-jd-metric { display: flex; flex-direction: column; gap: 4px; }
+.b-jd-metric-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.b-jd-metric-value {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--fg);
+  line-height: 1;
+}
+.b-jd-metric-unit {
+  font-size: 14px;
+  color: var(--fg-3);
+  font-weight: 500;
+  margin-left: 2px;
+}
+
+/* ── Two-up sections (Skills + Experience, Hard + Soft skills) ── */
+.b-resume-twoup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 880px) {
+  .b-resume-twoup { grid-template-columns: 1fr; }
+}
+.b-twoup-section {
+  padding: 18px 20px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+}
+.b-twoup-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-twoup-title {
+  font-family: var(--font-display);
+  font-size: 17.5px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.b-twoup-sub {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg-3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.b-twoup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.b-twoup-empty {
+  font-size: 12.5px;
+  color: var(--fg-3);
+  padding: 8px 0;
+}
+
+/* Editorial outer container — holds a stack of .b-doc-section
+   children. One outer surface, hairline-divided inside. Used by the
+   resume Draft profile and the JD body sections. */
+.b-doc {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  padding: 8px 24px;
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 720px) {
+  .b-doc { padding: 8px 16px; }
+}
+
+/* Wrapper that hosts the editorial doc + a head + actions row.
+   Currently used only by the resume Draft profile, but generic
+   enough that other surfaces can reuse it. */
+.b-doc-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 10px;
+}
+.b-doc-frame-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.b-doc-frame-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.b-doc-frame-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  margin: 4px 0 0;
+}
+.b-doc-frame-progress {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+}
+.b-doc-frame-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* CollapsibleSection — editorial / "bare" variant.
+   Used inside containers that already provide a surface (Draft
+   profile, JD body sections). Renders as a numbered article-style
+   section: hairline above, mono index, heading, optional sub, and
+   a quiet chevron that rotates on open. No card chrome, so a stack
+   of these reads like a continuous document instead of five
+   bordered boxes. */
+.b-doc-section {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--hairline);
+}
+.b-doc-section:first-child { border-top: 0; }
+.b-doc-section-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: baseline;
+  column-gap: 14px;
+  width: 100%;
+  padding: 18px 4px 14px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background .12s ease;
+}
+.b-doc-section-head:hover { background: rgba(255, 255, 255, 0.015); }
+.b-doc-section-index {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--fg-4);
+  font-weight: 500;
+}
+.b-doc-section-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.b-doc-section-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.b-doc-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--fg-4);
+  opacity: 0.6;
+  transition: transform .15s ease, color .15s, opacity .15s;
+  transform: rotate(0deg);
+}
+.b-doc-section:not([data-collapsed="true"]) .b-doc-section-toggle {
+  transform: rotate(90deg);
+}
+.b-doc-section-head:hover .b-doc-section-toggle {
+  opacity: 1;
+  color: var(--fg-2);
+}
+.b-doc-section-body {
+  padding: 0 4px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* CollapsibleSection — the section head becomes a clickable button.
+   Caret on the right rotates 90° when the section is open. The body
+   wrapper is just a div; we use the `hidden` attribute to remove it
+   from layout when closed. Padding-bottom on the closed-state head
+   trims the gap that the (now empty) body would otherwise leave. */
+.b-twoup-head-toggle {
+  background: transparent;
+  border: 0;
+  padding: 0 0 10px;
+  margin: 0 0 14px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.b-twoup-section[data-collapsed="true"] .b-twoup-head-toggle {
+  margin-bottom: 0;
+}
+.b-twoup-toggle-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--hairline);
+  color: var(--fg-3);
+  transition: transform .15s ease, color .15s, border-color .15s;
+  transform: rotate(0deg);
+  flex: 0 0 auto;
+  align-self: center;
+}
+.b-twoup-section:not([data-collapsed="true"]) .b-twoup-toggle-caret {
+  transform: rotate(90deg);
+  color: var(--fg-2);
+}
+.b-twoup-head-toggle:hover .b-twoup-toggle-caret {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+/* Quiet placeholder shown when a tab's empty area would otherwise be
+   a tall black void. Sits under the intake card to telegraph what the
+   canvas will fill in once data arrives. */
+.b-empty-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 22px;
+  border: 1px dashed var(--hairline);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.015);
+}
+.b-empty-hint-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-4);
+}
+.b-empty-hint-body {
+  font-size: 13.5px;
+  color: var(--fg-3);
+  line-height: 1.55;
+}
+
+/* Skill chips */
+.b-skill-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.b-skill-chip {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
+  color: var(--fg-2);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+.b-skill-chip[data-tone="bold"] {
+  background: rgba(48, 100, 255, 0.10);
+  border-color: rgba(90, 134, 255, 0.25);
+  color: var(--fg);
+}
+
+/* Experience rows inside two-up */
+.b-experience-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 4px;
+  /* No per-row border or background — the parent CollapsibleSection
+     already provides the outer box, so each role is a flat row inside
+     that frame separated by a hairline divider. Avoids the
+     "box inside a box" look the previous treatment produced. */
+}
+.b-experience-card + .b-experience-card {
+  border-top: 1px solid var(--hairline);
+}
+.b-experience-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: -0.005em;
+}
+.b-experience-org {
+  font-size: 13px;
+  color: var(--fg-3);
+  margin-top: 2px;
+}
+.b-experience-period {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-3);
+  letter-spacing: 0.02em;
+  flex: 0 0 auto;
+}
+
+/* Parser signals */
+.b-signal-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+@media (max-width: 720px) {
+  .b-signal-list { grid-template-columns: 1fr; }
+}
+.b-signal-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--fg-2);
+}
+.b-signal-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: rgba(127, 224, 176, 0.18);
+  color: var(--success);
+  flex: 0 0 auto;
+}
+
+/* JD body block */
+.b-jd-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.b-jd-block-head { display: flex; flex-direction: column; gap: 4px; }
+.b-jd-block-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+.b-jd-block-body {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--fg-2);
+}
+.b-jd-block-body p + p { margin-top: 8px; }
+.b-jd-bullet-list {
+  list-style: disc;
+  padding-left: 18px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--fg-2);
+}
+
+/* ── Job search ─────────────────────────────────────────────────── */
+.b-search-bar {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1.4fr) 1px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0;
+  padding: 0 12px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  height: 50px;
+  transition: border-color .15s;
+}
+.b-search-bar:focus-within { border-color: rgba(90, 134, 255, 0.35); }
+.b-search-bar input {
+  background: transparent;
+  border: 0;
+  outline: none;
+  height: 100%;
+  padding: 0 12px;
+  color: var(--fg);
+  font-size: 14px;
+  letter-spacing: -0.005em;
+}
+.b-search-bar input::placeholder { color: var(--fg-4); }
+.b-search-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--hairline);
+}
+.b-search-icon {
+  color: var(--fg-3);
+  display: grid;
+  place-items: center;
+}
+.b-search-bar .rd-btn { margin-right: 4px; }
+
+.b-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12.5px;
+  color: var(--fg-3);
+  flex-wrap: wrap;
+}
+.b-search-filters {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.b-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--fg-3);
+}
+.b-search-toggle input { accent-color: var(--accent-strong); }
+
+/* Multi-select filter chip + popover.
+ * Uses native <details>/<summary> for the disclosure semantics so the
+ * keyboard story is correct (Enter / Space toggles, Esc closes) without
+ * managing open state in React. The popover panel is absolutely
+ * positioned below the chip so it overlays results without shifting
+ * the layout. */
+.b-filter-popover {
+  position: relative;
+  display: inline-block;
+}
+.b-filter-popover > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg-3);
+  font-size: 12.5px;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.b-filter-popover > summary::-webkit-details-marker { display: none; }
+.b-filter-popover > summary:hover { border-color: rgba(90, 134, 255, 0.45); }
+.b-filter-popover[open] > summary {
+  border-color: rgba(90, 134, 255, 0.55);
+  background: rgba(0, 0, 0, 0.5);
+}
+.b-filter-popover-label { color: var(--fg-3); }
+.b-filter-popover-value { color: var(--fg); font-weight: 500; }
+.b-filter-popover-caret {
+  margin-left: 2px;
+  font-size: 10px;
+  transition: transform 120ms ease;
+}
+.b-filter-popover[open] .b-filter-popover-caret { transform: rotate(180deg); }
+.b-filter-popover-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(20, 20, 24, 0.97);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.b-filter-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--fg);
+  font-size: 13px;
+  transition: background 120ms ease;
+}
+.b-filter-popover-item:hover { background: rgba(255, 255, 255, 0.04); }
+.b-filter-popover-item input {
+  accent-color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.b-search-import {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.b-search-import-input {
+  width: 240px;
+  height: 30px;
+  padding: 4px 10px;
+}
+
+/* Saved jobs collapsible drawer */
+.b-saved-section {
+  border: 1px solid var(--hairline);
+  background: rgba(48, 100, 255, 0.035);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.b-saved-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  color: var(--fg);
+  text-align: left;
+  font-family: inherit;
+}
+.b-saved-caret {
+  transition: transform .15s ease;
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.b-saved-toggle[aria-expanded="true"] .b-saved-caret { transform: rotate(90deg); }
+.b-saved-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg);
+}
+.b-saved-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  letter-spacing: 0.04em;
+}
+.b-saved-toggle:hover .b-saved-title { color: rgba(140, 170, 255, 1); }
+.b-saved-empty {
+  margin-top: 10px;
+  padding: 12px;
+  font-size: 12.5px;
+  color: var(--fg-3);
+  border: 1px dashed var(--hairline);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.b-results-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: 8px;
+}
+
+/* Job grid (cards) */
+.b-job-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 880px) { .b-job-grid { grid-template-columns: 1fr; } }
+.b-job-card {
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .18s, background .18s, transform .18s, box-shadow .18s;
+  cursor: pointer;
+}
+/* Top hairline gradient — same trick used elsewhere; subtle layered
+   surface cue. */
+.b-job-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  border-radius: 12px 12px 0 0;
+}
+/* Accent left-bar that slides in on hover — gives a clear visual
+   "this row is interactive" cue. Animation grows from 0 → 3px. */
+.b-job-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18px;
+  bottom: 18px;
+  width: 0;
+  background: var(--accent-strong);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 12px var(--accent-glow);
+  transition: width .18s ease;
+}
+.b-job-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-card-2);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 32px -20px rgba(0, 0, 0, 0.6);
+}
+.b-job-card:hover::after { width: 3px; }
+.b-job-card:hover .b-job-card-actions { opacity: 1; }
+.b-job-card[data-active="true"] {
+  border-color: rgba(90, 134, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(48, 100, 255, 0.20), 0 16px 36px -16px var(--accent-glow);
+}
+.b-job-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+.b-job-card-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.25;
+  color: var(--fg);
+}
+.b-job-card-company { color: var(--fg-3); font-size: 13.5px; margin-top: 2px; }
+.b-job-card-summary {
+  font-size: 14px;
+  color: var(--fg-2);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.b-job-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg-3);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.b-job-card-meta-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--fg-4);
+}
+.b-job-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+  /* Subtly hidden by default; sharpen on card hover so the resting
+     grid feels less busy. */
+  opacity: 0.65;
+  transition: opacity .18s ease;
+}
+.b-job-card-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.b-saved-mark {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent-strong);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* "Expired" variant — softer red so a tombstoned listing reads as
+   informational, not alarming. The user still has the bookmark — just
+   knowing the upstream board has dropped the role. */
+.b-saved-mark[data-expired="true"] {
+  color: var(--danger, #b6431f);
+  border: 1px solid color-mix(in oklab, var(--danger, #b6431f) 30%, transparent);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.b-job-card[data-top-match="true"] {
+  background:
+    linear-gradient(180deg, rgba(48, 100, 255, 0.06) 0%, rgba(48, 100, 255, 0) 30%),
+    rgba(0, 0, 0, 0.45);
+  border-color: rgba(90, 134, 255, 0.32);
+  box-shadow:
+    0 0 0 1px rgba(90, 134, 255, 0.18),
+    0 20px 50px -20px rgba(48, 100, 255, 0.40);
+}
+.b-job-card[data-top-match="true"]::before {
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(90, 134, 255, 0.5),
+    rgba(90, 134, 255, 0.5),
+    transparent);
+}
+.b-top-match-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(90, 134, 255, 0.18), rgba(48, 100, 255, 0.10));
+  border: 1px solid rgba(90, 134, 255, 0.30);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 0 12px rgba(48, 100, 255, 0.20);
+  white-space: nowrap;
+}
+.b-top-match-badge svg { width: 10px; height: 10px; }
+
+/* ── Analysis tab ──────────────────────────────────────────────── */
+.b-run-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  position: relative;
+  flex-wrap: wrap;
+}
+.b-run-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  border-radius: 14px 14px 0 0;
+}
+.b-run-bar-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.b-run-bar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.b-pipeline {
+  display: grid;
+  /* 3 columns × 2 rows for a 6-stage pipeline so each card has room
+     for the title, detail text, and progress bar instead of being
+     squeezed into a 250px column. Falls back to a single column on
+     narrow viewports. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+/* Mobile-only "all done" confirmation. Hidden on desktop because the
+   pipeline cards already convey completion via per-stage state. */
+.b-pipeline-summary { display: none; }
+@media (max-width: 980px) {
+  .b-pipeline { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  .b-pipeline { grid-template-columns: 1fr; }
+}
+.b-pipeline-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  /* Min-height keeps done/active/standby cards on the same row even
+     when the active stage has multi-line detail text. */
+  min-height: 110px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  border-left: 3px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  overflow: hidden;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+/* Done — quiet success-tinted top wash + subtle left accent. */
+.b-pipeline-stage[data-state="done"] {
+  border-left-color: var(--success);
+  background:
+    linear-gradient(180deg, rgba(127, 224, 176, 0.05), transparent 60%),
+    rgba(0, 0, 0, 0.40);
+}
+/* Active — emissive accent gradient + ring glow. The card visibly
+   "lights up" relative to its done/standby neighbors. */
+.b-pipeline-stage[data-state="active"] {
+  border-left-color: var(--accent-strong);
+  background:
+    linear-gradient(180deg, rgba(48, 100, 255, 0.10), transparent 65%),
+    rgba(0, 0, 0, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(48, 100, 255, 0.22),
+    0 14px 32px -16px var(--accent-glow);
+}
+.b-pipeline-stage[data-state="active"]::before {
+  /* Top-right radial halo on the active card — adds depth without
+     disturbing the title typography. */
+  content: "";
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(48, 100, 255, 0.18), transparent 70%);
+  pointer-events: none;
+}
+.b-pipeline-stage[data-state="active"]::after {
+  content: "";
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 8px var(--accent-glow);
+  animation: b-live-pulse 1.4s ease-in-out infinite;
+}
+.b-pipeline-stage-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.b-pipeline-stage-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: -0.005em;
+}
+.b-pipeline-stage-percent {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-3);
+}
+.b-pipeline-stage-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.b-pipeline-stage-agent {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
+  color: var(--fg-3);
+}
+.b-pipeline-stage[data-state="active"] .b-pipeline-stage-agent {
+  background: rgba(48, 100, 255, 0.10);
+  border-color: rgba(90, 134, 255, 0.30);
+  color: var(--accent-strong);
+}
+.b-pipeline-stage[data-state="done"] .b-pipeline-stage-agent {
+  background: rgba(127, 224, 176, 0.08);
+  border-color: rgba(127, 224, 176, 0.22);
+  color: var(--success);
+}
+.b-pipeline-stage-state {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--fg-4);
+}
+.b-pipeline-stage[data-state="active"] .b-pipeline-stage-state { color: var(--accent-strong); }
+.b-pipeline-stage[data-state="done"] .b-pipeline-stage-state { color: var(--success); }
+.b-pipeline-stage-detail { font-size: 12.5px; color: var(--fg-3); }
+.b-pipeline-stage-bar {
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  margin-top: auto;
+  overflow: hidden;
+}
+.b-pipeline-stage-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 6px var(--accent-glow);
+  transition: width .25s ease;
+}
+.b-pipeline-stage[data-state="done"] .b-pipeline-stage-bar > span {
+  background: var(--success);
+  box-shadow: none;
+}
+.b-pipeline-stage[data-state="active"] .b-pipeline-stage-bar > span {
+  animation: b-stage-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes b-stage-breathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--accent-glow); }
+  50%      { opacity: 0.7; box-shadow: 0 0 14px var(--accent-glow); }
+}
+@keyframes b-live-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.6; }
+}
+
+/* ── Artifact viewer ────────────────────────────────────────────── */
+.b-artifact-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 16px;
+}
+.b-artifact-tab {
+  background: transparent;
+  border: 0;
+  padding: 11px 18px;
+  font-size: 14.5px;
+  color: var(--fg-3);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  font-family: inherit;
+}
+.b-artifact-tab:hover { color: var(--fg-2); }
+.b-artifact-tab[aria-selected="true"] {
+  color: var(--fg);
+  border-bottom-color: var(--accent-strong);
+  box-shadow: 0 4px 14px -8px var(--accent-glow);
+}
+
+.b-artifact-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .b-artifact-body { grid-template-columns: 1fr; }
+}
+.b-artifact-doc {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--fg-2);
+  max-height: 540px;
+  overflow: auto;
+}
+.b-artifact-doc-pre {
+  white-space: pre-wrap;
+  margin: 0;
+  padding: 24px 28px;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+.b-artifact-doc.is-streaming .b-artifact-doc-pre::after {
+  content: "▋";
+  display: inline-block;
+  color: var(--accent-strong);
+  animation: b-caret-blink 0.8s steps(2) infinite;
+  margin-left: 2px;
+}
+@keyframes b-caret-blink {
+  0%, 50%       { opacity: 1; }
+  50.01%, 100%  { opacity: 0; }
+}
+.b-artifact-doc-frame {
+  width: 100%;
+  min-height: 540px;
+  border: 0;
+  display: block;
+  background: white;
+  border-radius: 12px;
+}
+
+.b-artifact-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  background: rgba(0, 0, 0, 0.40);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  position: relative;
+}
+.b-artifact-aside::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  border-radius: 12px 12px 0 0;
+}
+.b-artifact-aside-title {
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+  margin: 0;
+}
+.b-artifact-aside-text {
+  font-size: 13.5px;
+  color: var(--fg-2);
+  line-height: 1.6;
+  margin: 0;
+}
+.b-artifact-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.b-artifact-meta {
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+
+/* Per-artifact theme picker (Default vs Neutral). Lives above the
+   download buttons on the right rail. */
+.b-artifact-style-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  margin: 0 0 6px;
+}
+.b-artifact-style-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  width: 100%;
+}
+.b-artifact-style-option {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.b-artifact-style-option:hover { color: var(--fg-2); }
+.b-artifact-style-option[data-active="true"] {
+  background: rgba(48, 100, 255, 0.10);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px rgba(90, 134, 255, 0.25);
+}
+.b-artifact-style-hint {
+  margin: 8px 0 0;
+  font-size: 11.75px;
+  color: var(--fg-3);
+  line-height: 1.5;
+}
+
+.b-streaming-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+.b-streaming-chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 6px var(--accent-glow);
+  animation: b-live-pulse 1s ease-in-out infinite;
+}
+
+/* ── Floating assistant FAB + popover ──────────────────────────── */
+.b-shell .rd-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 175, 255, 0.45);
+  /* Layered gradient with a CURSOR-FOLLOWING highlight (--rd-fab-x/y
+     CSS vars updated on mousemove). Defaults to a fixed upper-left
+     position when the cursor isn't over the button. */
+  background:
+    radial-gradient(circle at var(--rd-fab-x, 30%) var(--rd-fab-y, 25%), rgba(255, 255, 255, 0.30), transparent 55%),
+    linear-gradient(180deg, var(--accent-strong) 0%, #114be9 100%);
+  color: white;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 0 0 4px rgba(48, 100, 255, 0.10),
+    0 20px 44px -12px rgba(48, 100, 255, 0.55);
+  cursor: pointer;
+  z-index: 30;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  font: inherit;
+}
+.b-shell .rd-fab::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(48, 100, 255, 0.50), transparent 70%);
+  filter: blur(14px);
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.85;
+  transition: opacity 180ms ease;
+}
+.b-shell .rd-fab:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 0 0 5px rgba(48, 100, 255, 0.14),
+    0 24px 56px -12px rgba(48, 100, 255, 0.65);
+}
+.b-shell .rd-fab:hover::before { opacity: 1; }
+.b-shell .rd-fab-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--success);
+  border: 2px solid #04070f;
+}
+
+.b-shell .rd-assistant {
+  position: fixed;
+  bottom: 86px;
+  right: 22px;
+  width: 380px;
+  max-height: calc(100vh - 120px);
+  /* Match the deep near-black used by the page background + section
+     surfaces. Slightly translucent over the page gradient so the
+     emissive blue glow behind it still bleeds through subtly. */
+  background:
+    linear-gradient(180deg, rgba(8, 12, 22, 0.96), rgba(2, 4, 10, 0.96)),
+    var(--bg-page);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 1px rgba(48, 100, 255, 0.06),
+    0 24px 60px -20px rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  z-index: 30;
+  overflow: hidden;
+  animation: rd-pop 200ms ease;
+}
+@keyframes rd-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.b-shell .rd-assistant-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-shell .rd-assistant-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.b-shell .rd-assistant-sub {
+  color: var(--fg-2);
+  font-size: 11.5px;
+  margin-top: 2px;
+  opacity: 0.75;
+}
+.b-shell .rd-assistant-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.b-shell .rd-assistant-iconbtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-3);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font: inherit;
+}
+.b-shell .rd-assistant-iconbtn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+}
+.b-shell .rd-assistant-iconbtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.b-shell .rd-assistant-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.b-shell .rd-assistant-empty {
+  font-size: 12.5px;
+  color: var(--fg-2);
+  padding: 18px 8px;
+  text-align: center;
+}
+.b-shell .rd-assistant-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.b-shell .rd-bubble {
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+.b-shell .rd-bubble-user {
+  background: linear-gradient(180deg, var(--accent-strong), #114be9);
+  color: white;
+  align-self: flex-end;
+  /* User bubbles stay narrower so they read as quick prompts. */
+  max-width: 85%;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 8px 20px -8px var(--accent-glow);
+}
+.b-shell .rd-bubble-assistant {
+  /* Quiet inset surface — sits on top of the popover's deep-black
+     background. Brighter ink so the body copy reads cleanly.
+     Full width so long answers don't get cramped into 70% of the
+     panel — only the user prompt stays narrow + right-aligned. */
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border-strong);
+  color: var(--fg);
+  border-bottom-left-radius: 4px;
+}
+.b-shell .rd-bubble-error {
+  align-self: stretch;
+}
+.b-shell .rd-bubble-error {
+  background: rgba(255, 139, 139, 0.07);
+  border: 1px solid rgba(255, 139, 139, 0.30);
+  color: var(--danger);
+  border-bottom-left-radius: 4px;
+}
+.b-shell .rd-bubble-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent-strong);
+  animation: b-caret-blink 0.8s steps(2) infinite;
+}
+.b-shell .rd-bubble-thinking {
+  font-style: italic;
+  color: var(--fg-3);
+}
+
+.b-shell .rd-assistant-form {
+  border-top: 1px solid var(--hairline);
+  padding: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.b-shell .rd-assistant-input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  padding: 8px 12px;
+  resize: none;
+  min-height: 36px;
+  max-height: 120px;
+  font-size: 13px;
+  color: var(--fg);
+  outline: none;
+  font-family: inherit;
+}
+.b-shell .rd-assistant-input::placeholder { color: var(--fg-3); }
+.b-shell .rd-assistant-input:focus { border-color: rgba(90, 134, 255, 0.45); }
+.b-shell .rd-assistant-input:disabled { opacity: 0.6; cursor: not-allowed; }
+.b-shell .rd-assistant-send {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  border: 1px solid rgba(140, 175, 255, 0.4);
+  background: linear-gradient(180deg, var(--accent-strong), #114be9);
+  color: white;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 6px 14px -4px var(--accent-glow);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.b-shell .rd-assistant-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.b-shell .rd-assistant-locked {
+  font-size: 12px;
+  color: var(--fg-2);
+  padding: 12px 14px;
+  text-align: center;
+  border-top: 1px solid var(--hairline);
+}
+
+/* ── Command palette overlay ───────────────────────────────────── */
+.b-cmd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: start center;
+  padding-top: 12vh;
+  z-index: 100;
+  animation: b-cmd-fade .15s ease;
+}
+@keyframes b-cmd-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.b-cmd-panel {
+  width: 100%;
+  max-width: 580px;
+  background: rgba(8, 11, 18, 0.96);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 1px rgba(90, 134, 255, 0.10),
+    0 30px 80px rgba(0, 0, 0, 0.6),
+    0 0 60px rgba(48, 100, 255, 0.08);
+  overflow: hidden;
+  animation: b-cmd-pop .18s cubic-bezier(.2, .8, .2, 1.05);
+}
+@keyframes b-cmd-pop {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.b-cmd-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+.b-cmd-input-icon { color: var(--fg-3); }
+.b-cmd-input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--fg);
+  font-size: 15px;
+  font-family: inherit;
+  letter-spacing: -0.005em;
+}
+.b-cmd-input::placeholder { color: var(--fg-4); }
+/* Close button — replaces the previous static "Esc" hint with a real
+   clickable affordance so mobile users (no Esc key) can close the
+   palette by tapping. Visually identical to the old kbd chip on
+   desktop ("Esc" text); the mobile media query below swaps the text
+   for an X icon. */
+.b-cmd-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  padding: 3px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out);
+}
+.b-cmd-close:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+/* Default desktop: text label visible, icon hidden. The mobile
+   breakpoint below flips both. */
+.b-cmd-close-text { display: inline; }
+.b-cmd-close-icon { display: none; }
+.b-cmd-close-icon svg { width: 14px; height: 14px; }
+
+/* Default desktop: full rail label shown, short label hidden. The
+   mobile breakpoint below swaps them so "Job Search" / "Job Detail"
+   render as "Jobs" / "JD" on phones (the long labels wrap to two
+   lines inside the rail pill at ≤ 540 px otherwise). */
+.b-rail-label-short { display: none; }
+.b-cmd-list {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  max-height: 380px;
+  overflow: auto;
+}
+.b-cmd-empty {
+  padding: 20px 12px;
+  color: var(--fg-3);
+  font-size: 13px;
+  text-align: center;
+}
+.b-cmd-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--fg-4);
+  padding: 10px 10px 6px;
+  text-transform: uppercase;
+}
+.b-cmd-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .1s;
+  width: 100%;
+}
+.b-cmd-item[data-active="true"] {
+  background: rgba(90, 134, 255, 0.10);
+  color: var(--fg);
+}
+.b-cmd-item:disabled { opacity: 0.5; cursor: not-allowed; }
+.b-cmd-item-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.b-cmd-item[data-active="true"] .b-cmd-item-icon {
+  background: rgba(90, 134, 255, 0.16);
+  border-color: rgba(90, 134, 255, 0.30);
+  color: var(--accent-strong);
+}
+.b-cmd-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.b-cmd-item-title {
+  color: inherit;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+.b-cmd-item-sub {
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+.b-cmd-item-shortcut {
+  /* `inline-flex` + center alignment makes the chip's content sit
+     dead-center regardless of whether it's text ("⌘1") or an SVG
+     glyph (chevron). Without this the inline SVG aligned to the
+     text baseline, leaving visible whitespace above and to the
+     right of the chevron — the chip looked broken. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  flex: 0 0 auto;
+}
+/* The chevron variant gets a square box (instead of the wider
+   text-shaped chip) so the right-pointing arrow reads as a tap
+   affordance, not as a tiny letter pretending to be a kbd hint. */
+.b-cmd-item-shortcut-chev {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+}
+.b-cmd-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-top: 1px solid var(--hairline);
+  font-size: 11px;
+  color: var(--fg-4);
+}
+.b-cmd-footer-keys { display: inline-flex; gap: 8px; }
+.b-cmd-footer-key {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+/* Slim wizard breadcrumb — replaces the boxy 6-row b-builder-steps
+   list. Shows current step name + counter + a single hairline
+   progress bar. Reads as a quiet header line, not a nested table. */
+.b-wizard-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+.b-wizard-rail-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.b-wizard-rail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.b-wizard-rail-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+.b-wizard-rail-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-4);
+}
+.b-wizard-rail-bar {
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.b-wizard-rail-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-strong), #114be9);
+  box-shadow: 0 0 8px var(--accent-glow);
+  transition: width .25s ease;
+}
+
+/* Builder steps list (inside the assistant intake mode) */
+.b-builder-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.b-builder-step {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+  color: var(--fg-3);
+}
+.b-builder-step[data-active="true"] { color: var(--fg); }
+.b-builder-step[data-done="true"]   { color: var(--fg-2); }
+.b-builder-step-status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-4);
+}
+.b-builder-step[data-done="true"] .b-builder-step-status { color: var(--success); }
+.b-builder-step[data-active="true"] .b-builder-step-status { color: var(--accent-strong); }
+
+/* Builder draft form (inside resume tab) */
+.b-builder-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 720px) { .b-builder-form { grid-template-columns: 1fr; } }
+.b-builder-field { display: flex; flex-direction: column; gap: 6px; }
+.b-builder-field-wide { grid-column: span 2; }
+@media (max-width: 720px) { .b-builder-field-wide { grid-column: 1; } }
+.b-builder-field-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+  text-transform: uppercase;
+}
+.b-builder-preview-card {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* Auto-grow textarea inside the draft profile — no internal scrollbar
+   or fixed min-height so each field shows its full content. The
+   AutoTextarea component sets `style.height` directly to scrollHeight
+   on every value change. */
+.b-shell .b-builder-textarea-grow {
+  resize: none;
+  overflow: hidden;
+  min-height: 44px;
+}
+
+/* Editorial form fields — used inside .b-doc-section bodies (Draft
+   profile sub-sections). No card chrome around the input itself; just
+   a small mono label, a borderless field, and a bottom hairline that
+   lights to accent on focus. Reads more like a Stripe invoice form
+   than a stack of dashboard inputs. */
+.b-doc-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 24px;
+  row-gap: 18px;
+}
+@media (max-width: 720px) {
+  .b-doc-form { grid-template-columns: 1fr; }
+}
+.b-doc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.b-doc-field-wide { grid-column: span 2; }
+@media (max-width: 720px) {
+  .b-doc-field-wide { grid-column: 1; }
+}
+.b-doc-field-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.b-shell .b-doc-input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  padding: 8px 0;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 14.5px;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.b-shell .b-doc-input:focus {
+  border-bottom-color: var(--accent-strong);
+  /* Soft accent glow under the focused input — feels like the field
+     is "lit" from below, premium SaaS focus ring without a hard ring. */
+  box-shadow: 0 1px 0 rgba(90, 134, 255, 0.55), 0 6px 16px -6px var(--accent-glow);
+}
+.b-shell .b-doc-input::placeholder { color: var(--fg-4); }
+.b-shell .b-doc-textarea {
+  resize: none;
+  overflow: hidden;
+  line-height: 1.6;
+  min-height: 28px;
+  padding: 6px 0;
+}
+.b-builder-preview {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--fg-2);
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow: auto;
+}
+
+/* Workspace page wrapper (the <main> around <WorkspaceShell />) */
+.workspace-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* =====================================================================
+   Mobile responsive pass — everything below 540px collapses to a
+   single-column phone-friendly layout. The desktop @media queries on
+   individual components (.b-resume-twoup at 880px, .b-pipeline at
+   640/980px, etc.) still apply; this block tightens the chrome that
+   wasn't already responsive.
+   ===================================================================== */
+@media (max-width: 540px) {
+  /* Topbar — brand stays visible (just slightly smaller); the cmd-K
+     trigger collapses to its icon and the account chip hides the
+     name text. The kb shortcut "⌘K" hides too — there's no physical
+     kb on phones. */
+  .b-topbar {
+    padding: 10px 14px;
+    gap: 10px;
+  }
+  .b-shell .b-brand-name {
+    font-size: 13.5px;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .b-shell .b-cmd-trigger {
+    min-width: 0;
+    padding: 0 10px;
+    gap: 0;
+  }
+  .b-shell .b-cmd-trigger-text,
+  .b-shell .b-cmd-trigger-keys { display: none; }
+  .b-shell .b-account-name { display: none; }
+
+  /* Step rail — shrink chip padding + label + chip number so the
+     four-step pill fits in ~340px. */
+  .b-rail-row { padding: 10px 12px; }
+  .b-shell .b-rail { gap: 2px; padding: 3px; }
+  .b-shell .b-rail-step {
+    padding: 6px 10px;
+    font-size: 12px;
+    gap: 6px;
+  }
+  .b-shell .b-rail-num {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+  /* Connector line is too short to be meaningful on mobile — hide. */
+  .b-shell .b-rail::before { display: none; }
+
+  /* Hero — stack title + stats vertically. Stats wrap onto multiple
+     rows on mobile so long role titles ("Senior ML Engineer —
+     Inference Platform") don't get clipped by the parent's
+     overflow:hidden. */
+  .b-shell .b-hero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 18px 16px;
+  }
+  .b-shell .b-hero-title { font-size: 20px; }
+  .b-shell .b-hero-sub { font-size: 12.5px; }
+  .b-shell .b-hero-stats {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .b-shell .b-hero-stat {
+    font-size: 11.5px;
+    padding: 4px 10px;
+    /* Allow chips to be full-width when the role title is long, but
+       cap their length so a single chip doesn't dominate the row. */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Canvas — tighter side padding, more breathing room at the bottom
+     so the FAB doesn't overlap the last action button. */
+  .b-shell .b-canvas {
+    padding: 16px 14px 100px;
+    gap: 16px;
+  }
+
+  /* Region head — title + STEP tag stack. */
+  .b-shell .b-region-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding-bottom: 10px;
+  }
+  .b-shell .b-region-title { font-size: 16px; }
+  .b-shell .b-region-sub { font-size: 12.5px; }
+
+  /* Intake panel chrome shrinks; mode toggle pills stay clickable. */
+  .b-shell .b-intake-panel { padding: 14px 14px; }
+  .b-shell .b-intake-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .b-shell .b-intake-head-actions { justify-content: flex-start; }
+  /* Mode toggle stretches full width; share evenly between the two
+     buttons so the segmented control fills its container instead of
+     leaving a gap to the right of the wider "Build with assistant"
+     label. */
+  .b-shell .b-intake-modes { display: flex; }
+  .b-shell .b-intake-mode { flex: 1; text-align: center; }
+
+  /* Compact intake (post-parse) — stack meta + actions vertically. */
+  .b-shell .b-intake-compact { flex-direction: column; align-items: stretch; gap: 10px; padding: 6px 0; }
+  .b-shell .b-intake-compact-meta { width: 100%; }
+  .b-shell .b-intake-compact-actions { justify-content: flex-start; }
+
+  /* Job search bar — stack from a 5-col grid to vertical inputs. */
+  .b-shell .b-search-bar {
+    grid-template-columns: 1fr;
+    height: auto;
+    padding: 10px;
+    gap: 8px;
+    border-radius: 10px;
+  }
+  .b-shell .b-search-icon { display: none; }
+  .b-shell .b-search-divider { display: none; }
+  .b-shell .b-search-bar input {
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    height: 40px;
+  }
+  .b-shell .b-search-bar .rd-btn { width: 100%; }
+  .b-shell .b-search-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .b-shell .b-search-import {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .b-shell .b-search-import-input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
+  /* Run bar (Analysis) — info row + actions row stack. */
+  .b-shell .b-run-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 14px;
+  }
+  .b-shell .b-run-bar-info { flex-wrap: wrap; }
+  .b-shell .b-run-bar-actions { justify-content: flex-start; }
+
+  /* Parsed-profile hero — scaled-down typography + tighter padding. */
+  .b-shell .b-resume-hero { padding: 22px 18px 20px; border-radius: 12px; }
+  .b-shell .b-resume-hero-head { flex-direction: column; gap: 12px; align-items: stretch; }
+  .b-shell .b-resume-hero-title { font-size: 26px; }
+  .b-shell .b-resume-hero-meta { gap: 10px; font-size: 12px; }
+
+  /* JD metrics — 2-col on phone (auto-fit minmax 120 was producing
+     weird gaps). */
+  .b-shell .b-jd-metrics { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .b-shell .b-jd-metric-value { font-size: 22px; }
+
+  /* Two-up sections (already stack via earlier media queries) — just
+     tighten padding. */
+  .b-shell .b-twoup-section { padding: 14px 14px; }
+
+  /* Editorial doc — tighter side padding, smaller numbered index. */
+  .b-shell .b-doc { padding: 4px 14px; }
+  .b-shell .b-doc-section-head {
+    column-gap: 10px;
+    padding: 14px 0 10px;
+  }
+  .b-shell .b-doc-section-title { font-size: 15px; }
+
+  /* Wizard rail — title + meta wrap. */
+  .b-shell .b-wizard-rail-title { font-size: 15px; }
+
+  /* Notice panels — smaller. */
+  .b-shell .b-notice { padding: 9px 11px; font-size: 12px; }
+
+  /* Account popover — fill the screen with side margins. */
+  .b-shell .b-account-popover {
+    width: calc(100vw - 28px);
+    right: -8px;
+    max-width: 360px;
+  }
+
+  /* Cmd-K palette — fits the viewport with side margins. */
+  .b-shell .b-cmd-overlay {
+    padding-top: 8vh;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .b-cmd-panel { max-width: none; }
+  .b-cmd-input-wrap { padding: 14px 14px; }
+  .b-cmd-input { font-size: 14.5px; }
+  /* Swap the close button's "Esc" text for a tappable X icon. The
+     keyboard listener still handles physical Esc keys for the rare
+     mobile user with a hardware keyboard. */
+  .b-shell .b-cmd-close-text { display: none; }
+  .b-shell .b-cmd-close-icon { display: inline-flex; }
+  .b-shell .b-cmd-close {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+  }
+  /* Hide the per-row keyboard shortcut chips (⌘1, ⌘2…) — there's no
+     Cmd key on phones so the chip is dead weight. The chevrons on
+     non-shortcut rows stay (they're a tap-affordance hint). */
+  .b-shell .b-cmd-item-shortcut-key { display: none; }
+  /* Hide the desktop-only footer key hints (↑↓ navigate / ↵ run /
+     esc close) — none of those keys exist on touch. The "Grounded
+     in your active workspace" caption stays. */
+  .b-shell .b-cmd-footer-keys { display: none; }
+  .b-cmd-footer {
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    font-size: 10.5px;
+  }
+
+  /* Step rail — swap the long step labels ("Job Search", "Job
+     Detail") for short ones ("Jobs", "JD"). Without this the long
+     labels wrap to two lines inside the rail pill, growing the rail
+     row from ~50 px to ~80 px and eating ~15 % of vertical space. */
+  .b-shell .b-rail-label-full { display: none; }
+  .b-shell .b-rail-label-short { display: inline; }
+
+  /* FAB pinned closer to the corner; assistant popover spans the
+     full width with 12px gutters so chats are readable. */
+  .b-shell .rd-fab {
+    bottom: 18px;
+    right: 18px;
+    width: 50px;
+    height: 50px;
+  }
+  .b-shell .rd-assistant {
+    bottom: 80px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100vh - 110px);
+  }
+
+  /* Pipeline — already 1-col at 640px; just trim padding. */
+  .b-shell .b-pipeline-stage { padding: 14px 14px; }
+
+  /* Mobile pipeline view: collapse the 6 stacked cards to whichever
+     state is most informative. During a run, only the active card is
+     visible (the next card swaps in as each agent hands off). When
+     idle (every stage "next") or done (every stage "done"), all per-
+     stage cards are hidden — the run-bar pip + b-empty-hint or the
+     b-pipeline-summary cover the messaging without a screen of
+     scroll. */
+  .b-shell .b-pipeline:has(.b-pipeline-stage[data-state="active"])
+    .b-pipeline-stage:not([data-state="active"]) {
+    display: none;
+  }
+  .b-shell
+    .b-pipeline:not(:has(.b-pipeline-stage[data-state="active"])):not(:has(.b-pipeline-stage[data-state="next"]))
+    .b-pipeline-stage,
+  .b-shell
+    .b-pipeline:not(:has(.b-pipeline-stage[data-state="active"])):not(:has(.b-pipeline-stage[data-state="done"]))
+    .b-pipeline-stage {
+    display: none;
+  }
+  .b-shell .b-pipeline-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid rgba(127, 224, 176, 0.28);
+    background: rgba(127, 224, 176, 0.06);
+    color: var(--success);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .b-shell .b-pipeline-summary-pip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(127, 224, 176, 0.18);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    flex: 0 0 auto;
+  }
+
+  /* Artifact viewer — 1-col at 980px; tighten on phone. */
+  .b-shell .b-artifact-doc-frame { min-height: 360px; }
+  .b-shell .b-artifact-aside { padding: 14px 14px; }
+}
+
+/* Tablet refinements — between phone and desktop. */
+@media (min-width: 541px) and (max-width: 780px) {
+  .b-shell .b-canvas { padding: 20px 20px 80px; }
+  .b-shell .b-hero { padding: 20px 22px; }
+  .b-shell .b-jd-metrics { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* =====================================================================
+   Motion + delight pass — small premium animations.
+   All animations are gated behind `prefers-reduced-motion: no-preference`
+   so users with motion-sensitivity get the static layout.
+   ===================================================================== */
+
+/* Custom selection colour — accent blue everywhere inside the shell. */
+.b-shell ::selection {
+  background: rgba(48, 100, 255, 0.34);
+  color: var(--fg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Page-boot cascade. Hero drops in from -8px, then b-canvas children
+     fade up with a 60ms stagger. Triggered on every workspace mount;
+     keeps the entrance feeling alive without being a re-runnable
+     interaction (animation: forwards, fill state stays). */
+  @keyframes b-boot-fade-down {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes b-boot-fade-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .b-shell .b-hero {
+    animation: b-boot-fade-down 360ms var(--ease-out) both;
+  }
+  .b-shell .b-canvas > * {
+    animation: b-boot-fade-up 420ms var(--ease-out) both;
+  }
+  .b-shell .b-canvas > *:nth-child(1) { animation-delay: 80ms; }
+  .b-shell .b-canvas > *:nth-child(2) { animation-delay: 140ms; }
+  .b-shell .b-canvas > *:nth-child(3) { animation-delay: 200ms; }
+  .b-shell .b-canvas > *:nth-child(4) { animation-delay: 260ms; }
+  .b-shell .b-canvas > *:nth-child(5) { animation-delay: 320ms; }
+  .b-shell .b-canvas > *:nth-child(n+6) { animation-delay: 360ms; }
+
+  /* Job card stagger — replaces the canvas-level animation for the
+     job grid since the cards are 1+ levels deep. The first 8 cards
+     stagger at 50ms each. */
+  .b-shell .b-job-grid > *:nth-child(1) { animation: b-boot-fade-up 360ms var(--ease-out) both 60ms; }
+  .b-shell .b-job-grid > *:nth-child(2) { animation: b-boot-fade-up 360ms var(--ease-out) both 110ms; }
+  .b-shell .b-job-grid > *:nth-child(3) { animation: b-boot-fade-up 360ms var(--ease-out) both 160ms; }
+  .b-shell .b-job-grid > *:nth-child(4) { animation: b-boot-fade-up 360ms var(--ease-out) both 210ms; }
+  .b-shell .b-job-grid > *:nth-child(5) { animation: b-boot-fade-up 360ms var(--ease-out) both 260ms; }
+  .b-shell .b-job-grid > *:nth-child(6) { animation: b-boot-fade-up 360ms var(--ease-out) both 310ms; }
+  .b-shell .b-job-grid > *:nth-child(7) { animation: b-boot-fade-up 360ms var(--ease-out) both 360ms; }
+  .b-shell .b-job-grid > *:nth-child(n+8) { animation: b-boot-fade-up 360ms var(--ease-out) both 410ms; }
+
+  /* Skill chip stagger — short cascade left-to-right when chips
+     first render after a parse. Subtle (only first 16 chips). */
+  @keyframes b-chip-pop {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .b-shell .b-skill-chip {
+    animation: b-chip-pop 280ms var(--ease-out) both;
+  }
+  .b-shell .b-skill-chip:nth-child(n+2)  { animation-delay: 30ms; }
+  .b-shell .b-skill-chip:nth-child(n+4)  { animation-delay: 60ms; }
+  .b-shell .b-skill-chip:nth-child(n+6)  { animation-delay: 90ms; }
+  .b-shell .b-skill-chip:nth-child(n+8)  { animation-delay: 120ms; }
+  .b-shell .b-skill-chip:nth-child(n+10) { animation-delay: 150ms; }
+  .b-shell .b-skill-chip:nth-child(n+12) { animation-delay: 180ms; }
+  .b-shell .b-skill-chip:nth-child(n+14) { animation-delay: 210ms; }
+  .b-shell .b-skill-chip:nth-child(n+16) { animation-delay: 240ms; }
+
+  /* Workspace + section notice slide-in — info/success/warning
+     panels glide in instead of just appearing. */
+  @keyframes b-notice-enter {
+    from { opacity: 0; transform: translateY(-6px) scale(0.99); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .b-shell .b-notice {
+    animation: b-notice-enter 240ms var(--ease-out) both;
+  }
+
+  /* Status pip ambient breath — the "live" / "ready" / "outputs ready"
+     dots get a slow opacity cycle so signed-in surfaces feel alive
+     without being distracting. */
+  @keyframes b-pip-breath {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.7; transform: scale(0.92); }
+  }
+  .b-shell .rd-pip-live::before,
+  .b-shell .rd-pip-ready::before {
+    animation: b-pip-breath 3.2s ease-in-out infinite;
+  }
+}
+
+/* Even when reduced-motion is on, smooth pipeline progress bars +
+   palette enter still benefit from a slightly snappier curve.
+   These transitions don't move pixels around, just colour/width, so
+   they're safe to keep. */
+.b-shell .b-pipeline-stage-bar > span {
+  transition: width 380ms var(--ease-out);
+}
+/* Brief flash when the bar reaches 100% — a quick brightness uptick
+   on the last frame of fill. */
+@keyframes b-stage-complete-flash {
+  0%   { box-shadow: 0 0 6px var(--accent-glow); }
+  60%  { box-shadow: 0 0 18px rgba(127, 224, 176, 0.55); }
+  100% { box-shadow: none; }
+}
+.b-pipeline-stage[data-state="done"] .b-pipeline-stage-bar > span {
+  animation: b-stage-complete-flash 600ms ease-out;
+}
+
+/* Refine cmd-K palette entrance — was b-cmd-pop. Add a hint of spring
+   so the panel "settles" instead of just popping. */
+@keyframes b-cmd-pop {
+  0%   { opacity: 0; transform: translateY(-12px) scale(0.97); }
+  60%  { opacity: 1; transform: translateY(2px) scale(1.005); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}

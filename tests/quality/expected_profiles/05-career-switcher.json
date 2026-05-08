@@ -1,0 +1,48 @@
+{
+  "full_name": "Leander Antony A",
+  "location": "Chennai, India",
+  "contact_lines": [
+    "antony.leander@gmail.com",
+    "+91 99887 76543"
+  ],
+  "skills_must_include": [
+    "Python", "PyTorch", "TensorFlow", "scikit-learn", "Pandas", "XGBoost",
+    "FastAPI", "Docker"
+  ],
+  "experience_count": 2,
+  "experience_titles": [
+    "Senior Mechanical Engineer",
+    "Mechanical Engineer"
+  ],
+  "experience_organizations_must_include": [
+    "Tata Motors",
+    "Mahindra Research Valley"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Liverpool John Moores University",
+      "degree_must_include": "Master of Science"
+    },
+    {
+      "institution_must_include": "IIIT Bangalore",
+      "degree_must_include": "Generative AI"
+    },
+    {
+      "institution_must_include": "Anna University",
+      "degree_must_include": "Bachelor of Engineering"
+    }
+  ],
+  "certifications_must_include": [
+    "R Basics",
+    "Python 3 Programming Specialization"
+  ],
+  "projects_count_min": 3,
+  "projects_names_must_include": [
+    "Multi-Modal Deep Learning",
+    "Generative AI QA RAG System",
+    "Credit Card Fraud Detection"
+  ],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "Career switcher (mech → ML). Three degrees with multi-line wrapped specialization, three projects, two formal mech-eng jobs. Tests the wrapped-line education parser ('with specialization in / Generative AI IIIT Bangalore') we hardened earlier."
+}

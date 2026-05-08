@@ -44,6 +44,16 @@ OPENAI_MODEL_ROUTING = {
     "assistant": OPENAI_MODEL_ASSISTANT,
     "assistant_product_help": OPENAI_MODEL_PRODUCT_HELP,
     "assistant_application_qa": OPENAI_MODEL_APPLICATION_QA,
+    # Resume-builder intake: short conversational turns over a small
+    # JSON envelope. Mini-tier is fine; the work is interview-style
+    # parsing rather than long-form reasoning.
+    "resume_builder": os.getenv("OPENAI_MODEL_RESUME_BUILDER", OPENAI_MODEL_ASSISTANT),
+    # Resume-builder structuring: bigger structured output (multiple
+    # arrays + categories + summary). Use the higher-trust tier so the
+    # JSON stays well-formed and fact preservation is reliable.
+    "resume_builder_structuring": os.getenv(
+        "OPENAI_MODEL_RESUME_BUILDER_STRUCTURING", OPENAI_MODEL_HIGH_TRUST
+    ),
 }
 OPENAI_REASONING_ROUTING = {
     "jd_summary": os.getenv("OPENAI_REASONING_JD_SUMMARY", "low").strip().lower(),
@@ -61,6 +71,7 @@ OPENAI_REASONING_ROUTING = {
     "assistant_application_qa": os.getenv(
         "OPENAI_REASONING_APPLICATION_QA", OPENAI_REASONING_HIGH_TRUST
     ).strip().lower(),
+    "resume_builder": os.getenv("OPENAI_REASONING_RESUME_BUILDER", "low").strip().lower(),
 }
 OPENAI_MODEL = OPENAI_MODEL_DEFAULT
 
@@ -108,6 +119,18 @@ OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
     ),
     "assistant_product_help": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PRODUCT_HELP", 700),
     "assistant_application_qa": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
+    "resume_builder": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER", 1200),
+    # Structuring pass — converts free-form experience_notes /
+    # education_notes / projects_notes into structured arrays AND
+    # optionally produces skill_categories + an expanded
+    # professional_summary. Bumped to 4000 once projects + skill
+    # categories + summary expansion landed; smaller budgets were
+    # truncating the model's JSON mid-output and triggering parse
+    # failures (manifesting as `_structure_via_llm` returning None and
+    # the regex fallback taking over for the entire payload).
+    "resume_builder_structuring": _load_int_env(
+        "OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER_STRUCTURING", 4000
+    ),
 }
 
 
@@ -115,6 +138,12 @@ DAILY_QUOTA_CACHE_TTL_SECONDS = _load_int_env("DAILY_QUOTA_CACHE_TTL_SECONDS", 1
 APP_BASE_URL = os.getenv("APP_BASE_URL", "").strip()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
+# Service role key — bypasses RLS. Used ONLY by the cached_jobs writer
+# (the /admin/refresh-cache endpoint) and the cached_jobs reader (the
+# /jobs/search endpoint). Never sent to the frontend, never used for
+# user-scoped tables (saved_jobs, etc. — those keep using the anon
+# key + per-user JWT so RLS protects them).
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SUPABASE_AUTH_REDIRECT_URL = os.getenv(
     "SUPABASE_AUTH_REDIRECT_URL",
     APP_BASE_URL or "http://localhost:3000",
@@ -135,6 +164,15 @@ SUPABASE_SAVED_JOBS_TABLE = os.getenv(
 SUPABASE_RESUME_BUILDER_SESSIONS_TABLE = os.getenv(
     "SUPABASE_RESUME_BUILDER_SESSIONS_TABLE", "resume_builder_sessions"
 ).strip()
+SUPABASE_CACHED_JOBS_TABLE = os.getenv(
+    "SUPABASE_CACHED_JOBS_TABLE", "cached_jobs"
+).strip()
+# Shared secret guarding the /admin/refresh-cache endpoint. Set BOTH
+# in the backend env (so the endpoint can verify the bearer token)
+# AND in the Supabase pg_cron job's HTTP headers (so the cron can
+# include it). Anyone holding this secret can trigger a refresh —
+# rotate if leaked.
+REFRESH_CACHE_SECRET = os.getenv("REFRESH_CACHE_SECRET", "").strip()
 ENABLE_JOB_SEARCH_BACKEND = _load_bool_env("ENABLE_JOB_SEARCH_BACKEND", False)
 JOB_BACKEND_HOSTPORT = os.getenv("JOB_BACKEND_HOSTPORT", "").strip()
 JOB_BACKEND_BASE_URL = resolve_job_backend_base_url(
@@ -146,12 +184,37 @@ GREENHOUSE_BOARD_TOKENS = tuple(
     for token in os.getenv("GREENHOUSE_BOARD_TOKENS", "").split(",")
     if token.strip()
 )
+ASHBY_BOARD_TOKENS = tuple(
+    token.strip()
+    for token in os.getenv("ASHBY_BOARD_TOKENS", "").split(",")
+    if token.strip()
+)
+# Workday tokens are 3-tuples joined by ":"
+# (e.g. "nvidia:wd5:NVIDIAExternalCareerSite") because each company
+# runs its own tenant on a numbered host. See workday.py for the
+# parser.
+WORKDAY_BOARD_TOKENS = tuple(
+    token.strip()
+    for token in os.getenv("WORKDAY_BOARD_TOKENS", "").split(",")
+    if token.strip()
+)
 LEVER_SITE_NAMES = tuple(
     token.strip()
     for token in os.getenv("LEVER_SITE_NAMES", "").split(",")
     if token.strip()
 )
 SAVED_WORKSPACE_TTL_HOURS = _load_int_env("SAVED_WORKSPACE_TTL_HOURS", 24)
+# Resume-builder drafts live longer than saved workspaces — a draft is
+# something the user actively iterates on across multiple sessions
+# (e.g. picking it up the next weekend), whereas a saved workspace is
+# a post-analysis snapshot. The Supabase column default + the cron
+# `cleanup-expired-resume-builder-sessions` use this same value via
+# the migration in docs/supabase-resume-builder-ttl.sql; if you change
+# the days here you also need to migrate the column default and update
+# `expires_at` on the row when writing.
+RESUME_BUILDER_SESSION_TTL_DAYS = _load_int_env(
+    "RESUME_BUILDER_SESSION_TTL_DAYS", 7
+)
 AUTH_DEFAULT_PLAN_TIER = os.getenv("AUTH_DEFAULT_PLAN_TIER", "free").strip()
 AUTH_DEFAULT_ACCOUNT_STATUS = os.getenv(
     "AUTH_DEFAULT_ACCOUNT_STATUS", "active"

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -22,6 +22,17 @@ class WorkExperience:
 
 
 @dataclass
+class ProjectEntry:
+    name: str
+    description: str = ""
+    bullets: List[str] = field(default_factory=list)
+    technologies: List[str] = field(default_factory=list)
+    start: str = ""
+    end: str = ""
+    link: str = ""
+
+
+@dataclass
 class CandidateProfile:
     full_name: str = ""
     location: str = ""
@@ -32,6 +43,8 @@ class CandidateProfile:
     experience: List[WorkExperience] = field(default_factory=list)
     education: List[EducationEntry] = field(default_factory=list)
     certifications: List[str] = field(default_factory=list)
+    projects: List[ProjectEntry] = field(default_factory=list)
+    publications: List[str] = field(default_factory=list)
     source_signals: List[str] = field(default_factory=list)
 
 
@@ -86,6 +99,15 @@ class JobSearchQuery:
     remote_only: bool = False
     posted_within_days: Optional[int] = None
     page_size: int = 20
+    # Multi-select filters driven by UI dropdowns. Empty list = no
+    # filter (all values pass). Whitelisting / lower-casing happens
+    # in CachedJobsStore.search() before the RPC sees the values.
+    work_modes: List[str] = field(default_factory=list)
+    employment_types: List[str] = field(default_factory=list)
+    # Single-select sort. 'relevance' (default) → ts_rank when there's
+    # a query, recency otherwise. Other values: 'newest', 'oldest',
+    # 'company_az'. Anything unknown gets coerced back to 'relevance'.
+    sort_by: str = "relevance"
 
 
 @dataclass
@@ -171,13 +193,6 @@ class JobAgentOutput:
 
 
 @dataclass
-class FitAgentOutput:
-    fit_summary: str = ""
-    top_matches: List[str] = field(default_factory=list)
-    key_gaps: List[str] = field(default_factory=list)
-
-
-@dataclass
 class TailoringAgentOutput:
     professional_summary: str = ""
     rewritten_bullets: List[str] = field(default_factory=list)
@@ -234,7 +249,6 @@ class ReviewPassResult:
 class AgentWorkflowResult:
     mode: str
     model: str
-    fit: FitAgentOutput
     tailoring: TailoringAgentOutput
     review: ReviewAgentOutput
     profile: ProfileAgentOutput = field(default_factory=ProfileAgentOutput)
@@ -249,21 +263,13 @@ class AgentWorkflowResult:
 
 
 @dataclass
-class ApplicationReport:
-    title: str
-    filename_stem: str
-    summary: str
-    markdown: str
-    plain_text: str
-
-
-@dataclass
 class CoverLetterArtifact:
     title: str
     filename_stem: str
     summary: str
     markdown: str
     plain_text: str
+    theme: str = "classic_ats"
 
 
 @dataclass
@@ -278,9 +284,23 @@ class TailoredResumeArtifact:
     target_role: str = ""
     professional_summary: str = ""
     highlighted_skills: List[str] = field(default_factory=list)
+    # Optional grouped view of skills, keyed by category label
+    # ('Languages & Tools', 'ML/DL Frameworks', etc.). When non-empty
+    # the renderer displays one row per category instead of a flat
+    # pipe-separated list. Falls back to highlighted_skills when this
+    # is empty so legacy JD-driven exports keep their current layout.
+    skill_categories: Dict[str, List[str]] = field(default_factory=dict)
     experience_entries: List[ResumeExperienceEntry] = field(default_factory=list)
     education_entries: List[EducationEntry] = field(default_factory=list)
     certifications: List[str] = field(default_factory=list)
+    project_entries: List[ProjectEntry] = field(default_factory=list)
+    publication_entries: List[str] = field(default_factory=list)
+    # Canonical section identifiers ('summary', 'skills', 'experience',
+    # 'projects', 'education', 'publications', 'certifications') in the
+    # order they should render. Drives both HTML and markdown export so
+    # students lead with Education / Projects, academics lead with
+    # Publications, and seniors lead with Experience after Skills.
+    section_order: List[str] = field(default_factory=list)
     change_log: List[str] = field(default_factory=list)
     validation_notes: List[str] = field(default_factory=list)
 
@@ -358,7 +378,6 @@ class SavedWorkspaceRecord:
     job_title: str = ""
     workflow_signature: str = ""
     workflow_snapshot_json: str = ""
-    report_payload_json: str = ""
     cover_letter_payload_json: str = ""
     tailored_resume_payload_json: str = ""
     expires_at: str = ""
@@ -392,3 +411,8 @@ class ResumeBuilderSessionRecord:
     current_step: str = ""
     session_payload_json: str = ""
     updated_at: str = ""
+    # ISO-8601 timestamp when the row will be GC'd by the
+    # `cleanup-expired-resume-builder-sessions` cron / hidden by
+    # RLS, whichever happens first. Refreshed to now+TTL on every
+    # save so an active user keeps their draft alive.
+    expires_at: str = ""

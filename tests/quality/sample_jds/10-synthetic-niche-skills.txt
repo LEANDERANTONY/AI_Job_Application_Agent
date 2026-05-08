@@ -1,0 +1,44 @@
+Senior Growth Marketer
+New York, NY (Hybrid 3 days/week)
+
+About us
+
+We're a Series-B health-tech company building the future of mental-health care. Our
+mission is to make therapy accessible to every American.
+
+Role overview
+
+We're looking for a Senior Growth Marketer to own paid acquisition across Meta,
+TikTok, Reddit, and Google. You'll partner with our brand team on creative strategy,
+build out the analytics stack on Mixpanel and Segment, and own LTV/CAC modeling.
+
+What you'll do
+
+- Own paid-acquisition strategy across Meta Ads Manager, TikTok Ads Manager, Reddit
+  Ads, and Google Ads.
+- Build attribution models in Heap, Amplitude, or Mixpanel that account for view-through
+  conversions and assisted attribution.
+- Partner with the data team on Snowplow event instrumentation.
+- Manage a quarterly budget of $2-3M across channels with weekly pacing reviews.
+- Build LTV/CAC and payback period models in Looker Studio.
+- Conduct creative testing in collaboration with our in-house Figma design team.
+- Run quarterly business reviews with leadership.
+
+Requirements
+
+- 5+ years of paid-acquisition experience in DTC or B2C SaaS.
+- Hands-on with Meta, TikTok, Reddit, and Google Ads platforms.
+- Mixpanel, Heap, or Amplitude expertise; familiarity with Segment CDP, Snowplow, or
+  RudderStack.
+- Strong SQL skills.
+- Comfort with attribution-modeling concepts (multi-touch, view-through, post-IDFA).
+
+Nice-to-have
+
+- Experience with Klaviyo, Iterable, or Customer.io for lifecycle marketing.
+- Past work in regulated industries (health, finance).
+- Familiarity with creative-testing platforms like Motion or AdLibrary.io.
+
+Total compensation
+
+Base $135K-$165K plus equity in early-stage startup.

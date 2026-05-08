@@ -1,0 +1,42 @@
+{
+  "full_name": "José Hernández García",
+  "location": "Madrid, España",
+  "contact_lines": [
+    "jose.hernandez@ejemplo.es",
+    "+34 611 22 33 44",
+    "linkedin.com/in/josehg"
+  ],
+  "skills_must_include": [
+    "TypeScript", "Go", "Python", "React", "Next.js", "Tailwind",
+    "Node.js", "FastAPI", "PostgreSQL", "MongoDB", "Redis", "AWS",
+    "Docker", "Kubernetes", "Terraform"
+  ],
+  "experience_count": 2,
+  "experience_titles": [
+    "Senior Software Engineer",
+    "Software Engineer"
+  ],
+  "experience_organizations_must_include": [
+    "Cabify",
+    "Glovo"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Universidad Politécnica de Madrid",
+      "degree_must_include": "Master in Software Engineering"
+    },
+    {
+      "institution_must_include": "Universidad de Granada",
+      "degree_must_include": "Bachelor"
+    }
+  ],
+  "certifications_must_include": [
+    "AWS Certified Solutions Architect",
+    "Certified Kubernetes Administrator"
+  ],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "International candidate: accented characters in name (José Hernández García), Spanish section headers ('Resumen Profesional', 'Experiencia Profesional', 'Educación'), DD/MM/YYYY date format, European location ('Madrid, España'). Tests that the parser doesn't choke on non-English headers or accented unicode in the name field. The deterministic parser likely WILL miss the Spanish section headers — they're not in our aliases dict — and this is intentional: the test should expose that gap."
+}

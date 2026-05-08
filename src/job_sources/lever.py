@@ -331,6 +331,38 @@ class LeverJobSourceAdapter(JobSourceAdapter):
         response.raise_for_status()
         return response.json()
 
+    def fetch_all_postings(self):
+        """Snapshot every job from every configured Lever site, no
+        filtering. Mirrors GreenhouseJobSourceAdapter.fetch_all_postings
+        — see that docstring for the rationale.
+        """
+        if not self._site_names:
+            return
+
+        max_workers = min(8, len(self._site_names)) or 1
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_site = {
+                executor.submit(self._fetch_site_payload, site_name): site_name
+                for site_name in self._site_names
+            }
+            for future in as_completed(future_to_site):
+                site_name = future_to_site[future]
+                try:
+                    payload = future.result()
+                except requests.RequestException as exc:
+                    yield (site_name, "error", str(exc))
+                    continue
+
+                jobs = payload if isinstance(payload, list) else []
+                if not jobs:
+                    yield (site_name, "empty", [])
+                    continue
+                postings = [
+                    self._to_job_posting(site_name, job_payload)
+                    for job_payload in jobs
+                ]
+                yield (site_name, "ok", postings)
+
     def resolve_url(self, url: str) -> JobResolutionResult:
         parsed = urlparse(str(url or "").strip())
         parts = [part for part in (parsed.path or "").split("/") if part]

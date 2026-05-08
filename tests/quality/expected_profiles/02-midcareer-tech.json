@@ -1,0 +1,43 @@
+{
+  "full_name": "Rajesh Kumar",
+  "location": "San Francisco, CA",
+  "contact_lines": [
+    "rajesh.kumar@gmail.com",
+    "(415) 555-0142",
+    "linkedin.com/in/rajeshkumar"
+  ],
+  "skills_must_include": [
+    "Go", "Python", "Rust", "Kubernetes", "PostgreSQL", "Redis", "Kafka",
+    "AWS", "GCP", "Terraform"
+  ],
+  "experience_count": 3,
+  "experience_titles": [
+    "Senior Software Engineer",
+    "Software Engineer II",
+    "Software Engineer"
+  ],
+  "experience_organizations_must_include": [
+    "Stripe",
+    "Cloudflare",
+    "Atlassian"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Stanford",
+      "degree_must_include": "Master of Science"
+    },
+    {
+      "institution_must_include": "Indian Institute of Technology Madras",
+      "degree_must_include": "Bachelor of Technology"
+    }
+  ],
+  "certifications_must_include": [
+    "Certified Kubernetes Application Developer",
+    "Google Cloud Professional Cloud Architect"
+  ],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "Mid-career tech. Three formal jobs at well-known companies, dense bullet text, two degrees. Should NOT produce phantom projects. Tests Stripe, Cloudflare, Atlassian extraction with month-year date formats and 'San Francisco, CA | Jul 2021 - Present' meta line patterns."
+}

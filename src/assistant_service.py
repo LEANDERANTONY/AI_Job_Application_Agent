@@ -27,7 +27,6 @@ class AssistantService:
         *,
         current_page,
         workflow_view_model=None,
-        report=None,
         artifact=None,
         history=None,
         app_context=None,
@@ -42,7 +41,6 @@ class AssistantService:
         }
         workflow_context = self._build_application_qa_context(
             workflow_view_model,
-            report=report,
             artifact=artifact,
         )
         assistant_context = {
@@ -78,7 +76,6 @@ class AssistantService:
             current_page=current_page,
             workflow_view_model=workflow_view_model,
             artifact=artifact,
-            report=report,
             app_context=product_context,
         )
 
@@ -88,7 +85,6 @@ class AssistantService:
         *,
         current_page,
         workflow_view_model=None,
-        report=None,
         artifact=None,
         history=None,
         app_context=None,
@@ -114,7 +110,6 @@ class AssistantService:
         }
         workflow_context = self._build_application_qa_context(
             workflow_view_model,
-            report=report,
             artifact=artifact,
         )
         assistant_context = {
@@ -163,7 +158,6 @@ class AssistantService:
             current_page=current_page,
             workflow_view_model=workflow_view_model,
             artifact=artifact,
-            report=report,
             app_context=product_context,
         )
         if fallback.answer:
@@ -178,12 +172,11 @@ class AssistantService:
             assistant_scope="product_help",
         )
 
-    def answer_application_qa(self, question, workflow_view_model, report=None, artifact=None, history=None):
+    def answer_application_qa(self, question, workflow_view_model, artifact=None, history=None):
         return self.answer(
             question,
             current_page="Manual JD Input",
             workflow_view_model=workflow_view_model,
-            report=report,
             artifact=artifact,
             history=history,
             assistant_scope="application_qa",
@@ -194,7 +187,6 @@ class AssistantService:
         *,
         current_page,
         workflow_view_model=None,
-        report=None,
         artifact=None,
         app_context=None,
     ):
@@ -204,7 +196,6 @@ class AssistantService:
         assistant_context = self.build_session_context(
             current_page=current_page,
             workflow_view_model=workflow_view_model,
-            report=report,
             artifact=artifact,
             app_context=app_context,
         )
@@ -233,7 +224,6 @@ class AssistantService:
         *,
         current_page,
         workflow_view_model=None,
-        report=None,
         artifact=None,
         app_context=None,
     ):
@@ -243,7 +233,6 @@ class AssistantService:
         if workflow_view_model and getattr(workflow_view_model, "job_description", None):
             workflow_context = cls._build_application_qa_context(
                 workflow_view_model,
-                report=report,
                 artifact=artifact,
             )
         return {
@@ -259,7 +248,7 @@ class AssistantService:
         return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def _build_workflow_context(workflow_view_model, report=None, artifact=None):
+    def _build_workflow_context(workflow_view_model, artifact=None):
         fit_analysis = getattr(workflow_view_model, "fit_analysis", None) if workflow_view_model else None
         agent_result = getattr(workflow_view_model, "agent_result", None) if workflow_view_model else None
         review = getattr(agent_result, "review", None) if agent_result else None
@@ -270,7 +259,6 @@ class AssistantService:
             "fit_analysis": AssistantService._to_context_payload(fit_analysis),
             "tailored_draft": AssistantService._to_context_payload(getattr(workflow_view_model, "tailored_draft", None) if workflow_view_model else None),
             "agent_result": AssistantService._to_context_payload(agent_result),
-            "report_summary": getattr(report, "summary", None),
             "tailored_resume_summary": getattr(artifact, "summary", None),
             "tailored_resume_validation_notes": getattr(artifact, "validation_notes", []),
             "cover_letter_summary": AssistantService._build_cover_letter_summary(cover_letter),
@@ -283,7 +271,7 @@ class AssistantService:
         }
 
     @staticmethod
-    def _build_application_qa_context(workflow_view_model, report=None, artifact=None):
+    def _build_application_qa_context(workflow_view_model, artifact=None):
         fit_analysis = getattr(workflow_view_model, "fit_analysis", None) if workflow_view_model else None
         agent_result = getattr(workflow_view_model, "agent_result", None) if workflow_view_model else None
         review = getattr(agent_result, "review", None) if agent_result else None
@@ -324,7 +312,6 @@ class AssistantService:
                 ) if artifact else list(getattr(tailored_draft, "highlighted_skills", [])[:6]) if tailored_draft else [],
                 "validation_notes": list(getattr(artifact, "validation_notes", [])[:4]) if artifact else [],
             },
-            "report_summary": getattr(report, "summary", None),
             "cover_letter_summary": AssistantService._build_cover_letter_summary(cover_letter),
             "review": {
                 "approved": bool(getattr(review, "approved", False)) if review else False,
@@ -420,7 +407,6 @@ class AssistantService:
         current_page,
         workflow_view_model=None,
         artifact=None,
-        report=None,
         app_context=None,
     ):
         normalized = str(question or "").lower()
@@ -428,7 +414,7 @@ class AssistantService:
         knowledge_hits = list(app_context.get("knowledge_hits", []) or [])
         if "your name" in normalized or "who are you" in normalized:
             return AssistantResponse(
-                answer="I am the in-app assistant for Application Copilot. I can explain how the product works and answer grounded questions about your current fit analysis, tailored resume, cover letter, and application package.",
+                answer="I am the in-app assistant for Application Copilot. I can explain how the product works and answer grounded questions about your current fit analysis, tailored resume, and cover letter.",
                 sources=[current_page, "Upload Resume", "Manual JD Input"],
                 suggested_follow_ups=["How does the navigation work?", "What does Reload Workspace do?"],
             )
@@ -442,11 +428,11 @@ class AssistantService:
             return AssistantResponse(
                 answer=(
                     "The main flow is: sign in, upload your resume on Upload Resume, then either search/import a role from Job Search or paste/upload a JD in Manual JD Input. "
-                    "Once the job description is loaded, the app builds a fit snapshot, tailored resume draft, cover letter, and application package report. "
+                    "Once the job description is loaded, the app builds a fit snapshot, tailored resume draft, and cover letter. "
                     "You review those outputs in the same JD flow, download the artifacts you want, and if you are signed in the latest workspace can be reloaded for 24 hours. "
                     "Job Search is just one entry path into that larger workflow."
                 ),
-                sources=["Upload Resume", "Job Search", "Manual JD Input", "Readiness Snapshot", "Application Package"],
+                sources=["Upload Resume", "Job Search", "Manual JD Input", "Readiness Snapshot", "Tailored Resume Draft"],
                 suggested_follow_ups=["What exactly happens after I upload my resume?", "What is the difference between Job Search and Manual JD Input?"],
             )
         if "navigation" in normalized or "nav" in normalized or "tab" in normalized or "sidebar" in normalized:
@@ -471,27 +457,15 @@ class AssistantService:
             )
         if "job description" in normalized or "jd" in normalized:
             return AssistantResponse(
-                answer="Use Manual JD Input to upload a JD file or paste JD text directly. Once the JD is loaded, the app builds the fit snapshot, supervised workflow outputs, tailored resume, cover letter, and application package from that structured role data.",
+                answer="Use Manual JD Input to upload a JD file or paste JD text directly. Once the JD is loaded, the app builds the fit snapshot, supervised workflow outputs, tailored resume, and cover letter from that structured role data.",
                 sources=["Manual JD Input", "Readiness Snapshot"],
                 suggested_follow_ups=["What is the supervised workflow?", "What do I get at the end?"],
             )
         if "cover letter" in normalized or ("letter" in normalized and "cover" in normalized):
             return AssistantResponse(
-                answer="The cover letter is a first-class artifact in the JD flow. After review-approved workflow outputs exist, it appears between Resume Preview and Application Package and can be downloaded as Markdown or PDF.",
-                sources=["Cover Letter", "Resume Preview", "Application Package"],
+                answer="The cover letter is a first-class artifact in the JD flow. After review-approved workflow outputs exist, it appears alongside Resume Preview and can be downloaded as Markdown or PDF.",
+                sources=["Cover Letter", "Resume Preview"],
                 suggested_follow_ups=["Is the cover letter saved with the workspace?", "What inputs shape the cover letter?"],
-            )
-        if "report" in normalized or "application package" in normalized:
-            return AssistantResponse(
-                answer="Use the application package report to review the fit summary, review notes, and rationale behind the tailored resume and cover letter wording. It is the explanation layer, while the tailored resume and cover letter are the direct-use artifacts.",
-                sources=["Application Package", "Readiness Snapshot", "Tailored Resume Draft", "Cover Letter"],
-                suggested_follow_ups=["What is the difference between the report and the resume?", "Can I download the report as PDF?"],
-            )
-        if "difference" in normalized or ("report" in normalized and "resume" in normalized):
-            return AssistantResponse(
-                answer="The tailored resume and cover letter are the direct-use artifacts, while the report explains the fit, review notes, and why those outputs were shaped that way. You can preview all of them in the page before downloading.",
-                sources=["Tailored Resume Draft", "Cover Letter", "Application Package"],
-                suggested_follow_ups=["Which one should I submit?", "Can I download the report as PDF?"],
             )
         if "template" in normalized or "theme" in normalized:
             return AssistantResponse(
@@ -513,13 +487,13 @@ class AssistantService:
             )
         if "job search" in normalized:
             return AssistantResponse(
-                answer="Use Job Search to search configured technical-role sources, paste a supported job URL, or shortlist interesting roles for later. Once you choose a role, load it into the JD flow and continue through the same analysis, resume, cover letter, and report path.",
+                answer="Use Job Search to search configured technical-role sources, paste a supported job URL, or shortlist interesting roles for later. Once you choose a role, load it into the JD flow and continue through the same analysis, resume, and cover letter path.",
                 sources=["Job Search", "Upload Resume", "Manual JD Input"],
                 suggested_follow_ups=["Can I save jobs for later?", "What happens after I load a role into the JD flow?"],
             )
         if "saved workspace" in normalized or "reload workspace" in normalized or "restore" in normalized:
             return AssistantResponse(
-                answer="Signed-in users keep one saved workspace snapshot for 24 hours. Reload Workspace restores the saved resume-backed candidate state, fit outputs, imported job context when applicable, and any saved report, tailored resume, and cover letter artifacts back into the JD flow.",
+                answer="Signed-in users keep one saved workspace snapshot for 24 hours. Reload Workspace restores the saved resume-backed candidate state, fit outputs, imported job context when applicable, and any saved tailored resume and cover letter artifacts back into the JD flow.",
                 sources=["Reload Workspace", "Manual JD Input"],
                 suggested_follow_ups=["How long does the saved workspace last?", "What gets restored into the JD page?"],
             )
@@ -527,7 +501,6 @@ class AssistantService:
             normalized,
             workflow_view_model,
             artifact,
-            report=report,
         )
         if contextual_response is not None:
             return contextual_response
@@ -539,8 +512,8 @@ class AssistantService:
                 suggested_follow_ups=["Can you explain that step-by-step?", "What page should I use for that?"],
             )
         return AssistantResponse(
-            answer="The current flow is: sign in, upload a resume, load a job description, review the fit snapshot, optionally run the AI-assisted analysis, inspect the tailored resume, cover letter, and application package, then download only the artifacts you want to keep.",
-            sources=[current_page, "Readiness Snapshot", "Tailored Resume Draft", "Cover Letter", "Application Package"],
+            answer="The current flow is: sign in, upload a resume, load a job description, review the fit snapshot, optionally run the AI-assisted analysis, inspect the tailored resume and cover letter, then download only the artifacts you want to keep.",
+            sources=[current_page, "Readiness Snapshot", "Tailored Resume Draft", "Cover Letter"],
             suggested_follow_ups=["How do I use the AI-assisted analysis?", "What is the difference between the two outputs?"],
         )
 
@@ -553,11 +526,11 @@ class AssistantService:
         )
 
     @staticmethod
-    def _fallback_output_qa(normalized, workflow_view_model, artifact, report=None):
+    def _fallback_output_qa(normalized, workflow_view_model, artifact):
         if not workflow_view_model or not workflow_view_model.candidate_profile or not workflow_view_model.job_description:
-            if any(keyword in normalized for keyword in ("resume", "report", "cover letter", "fit", "submit", "gap", "bullet", "rewrite")):
+            if any(keyword in normalized for keyword in ("resume", "cover letter", "fit", "submit", "gap", "bullet", "rewrite")):
                 return AssistantResponse(
-                    answer="The assistant needs both a resume and a job description loaded first. Once those are available, I can answer grounded questions about the fit snapshot, tailored resume, cover letter, and application package.",
+                    answer="The assistant needs both a resume and a job description loaded first. Once those are available, I can answer grounded questions about the fit snapshot, tailored resume, and cover letter.",
                     sources=["Upload Resume", "Manual JD Input"],
                     suggested_follow_ups=["How do I load the job description?", "What happens after I upload a resume?"],
                 )
@@ -619,9 +592,9 @@ class AssistantService:
         if "why" in normalized or "change" in normalized or "rewrite" in normalized or "bullet" in normalized:
             return AssistantResponse(
                 answer=(
-                    "The tailored resume was shaped to emphasize verified alignment with the JD, especially around {skills}. The change summary and comparison view show what moved, and the report explains the reasoning behind those adjustments."
+                    "The tailored resume was shaped to emphasize verified alignment with the JD, especially around {skills}. The change summary and comparison view show what moved and why those adjustments were made."
                 ).format(skills=", ".join(highlighted_skills) or "the strongest matched skills"),
-                sources=["Tailored Resume Draft", "Change Summary", "Application Package"],
+                sources=["Tailored Resume Draft", "Change Summary"],
                 suggested_follow_ups=["Is this claim grounded in my resume?", "What should I verify before submitting?"],
             )
         if "safe" in normalized or "grounded" in normalized or "submit" in normalized:
@@ -635,19 +608,19 @@ class AssistantService:
             )
         if "which" in normalized and ("output" in normalized or "download" in normalized):
             return AssistantResponse(
-                answer="Use the tailored resume if you want a ready-to-use JD-aligned resume, use the cover letter if you also want role-specific outreach text, use the report if you want the reasoning and improvement guidance, or use the combined export if you want everything together.",
-                sources=["Tailored Resume Draft", "Cover Letter", "Application Package", "Combined Export"],
+                answer="Use the tailored resume if you want a ready-to-use JD-aligned resume, or use the cover letter if you also want role-specific outreach text. Both can be downloaded as Markdown or PDF.",
+                sources=["Tailored Resume Draft", "Cover Letter"],
                 suggested_follow_ups=["Can I preview both before downloading?", "Which one is better for manual editing?"],
             )
         return AssistantResponse(
             answer=(
-                "Right now your package centers on a fit score of {score}/100 with readiness marked as {label}. The tailored resume emphasizes {skills}, the cover letter follows the approved workflow outputs when available, and the report captures the broader fit and review context."
+                "Right now your workspace centers on a fit score of {score}/100 with readiness marked as {label}. The tailored resume emphasizes {skills}, and the cover letter follows the approved workflow outputs when available."
             ).format(
                 score=fit_score_text,
                 label=readiness_label_text,
                 skills=", ".join(highlighted_skills) or "the strongest matched skills",
             ),
-            sources=["Readiness Snapshot", "Tailored Resume Draft", "Cover Letter", "Application Package"],
+            sources=["Readiness Snapshot", "Tailored Resume Draft", "Cover Letter"],
             suggested_follow_ups=["What are my biggest remaining gaps?", "Why were these skills emphasized?"],
         )
 

@@ -6,6 +6,7 @@ from src.openai_service import OpenAIService
 from src.schemas import (
     CandidateProfile,
     EducationEntry,
+    ProjectEntry,
     ResumeDocument,
     WorkExperience,
 )
@@ -25,25 +26,96 @@ SECTION_HEADERS = {
     "summary",
     "profile",
     "certifications",
+    "publications",
     "achievements",
 }
 
 SECTION_ALIASES = {
+    # Summary variants
     "professional summary": "summary",
     "summary": "summary",
+    "about": "summary",
+    "about me": "summary",
     "profile": "profile",
+    "career objective": "summary",
+    "objective": "summary",
+    "executive summary": "summary",
+    "research interests": "summary",
+    # Spanish (resumen) variants
+    "resumen": "summary",
+    "resumen profesional": "summary",
+    "perfil": "summary",
+    # Skills
     "technical skills": "skills",
+    "core skills": "skills",
     "skills": "skills",
+    "what i do well": "skills",
+    "habilidades": "skills",
+    "habilidades técnicas": "skills",
+    # Projects
     "projects": "projects",
     "project": "projects",
+    "selected projects": "projects",
+    "personal projects": "projects",
+    # Experience — every realistic header we've seen on real resumes
     "professional experience": "experience",
     "experience": "experience",
+    "work experience": "experience",
+    "work history": "experience",
+    "employment": "experience",
+    "employment history": "experience",
+    "professional history": "experience",
+    "academic appointments": "experience",
+    "research experience": "experience",
+    "industry experience": "experience",
+    "relevant experience": "experience",
+    "leadership experience": "experience",
+    "clinical experience": "experience",
+    "where i ve worked": "experience",
+    "where i have worked": "experience",
+    # Spanish experience variants
+    "experiencia": "experience",
+    "experiencia profesional": "experience",
+    "experiencia laboral": "experience",
+    # Education
     "education": "education",
+    "academic background": "education",
+    "academic qualifications": "education",
+    # Spanish education
+    "educación": "education",
+    "educacion": "education",
+    "formación": "education",
+    "formacion": "education",
+    # Certifications — including healthcare / finance variants
     "certifications": "certifications",
     "certification": "certifications",
-    "publications": "achievements",
-    "publication": "achievements",
+    "licenses and certifications": "certifications",
+    "licenses certifications": "certifications",
+    "licensure and certifications": "certifications",
+    "licensure certifications": "certifications",
+    "designations and certifications": "certifications",
+    "designations certifications": "certifications",
+    "certificaciones": "certifications",
+    # Publications / talks
+    "publications": "publications",
+    "publication": "publications",
+    "selected publications": "publications",
+    "papers": "publications",
+    "publications and talks": "publications",
+    "publications talks": "publications",
+    "talks and publications": "publications",
+    "speaking": "publications",
+    "speaking engagements": "publications",
+    "talks": "publications",
+    "presentations": "publications",
+    # Achievements / awards
     "achievements": "achievements",
+    "achievement": "achievements",
+    "awards": "achievements",
+    "awards and honors": "achievements",
+    "honors": "achievements",
+    "honors and activities": "achievements",
+    "a few honors": "achievements",
 }
 
 DEGREE_KEYWORDS = (
@@ -63,6 +135,25 @@ DEGREE_KEYWORDS = (
     "m.sc",
     "m. sc",
     "msc",
+    "b.s.",
+    "b.s ",
+    "b.a.",
+    "b.a ",
+    "ba in",
+    "bs in",
+    "m.a.",
+    "m.s.",
+    "ms in",
+    "ma in",
+    "ph.d",
+    "phd",
+    "doctorate",
+    "doctoral",
+    "associate of",
+    "diploma",
+    "immersive",
+    "bootcamp",
+    "certificate program",
     "degree",
 )
 
@@ -85,6 +176,11 @@ ROLE_KEYWORDS = (
     "developer",
     "analyst",
     "scientist",
+    "researcher",
+    "professor",
+    "fellow",
+    "postdoc",
+    "postdoctoral",
     "intern",
     "internship",
     "lead",
@@ -98,6 +194,16 @@ ROLE_KEYWORDS = (
     "treasurer",
     "technician",
     "tech",
+    "founder",
+    "co-founder",
+    "owner",
+    "principal",
+    "associate",
+    "officer",
+    "ceo",
+    "cto",
+    "cfo",
+    "vp",
 )
 
 CERTIFICATION_KEYWORDS = (
@@ -358,19 +464,421 @@ def _split_experience_title_and_org(line: str) -> tuple[str, str]:
     return normalized, ""
 
 
-def _append_experience_entry(entries: List[WorkExperience], *, title: str, organization: str = "", date_text: str = "", description_lines: List[str] | None = None):
+# ---------------------------------------------------------------------------
+# Multi-line / multi-separator header parser
+# ---------------------------------------------------------------------------
+#
+# Real resumes split a single experience entry across several formats and
+# multiple lines. The single-line _split_experience_title_and_org above
+# only handles the simplest 'Title, Org' case; the helpers below pick up
+# everything else we've seen in the wild:
+#
+#   - "Stripe — Senior Software Engineer\nSan Francisco, CA | Jul 2021 - Present"
+#   - "Frontend Engineer Intern · Klarna · Remote\nSep 2024 - Dec 2024"
+#   - "Assistant Professor, University of Toronto, Jul 2022 - Present"
+#   - "Tata Motors Engineering Research Centre, Pune\nSenior Mechanical Engineer · Aug 2020 - Present"
+#
+# The strategy is "split header by likely separator → classify each piece
+# as title/org/location/date" rather than assuming a fixed positional
+# layout.
+
+_HEADER_SEPARATORS = (" — ", " – ", " | ", " · ", " / ")
+_LOCATION_TOKENS = {"remote", "hybrid", "on-site", "onsite"}
+_LOCATION_COUNTRIES = (
+    "india", "usa", "u.s.a.", "u.s.", "us", "canada", "uk", "u.k.",
+    "australia", "germany", "france", "china", "japan", "singapore",
+    "ireland", "netherlands", "spain", "italy", "brazil", "mexico",
+)
+
+
+_DATE_RANGE_GLUE_PATTERNS = [
+    # 'Month YYYY — Month YYYY / Present'
+    re.compile(
+        r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4})"
+        r"\s+[—–]\s+"
+        r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}|present|current|ongoing|now|actualidad)",
+        re.IGNORECASE,
+    ),
+    # 'YYYY — YYYY / Present'
+    re.compile(
+        r"((?:19|20)\d{2})"
+        r"\s+[—–]\s+"
+        r"((?:19|20)\d{2}|present|current|ongoing|now|actualidad)",
+        re.IGNORECASE,
+    ),
+]
+
+
+_TRAILING_DATE_PATTERNS = [
+    re.compile(
+        r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}"
+        r"\s*-\s*"
+        r"(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}|present|current|ongoing|now|actualidad))"
+        r"\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"((?:19|20)\d{2}\s*-\s*(?:(?:19|20)\d{2}|present|current|ongoing|now|actualidad))\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4})\s*$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"((?:19|20)\d{2})\s*$"),
+]
+
+
+def _peel_trailing_date(part: str) -> tuple[str, str]:
+    """If `part` ends with a month-year / year-range / bare year, peel
+    the trailing date off into a separate string. 'Growth Equity
+    August 2024-Present' → ('Growth Equity', 'August 2024-Present');
+    a pure date like 'August 2024' → ('', 'August 2024')."""
+    if not part:
+        return part, ""
+    for pattern in _TRAILING_DATE_PATTERNS:
+        match = pattern.search(part)
+        if match:
+            head = part[: match.start()].rstrip(" ,;:·—–-")
+            return head, match.group(1).strip()
+    return part, ""
+
+
+def _glue_date_range_dashes(text: str) -> str:
+    """Replace the em-dash / en-dash inside a date range with a non-
+    splitting hyphen so _split_header_parts doesn't break the range
+    in two. 'Aug 2020 — Present' → 'Aug 2020-Present'.
+
+    Without this, lines like 'Senior Associate · Aug 2020 — Present'
+    or 'Org — Title · Mar 2022 — Present' get split on the wrong
+    em-dash (the one inside the date), which in turn causes the
+    title and org to be mis-classified.
+    """
+    for pattern in _DATE_RANGE_GLUE_PATTERNS:
+        text = pattern.sub(r"\1-\2", text)
+    return text
+
+
+def _split_header_parts(line: str) -> List[str]:
+    """Split a single header line by the most likely separator. Tries
+    the unambiguous separators first (em-dash/en-dash/pipe/middle-dot/
+    slash), then falls back to comma when it yields multiple sensible
+    parts. Trailing parenthesised dates ('Acme Corp (2023 - Present)')
+    are peeled into a separate part so they classify independently.
+    Date ranges like 'Aug 2020 — Present' are glued first so the
+    em-dash inside them isn't treated as a structural separator."""
+    normalized = _normalize_line(line)
+    if not normalized:
+        return []
+
+    # Peel a trailing '(2023 - Present)' off the end first so the
+    # split below doesn't have to fight with parens.
+    head, parens_date = _peel_parenthesised_date(normalized)
+    base = head if parens_date else normalized
+    base = _glue_date_range_dashes(base)
+
+    best: List[str] = []
+    for sep in _HEADER_SEPARATORS:
+        if sep in base:
+            parts = [p.strip() for p in base.split(sep) if p.strip()]
+            if len(parts) >= 2 and len(parts) > len(best):
+                best = parts
+    if not best and "," in base:
+        parts = [p.strip() for p in base.split(",") if p.strip()]
+        if len(parts) >= 2 and all(len(p) >= 2 for p in parts[:3]):
+            best = parts
+    if not best:
+        best = [base]
+
+    # Peel trailing dates off each part so 'Growth Equity August 2024'
+    # splits into ('Growth Equity', 'August 2024') instead of being
+    # classified wholesale as a date and leaving the prose stuck on
+    # the start field.
+    expanded: List[str] = []
+    for part in best:
+        head, date = _peel_trailing_date(part)
+        if date and head:
+            expanded.append(head)
+            expanded.append(date)
+        else:
+            expanded.append(part)
+    best = expanded
+
+    if parens_date:
+        best = best + [parens_date]
+    return best
+
+
+_KNOWN_LOCATION_CITIES = (
+    "san francisco", "new york", "brooklyn", "manhattan", "seattle", "boston",
+    "austin", "los angeles", "chicago", "denver", "portland", "atlanta",
+    "remote", "hybrid", "on-site", "onsite", "bengaluru", "bangalore",
+    "mumbai", "delhi", "chennai", "hyderabad", "pune", "kolkata", "noida",
+    "gurgaon", "gurugram", "london", "berlin", "amsterdam", "paris",
+    "toronto", "vancouver", "montreal", "sydney", "melbourne", "singapore",
+    "tokyo", "dublin", "zurich", "stockholm", "tel aviv",
+)
+
+
+def _classify_header_part(part: str) -> str:
+    """Classify one part of a split header line as 'title' | 'org'
+    | 'location' | 'date' | 'unknown'. Used by the multi-line
+    experience parser to pick out which piece is which.
+
+    Conservative on location detection: only flag a part as a location
+    if it has a strong location signal (city + state code, country
+    name in a list, explicit 'Remote'/'Hybrid' label, or appears in a
+    known-cities allowlist). Single capitalised words like 'Stripe'
+    default to 'org' rather than being mis-classified as cities.
+    """
+    if not part:
+        return "unknown"
+    normalized = _normalize_line(part)
+    lowered = normalized.lower()
+
+    # Date detection — month-year, year ranges, parenthesised year, etc.
+    if MONTH_YEAR_PATTERN.search(normalized):
+        return "date"
+    if re.match(r"^\(?(?:19|20)\d{2}\b", normalized):
+        return "date"
+    if re.search(
+        r"\b(?:19|20)\d{2}\s*[\-–—]\s*"
+        r"(?:(?:19|20)\d{2}|present|current|ongoing|now)\b",
+        lowered,
+    ):
+        return "date"
+
+    # Title detection — must have a role keyword.
+    if any(re.search(r"\b" + re.escape(kw) + r"\b", lowered) for kw in ROLE_KEYWORDS):
+        return "title"
+
+    # Location detection — only on strong signals.
+    if lowered in _LOCATION_TOKENS:
+        return "location"
+    if re.search(r",\s*[A-Z]{2}\s*$", normalized):  # "Brooklyn, NY"
+        return "location"
+    if any(
+        re.search(r"\b" + re.escape(country) + r"\b", lowered)
+        for country in _LOCATION_COUNTRIES
+    ):
+        if len(normalized.split()) <= 5:
+            return "location"
+    if any(city == lowered or lowered.startswith(city + ",") or lowered.endswith(", " + city) for city in _KNOWN_LOCATION_CITIES):
+        return "location"
+
+    # Anything left is treated as an organisation.
+    return "org"
+
+
+def _peel_parenthesised_date(part: str) -> tuple[str, str]:
+    """Given a piece like 'Acme Corp (2023 - Present)', return
+    ('Acme Corp', '2023 - Present'). Used during header splitting so
+    the date inside parens gets classified separately."""
+    if not part:
+        return part, ""
+    match = re.search(r"\(([^)]+)\)\s*$", part)
+    if not match:
+        return part, ""
+    inner = match.group(1).strip()
+    head = part[: match.start()].strip()
+    if MONTH_YEAR_PATTERN.search(inner) or re.search(
+        r"(?:19|20)\d{2}", inner
+    ):
+        return head, inner
+    return part, ""
+
+
+def _is_pure_date_line(text: str) -> bool:
+    """True for lines that are nothing but a date range. We use this
+    to recognise the 'Sep 2024 - Dec 2024' or '(2020 - 2024)' lines
+    that follow a header."""
+    normalized = _normalize_line(text)
+    if not normalized:
+        return False
+    if DATE_ONLY_PATTERN.match(normalized):
+        return True
+    if re.match(
+        r"^\(?(?:19|20)\d{2}\s*[\-–—]\s*"
+        r"(?:(?:19|20)\d{2}|present|current|ongoing|now)\)?$",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return True
+    if re.match(
+        r"^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}",
+        normalized,
+        re.IGNORECASE,
+    ):
+        # Starts with a month-year and contains a range — treat as a
+        # pure date line even when followed by 'Present' / a second
+        # month-year (the regex above only matched purist forms).
+        if re.search(
+            r"[\-–—]\s*(?:present|current|ongoing|now|"
+            r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{4}|"
+            r"(?:19|20)\d{2})",
+            normalized,
+            re.IGNORECASE,
+        ):
+            return True
+    return False
+
+
+def _is_bullet_line(raw: str) -> bool:
+    if raw is None:
+        return False
+    stripped = raw.lstrip()
+    if not stripped:
+        return False
+    return bool(re.match(r"^[•\-\*–—]\s+", stripped))
+
+
+def _match_experience_header(rows: List[dict], start: int) -> dict | None:
+    """Try to interpret rows[start] (and possibly rows[start+1]) as an
+    experience-entry header. Returns the parsed fields + how many rows
+    were consumed, or None if no header pattern matches."""
+    if start >= len(rows):
+        return None
+    row = rows[start]
+    text = row["text"]
+    if not text or row["is_bullet"]:
+        return None
+    if _normalize_section_header(text):
+        return None
+    if _is_pure_date_line(text):
+        return None
+    if _looks_like_education_line(text):
+        return None
+
+    # Quick rejection: header lines are short-ish noun phrases. Wrapped
+    # bullet continuations ('by enterprise customers.') are sentence
+    # fragments — we reject single-part lines that look like prose
+    # (lowercase start AND sentence-terminator end). Multi-part lines
+    # are allowed even when lowercase because creative resumes use
+    # all-lowercase styling and still produce valid headers like
+    # 'partner & design lead — flores studio · mar 2022 — present'.
+    parts1 = _split_header_parts(text)
+    if (
+        len(parts1) == 1
+        and text[:1].islower()
+        and text.endswith((".", "!", "?"))
+    ):
+        return None
+    if len(parts1) == 1 and text.endswith((".", "!", "?")):
+        return None
+    classified1 = [(_classify_header_part(p), p) for p in parts1]
+    has_title_1 = any(k == "title" for k, _ in classified1)
+    has_org_1 = any(k == "org" for k, _ in classified1)
+    has_date_1 = any(k == "date" for k, _ in classified1)
+
+    # First-line must look like at least a title or an org.
+    if not (has_title_1 or has_org_1):
+        return None
+    # Org-only single-part lines need a corroborating second line to
+    # avoid grabbing stray text fragments.
+    if not has_title_1 and len(parts1) == 1 and len(text.split()) <= 3:
+        # 'Stripe' on its own would qualify only if line 2 carries
+        # date/title metadata.
+        next_row = rows[start + 1] if start + 1 < len(rows) else None
+        if not next_row or next_row["is_bullet"] or not next_row["text"]:
+            return None
+        next_text = next_row["text"]
+        if not (
+            _is_pure_date_line(next_text)
+            or any(
+                k in {"date", "title"}
+                for k, _ in [(_classify_header_part(p), p) for p in _split_header_parts(next_text)]
+            )
+        ):
+            return None
+
+    # Optional second-line consumption: a meta line with date / location.
+    consumed = 1
+    combined = list(classified1)
+
+    if start + 1 < len(rows):
+        next_row = rows[start + 1]
+        next_text = next_row["text"]
+        if next_text and not next_row["is_bullet"]:
+            if _is_pure_date_line(next_text):
+                combined.append(("date", next_text))
+                consumed = 2
+            else:
+                parts2 = _split_header_parts(next_text)
+                classified2 = [(_classify_header_part(p), p) for p in parts2]
+                has_date_2 = any(k == "date" for k, _ in classified2)
+                has_title_2 = any(k == "title" for k, _ in classified2)
+                # Pull in line 2 if it carries metadata we still need
+                # (date when line 1 had none, or title when line 1 was
+                # an org-only line). We deliberately don't consume
+                # bullet-paragraph or institution-shaped follow-ups.
+                if (
+                    (has_date_2 and not has_date_1)
+                    or (has_title_2 and not has_title_1)
+                ):
+                    if not _looks_like_education_line(next_text):
+                        combined.extend(classified2)
+                        consumed = 2
+
+    title, org, location, dates = "", "", "", ""
+    extra_orgs: list[str] = []
+    for kind, value in combined:
+        if kind == "title" and not title:
+            title = value
+        elif kind == "date" and not dates:
+            dates = value
+        elif kind == "location" and not location:
+            location = value
+        elif kind == "org":
+            if not org:
+                org = value
+            else:
+                extra_orgs.append(value)
+
+    # If we have a leftover org-like value and no location yet, assume
+    # the second org-shaped piece is actually a location label.
+    if extra_orgs and not location:
+        location = extra_orgs[0]
+
+    if not (title or org):
+        return None
+
+    return {
+        "title": title,
+        "organization": org,
+        "location": location,
+        "dates": dates,
+        "consumed": consumed,
+    }
+
+
+def _append_experience_entry(
+    entries: List[WorkExperience],
+    *,
+    title: str,
+    organization: str = "",
+    location: str = "",
+    date_text: str = "",
+    description_lines: List[str] | None = None,
+):
     title = _normalize_line(title)
     organization = _normalize_line(organization)
-    if not title:
+    location = _normalize_line(location)
+    if not title and not organization:
         return
     start, end = _split_date_range_parts(date_text)
-    description = "\n".join(_normalize_line(line) for line in (description_lines or []) if _normalize_line(line)).strip()
-    if not (start or end or description):
+    description = "\n".join(
+        _normalize_line(line) for line in (description_lines or []) if _normalize_line(line)
+    ).strip()
+    # Keep header-only entries (title + org without date or description)
+    # only when both title and organization are present — otherwise the
+    # row was probably a stray header that didn't belong to a real role.
+    if not (start or end or description) and not (title and organization):
         return
     entries.append(
         WorkExperience(
-            title=title,
+            title=title or "Relevant Experience",
             organization=organization,
+            location=location,
             description=description,
             start=start or None,
             end=end or None,
@@ -379,108 +887,84 @@ def _append_experience_entry(entries: List[WorkExperience], *, title: str, organ
 
 
 def _parse_experience_entries(section_lines: List[str], all_lines: List[str]) -> List[WorkExperience]:
+    """Parse the Experience section into structured entries.
+
+    The implementation uses a header-aware multi-line scanner: we look
+    for a 'header line' at each position, optionally consume the next
+    line if it carries date / location metadata, and then collect the
+    bullet/description lines that follow until the next header. This
+    handles the four common real-world layouts:
+      A. Single line with everything ('Title, Org, City, Date - Date')
+      B. Header on line 1, 'Location | Date - Date' meta on line 2
+      C. Header on line 1, pure 'Date - Date' on line 2
+      D. Org-first on line 1, 'Title · Date - Date' on line 2
+
+    Earlier versions handled only A; B-D produced 0 entries on
+    Stripe / Cloudflare / Klarna / Tata Motors style resumes.
+    """
+    if not section_lines:
+        return []
+
+    rows: List[dict] = []
+    for raw in section_lines:
+        is_bullet = _is_bullet_line(raw)
+        text = _normalize_line(_clean_bullet_prefix(raw)) if is_bullet else _normalize_line(raw)
+        rows.append({"raw": raw, "text": text, "is_bullet": is_bullet})
+
     entries: List[WorkExperience] = []
-    current_entry = None
+    index = 0
+    while index < len(rows):
+        row = rows[index]
+        if not row["text"] or row["is_bullet"]:
+            index += 1
+            continue
+        if _is_pure_date_line(row["text"]):
+            index += 1
+            continue
 
-    def flush_current():
-        nonlocal current_entry
-        if not current_entry:
-            return
-        _append_experience_entry(entries, **current_entry)
-        current_entry = None
+        match = _match_experience_header(rows, index)
+        if not match:
+            index += 1
+            continue
 
-    def scan_lines(lines_to_scan: List[str]):
-        nonlocal current_entry
-        for raw_line in lines_to_scan:
-            line = _normalize_line(raw_line)
-            if not line:
+        index += match["consumed"]
+        description_lines: list[str] = []
+        while index < len(rows):
+            row = rows[index]
+            if not row["text"]:
+                index += 1
                 continue
-
-            if current_entry and not current_entry["date_text"] and DATE_ONLY_PATTERN.match(line):
-                current_entry["date_text"] = line
+            if row["is_bullet"]:
+                description_lines.append(row["text"])
+                index += 1
                 continue
-
-            maybe_header = _normalize_section_header(line)
-            if maybe_header:
-                flush_current()
+            if _is_pure_date_line(row["text"]):
+                # Stray date on its own line — likely belongs to the
+                # current entry (rare formatting); attach if we have
+                # nothing else, otherwise skip.
+                if match["dates"] == "":
+                    match["dates"] = row["text"]
+                index += 1
                 continue
+            # Could be the next entry's header — peek with the same
+            # detector and break if it is.
+            if _match_experience_header(rows, index):
+                break
+            # Otherwise treat as a continuation paragraph.
+            if _looks_like_experience_description(row["text"]):
+                description_lines.append(row["text"])
+            index += 1
 
-            content, leading_date = _split_leading_date_range(line)
-            if leading_date and _looks_like_role_title(content) and not _looks_like_education_line(content):
-                flush_current()
-                title, organization = _split_experience_title_and_org(content)
-                current_entry = {
-                    "title": title,
-                    "organization": organization,
-                    "date_text": leading_date,
-                    "description_lines": [],
-                }
-                continue
-
-            content, trailing_date = _split_trailing_date_range(line)
-            if trailing_date and _looks_like_role_title(content) and not _looks_like_education_line(content):
-                flush_current()
-                title, organization = _split_experience_title_and_org(content)
-                current_entry = {
-                    "title": title,
-                    "organization": organization,
-                    "date_text": trailing_date,
-                    "description_lines": [],
-                }
-                continue
-
-            if (
-                (_looks_like_role_title(line) or ("," in line and _looks_like_role_title(_split_experience_title_and_org(line)[0])))
-                and not _looks_like_education_line(line)
-                and ("," in line or " , " in line)
-            ):
-                flush_current()
-                title, organization = _split_experience_title_and_org(line)
-                current_entry = {
-                    "title": title,
-                    "organization": organization,
-                    "date_text": "",
-                    "description_lines": [],
-                }
-                continue
-
-            if current_entry and _looks_like_experience_description(line):
-                current_entry["description_lines"].append(line)
-                continue
-
-            if current_entry and _looks_like_role_title(line):
-                flush_current()
-
-    scan_lines(section_lines or all_lines)
-
-    flush_current()
-
-    if entries or not section_lines:
-        return entries
-
-    scan_lines(all_lines)
-    flush_current()
-
-    if entries:
-        return entries
-
-    role_lines = [line for line in section_lines if _looks_like_role_title(line)]
-    organization_lines = [line for line in section_lines if _looks_like_company_line(line)]
-    date_lines = [line for line in all_lines if DATE_ONLY_PATTERN.match(_normalize_line(line))]
-
-    paired_entries: List[WorkExperience] = []
-    pair_count = min(len(role_lines), len(organization_lines), len(date_lines))
-    for index in range(pair_count):
-        title, organization_inline = _split_experience_title_and_org(role_lines[index])
-        organization = organization_inline or organization_lines[index]
         _append_experience_entry(
-            paired_entries,
-            title=title,
-            organization=organization,
-            date_text=date_lines[index],
-            description_lines=[],
+            entries,
+            title=match["title"],
+            organization=match["organization"],
+            location=match["location"],
+            date_text=match["dates"],
+            description_lines=description_lines,
         )
-    return paired_entries
+
+    return entries
 
 
 def _merge_education_entries(primary: List[EducationEntry], secondary: List[EducationEntry]) -> List[EducationEntry]:
@@ -502,10 +986,28 @@ def _merge_education_entries(primary: List[EducationEntry], secondary: List[Educ
     return merged
 
 
+def _matches_degree_keyword(text: str) -> bool:
+    """Word-boundary degree-keyword check. Substring matching here used
+    to false-positive on lines like 'Postdoctoral Researcher' where
+    'doctoral' is buried inside 'postdoctoral' and the line was wrongly
+    routed to the education parser."""
+    if not text:
+        return False
+    lowered = text.lower()
+    for keyword in DEGREE_KEYWORDS:
+        kw = keyword.strip()
+        if not kw:
+            continue
+        # Use word boundaries when the keyword is alphanumeric. Keywords
+        # with periods (like "ph.d.") need a regex with escaped dots.
+        if re.search(r"(?<![A-Za-z])" + re.escape(kw) + r"(?![A-Za-z])", lowered):
+            return True
+    return False
+
+
 def _looks_like_education_line(line: str) -> bool:
     normalized = _normalize_line(line)
-    lowered = normalized.lower()
-    if not any(keyword in lowered for keyword in DEGREE_KEYWORDS):
+    if not _matches_degree_keyword(normalized):
         return False
     if normalized.endswith("."):
         return False
@@ -513,7 +1015,7 @@ def _looks_like_education_line(line: str) -> bool:
     content, _ = _split_education_date(normalized)
     content, _ = _split_leading_date_range(content)
     leading_window = " ".join(content.lower().split()[:6])
-    return any(keyword in leading_window for keyword in DEGREE_KEYWORDS)
+    return _matches_degree_keyword(leading_window)
 
 
 def _prune_education_entries(entries: List[EducationEntry]) -> List[EducationEntry]:
@@ -565,11 +1067,34 @@ def _looks_like_project_title(line: str) -> bool:
         return False
     if cleaned.endswith(":") or cleaned.endswith("."):
         return False
-    if len(cleaned) > 120:
+    if len(cleaned) > 160:
+        return False
+    # Reject hyphen / asterisk-prefixed lines (those are description
+    # sub-bullets). Heavy round-bullets ('•') are intentionally allowed:
+    # some resume layouts use '•' as a project-title marker and the
+    # text after it is a short capitalised name like
+    # '• Multi-Modal Deep Learning for ...'.
+    leading = line.lstrip()
+    if leading.startswith(("- ", "-\t", "* ", "*\t")) or leading in {"-", "*"}:
         return False
     words = cleaned.split()
     if len(words) < 2:
         return False
+
+    # If the line has a project-title separator (em-dash / en-dash / hyphen
+    # surrounded by spaces / colon), only the leading 'name' segment needs
+    # to look title-cased. The trailing 'description' segment is allowed
+    # to be lowercase prose ('Recipe Mixer — meal planner with ...').
+    leading = re.split(r"\s+(?:[—–\-]|:)\s+", cleaned, maxsplit=1)[0].strip()
+    leading_words = leading.split() or words
+    titleish_leading = sum(
+        1
+        for word in leading_words
+        if word[:1].isupper() or any(char.isupper() for char in word[1:]) or word.isupper()
+    )
+    if leading_words and titleish_leading >= max(2, len(leading_words) // 2):
+        return True
+
     titleish_words = sum(
         1
         for word in words
@@ -578,8 +1103,8 @@ def _looks_like_project_title(line: str) -> bool:
     return titleish_words >= max(2, len(words) // 2)
 
 
-def _parse_project_entries(section_lines: List[str]) -> List[WorkExperience]:
-    projects: List[WorkExperience] = []
+def _parse_project_entries(section_lines: List[str]) -> List[ProjectEntry]:
+    projects: List[ProjectEntry] = []
     current_title = ""
     current_lines: List[str] = []
     current_status = ""
@@ -588,14 +1113,15 @@ def _parse_project_entries(section_lines: List[str]) -> List[WorkExperience]:
         nonlocal current_title, current_lines
         if not current_title:
             return
-        description = "\n".join(line for line in current_lines if line).strip()
+        bullets = [line for line in current_lines if line]
+        description = ""
         if current_status and current_status.lower() not in current_title.lower():
-            description = (current_status + "\n" + description).strip()
+            description = current_status
         projects.append(
-            WorkExperience(
-                title=current_title,
-                organization="Project Portfolio",
+            ProjectEntry(
+                name=current_title,
                 description=description,
+                bullets=bullets,
             )
         )
         current_title = ""
@@ -618,12 +1144,253 @@ def _parse_project_entries(section_lines: List[str]) -> List[WorkExperience]:
     return projects
 
 
+def _parse_publication_entries(section_lines: List[str]) -> List[str]:
+    """Free-form citation strings, one per logical entry. Real-world
+    citations often wrap to 2-3 lines (long titles / author lists), so
+    we merge a continuation line into the previous entry when it
+    starts with lowercase / a small connector and the previous line
+    didn't end in a sentence-terminator. Also tolerates explicit
+    indentation as a continuation cue."""
+    entries: List[str] = []
+    for raw_line in section_lines:
+        if raw_line is None:
+            continue
+        stripped = raw_line.rstrip()
+        if not stripped or not stripped.strip():
+            continue
+        cleaned = _clean_bullet_prefix(stripped).strip()
+        if not cleaned:
+            continue
+        if _normalize_section_header(cleaned) == "publications":
+            continue
+        # Continuation cues:
+        #   - leading whitespace on the original line (typical wrap)
+        #   - first character is lowercase (mid-sentence)
+        #   - previous entry didn't end with a closing punctuation
+        is_indented_wrap = stripped.startswith(("  ", "\t")) and not _is_bullet_line(stripped)
+        starts_lowercase = cleaned[:1].islower()
+        previous_unfinished = bool(entries) and not entries[-1].endswith((".", "!", "?", ")"))
+        if entries and (is_indented_wrap or starts_lowercase or previous_unfinished):
+            entries[-1] = (entries[-1].rstrip() + " " + cleaned).strip()
+            continue
+        entries.append(cleaned.strip(" ."))
+    # Final cleanup: trim trailing punctuation noise but keep terminator.
+    return dedupe_strings(entries)
+
+
+_INLINE_EDU_DEGREE_PATTERNS = (
+    r"\b(?:b\.?s\.?|b\.?a\.?|m\.?s\.?|m\.?a\.?|b\.?tech|m\.?tech|"
+    r"b\.?e\.?|m\.?e\.?|b\.?sc|m\.?sc|"
+    r"ph\.?d\.?|phd|doctorate|doctoral|"
+    r"bachelor(?:'?s)?|master(?:'?s)?|mba|"
+    r"associate of|diploma|certificate)\b"
+)
+
+
+def _split_institution_then_degree(text: str) -> tuple[str, str] | None:
+    """Given a chunk like 'Harvard Business School MBA' (institution
+    keyword appears earlier than a degree token, no comma between
+    them — typical of tabular two-column education layouts where
+    multi-space separation collapsed during line normalisation),
+    split into (institution, degree). Returns None if no clean split
+    exists.
+
+    Strategy: find the last word that's an institution keyword (e.g.
+    'University', 'School', 'Institute'). Everything up to and
+    including it is the institution; anything after is the degree.
+    """
+    words = text.split()
+    if len(words) < 2:
+        return None
+    inst_keywords = {kw.rstrip(".") for kw in INSTITUTION_KEYWORDS}
+    last_inst_idx = -1
+    for idx, word in enumerate(words):
+        token = word.lower().rstrip(".,;")
+        if token in inst_keywords:
+            last_inst_idx = idx
+    if last_inst_idx < 0 or last_inst_idx == len(words) - 1:
+        return None
+    institution = " ".join(words[: last_inst_idx + 1]).strip()
+    degree = " ".join(words[last_inst_idx + 1 :]).strip()
+    if not institution or not degree:
+        return None
+    if not re.search(_INLINE_EDU_DEGREE_PATTERNS, degree, re.IGNORECASE):
+        return None
+    return institution, degree
+
+
+def _parse_inline_education_line(line: str) -> EducationEntry | None:
+    """Recognise compact one-line education records that the
+    section-by-section parser misses, e.g.:
+        'B.S. Computer Science, San Jose State University, 2023'
+        'Ph.D. in Computer Science, MIT, 2020'
+        'Bachelor of Arts in Economics, Cornell University, 2020'
+        'Harvard Business School    MBA, 2019'   (tabular layout)
+    """
+    normalized = _normalize_line(line)
+    if not normalized:
+        return None
+    if not re.search(_INLINE_EDU_DEGREE_PATTERNS, normalized, re.IGNORECASE):
+        return None
+    parts = [part.strip() for part in normalized.split(",") if part.strip()]
+    if len(parts) < 2:
+        return None
+
+    # Tabular layout: the first comma-separated chunk contains BOTH
+    # the institution and the degree (the visual column separator
+    # collapsed into a single space). Detect by checking whether the
+    # first chunk has both an institution keyword and a degree token.
+    head = parts[0]
+    if (
+        _looks_like_institution(head)
+        and re.search(_INLINE_EDU_DEGREE_PATTERNS, head, re.IGNORECASE)
+    ):
+        split = _split_institution_then_degree(head)
+        if split is not None:
+            institution, degree = split
+            date_text = ""
+            for tail_part in parts[1:]:
+                if re.match(r"^\(?(?:19|20)\d{2}\b", tail_part):
+                    date_text = tail_part.strip(" ()")
+                    break
+                if MONTH_YEAR_PATTERN.search(tail_part):
+                    date_text = tail_part
+                    break
+            return EducationEntry(
+                institution=institution,
+                degree=degree,
+                start=date_text,
+            )
+
+    # Standard 'Degree, Institution, Year' layout: first part is the
+    # degree, subsequent parts are institution + year(s).
+    if not re.search(_INLINE_EDU_DEGREE_PATTERNS, head, re.IGNORECASE):
+        return None
+    institution = ""
+    date_text = ""
+    for part in parts[1:]:
+        if re.match(r"^\(?(?:19|20)\d{2}\b", part):
+            date_text = part.strip(" ()")
+            continue
+        if MONTH_YEAR_PATTERN.search(part):
+            date_text = part
+            continue
+        if _looks_like_institution(part) and not institution:
+            institution = part
+            continue
+        if not institution and _is_plausible_institution_candidate(part):
+            institution = part
+    if not institution:
+        return None
+    return EducationEntry(
+        institution=institution,
+        degree=head,
+        start=date_text,
+    )
+
+
+_DEGREE_MODIFIER_KEYWORDS = (
+    "concentration", "specialization", "specialisation", "focus",
+    "minor", "major", "honors", "honours", "distinction", "magna",
+    "summa", "cum laude", "department",
+)
+
+
+def _is_plausible_institution_candidate(text: str) -> bool:
+    """A non-keyword institution candidate ('ETH Zurich', 'IISc') is
+    accepted only if it's a short, capitalised phrase without dates or
+    degree-modifier words. 'Finance Concentration 2022 - 2024' fails;
+    'ETH Zurich' passes.
+    """
+    if not text:
+        return False
+    if _looks_like_institution(text):
+        return True
+    if MONTH_YEAR_PATTERN.search(text) or re.search(r"(?:19|20)\d{2}", text):
+        return False
+    lowered = text.lower()
+    if any(modifier in lowered for modifier in _DEGREE_MODIFIER_KEYWORDS):
+        return False
+    if re.search(_INLINE_EDU_DEGREE_PATTERNS, text, re.IGNORECASE):
+        return False
+    words = text.split()
+    if len(words) > 4:
+        return False
+    return all(
+        word[:1].isupper() or word.isupper()
+        for word in words
+        if word[:1].isalpha()
+    )
+
+
+def _parse_inline_bootcamp_line(line: str, next_line: str = "") -> EducationEntry | None:
+    """Recognise bootcamp / two-line institutional patterns where the
+    first line names the school and the second carries a degree-style
+    phrase (e.g. 'General Assembly Software Engineering Immersive' →
+    next line 'New York, NY · Jun 2024 - Sep 2024'). The institution
+    line itself doesn't contain a degree keyword, but the school name
+    does include an institution keyword OR the next line carries the
+    degree phrase."""
+    if not line or _is_bullet_line(line):
+        return None
+    normalized = _normalize_line(line)
+    if not normalized:
+        return None
+    if normalized.endswith("."):
+        # Sentences (bullet descriptions) shouldn't trigger this.
+        return None
+    lowered = normalized.lower()
+    if len(normalized.split()) > 12:
+        # Bootcamp titles are short; descriptive sentences are not.
+        return None
+    has_immersive = bool(re.search(r"\b(?:immersive|bootcamp|certificate program)\b", lowered))
+    has_institution = _looks_like_institution(normalized) or any(
+        marker in lowered for marker in ("general assembly", "academy", "bootcamp", "school")
+    )
+    if not (has_immersive and has_institution):
+        return None
+    # Pull a date from the next line if present.
+    date_text = ""
+    next_norm = _normalize_line(next_line)
+    if next_norm:
+        match = MONTH_YEAR_PATTERN.search(next_norm)
+        if match:
+            date_text = next_norm[match.start() :].strip(" ()")
+    return EducationEntry(
+        institution=normalized,
+        degree=normalized,
+        start=date_text,
+    )
+
+
 def _parse_education_entries(section_lines: List[str]) -> List[EducationEntry]:
     entries: List[EducationEntry] = []
     index = 0
 
     while index < len(section_lines):
         line = _normalize_line(section_lines[index])
+
+        # Run the inline single-line parser FIRST. It's more precise on
+        # well-formed 'Degree, Institution, Year' lines than the
+        # multi-line stitch logic below, which used to greedy-split the
+        # institution at a word boundary and mangle 'Massachusetts
+        # Institute of Technology, 2020' into 'Massachusetts' + the
+        # rest.
+        inline = _parse_inline_education_line(line)
+        if inline is not None:
+            entries.append(inline)
+            index += 1
+            continue
+        # Bootcamp / institution-on-line-1 patterns.
+        next_line = (
+            section_lines[index + 1] if index + 1 < len(section_lines) else ""
+        )
+        bootcamp = _parse_inline_bootcamp_line(line, next_line)
+        if bootcamp is not None:
+            entries.append(bootcamp)
+            index += 2 if next_line else 1
+            continue
+
         if not _looks_like_education_line(line):
             index += 1
             continue
@@ -639,15 +1406,21 @@ def _parse_education_entries(section_lines: List[str]) -> List[EducationEntry]:
         if not institution and index > 0:
             previous_line = _normalize_line(section_lines[index - 1])
             previous_content, _ = _split_education_date(previous_line)
-            if _looks_like_institution(previous_content) and not any(
-                keyword in previous_content.lower() for keyword in DEGREE_KEYWORDS
-            ) and not re.search(r"\d{4}", previous_content):
+            # Reject if the FULL previous line contained a 4-digit year
+            # (likely already part of a previous education entry's
+            # 'Institution · Date' line, e.g. 'Liverpool ... Jan 2025'),
+            # not just the date-stripped content.
+            previous_has_year = bool(re.search(r"(?:19|20)\d{2}", previous_line))
+            if (
+                _looks_like_institution(previous_content)
+                and not _matches_degree_keyword(previous_content)
+                and not previous_has_year
+            ):
                 institution = previous_content
 
         if index + 1 < len(section_lines):
             next_line = _normalize_line(section_lines[index + 1])
-            next_lower = next_line.lower()
-            if next_line and not any(keyword in next_lower for keyword in DEGREE_KEYWORDS):
+            if next_line and not _matches_degree_keyword(next_line):
                 next_content, next_date = _split_education_date(next_line)
                 next_content, next_leading_date = _split_leading_date_range(next_content)
                 if not date_text and next_date:
@@ -689,24 +1462,59 @@ def _parse_education_entries(section_lines: List[str]) -> List[EducationEntry]:
 
 
 def _parse_certifications(section_lines: List[str]) -> List[str]:
-    certifications = []
+    """Section-mode parser: every non-empty, non-header line inside
+    the Certifications section counts as a certification, even when
+    the line doesn't carry an obvious cert keyword (e.g. 'Google
+    Cloud Professional Cloud Architect, 2020' has no 'certified' /
+    'certificate' / 'license' word but is clearly a cert)."""
+    certifications: list[str] = []
     for raw_line in section_lines:
-        line = _clean_bullet_prefix(raw_line)
-        lowered = line.lower()
-        if _normalize_section_header(line) == "certifications":
+        if raw_line is None:
             continue
+        cleaned = _clean_bullet_prefix(raw_line).strip()
+        if not cleaned:
+            continue
+        if _normalize_section_header(cleaned) == "certifications":
+            continue
+        lowered = cleaned.lower()
+        # 'Certifications: AWS Cert, GCP Cert' inline-list pattern.
         if re.search(r"\bcertifications?\s*:", lowered):
-            suffix = line.split(":", 1)[1].strip() if ":" in line else line
-            parts = [part.strip(" .") for part in re.split(r"\s*,\s*(?=[A-Z])", suffix) if part.strip(" .")]
+            suffix = cleaned.split(":", 1)[1].strip() if ":" in cleaned else cleaned
+            parts = [
+                part.strip(" .")
+                for part in re.split(r"\s*,\s*(?=[A-Z])", suffix)
+                if part.strip(" .")
+            ]
             certifications.extend(parts)
             continue
-        if any(keyword in lowered for keyword in CERTIFICATION_KEYWORDS):
-            certifications.append(line.strip(" ."))
+        certifications.append(cleaned.strip(" ."))
     return dedupe_strings(certifications)
 
 
 def _parse_certifications_from_resume_text(text: str) -> List[str]:
-    return _parse_certifications(text.splitlines())
+    """Whole-resume scan: only keep lines that strongly look like
+    certifications (carry a cert keyword). Used as a fallback when
+    the section parser returns nothing."""
+    certifications: list[str] = []
+    for raw_line in text.splitlines():
+        cleaned = _clean_bullet_prefix(raw_line).strip()
+        if not cleaned:
+            continue
+        lowered = cleaned.lower()
+        if _normalize_section_header(cleaned) == "certifications":
+            continue
+        if re.search(r"\bcertifications?\s*:", lowered):
+            suffix = cleaned.split(":", 1)[1].strip() if ":" in cleaned else cleaned
+            parts = [
+                part.strip(" .")
+                for part in re.split(r"\s*,\s*(?=[A-Z])", suffix)
+                if part.strip(" .")
+            ]
+            certifications.extend(parts)
+            continue
+        if any(keyword in lowered for keyword in CERTIFICATION_KEYWORDS):
+            certifications.append(cleaned.strip(" ."))
+    return dedupe_strings(certifications)
 
 
 def _first_meaningful_lines(text: str) -> List[str]:
@@ -728,35 +1536,187 @@ def _resume_header_lines(text: str) -> List[str]:
     return lines
 
 
+_HONORIFIC_PREFIXES = (
+    # Civilian honorifics
+    "dr.", "dr", "prof.", "prof", "professor", "mr.", "mr", "ms.", "ms",
+    "mrs.", "mrs", "miss", "mx.", "mx",
+    # Military / uniformed-service ranks (commissioned + senior NCO).
+    # Strip-only — we don't try to preserve the rank in the parsed
+    # output. Full names like 'Captain Jacqueline Reyes, USAF' resolve
+    # to 'Jacqueline Reyes'.
+    "captain", "capt.", "capt",
+    "lieutenant", "lt.", "lt",
+    "major", "maj.", "maj",
+    "colonel", "col.", "col",
+    "general", "gen.", "gen",
+    "admiral", "adm.", "adm",
+    "commander", "cmdr.", "cmdr",
+    "sergeant", "sgt.", "sgt",
+    "corporal", "cpl.", "cpl",
+    "private", "pvt.", "pvt",
+)
+
+# Trailing suffix tokens that aren't part of the candidate's name —
+# professional designations and service branches we strip when they
+# appear after a comma. 'Diana Okafor, MSN, RN, CCRN' → 'Diana Okafor';
+# 'Aditi Gupta, CFA' → 'Aditi Gupta'; 'Captain Reyes, USAF' → 'Reyes'.
+_TRAILING_NAME_SUFFIXES = {
+    # Healthcare credentials
+    "rn", "lpn", "np", "msn", "bsn", "ccrn", "fnp", "dnp", "pa", "pa-c",
+    "md", "do", "mph", "phd", "dpt", "rrt", "rdh",
+    # Engineering / scientific designations
+    "pe", "p.e.", "p.eng", "peng", "phd",
+    # Finance / business designations
+    "cfa", "cpa", "cfp", "frm", "caia", "mba",
+    # Service branches
+    "usaf", "us army", "us navy", "usmc", "uscg", "usa", "usn",
+    # Bar / legal
+    "esq", "esq.", "j.d.", "jd",
+}
+
+
+def _strip_trailing_name_suffixes(name: str) -> str:
+    """Drop comma-separated trailing designations like 'CFA' / 'MSN, RN'
+    / 'USAF' from a detected name line. We only strip when the comma-
+    separated tail tokens are all in the known-suffix set; otherwise
+    we leave the line intact (so legitimate two-word names with commas
+    aren't mangled)."""
+    if not name or "," not in name:
+        return name
+    head, _, tail = name.partition(",")
+    head = head.strip()
+    tail_chunks = [chunk.strip(" .") for chunk in tail.split(",") if chunk.strip(" .")]
+    if not tail_chunks:
+        return head or name
+    if all(chunk.lower() in _TRAILING_NAME_SUFFIXES for chunk in tail_chunks):
+        return head
+    return name
+
+
+def _strip_honorifics(name: str) -> str:
+    """Drop a leading honorific (Dr./Prof./Mr./Ms./Mrs./Mx./military
+    rank) AND any trailing credential suffix (CFA/MSN/USAF/...) from a
+    detected name. Names like 'Captain Jacqueline Reyes, USAF' return
+    'Jacqueline Reyes'."""
+    if not name:
+        return name
+    cleaned = _strip_trailing_name_suffixes(name)
+    parts = cleaned.split()
+    honorific_set = {p.rstrip(".") for p in _HONORIFIC_PREFIXES}
+    while parts and parts[0].lower().rstrip(".") in honorific_set:
+        parts = parts[1:]
+    return " ".join(parts).strip() or name
+
+
+def _is_section_header_text(line: str) -> bool:
+    """True if a line is a recognised section header — used to guard
+    against picking 'PROFESSIONAL SUMMARY' or 'EDUCATION' as a name
+    when the actual name was rejected by the strict checks."""
+    if not line:
+        return True
+    if line.lower() in SECTION_HEADERS:
+        return True
+    return bool(_normalize_section_header(line))
+
+
 def _looks_like_name(line: str) -> bool:
-    if not line or line.lower() in SECTION_HEADERS:
+    if not line or _is_section_header_text(line):
         return False
     lowered = line.lower()
     if any(keyword in lowered for keyword in INSTITUTION_KEYWORDS):
         return False
-    words = line.split()
-    if len(words) < 2 or len(words) > 4:
+    candidate = _strip_honorifics(line)
+    if not candidate or _is_section_header_text(candidate):
         return False
-    if any(char.isdigit() for char in line):
+    words = candidate.split()
+    if len(words) < 2 or len(words) > 5:
         return False
-    return all(word[:1].isupper() for word in words if word[:1].isalpha())
+    if any(char.isdigit() for char in candidate):
+        return False
+    if "@" in candidate or any(token in lowered for token in ("http", "www.")):
+        return False
+    # Strict (capitalised) names always pass.
+    if all(word[:1].isupper() for word in words if word[:1].isalpha()):
+        return True
+    # Permissive lowercase fallback — accepted only when every word is
+    # alphabetic. This catches creative-resume name lines like
+    # 'tomás flores' without admitting random sentence fragments
+    # (which always contain at least a connector word like 'with' /
+    # 'and' / 'from' that's still alphabetic; the section-header
+    # guard above plus the 5-word cap constrain it enough that
+    # bullets and prose don't qualify).
+    return all(word.isalpha() or word[0].isalpha() for word in words)
 
 
 def _extract_name_from_resume(text: str) -> str:
     for line in [line.strip() for line in text.splitlines() if line.strip()][:40]:
         if _looks_like_name(line):
-            return line
+            return _strip_honorifics(line)
     return ""
 
 
 def _extract_location_from_resume(text: str) -> str:
+    """Pull the candidate's location from the header block.
+
+    The naive 'first segment with a comma and ≤6 words' heuristic gets
+    fooled by:
+      - credentialed names ('Diana Okafor, MSN, RN, CCRN')
+      - job-title taglines ('VP of Engineering, Platform | SF Bay Area')
+      - service-branch suffixes ('Captain Reyes, USAF')
+    so we additionally require a positive location signal — a US state
+    code, a known city, or a known country — and reject segments that
+    look like role taglines (role keyword) or credential lists
+    (every comma-tail token is in _TRAILING_NAME_SUFFIXES).
+    """
+    role_keyword_set = {kw.rstrip(".") for kw in ROLE_KEYWORDS}
     for line in _resume_header_lines(text):
         segments = [segment.strip() for segment in re.split(r"[|•·]", line) if segment.strip()]
         for segment in segments or [line]:
+            lowered = segment.lower()
             if "@" in segment or any(char.isdigit() for char in segment):
                 continue
-            if "," in segment and len(segment.split()) <= 6:
+            if "," not in segment or len(segment.split()) > 6:
+                continue
+            # Reject job-title-style segments ('VP of Engineering').
+            if any(
+                re.search(r"\b" + re.escape(kw) + r"\b", lowered)
+                for kw in role_keyword_set
+            ):
+                continue
+            # Reject credential-suffix segments ('Diana Okafor, MSN, RN').
+            chunks = [c.strip(" .") for c in segment.split(",") if c.strip(" .")]
+            if len(chunks) >= 2 and all(
+                c.lower() in _TRAILING_NAME_SUFFIXES for c in chunks[1:]
+            ):
+                continue
+            # Require at least one positive location signal.
+            has_state_code = bool(re.search(r",\s*[A-Z]{2}\s*$", segment))
+            has_country = any(
+                re.search(r"\b" + re.escape(country) + r"\b", lowered)
+                for country in _LOCATION_COUNTRIES
+            )
+            has_known_city = any(
+                re.search(r"\b" + re.escape(city) + r"\b", lowered)
+                for city in _KNOWN_LOCATION_CITIES
+            )
+            if has_state_code or has_country or has_known_city:
                 return segment
+    # If the header lines didn't yield a confident location, scan the
+    # second header line for a 'Location | ... | ...' tail (some
+    # resumes put role/title on line 1 and location on line 2).
+    for line in _resume_header_lines(text)[:6]:
+        for segment in [s.strip() for s in re.split(r"[|•·]", line) if s.strip()]:
+            lowered = segment.lower()
+            if "@" in segment or any(ch.isdigit() for ch in segment):
+                continue
+            if any(
+                re.search(r"\b" + re.escape(city) + r"\b", lowered)
+                for city in _KNOWN_LOCATION_CITIES
+            ):
+                # Allow comma-less location matches when the city is a
+                # known one (handles 'San Francisco Bay Area').
+                if 1 < len(segment.split()) <= 6:
+                    return segment
     return ""
 
 
@@ -805,7 +1765,11 @@ def _extract_contact_lines_from_resume(text: str) -> List[str]:
 
 
 def _collect_resume_signals(
-    resume_document: ResumeDocument, skills: List[str], sections: dict[str, List[str]], project_entries: List[WorkExperience]
+    resume_document: ResumeDocument,
+    skills: List[str],
+    sections: dict[str, List[str]],
+    project_entries: List[ProjectEntry],
+    publication_entries: List[str] | None = None,
 ) -> List[str]:
     signals = [f"Resume parsed from {resume_document.filetype} upload."]
     if skills:
@@ -814,6 +1778,8 @@ def _collect_resume_signals(
         signals.append("Resume text appears detailed enough for downstream tailoring.")
     if project_entries:
         signals.append(f"Structured {len(project_entries)} project entries from the Projects section.")
+    if publication_entries:
+        signals.append(f"Captured {len(publication_entries)} publication entries from the resume.")
     if sections.get("education"):
         signals.append("Education details were found in the resume.")
     if sections.get("certifications"):
@@ -831,6 +1797,7 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
         match_keywords(resume_text, HARD_SKILL_KEYWORDS + SOFT_SKILL_KEYWORDS)
     )
     project_entries = _parse_project_entries(sections.get("projects", []))
+    publication_entries = _parse_publication_entries(sections.get("publications", []))
     professional_experience = _parse_experience_entries(sections.get("experience", []), resume_text.splitlines())
     education_entries = _parse_education_entries(sections.get("education", []))
     if len(education_entries) < 2:
@@ -843,6 +1810,9 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
     certifications = _parse_certifications(sections.get("certifications", []))
     if not certifications:
         certifications = _parse_certifications_from_resume_text(resume_text)
+    # Projects no longer fall back into experience: students who only
+    # have project work get an empty Experience section (which the
+    # exporter drops) and a populated Projects section instead.
     return CandidateProfile(
         full_name=_extract_name_from_resume(resume_text),
         location=_extract_location_from_resume(resume_text),
@@ -850,14 +1820,17 @@ def build_candidate_profile_from_resume(resume_document: ResumeDocument) -> Cand
         source=resume_document.source or "resume_upload",
         resume_text=resume_text,
         skills=detected_skills,
-        experience=professional_experience or project_entries,
+        experience=professional_experience,
         education=education_entries,
         certifications=certifications,
+        projects=project_entries,
+        publications=publication_entries,
         source_signals=_collect_resume_signals(
             resume_document,
             detected_skills,
             sections,
             project_entries,
+            publication_entries,
         ),
     )
 
@@ -883,6 +1856,49 @@ def _build_experience_entry_from_llm_payload(
     )
 
 
+def _build_project_entry_from_llm_payload(entry: dict) -> ProjectEntry | None:
+    name = _normalize_line(entry.get("title")) or _normalize_line(entry.get("name"))
+    description = _normalize_line(entry.get("description"))
+    start = _normalize_line(entry.get("start"))
+    end = _normalize_line(entry.get("end"))
+    bullets_payload = entry.get("bullets") or entry.get("highlights") or []
+    if isinstance(bullets_payload, list):
+        bullets = [_normalize_line(item) for item in bullets_payload if _normalize_line(item)]
+    else:
+        bullets = []
+    if not bullets and description:
+        # If the LLM only returned a free-form description, split it into
+        # bullet-style sentences so the renderer has something useful.
+        sentences = [
+            piece.strip()
+            for piece in re.split(r"(?<=[.!?])\s+", description)
+            if piece.strip()
+        ]
+        bullets = sentences[:3]
+    technologies_payload = entry.get("technologies") or entry.get("tech_stack") or []
+    if isinstance(technologies_payload, list):
+        technologies = [_normalize_line(item) for item in technologies_payload if _normalize_line(item)]
+    else:
+        technologies = []
+    links_payload = entry.get("links") or []
+    link = ""
+    if isinstance(links_payload, list) and links_payload:
+        link = _normalize_line(links_payload[0])
+    elif isinstance(links_payload, str):
+        link = _normalize_line(links_payload)
+    if not (name or description or bullets):
+        return None
+    return ProjectEntry(
+        name=name or "Project",
+        description=description,
+        bullets=bullets,
+        technologies=technologies,
+        start=start,
+        end=end,
+        link=link,
+    )
+
+
 def _llm_payload_has_viable_snapshot(
     payload: dict, resume_text: str, deterministic_profile: CandidateProfile
 ) -> bool:
@@ -896,6 +1912,7 @@ def _llm_payload_has_viable_snapshot(
             combined_experience,
             list(payload.get("education") or []),
             list(payload.get("certifications") or []),
+            list(payload.get("publications") or []),
         ]
     )
     if not has_structured_content:
@@ -913,20 +1930,49 @@ def _build_candidate_profile_from_llm_payload(
     deterministic_profile: CandidateProfile,
     payload: dict,
 ) -> CandidateProfile:
+    """Build the candidate profile from a successful LLM payload.
+
+    Design (post-Tier-1 simplification): the LLM is the source of
+    truth for every content field. The previous implementation did a
+    per-field fallback to the deterministic parser when the LLM
+    returned empty for any individual field. The 15-fixture quality
+    run (LLM-only 0.99 vs hybrid 0.98) showed that hedge didn't pay
+    off — and the deterministic backfill occasionally promoted stray
+    text into phantom entries. So every content field below now pulls
+    cleanly from the LLM payload, with no per-field deterministic
+    safety net.
+
+    The deterministic parser still runs unconditionally upstream (in
+    ``build_candidate_profile_from_resume_auto``) and contributes its
+    ``source_signals`` notes here so the 'What we found' UI line still
+    summarises both what the LLM extracted and what the keyword scan
+    saw in the source text.
+
+    The deterministic profile is also the full fallback when the LLM
+    is unavailable or its payload fails the viability check — see
+    ``build_candidate_profile_from_resume_auto`` for that branch.
+    """
     experience_entries: list[WorkExperience] = []
     for entry in payload.get("experience") or []:
         experience = _build_experience_entry_from_llm_payload(entry)
         if experience:
             experience_entries.append(experience)
-    for entry in payload.get("projects") or []:
-        project = _build_experience_entry_from_llm_payload(
-            entry,
-            fallback_organization="Project Portfolio",
-        )
-        if project:
-            experience_entries.append(project)
 
-    education_entries = []
+    project_entries: list[ProjectEntry] = []
+    for entry in payload.get("projects") or []:
+        if not isinstance(entry, dict):
+            continue
+        project = _build_project_entry_from_llm_payload(entry)
+        if project:
+            project_entries.append(project)
+
+    publication_entries = [
+        _normalize_line(item)
+        for item in (payload.get("publications") or [])
+        if _normalize_line(item)
+    ]
+
+    education_entries: list[EducationEntry] = []
     for item in payload.get("education") or []:
         if not isinstance(item, dict):
             continue
@@ -941,30 +1987,37 @@ def _build_candidate_profile_from_llm_payload(
         )
 
     llm_source_signals = dedupe_strings(payload.get("source_signals") or [])
-    project_count = len(payload.get("projects") or [])
-    if project_count:
+    if project_entries:
         llm_source_signals.append(
             "Structured {count} project entries with the LLM parser.".format(
-                count=project_count
+                count=len(project_entries)
+            )
+        )
+    if publication_entries:
+        llm_source_signals.append(
+            "Captured {count} publication entries with the LLM parser.".format(
+                count=len(publication_entries)
             )
         )
     llm_source_signals.append("Candidate profile structured with the LLM parser.")
 
     return CandidateProfile(
-        full_name=_normalize_line(payload.get("full_name")) or deterministic_profile.full_name,
-        location=_normalize_line(payload.get("location")) or deterministic_profile.location,
-        contact_lines=dedupe_strings(
-            payload.get("contact_lines") or deterministic_profile.contact_lines
-        ),
+        full_name=_normalize_line(payload.get("full_name")),
+        location=_normalize_line(payload.get("location")),
+        contact_lines=dedupe_strings(payload.get("contact_lines") or []),
         source=resume_document.source or "resume_upload",
         resume_text=resume_document.text,
-        skills=dedupe_strings(payload.get("skills") or deterministic_profile.skills),
-        experience=experience_entries or list(deterministic_profile.experience),
-        education=_prune_education_entries(education_entries)
-        or list(deterministic_profile.education),
-        certifications=dedupe_strings(
-            payload.get("certifications") or deterministic_profile.certifications
-        ),
+        skills=dedupe_strings(payload.get("skills") or []),
+        experience=experience_entries,
+        education=_prune_education_entries(education_entries),
+        certifications=dedupe_strings(payload.get("certifications") or []),
+        projects=project_entries,
+        publications=dedupe_strings(publication_entries),
+        # Source signals are the one field still merged with
+        # deterministic — they're diagnostic notes ('What we found')
+        # rather than substantive content, and combining both lists
+        # gives the UI a richer summary without risk of polluting the
+        # extracted profile.
         source_signals=dedupe_strings(
             llm_source_signals + list(deterministic_profile.source_signals)
         ),
@@ -975,12 +2028,30 @@ def build_candidate_profile_from_resume_auto(
     resume_document: ResumeDocument,
     parser_service: ResumeLLMParserService | None = None,
 ) -> CandidateProfile:
+    """Production resume-parsing entry point.
+
+    Architecture: pure-LLM source-of-truth with full deterministic
+    fallback. The deterministic parser runs on every request to gather
+    'source_signals' diagnostics (the 'What we found' UI line), but
+    the LLM payload alone populates every content field whenever the
+    LLM is reachable. The deterministic profile only takes over end-
+    to-end when one of the LLM-failure branches below trips:
+
+        1. LLM parser not configured (no API key)
+        2. LLM call raised (timeout / network / rate-limit / 5xx)
+        3. LLM payload didn't pass the viability check (no
+           structured content)
+
+    A previous design merged the two profiles per-field (LLM if
+    populated, deterministic otherwise). The 15-fixture quality run
+    showed the hedge didn't pay off — pure LLM scored 0.99, the
+    per-field hybrid scored 0.98. Simpler design, same or better
+    quality.
+    """
     if not isinstance(resume_document, ResumeDocument):
         raise TypeError("resume_document must be a ResumeDocument instance.")
 
     deterministic_profile = build_candidate_profile_from_resume(resume_document)
-    if resume_document.filetype.upper() == "TXT":
-        return deterministic_profile
 
     llm_parser = parser_service or ResumeLLMParserService(
         openai_service=OpenAIService()

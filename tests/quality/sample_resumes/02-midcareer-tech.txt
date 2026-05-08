@@ -1,0 +1,47 @@
+RAJESH KUMAR
+Senior Software Engineer | Distributed Systems | ML Infra
+San Francisco, CA · rajesh.kumar@gmail.com · (415) 555-0142 · linkedin.com/in/rajeshkumar
+
+SUMMARY
+Senior software engineer with 8+ years building high-throughput systems at scale.
+Led the platform team that re-architected Stripe's payment routing layer; cut p99
+from 240ms to 45ms while doubling throughput.
+
+PROFESSIONAL EXPERIENCE
+
+Stripe — Senior Software Engineer
+San Francisco, CA | Jul 2021 - Present
+- Led 6-person platform team that re-architected payment routing across 14 regions.
+- Cut routing p99 from 240ms to 45ms while absorbing 2.4x more transactions per second.
+- Mentored 3 juniors through their first on-call rotations and post-mortem write-ups.
+- Designed the migration plan that moved 3.2B legacy charges off MySQL onto Vitess.
+
+Cloudflare — Software Engineer II
+Remote | Aug 2019 - Jun 2021
+- Owned the cache invalidation pipeline; eliminated a class of stale-data bugs reported
+  by enterprise customers.
+- Shipped Workers KV regional read replicas, reducing global read p99 by 38%.
+- Authored RFC for the multi-tenant rate limiter still in production today.
+
+Atlassian — Software Engineer
+Sydney, Australia | Feb 2017 - Jul 2019
+- Built the Jira webhook delivery service handling 50M+ events/day.
+- Contributed to the open-source Forge platform CLI; 90% of internal teams adopted within 6mo.
+- Drove the move from Jenkins to BuildKite, reducing CI flake rate from 18% to 3%.
+
+EDUCATION
+
+Stanford University
+Master of Science in Computer Science (Sep 2015 - Jun 2017)
+Specialization: Systems and Networking
+
+Indian Institute of Technology Madras
+Bachelor of Technology in Computer Science (Aug 2011 - May 2015)
+
+CORE SKILLS
+Go, Python, Rust, Kubernetes, Vitess, MySQL, PostgreSQL, Redis, Kafka, gRPC, Terraform,
+AWS, GCP, Cloudflare Workers, ML inference, distributed tracing
+
+CERTIFICATIONS
+- Certified Kubernetes Application Developer (CKAD), Linux Foundation, 2022
+- Google Cloud Professional Cloud Architect, 2020

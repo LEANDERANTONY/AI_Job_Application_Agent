@@ -1,0 +1,52 @@
+{
+  "full_name": "Michael Chen",
+  "location": "San Francisco Bay Area",
+  "contact_lines": [
+    "michael@mchen.io",
+    "(650) 555-0411",
+    "linkedin.com/in/michaelchen-eng",
+    "mchen.io"
+  ],
+  "skills_must_include": [
+    "Engineering leadership",
+    "distributed systems",
+    "microservices",
+    "observability",
+    "incident response"
+  ],
+  "experience_count": 5,
+  "experience_titles": [
+    "VP of Engineering",
+    "Director of Engineering",
+    "Engineering Manager",
+    "Senior Software Engineer",
+    "Software Development Engineer II"
+  ],
+  "experience_organizations_must_include": [
+    "Datadog",
+    "Stripe",
+    "Atlassian",
+    "Netflix",
+    "Microsoft"
+  ],
+  "education": [
+    {
+      "institution_must_include": "Massachusetts Institute of Technology",
+      "degree_must_include": "Master of Engineering"
+    },
+    {
+      "institution_must_include": "University of California, Berkeley",
+      "degree_must_include": "B.S."
+    }
+  ],
+  "certifications_must_include": [],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 3,
+  "publications_must_include_substrings": [
+    "Lessons from scaling Stripe",
+    "Choosing service-mesh boundaries",
+    "Why your post-mortems aren"
+  ],
+  "notes": "Senior 18-year career: 5 jobs across two decades, headed by 'EXECUTIVE SUMMARY' / 'LEADERSHIP EXPERIENCE' / 'PUBLICATIONS & TALKS' / 'ADVISORY BOARDS' (the last two NOT in our aliases — Advisory Boards should not become a 6th experience entry). Tests dense parsing across many entries with promotion patterns ('Engineering Manager → Senior EM') and complex titles like 'Director of Engineering, Payments Infrastructure'. Two degrees with awards/honors text on the line below the date."
+}

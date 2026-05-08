@@ -1,0 +1,39 @@
+{
+  "full_name": "David Park",
+  "location": "Seattle, WA",
+  "contact_lines": [
+    "david.park@protonmail.com",
+    "(206) 555-0287",
+    "davidpark.dev"
+  ],
+  "skills_must_include": [
+    "Python", "Go", "TypeScript", "SQL", "Django", "FastAPI",
+    "PostgreSQL", "Redis", "Kafka", "AWS", "Terraform", "Docker", "Kubernetes"
+  ],
+  "experience_count": 3,
+  "experience_titles": [
+    "Senior Software Engineer",
+    "Software Engineer II",
+    "Backend Engineer"
+  ],
+  "experience_organizations_must_include": [
+    "REI Co-op",
+    "Zillow Group",
+    "Performant Media"
+  ],
+  "education": [
+    {
+      "institution_must_include": "University of Washington",
+      "degree_must_include": "B.S. Computer Science"
+    }
+  ],
+  "certifications_must_include": [
+    "AWS Certified Solutions Architect",
+    "HashiCorp Certified"
+  ],
+  "projects_count_min": 0,
+  "projects_names_must_include": [],
+  "publications_count_min": 0,
+  "publications_must_include_substrings": [],
+  "notes": "ALL-CAPS section headers + tabular skills layout + double-asterisk bullets. Tests case-insensitive section detection and that we don't get tripped up by the 'Languages / Frameworks / Data / ...' tabular skills format."
+}

@@ -4,6 +4,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from backend.services.auth_session_service import resolve_authenticated_context
+from src.cached_jobs_store import CachedJobsStore
 from src.errors import InputValidationError
 from src.saved_jobs_store import SavedJobsStore
 
@@ -46,7 +47,36 @@ def _normalize_saved_job(payload: dict[str, Any] | Any):
         "metadata": metadata,
         "saved_at": str(raw_payload.get("saved_at", "") or ""),
         "updated_at": str(raw_payload.get("updated_at", "") or ""),
+        # Default optimistic — overwritten by _annotate_listing_status
+        # when we have a cache to consult. The UI shows an "Expired"
+        # badge when this is False.
+        "is_listing_active": True,
     }
+
+
+def _annotate_listing_status(jobs: list[dict[str, Any]]):
+    """Look up the cache to find which saved jobs are still listed
+    upstream. Mutates `jobs` in place — sets is_listing_active=False
+    on any whose cached_jobs row has removed_at set (the smart cleanup
+    tombstoned it after the upstream board stopped returning it).
+
+    No-ops gracefully when the cache isn't configured, so local-dev
+    workflows without SUPABASE_SERVICE_ROLE_KEY don't break."""
+    if not jobs:
+        return
+    cache = CachedJobsStore()
+    if not cache.is_configured():
+        return
+    keys = [(str(j.get("source", "")), str(j.get("id", ""))) for j in jobs]
+    try:
+        status_map = cache.get_listing_status_map(keys)
+    except Exception:
+        # Don't poison the saved-jobs response on a cache outage.
+        return
+    for job in jobs:
+        key = (str(job.get("source", "")), str(job.get("id", "")))
+        is_active = status_map.get(key, True)
+        job["is_listing_active"] = bool(is_active)
 
 
 def list_saved_jobs(*, access_token: str, refresh_token: str):
@@ -67,6 +97,7 @@ def list_saved_jobs(*, access_token: str, refresh_token: str):
         )
     ]
     saved_jobs.sort(key=_saved_job_sort_key, reverse=True)
+    _annotate_listing_status(saved_jobs)
 
     latest_saved_at = ""
     for item in saved_jobs:

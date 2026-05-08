@@ -13,7 +13,18 @@ from backend.services.workspace_service import run_workspace_analysis
 
 
 JOB_TTL_SECONDS = 60 * 30
+# One uvicorn worker per the VPS deployment; the semaphore protects that
+# single process from runaway thread spawns under burst /analyze-jobs
+# traffic. A simultaneously-running agentic workflow holds an LLM client
+# + parsed snapshots in memory, and 5 is comfortably below where a 1-2GB
+# container starts feeling pressure.
+JOB_CONCURRENCY_LIMIT = 5
+JOB_RETRY_AFTER_SECONDS = 30
 LOGGER = get_logger(__name__)
+
+
+class WorkspaceRunJobCapacityError(RuntimeError):
+    """Raised when `_RUN_SEMAPHORE` is exhausted at request time."""
 
 
 @dataclass
@@ -31,6 +42,7 @@ class WorkspaceRunJob:
 
 _JOBS: dict[str, WorkspaceRunJob] = {}
 _LOCK = threading.Lock()
+_RUN_SEMAPHORE = threading.BoundedSemaphore(JOB_CONCURRENCY_LIMIT)
 
 
 def _prune_jobs() -> None:
@@ -76,59 +88,64 @@ def _run_job(
     refresh_token: str,
 ) -> None:
     try:
-        result = run_workspace_analysis(
-            resume_text=resume_text,
-            resume_filetype=resume_filetype,
-            resume_source=resume_source,
-            job_description_text=job_description_text,
-            imported_job_posting=imported_job_posting,
-            run_assisted=True,
-            access_token=access_token,
-            refresh_token=refresh_token,
-            progress_callback=lambda title, detail, value: _update_job_progress(
-                job_id,
-                title,
-                detail,
-                value,
-            ),
-        )
-        with _LOCK:
-            job = _JOBS.get(job_id)
-            if job is None:
-                return
-            job.status = "completed"
-            job.result = result
-            job.progress_percent = 100
-            job.stage_title = "Workflow crew"
-            job.stage_detail = "All agents are done. Your tailored documents are ready to review."
-            job.updated_at = time.time()
-    except AppError as error:
-        message = error.user_message
-        log_event(
-            LOGGER,
-            30,
-            "workspace_run_job_failed",
-            "The background workspace analysis job failed with an application error.",
-            job_id=job_id,
-            error_type=type(error).__name__,
-            message=message,
-        )
-        with _LOCK:
-            job = _JOBS.get(job_id)
-            if job is None:
-                return
-            job.status = "failed"
-            job.error_message = message
-            job.updated_at = time.time()
-    except Exception as error:  # pragma: no cover - defensive server fallback
-        LOGGER.exception("Background workspace analysis job crashed.", extra={"job_id": job_id})
-        with _LOCK:
-            job = _JOBS.get(job_id)
-            if job is None:
-                return
-            job.status = "failed"
-            job.error_message = str(error) or "The agentic workflow failed unexpectedly."
-            job.updated_at = time.time()
+        try:
+            result = run_workspace_analysis(
+                resume_text=resume_text,
+                resume_filetype=resume_filetype,
+                resume_source=resume_source,
+                job_description_text=job_description_text,
+                imported_job_posting=imported_job_posting,
+                run_assisted=True,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                progress_callback=lambda title, detail, value: _update_job_progress(
+                    job_id,
+                    title,
+                    detail,
+                    value,
+                ),
+            )
+            with _LOCK:
+                job = _JOBS.get(job_id)
+                if job is None:
+                    return
+                job.status = "completed"
+                job.result = result
+                job.progress_percent = 100
+                job.stage_title = "Workflow crew"
+                job.stage_detail = "All agents are done. Your tailored documents are ready to review."
+                job.updated_at = time.time()
+        except AppError as error:
+            message = error.user_message
+            log_event(
+                LOGGER,
+                30,
+                "workspace_run_job_failed",
+                "The background workspace analysis job failed with an application error.",
+                job_id=job_id,
+                error_type=type(error).__name__,
+                message=message,
+            )
+            with _LOCK:
+                job = _JOBS.get(job_id)
+                if job is None:
+                    return
+                job.status = "failed"
+                job.error_message = message
+                job.updated_at = time.time()
+        except Exception as error:  # pragma: no cover - defensive server fallback
+            LOGGER.exception("Background workspace analysis job crashed.", extra={"job_id": job_id})
+            with _LOCK:
+                job = _JOBS.get(job_id)
+                if job is None:
+                    return
+                job.status = "failed"
+                job.error_message = str(error) or "The agentic workflow failed unexpectedly."
+                job.updated_at = time.time()
+    finally:
+        # Release the slot regardless of how the worker exits, so a
+        # crash never permanently shrinks the cap below the limit.
+        _RUN_SEMAPHORE.release()
 
 
 def start_workspace_analysis_job(
@@ -141,27 +158,43 @@ def start_workspace_analysis_job(
     access_token: str,
     refresh_token: str,
 ) -> dict[str, Any]:
-    with _LOCK:
-        _prune_jobs()
-        job_id = uuid.uuid4().hex
-        job = WorkspaceRunJob(job_id=job_id)
-        _JOBS[job_id] = job
+    # Non-blocking acquire so a saturated server fast-fails the request
+    # rather than queueing it behind an opaque thread-spawn delay. The
+    # matching release lives in `_run_job`'s finally block.
+    if not _RUN_SEMAPHORE.acquire(blocking=False):
+        raise WorkspaceRunJobCapacityError(
+            "Too many agentic workflow runs are in flight right now."
+        )
 
-    worker = threading.Thread(
-        target=_run_job,
-        kwargs={
-            "job_id": job_id,
-            "resume_text": resume_text,
-            "resume_filetype": resume_filetype,
-            "resume_source": resume_source,
-            "job_description_text": job_description_text,
-            "imported_job_posting": imported_job_posting,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-        },
-        daemon=True,
-    )
-    worker.start()
+    try:
+        with _LOCK:
+            _prune_jobs()
+            job_id = uuid.uuid4().hex
+            job = WorkspaceRunJob(job_id=job_id)
+            _JOBS[job_id] = job
+
+        worker = threading.Thread(
+            target=_run_job,
+            kwargs={
+                "job_id": job_id,
+                "resume_text": resume_text,
+                "resume_filetype": resume_filetype,
+                "resume_source": resume_source,
+                "job_description_text": job_description_text,
+                "imported_job_posting": imported_job_posting,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+            },
+            daemon=True,
+        )
+        worker.start()
+    except BaseException:
+        # Thread spawn (or anything else above) failed before `_run_job`
+        # could run; release the slot ourselves so capacity isn't lost.
+        _RUN_SEMAPHORE.release()
+        with _LOCK:
+            _JOBS.pop(job_id, None)
+        raise
 
     with _LOCK:
         return _serialize_job(_JOBS[job_id])

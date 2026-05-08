@@ -1,0 +1,19 @@
+{
+  "title_must_include": "Big Data Engineer",
+  "location_must_include": "Ramat Gan",
+  "salary_must_include": "",
+  "experience_requirement_must_include": "5+ years",
+  "hard_skills_must_include": [
+    "Python",
+    "Spark",
+    "PySpark",
+    "AWS",
+    "GCP",
+    "SQL",
+    "Airflow",
+    "Hadoop"
+  ],
+  "must_haves_must_include_substrings": [],
+  "nice_to_haves_must_include_substrings": [],
+  "notes": "Live JD from Placer.ai — Big Data Engineer in Ramat Gan, Israel. Rich on hard skills (Spark, PySpark/Scala, Hadoop, Airflow, AWS/GCP). Tests Israeli-location detection. 5+ years requirement is split across two adjacent sentences ('5+ years of professional experience in software development, with at least 3 years as a Data Engineer.')."
+}

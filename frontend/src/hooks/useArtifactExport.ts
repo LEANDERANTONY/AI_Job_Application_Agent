@@ -13,11 +13,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  downloadBase64File,
   exportWorkspaceArtifact,
   previewWorkspaceArtifact,
 } from "@/lib/api";
+import { humanizeApiError } from "@/lib/humanizeApiError";
 import type {
+  ArtifactTheme,
   WorkspaceAnalysisResponse,
+  WorkspaceArtifactExportFormat,
   WorkspaceArtifactKind,
 } from "@/lib/api-types";
 import type {
@@ -32,30 +36,9 @@ type Notice =
     }
   | null;
 
-function downloadBase64File(
-  filename: string,
-  contentBase64: string,
-  mimeType: string,
-) {
-  const binary = atob(contentBase64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  const blob = new Blob([bytes], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
 function artifactKindFromTab(
   tab: ArtifactTab,
-): Exclude<WorkspaceArtifactKind, "bundle" | "report"> {
+): WorkspaceArtifactKind {
   return tab === "resume" ? "tailored_resume" : "cover_letter";
 }
 
@@ -76,15 +59,22 @@ export type UseArtifactExportReturn = {
   /** Memoized artifact metadata (title + summary) for the active tab. */
   currentArtifact: ArtifactViewerArtifact | null;
   /** Derived backend kind ("tailored_resume" | "cover_letter") for the active tab. */
-  currentArtifactKind: Exclude<WorkspaceArtifactKind, "bundle" | "report">;
+  currentArtifactKind: WorkspaceArtifactKind;
   /**
-   * Trigger an export. Accepts the full `WorkspaceArtifactKind` set
-   * (including `bundle`) so callers outside of ArtifactViewer can also
-   * use it.
+   * Theme selection per artifact. Each tab carries its own theme so the
+   * resume can ship classic_ats while the cover letter ships
+   * professional_neutral (or vice versa) — the user picks per document.
+   */
+  resumeTheme: ArtifactTheme;
+  coverLetterTheme: ArtifactTheme;
+  setResumeTheme: (theme: ArtifactTheme) => void;
+  setCoverLetterTheme: (theme: ArtifactTheme) => void;
+  /**
+   * Trigger an export for the resume or cover letter artifact.
    */
   exportArtifact: (
     kind: WorkspaceArtifactKind,
-    format: "markdown" | "pdf" | "zip",
+    format: WorkspaceArtifactExportFormat,
   ) => Promise<void>;
   /** Reset transient artifact state (used by `clearWorkspaceRole`). */
   resetArtifacts: () => void;
@@ -105,6 +95,9 @@ export function useArtifactExport({
     string | null
   >(null);
   const [artifactPreviewLoading, setArtifactPreviewLoading] = useState(false);
+  const [resumeTheme, setResumeTheme] = useState<ArtifactTheme>("classic_ats");
+  const [coverLetterTheme, setCoverLetterTheme] =
+    useState<ArtifactTheme>("classic_ats");
 
   const currentArtifact = useMemo<ArtifactViewerArtifact | null>(() => {
     if (!analysisState) {
@@ -113,14 +106,17 @@ export function useArtifactExport({
     if (artifactTab === "resume") {
       return {
         ...analysisState.artifacts.tailored_resume,
-        theme: "classic_ats",
+        theme: resumeTheme,
         summary: `Tailored resume draft for ${
           analysisState.job_description.title || "the target role"
         }, ready to review and export.`,
       };
     }
-    return analysisState.artifacts.cover_letter;
-  }, [analysisState, artifactTab]);
+    return {
+      ...analysisState.artifacts.cover_letter,
+      theme: coverLetterTheme,
+    };
+  }, [analysisState, artifactTab, resumeTheme, coverLetterTheme]);
 
   const currentArtifactKind = artifactKindFromTab(artifactTab);
 
@@ -144,7 +140,8 @@ export function useArtifactExport({
         const response = await previewWorkspaceArtifact({
           workspace_snapshot: resolvedWorkspaceSnapshot,
           artifact_kind: currentArtifactKind,
-          resume_theme: "classic_ats",
+          resume_theme: resumeTheme,
+          cover_letter_theme: coverLetterTheme,
         });
         if (!cancelled) {
           setArtifactPreviewHtml(response.html);
@@ -156,10 +153,10 @@ export function useArtifactExport({
           setArtifactPreviewTitle(null);
           setNotice({
             level: "warning",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Artifact preview could not be generated.",
+            message: humanizeApiError(
+              error,
+              "Artifact preview could not be generated.",
+            ),
           });
         }
       } finally {
@@ -174,11 +171,17 @@ export function useArtifactExport({
     return () => {
       cancelled = true;
     };
-  }, [analysisState, currentArtifactKind, setNotice]);
+  }, [
+    analysisState,
+    currentArtifactKind,
+    resumeTheme,
+    coverLetterTheme,
+    setNotice,
+  ]);
 
   async function exportArtifact(
     artifactKind: WorkspaceArtifactKind,
-    exportFormat: "markdown" | "pdf" | "zip",
+    exportFormat: WorkspaceArtifactExportFormat,
   ) {
     if (!analysisState) {
       setNotice({
@@ -195,7 +198,8 @@ export function useArtifactExport({
         workspace_snapshot: analysisState,
         artifact_kind: artifactKind,
         export_format: exportFormat,
-        resume_theme: "classic_ats",
+        resume_theme: resumeTheme,
+        cover_letter_theme: coverLetterTheme,
       });
       downloadBase64File(
         response.file_name,
@@ -204,18 +208,12 @@ export function useArtifactExport({
       );
       setNotice({
         level: "success",
-        message:
-          artifactKind === "bundle"
-            ? `Prepared the full application package as ${response.file_name}.`
-            : `Prepared ${response.artifact_title} as ${response.file_name}.`,
+        message: `Prepared ${response.artifact_title} as ${response.file_name}.`,
       });
     } catch (error) {
       setNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Artifact export failed unexpectedly.",
+        message: humanizeApiError(error, "Artifact export failed unexpectedly."),
       });
     } finally {
       setArtifactExporting(null);
@@ -238,6 +236,10 @@ export function useArtifactExport({
     artifactPreviewLoading,
     currentArtifact,
     currentArtifactKind,
+    resumeTheme,
+    coverLetterTheme,
+    setResumeTheme,
+    setCoverLetterTheme,
     exportArtifact,
     resetArtifacts,
   };

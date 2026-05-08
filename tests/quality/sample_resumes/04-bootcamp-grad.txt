@@ -1,0 +1,47 @@
+Maya Johnson
+Brooklyn, NY
+maya.johnson.dev@gmail.com
+(347) 555-0098
+github.com/mayaj-dev
+
+ABOUT
+Career switcher into software engineering after 4 years as a marketing analyst.
+Recent General Assembly bootcamp graduate looking for entry-level full-stack roles.
+Comfortable shipping React/Node features and strong on the product side from prior career.
+
+SKILLS
+JavaScript, TypeScript, React, Node.js, Express, PostgreSQL, MongoDB, Tailwind CSS,
+Git, REST APIs, Agile/Scrum, SQL, Figma, A/B testing
+
+EXPERIENCE
+
+Frontend Engineer Intern · Klarna · Remote
+Sep 2024 - Dec 2024
+- Built a checkout review widget in React + TypeScript shipped to 2.8M users in EU.
+- Wrote integration tests in Playwright; flagged a regression that would have blocked release.
+- Pair-programmed daily with senior engineers and shipped 14 PRs over 3 months.
+
+Marketing Analytics Manager · Warby Parker · New York, NY
+Jun 2020 - Aug 2024
+- Owned attribution modeling across paid social, search, and email; reduced CAC by 22%.
+- Built self-serve dashboards in Looker for the brand team — 40+ weekly active users.
+- Led the migration from third-party analytics onto a Snowflake + dbt internal pipeline.
+
+EDUCATION
+
+General Assembly Software Engineering Immersive
+New York, NY · Jun 2024 - Sep 2024
+- 12-week full-time bootcamp covering React, Node, Express, PostgreSQL, agile workflow.
+- Capstone: a peer-review marketplace for indie game devs (live demo on portfolio).
+
+Cornell University
+Bachelor of Arts in Economics (2016 - 2020)
+
+PROJECTS
+
+Indie Reviews — peer-review marketplace
+- React + Next.js front-end with Stripe checkout and Postgres + Prisma data layer.
+- 40+ beta users from r/IndieDev; 4.6 star average across 80+ submitted reviews.
+
+Recipe Mixer — meal planner with dietary constraint solver
+- Constraint-satisfaction backend in TypeScript, simple React UI, deployed on Vercel.

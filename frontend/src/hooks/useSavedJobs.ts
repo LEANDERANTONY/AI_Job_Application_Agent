@@ -19,6 +19,7 @@ import type {
   AuthSessionResponse,
   JobPosting,
 } from "@/lib/api-types";
+import { humanizeApiError } from "@/lib/humanizeApiError";
 
 type Notice =
   | { level: "info" | "success" | "warning"; message: string }
@@ -94,10 +95,10 @@ export function useSavedJobs({
         if (!cancelled) {
           setSavedJobsNotice({
             level: "warning",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Saved jobs could not be loaded right now.",
+            message: humanizeApiError(
+              error,
+              "Saved jobs could not be loaded right now.",
+            ),
           });
           setSavedJobs([]);
         }
@@ -155,10 +156,10 @@ export function useSavedJobs({
     } catch (error) {
       setSavedJobsNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "This role could not be saved to your shortlist.",
+        message: humanizeApiError(
+          error,
+          "This role could not be saved to your shortlist.",
+        ),
       });
     } finally {
       setSavedJobActionId(null);
@@ -185,10 +186,10 @@ export function useSavedJobs({
     } catch (error) {
       setSavedJobsNotice({
         level: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : "This role could not be removed from your shortlist.",
+        message: humanizeApiError(
+          error,
+          "This role could not be removed from your shortlist.",
+        ),
       });
     } finally {
       setSavedJobActionId(null);

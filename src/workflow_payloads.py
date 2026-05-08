@@ -4,12 +4,10 @@ from typing import Optional
 
 from src.schemas import (
     AgentWorkflowResult,
-    ApplicationReport,
     CandidateProfile,
     CoverLetterArtifact,
     CoverLetterAgentOutput,
     EducationEntry,
-    FitAgentOutput,
     FitAnalysis,
     JobAgentOutput,
     JobDescription,
@@ -29,7 +27,6 @@ from src.schemas import (
 
 WORKFLOW_HISTORY_PAYLOAD_VERSION = 1
 WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT = "workflow_snapshot"
-WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT = "application_report"
 WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER = "cover_letter_artifact"
 WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME = "tailored_resume_artifact"
 
@@ -171,7 +168,6 @@ def get_saved_workflow_payload_status(workflow_run: Optional[object]):
     inspections = []
     for raw_payload, expected_kind in (
         (getattr(workflow_run, "workflow_snapshot_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_SNAPSHOT),
-        (getattr(workflow_run, "report_payload_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT),
         (getattr(workflow_run, "cover_letter_payload_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_COVER_LETTER),
         (getattr(workflow_run, "tailored_resume_payload_json", ""), WORKFLOW_HISTORY_PAYLOAD_KIND_TAILORED_RESUME),
     ):
@@ -216,20 +212,6 @@ def get_saved_workflow_payload_status(workflow_run: Optional[object]):
         "supported": True,
         "message": "This saved run mixes legacy and current saved payload envelopes. Historical downloads remain available through compatible readers.",
     }
-
-
-def build_saved_report_from_payload(raw_payload: str):
-    inspection = inspect_saved_payload(raw_payload, WORKFLOW_HISTORY_PAYLOAD_KIND_REPORT)
-    if not inspection["supported"]:
-        return None
-    payload = inspection["data"] or {}
-    return ApplicationReport(
-        title=str(payload.get("title", "Saved Application Report") or "Saved Application Report"),
-        filename_stem=str(payload.get("filename_stem", "saved-application-report") or "saved-application-report"),
-        summary=str(payload.get("summary", "") or ""),
-        markdown=str(payload.get("markdown", "") or ""),
-        plain_text=str(payload.get("plain_text", "") or ""),
-    )
 
 
 def build_saved_cover_letter_from_payload(raw_payload: str):
@@ -418,15 +400,6 @@ def _build_job_output(payload: dict):
     )
 
 
-def _build_fit_output(payload: dict):
-    payload = _as_dict(payload)
-    return FitAgentOutput(
-        fit_summary=str(payload.get("fit_summary", "") or ""),
-        top_matches=[str(item) for item in payload.get("top_matches", []) or []],
-        key_gaps=[str(item) for item in payload.get("key_gaps", []) or []],
-    )
-
-
 def _build_tailoring_output(payload: dict):
     payload = _as_dict(payload)
     return TailoringAgentOutput(
@@ -507,7 +480,6 @@ def _build_agent_result(payload):
         model=str(payload.get("model", "") or ""),
         profile=_build_profile_output(payload.get("profile") or {}),
         job=_build_job_output(payload.get("job") or {}),
-        fit=_build_fit_output(payload.get("fit") or {}),
         tailoring=_build_tailoring_output(payload.get("tailoring") or {}),
         review=_build_review_output(payload.get("review") or {}),
         strategy=_build_strategy_output(payload.get("strategy")),

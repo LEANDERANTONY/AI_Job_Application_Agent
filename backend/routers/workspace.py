@@ -3,8 +3,13 @@ from fastapi.responses import StreamingResponse
 
 from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
 from backend.request_auth import get_optional_auth_tokens
+from backend.services.auth_session_service import (
+    build_openai_service_for_context,
+    resolve_authenticated_context,
+)
 from backend.services.resume_builder_persistence_service import (
     clear_resume_builder_session,
+    hydrate_resume_builder_session_if_needed,
     load_latest_resume_builder_session,
     persist_resume_builder_session,
 )
@@ -22,6 +27,7 @@ from backend.services.artifact_export_service import preview_workspace_artifact
 from backend.services.resume_builder_service import (
     answer_resume_builder_message,
     commit_resume_builder_session,
+    export_resume_builder_artifact,
     generate_resume_builder_resume,
     start_resume_builder_session,
     update_resume_builder_session,
@@ -34,10 +40,13 @@ from backend.services.workspace_service import (
     stream_workspace_question,
 )
 from backend.services.workspace_run_jobs import (
+    JOB_RETRY_AFTER_SECONDS,
+    WorkspaceRunJobCapacityError,
     get_workspace_analysis_job,
     start_workspace_analysis_job,
 )
 from backend.workspace_models import (
+    ResumeBuilderExportRequestModel,
     ResumeBuilderMessageRequestModel,
     ResumeBuilderSessionRequestModel,
     ResumeBuilderUpdateRequestModel,
@@ -59,6 +68,70 @@ router = APIRouter(prefix="/workspace", tags=["workspace"])
 
 def _raise_http_error(error: AppError):
     raise HTTPException(status_code=400, detail=error.user_message)
+
+
+def _resolve_openai_service(access_token: str, refresh_token: str):
+    """Best-effort OpenAIService for an authenticated request.
+
+    Returns None when tokens are missing OR the auth/openai construction
+    fails — caller (resume builder, etc.) treats None as "no LLM
+    available" and falls back to the deterministic path."""
+    if not (access_token and refresh_token):
+        return None
+    try:
+        auth_context = resolve_authenticated_context(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+    except Exception:
+        return None
+    if auth_context is None:
+        return None
+    try:
+        openai_service, _ = build_openai_service_for_context(auth_context)
+    except Exception:
+        return None
+    return openai_service
+
+
+def _attach_persistence_status(
+    response: dict,
+    persist_result: dict | None,
+    *,
+    access_token: str,
+    refresh_token: str,
+) -> dict:
+    """Tag a resume-builder route response with the persistence outcome.
+
+    Tri-state so the UI can communicate clearly:
+      - "saved":         signed in + Supabase upsert succeeded
+      - "skipped":       signed in but persistence failed (Supabase
+                         unreachable, RLS reject, payload export error).
+                         The user's draft is in-memory only and at risk
+                         from a container restart.
+      - "unauthenticated": no auth tokens; persistence was never
+                           attempted. Surface a "sign in to save" prompt
+                           in the UI instead of a generic skip.
+
+    Also forwards `expires_at` (ISO timestamp from the saved row) when
+    available so the UI can render a "refreshes through X" hint next
+    to the indicator. The TTL refreshes on every save, so the value
+    represents the latest write's expiry.
+
+    `persist_result` is the dict returned by
+    persist_resume_builder_session; treat None as a missing call.
+    """
+    if not (access_token and refresh_token):
+        response["persistence_status"] = "unauthenticated"
+        return response
+    raw_status = (persist_result or {}).get("status", "skipped")
+    response["persistence_status"] = (
+        "saved" if raw_status == "saved" else "skipped"
+    )
+    expires_at = (persist_result or {}).get("expires_at") or ""
+    if expires_at:
+        response["expires_at"] = expires_at
+    return response
 
 
 @router.post("/resume/upload")
@@ -93,12 +166,17 @@ def start_resume_builder_route(request: Request, auth_tokens=Depends(get_optiona
     access_token, refresh_token = auth_tokens
     try:
         payload = start_resume_builder_session()
-        persist_resume_builder_session(
+        persist_result = persist_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
             session_id=payload["session_id"],
         )
-        return payload
+        return _attach_persistence_status(
+            payload,
+            persist_result,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -121,16 +199,31 @@ def answer_resume_builder_route(
 ):
     access_token, refresh_token = auth_tokens
     try:
-        response = answer_resume_builder_message(
-            session_id=payload.session_id,
-            message=payload.message,
-        )
-        persist_resume_builder_session(
+        hydrate_resume_builder_session_if_needed(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
-        return response
+        openai_service = _resolve_openai_service(
+            access_token or "",
+            refresh_token or "",
+        )
+        response = answer_resume_builder_message(
+            session_id=payload.session_id,
+            message=payload.message,
+            openai_service=openai_service,
+        )
+        persist_result = persist_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        return _attach_persistence_status(
+            response,
+            persist_result,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -144,13 +237,32 @@ def generate_resume_builder_route(
 ):
     access_token, refresh_token = auth_tokens
     try:
-        response = generate_resume_builder_resume(session_id=payload.session_id)
-        persist_resume_builder_session(
+        hydrate_resume_builder_session_if_needed(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
-        return response
+        # LLM-first structuring at generate time — falls back to regex
+        # parser inside the service when the service is None or errors.
+        openai_service = _resolve_openai_service(
+            access_token or "",
+            refresh_token or "",
+        )
+        response = generate_resume_builder_resume(
+            session_id=payload.session_id,
+            openai_service=openai_service,
+        )
+        persist_result = persist_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        return _attach_persistence_status(
+            response,
+            persist_result,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -164,16 +276,26 @@ def update_resume_builder_route(
 ):
     access_token, refresh_token = auth_tokens
     try:
-        response = update_resume_builder_session(
-            session_id=payload.session_id,
-            draft_updates=payload.draft_profile,
-        )
-        persist_resume_builder_session(
+        hydrate_resume_builder_session_if_needed(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
-        return response
+        response = update_resume_builder_session(
+            session_id=payload.session_id,
+            draft_updates=payload.draft_profile,
+        )
+        persist_result = persist_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        return _attach_persistence_status(
+            response,
+            persist_result,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -187,12 +309,60 @@ def commit_resume_builder_route(
 ):
     access_token, refresh_token = auth_tokens
     try:
-        response = commit_resume_builder_session(session_id=payload.session_id)
+        hydrate_resume_builder_session_if_needed(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        openai_service = _resolve_openai_service(
+            access_token or "",
+            refresh_token or "",
+        )
+        response = commit_resume_builder_session(
+            session_id=payload.session_id,
+            openai_service=openai_service,
+        )
         clear_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
         return response
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.post("/resume-builder/export")
+@limiter.limit(LIMIT_HEAVY)
+def export_resume_builder_route(
+    request: Request,
+    payload: ResumeBuilderExportRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    """Phase 5: download the builder's generated base resume.
+
+    Auth-gated like the other resume-builder routes — same hydrate +
+    persistence story so a container restart between Generate and
+    Download doesn't leave the user staring at a 400. Reuses
+    `export_pdf_bytes` / `export_docx_bytes` via the service-layer
+    `export_resume_builder_artifact()` helper.
+    """
+    access_token, refresh_token = auth_tokens
+    try:
+        hydrate_resume_builder_session_if_needed(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        openai_service = _resolve_openai_service(
+            access_token or "",
+            refresh_token or "",
+        )
+        return export_resume_builder_artifact(
+            session_id=payload.session_id,
+            export_format=payload.export_format,
+            theme=payload.theme,
+            openai_service=openai_service,
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -231,15 +401,25 @@ def start_workspace_analysis_job_route(
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
-    return start_workspace_analysis_job(
-        resume_text=payload.resume_text,
-        resume_filetype=payload.resume_filetype,
-        resume_source=payload.resume_source,
-        job_description_text=payload.job_description_text,
-        imported_job_posting=payload.imported_job_posting,
-        access_token=access_token or "",
-        refresh_token=refresh_token or "",
-    )
+    try:
+        return start_workspace_analysis_job(
+            resume_text=payload.resume_text,
+            resume_filetype=payload.resume_filetype,
+            resume_source=payload.resume_source,
+            job_description_text=payload.job_description_text,
+            imported_job_posting=payload.imported_job_posting,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
+    except WorkspaceRunJobCapacityError:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "The workspace is busy running other agentic workflows right "
+                "now. Please try again in a few seconds."
+            ),
+            headers={"Retry-After": str(JOB_RETRY_AFTER_SECONDS)},
+        )
 
 
 @router.get(
@@ -249,7 +429,18 @@ def start_workspace_analysis_job_route(
 def get_workspace_analysis_job_route(job_id: str):
     payload = get_workspace_analysis_job(job_id)
     if payload is None:
-        raise HTTPException(status_code=404, detail="Analysis job not found.")
+        # `_JOBS` is process-local, so a container restart mid-run drops
+        # the job state permanently. The frontend polling hook surfaces
+        # `detail` directly to the user, so spell out the cause + the
+        # recovery action instead of a bare "not found".
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "This workflow run is no longer available — the server may "
+                "have restarted while it was running. Please run the workflow "
+                "again."
+            ),
+        )
     return payload
 
 
@@ -265,6 +456,11 @@ def answer_assistant_question(
         return answer_workspace_question(
             question=payload.question,
             current_page=payload.current_page,
+            workspace_state=(
+                payload.workspace_state.model_dump()
+                if payload.workspace_state
+                else None
+            ),
             workspace_snapshot=payload.workspace_snapshot,
             history=[item.model_dump() for item in payload.history],
             access_token=access_token or "",
@@ -298,6 +494,11 @@ def stream_assistant_answer(
         stream_workspace_question(
             question=payload.question,
             current_page=payload.current_page,
+            workspace_state=(
+                payload.workspace_state.model_dump()
+                if payload.workspace_state
+                else None
+            ),
             workspace_snapshot=payload.workspace_snapshot,
             history=[item.model_dump() for item in payload.history],
             access_token=access_token or "",
@@ -401,6 +602,7 @@ def export_workspace_artifact_route(request: Request, payload: WorkspaceArtifact
             artifact_kind=payload.artifact_kind,
             export_format=payload.export_format,
             resume_theme=payload.resume_theme,
+            cover_letter_theme=payload.cover_letter_theme,
         )
     except AppError as error:
         _raise_http_error(error)
@@ -414,6 +616,7 @@ def preview_workspace_artifact_route(request: Request, payload: WorkspaceArtifac
             workspace_snapshot=payload.workspace_snapshot,
             artifact_kind=payload.artifact_kind,
             resume_theme=payload.resume_theme,
+            cover_letter_theme=payload.cover_letter_theme,
         )
     except AppError as error:
         _raise_http_error(error)

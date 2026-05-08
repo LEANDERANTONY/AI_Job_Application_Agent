@@ -1,0 +1,55 @@
+Aditi Gupta, CFA
+New York, NY · adi.gupta.fin@gmail.com · 917-555-0438 · linkedin.com/in/aditigupta-finance
+
+SUMMARY
+
+Investment professional with seven years across investment banking, growth equity, and
+public-equity research. CFA charterholder (2022). MBA from Wharton (2024). Sector focus on
+software / technology infrastructure.
+
+EXPERIENCE
+
+General Catalyst Partners — New York, NY
+Senior Associate, Growth Equity                             August 2024 — Present
+* Lead diligence on growth-stage software investments ($30M-$150M cheque size).
+* Closed two investments since joining (one $90M cheque, one $45M co-lead).
+* Built the firm's internal benchmarking dataset across 380 SaaS portfolio companies.
+
+The Wharton School — Philadelphia, PA  (during MBA)
+Summer Associate, Insight Partners                          June 2023 — August 2023
+* Sourced and screened 47 enterprise-SaaS opportunities; led to 1 closed investment.
+* Authored sector deep-dive on observability (Datadog, Splunk, Dynatrace, Honeycomb).
+
+Goldman Sachs — New York, NY
+Investment Banking Analyst (TMT Group)                      July 2018 — June 2022
+* Lead analyst on 6 closed M&A transactions (combined $14.2B enterprise value).
+* Built the financial models that underpinned the team's pitch decks for AI-infra clients.
+* Promoted from Analyst-1 to Analyst-3 in 2 years (top quintile of class).
+
+Morgan Stanley — New York, NY
+Summer Analyst, Equity Research                             June 2017 — August 2017
+
+EDUCATION
+
+The Wharton School, University of Pennsylvania                            Philadelphia, PA
+Master of Business Administration (MBA), Finance Concentration            2022 - 2024
+* GMAT 760 / 800.  Director's List (top 10% of class).
+* Co-president, Wharton Private Equity & Venture Capital Club.
+
+Indian Institute of Technology Bombay                                     Mumbai, India
+Bachelor of Technology in Electrical Engineering                          2014 - 2018
+* Institute Silver Medalist (top 5 in graduating class of ~1100).
+
+DESIGNATIONS & CERTIFICATIONS
+
+* Chartered Financial Analyst (CFA), CFA Institute, 2022 (all 3 levels first attempt)
+* Series 7 and Series 63 (currently inactive)
+
+TECHNICAL SKILLS
+
+Financial modeling, valuation (DCF / LBO / comps), Python (pandas, numpy), SQL, Excel,
+PowerPoint, Tableau, Capital IQ, FactSet, PitchBook, Bloomberg Terminal
+
+LANGUAGES
+
+English (native), Hindi (native), Spanish (B2)

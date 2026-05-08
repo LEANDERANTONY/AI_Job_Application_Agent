@@ -42,11 +42,6 @@ class FakeOpenAIService:
         self.model = "fake-model"
         self._responses = [
             {
-                "fit_summary": "Strong fit overall with one visible cloud gap.",
-                "top_matches": ["Python", "SQL", "Docker"],
-                "key_gaps": ["AWS"],
-            },
-            {
                 "professional_summary": "Grounded summary for the role.",
                 "rewritten_bullets": ["Built production applications using Python and Docker."],
                 "highlighted_skills": ["Python", "SQL", "Docker"],
@@ -110,11 +105,6 @@ class FakeCorrectionOpenAIService(FakeOpenAIService):
         self.model = "fake-model"
         self._responses = [
             {
-                "fit_summary": "Strong fit overall with one visible cloud gap.",
-                "top_matches": ["Python", "SQL", "Docker"],
-                "key_gaps": ["AWS"],
-            },
-            {
                 "professional_summary": "Initial summary with unsupported AWS emphasis.",
                 "rewritten_bullets": ["Led AWS-native production deployments for ML services."],
                 "highlighted_skills": ["Python", "SQL", "AWS"],
@@ -162,7 +152,6 @@ def test_orchestrator_runs_in_deterministic_fallback_mode():
     assert result.mode == "deterministic_fallback"
     assert result.model == "fallback"
     assert result.attempted_assisted is False
-    assert result.fit.fit_summary
     assert result.tailoring.professional_summary
     assert result.review_history == []
 
@@ -184,6 +173,187 @@ def test_orchestrator_uses_openai_service_when_available():
     assert result.resume_generation.professional_summary == "Final tailored summary for the generated resume."
     assert result.cover_letter.opening_paragraph == "I am excited to apply for the Machine Learning Engineer role and bring grounded implementation experience."
     assert result.review_history == []
+
+
+class FlakyOpenAIService:
+    """Test double that returns a queue of responses or exceptions.
+
+    Each call to ``run_json_prompt`` pops the next item: if it's an
+    Exception, raise it; otherwise return it as the JSON payload.
+    Lets us test the per-agent retry by interleaving exceptions with
+    success responses.
+    """
+
+    def __init__(self, queue):
+        self.model = "flaky-model"
+        self._queue = list(queue)
+        self.call_count = 0
+
+    def is_available(self):
+        return True
+
+    def run_json_prompt(self, system_prompt, user_prompt, expected_keys=None, **kwargs):
+        self.call_count += 1
+        if not self._queue:
+            raise AssertionError(
+                "FlakyOpenAIService ran out of queued responses at call "
+                f"#{self.call_count}"
+            )
+        item = self._queue.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+
+def _tailoring_response():
+    return {
+        "professional_summary": "Grounded summary for the role.",
+        "rewritten_bullets": ["Built production applications using Python and Docker."],
+        "highlighted_skills": ["Python", "SQL", "Docker"],
+        "cover_letter_themes": ["Strong implementation fit."],
+    }
+
+
+def _review_response():
+    return {
+        "approved": True,
+        "grounding_issues": [],
+        "unresolved_issues": [],
+        "revision_requests": [],
+        "final_notes": ["Grounded output."],
+        "corrected_tailoring": {
+            "professional_summary": "Grounded summary for the role.",
+            "rewritten_bullets": ["Built production applications using Python and Docker."],
+            "highlighted_skills": ["Python", "SQL", "Docker"],
+            "cover_letter_themes": ["Strong implementation fit."],
+        },
+    }
+
+
+def _resume_generation_response():
+    return {
+        "professional_summary": "Final tailored summary for the generated resume.",
+        "highlighted_skills": ["Python", "SQL", "Docker"],
+        "experience_bullets": ["Built production applications using Python and Docker."],
+        "section_order": ["Professional Summary", "Core Skills", "Professional Experience", "Education"],
+        "template_hint": "classic_ats",
+    }
+
+
+def _cover_letter_response():
+    return {
+        "greeting": "Dear Hiring Team",
+        "opening_paragraph": "I am excited to apply for the Machine Learning Engineer role and bring grounded implementation experience.",
+        "body_paragraphs": [
+            "Strong implementation fit.",
+            "Built production applications using Python and Docker.",
+        ],
+        "closing_paragraph": "I would welcome the opportunity to discuss how my experience can support your team.",
+        "signoff": "Sincerely",
+        "signature_name": "Leander Antony",
+    }
+
+
+def test_orchestrator_retries_failing_agent_and_recovers():
+    """If a single agent's LLM call raises AgentExecutionError on its
+    first attempt, the orchestrator's per-agent retry should give it
+    one more shot. If that succeeds, the whole pipeline still runs in
+    `mode="openai"` — we should NOT degrade to deterministic just
+    because of one transient failure mid-run."""
+    # Tailoring agent fails on attempt 1 then succeeds on attempt 2.
+    # Review, resume gen, cover letter all succeed first try.
+    queue = [
+        AgentExecutionError("transient — pretend the network blipped"),
+        _tailoring_response(),         # tailoring succeeds on retry
+        _review_response(),
+        _resume_generation_response(),
+        _cover_letter_response(),
+    ]
+    flaky = FlakyOpenAIService(queue)
+    orchestrator = ApplicationOrchestrator(openai_service=flaky)
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    assert result.mode == "openai", (
+        "Pipeline should stay in assisted mode after a recoverable agent retry."
+    )
+    assert result.model == "flaky-model"
+    # 5 calls total: 2 for tailoring (one failed + one retry), then 1
+    # each for review / resume gen / cover letter.
+    assert flaky.call_count == 5
+    # All four agents produced their assisted outputs.
+    assert result.tailoring.rewritten_bullets == [
+        "Built production applications using Python and Docker."
+    ]
+    assert result.review.approved is True
+    assert result.resume_generation.professional_summary == \
+        "Final tailored summary for the generated resume."
+    assert result.cover_letter.opening_paragraph.startswith("I am excited to apply")
+
+
+def test_orchestrator_per_agent_fallback_isolates_a_failing_agent():
+    """When one agent's LLM attempts both fail (original + retry),
+    that agent's deterministic fallback runs for THAT agent only —
+    downstream agents still try the LLM path. Previously, one
+    failing agent cascaded to "downgrade the whole run to
+    deterministic" even though the rest would have succeeded."""
+    # Tailoring fails twice (2 LLM calls burned), then per-agent
+    # fallback kicks in for Tailoring. Review / ResumeGen / Cover
+    # Letter all succeed first try (3 more LLM calls). Total: 5.
+    queue = [
+        AgentExecutionError("first tailoring failure"),
+        AgentExecutionError("retry tailoring also failed"),
+        _review_response(),
+        _resume_generation_response(),
+        _cover_letter_response(),
+    ]
+    flaky = FlakyOpenAIService(queue)
+    orchestrator = ApplicationOrchestrator(openai_service=flaky)
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    # Pipeline as a whole stays in assisted mode — the LLM ran
+    # successfully for 3 of the 4 agents.
+    assert result.mode == "openai", (
+        "Pipeline should remain assisted when only one agent fell back per-agent."
+    )
+    assert result.attempted_assisted is True
+    # Exactly 5 LLM attempts: 2 failed tailoring + 3 successful
+    # downstream agents (review / resume gen / cover letter).
+    # NOT 2 (the old whole-pipeline-fallback behavior).
+    assert flaky.call_count == 5
+    # Tailoring output came from the deterministic fallback path
+    # (TailoringAgent(None)._fallback), but the downstream LLM
+    # outputs still populate.
+    assert result.tailoring is not None
+    assert result.review.approved is True
+    assert result.resume_generation.professional_summary == \
+        "Final tailored summary for the generated resume."
+    assert result.cover_letter.opening_paragraph.startswith("I am excited to apply")
+
+
+def test_orchestrator_marks_mode_deterministic_when_every_agent_fell_back():
+    """If EVERY agent's LLM attempts fail and they all fall back to
+    deterministic per-agent, the pipeline still completes (no
+    cascade to whole-pipeline fallback) — but the result.mode
+    should honestly reflect that no agent actually used the LLM.
+
+    Auto-downgrade: result.mode flips from "openai" to
+    "deterministic_fallback" when llm_success_count == 0.
+    """
+    # Every LLM call raises. With per-agent fallback, each agent's
+    # deterministic path runs successfully → 4 agents complete with
+    # zero LLM successes.
+    queue = [AgentExecutionError(f"failure {i}") for i in range(20)]
+    flaky = FlakyOpenAIService(queue)
+    orchestrator = ApplicationOrchestrator(openai_service=flaky)
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    # Pipeline completed but no agent succeeded with LLM, so mode
+    # must reflect that.
+    assert result.mode == "deterministic_fallback"
+    assert result.attempted_assisted is True
 
 
 def test_orchestrator_falls_back_if_ai_execution_fails():
