@@ -1355,13 +1355,22 @@ export function WorkspaceShell() {
             }
           : null,
         has_jd: Boolean(review),
+        // Title + location come from the JobPosting metadata (when
+        // the user picked a job from search). Skill counts come from
+        // the JobReview's parsed-text breakdown. They live on
+        // different objects on purpose: review.{hardSkills,softSkills,
+        // mustHaves} is the local heuristic parse of the JD body,
+        // whereas activeJob.{title,location} is the structured
+        // metadata from the ATS source. activeJob is null on a
+        // manually-pasted JD, in which case title/location simply
+        // come up empty — the LLM still gets the skill counts.
         jd_summary: review
           ? {
-              title: review.title || "",
-              location: review.location ?? null,
-              hard_skills_count: review.requirements?.hard_skills?.length ?? 0,
-              soft_skills_count: review.requirements?.soft_skills?.length ?? 0,
-              must_haves_count: review.requirements?.must_haves?.length ?? 0,
+              title: activeJob?.title ?? "",
+              location: activeJob?.location ?? null,
+              hard_skills_count: review.hardSkills?.length ?? 0,
+              soft_skills_count: review.softSkills?.length ?? 0,
+              must_haves_count: review.mustHaves?.length ?? 0,
             }
           : null,
         has_analysis: Boolean(analysisState),

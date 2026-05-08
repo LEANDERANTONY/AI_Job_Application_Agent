@@ -314,8 +314,14 @@ _SCENARIOS: list[tuple[str, Callable]] = [
     ("artifact_export_unsupported_format", _scenario_artifact_export_unsupported_format),
     ("workspace_analyze_empty_body", _scenario_workspace_analyze_empty_body),
     ("analyze_jobs_status_missing_job", _scenario_analyze_jobs_status_missing_job),
-    ("admin_refresh_without_bearer", _scenario_admin_refresh_without_bearer),
-    ("admin_refresh_invalid_bearer", _scenario_admin_refresh_invalid_bearer),
+    # The two admin-refresh bearer scenarios live as separate test
+    # functions below — they need a `monkeypatch` to set the
+    # REFRESH_CACHE_SECRET. Without it the endpoint returns 503
+    # ("Refresh-cache secret not configured") and the bearer-check
+    # branches we're trying to exercise never run. (Local dev
+    # happens to pass because `.env` populates the secret; CI
+    # doesn't ship a `.env`, so the parametrized form failed
+    # only in CI.)
     ("resume_builder_export_400_real_message", _scenario_resume_builder_export_returns_400_with_real_message),
     ("save_workspace_unauthenticated", _scenario_save_workspace_unauthenticated),
     ("assistant_answer_unknown_action", _scenario_assistant_answer_unknown_action),
@@ -325,6 +331,23 @@ _SCENARIOS: list[tuple[str, Callable]] = [
 @pytest.mark.parametrize("name,scenario_fn", _SCENARIOS, ids=[name for name, _ in _SCENARIOS])
 def test_error_scenario(name, scenario_fn):
     scenario_fn()
+
+
+def test_admin_refresh_without_bearer(monkeypatch):
+    """Endpoint must reject an unauthenticated POST with 401/403.
+
+    Patches REFRESH_CACHE_SECRET so the bearer-check branch is
+    actually reached (without a configured secret the endpoint
+    short-circuits with a 503).
+    """
+    monkeypatch.setattr("backend.routers.jobs.REFRESH_CACHE_SECRET", "test-secret")
+    _scenario_admin_refresh_without_bearer()
+
+
+def test_admin_refresh_invalid_bearer(monkeypatch):
+    """Endpoint must reject a wrong bearer with 401."""
+    monkeypatch.setattr("backend.routers.jobs.REFRESH_CACHE_SECRET", "test-secret")
+    _scenario_admin_refresh_invalid_bearer()
 
 
 def test_resume_upload_with_invalid_base64(monkeypatch):
