@@ -224,14 +224,6 @@ export function LandingPage() {
           <nav className="l-topbar-nav" aria-label="Landing navigation">
             <a href="#workbench" className="l-topbar-link">Workflow</a>
             <a href="#bento" className="l-topbar-link">Features</a>
-            <a
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="l-topbar-link"
-            >
-              GitHub
-            </a>
             {isSignedIn ? (
               <button
                 className="l-btn l-btn-ghost l-btn-sm"
