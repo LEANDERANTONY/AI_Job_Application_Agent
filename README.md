@@ -30,7 +30,7 @@
 
 | System | What it does |
 |--------|--------------|
-| **Live job search** | Cached index of ~12,000 open roles from Greenhouse, Lever, Ashby, and Workday — refreshed every 30 minutes. Filter by company, work mode, role type, posted-within. Sort by relevance, recency, or alphabetical. |
+| **Live job search** | Cached index of ~12,000 open roles from Greenhouse, Lever, Ashby, and Workday — refreshed every 4 hours. Filter by company, work mode, role type, posted-within. Sort by relevance, recency, or alphabetical. |
 | **Resume intake** | Upload PDF / DOCX / TXT, or chat one into existence with the conversational builder. Parsed into a normalized profile with skills, experience timeline, projects, publications, and certifications. |
 | **JD review** | LLM-first JD parser with regex fallback. Surfaces hard skills, soft skills, and must-haves; shows match score against the loaded resume. |
 | **Supervised pipeline** | Matchmaker → Forge (tailoring) → Gatekeeper (review) → Resume Generation → Cover Letter. Three-layer LLM retry stack with per-agent fallback isolation, deterministic floor on every stage. |
@@ -45,7 +45,7 @@
 The cached jobs layer lives in Postgres (`cached_jobs` table) and is refreshed by a scheduled worker that fans out across all four sources. Highlights:
 
 - **~117 Greenhouse boards** + **30 Lever sites** + **36 Ashby boards** + **11 Workday Fortune-500 tenants** in the active source pool.
-- **30-minute refresh cadence** via `pg_net` cron triggering the `/admin/refresh-cache` endpoint.
+- **4-hour refresh cadence** via `pg_net` cron triggering the `/admin/refresh-cache` endpoint (6 refreshes per day at 00:00 / 04:00 / 08:00 / 12:00 / 16:00 / 20:00 UTC).
 - **Relevance-ranked search** through a Postgres RPC that combines query token coverage with recency.
 - **Saved-jobs drawer** with a 24-hour TTL — bookmarks survive page reloads but expire if you don't act on them, with an `EXPIRED` badge so nothing silently disappears.
 

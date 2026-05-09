@@ -40,7 +40,7 @@ const WORKBENCH_STEPS = [
     eyebrow: "02 · Job Search",
     title: "Search 12,000+ open roles in one place",
     body:
-      "Live listings from Greenhouse, Lever, Ashby, and Workday — refreshed every 30 minutes so you always see what's actually open. Filter by company, work mode, role type, or how recent the posting is. Sort by best match, newest, or alphabetically.",
+      "Live listings from Greenhouse, Lever, Ashby, and Workday — refreshed several times a day so you always see what's actually open. Filter by company, work mode, role type, or how recent the posting is. Sort by best match, newest, or alphabetically.",
     aside:
       "Saved a job that's no longer hiring? Your bookmark stays put with a clear \"Expired\" tag — nothing gets lost from your shortlist.",
   },
@@ -889,8 +889,8 @@ function BentoSection() {
             </h3>
             <p className="l-bento-body">
               Live listings from 130+ companies including Stripe, Pinterest,
-              Anthropic, Notion, Walmart, and Disney. Refreshed every 30
-              minutes so you&apos;re always seeing what&apos;s actually open.
+              Anthropic, Notion, Walmart, and Disney. Refreshed several
+              times a day so you&apos;re always seeing what&apos;s actually open.
             </p>
             <div className="l-bento-providers">
               <span className="l-bento-provider">greenhouse</span>

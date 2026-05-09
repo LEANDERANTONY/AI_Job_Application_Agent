@@ -196,7 +196,7 @@ Per-user persistent state:
 
 Global (non-user-scoped) state:
 
-- `cached_jobs` — the indexed set of upstream postings refreshed every ~30 min by the backend's `refresh_cached_jobs` worker; see [ADR-013](adr/ADR-013-cached-jobs-cache-layer-with-scheduled-refresh.md)
+- `cached_jobs` — the indexed set of upstream postings refreshed every 4 hours (six times a day) by the backend's `refresh_cached_jobs` worker; see [ADR-013](adr/ADR-013-cached-jobs-cache-layer-with-scheduled-refresh.md)
 
 Each `saved_workspaces` row stores one latest snapshot per user, including enough data to restore the current resume/JD/workflow state.
 
@@ -211,7 +211,7 @@ Each `saved_jobs` row stores one shortlisted posting per user and normalized job
 
 Each `resume_builder_sessions` row stores one in-progress conversational resume-builder draft per user with a 7-day TTL refreshed on every save. A `pg_cron` job (`cleanup-expired-resume-builder-sessions`) hard-deletes expired rows every 5 min and RLS hides expired rows from per-user queries; see [ADR-016](adr/ADR-016-conversational-llm-resume-builder.md).
 
-Each `cached_jobs` row holds one upstream posting keyed on `(source, job_id)`. The table has GENERATED STORED columns (`work_mode`, `employment_type_norm`) backing the dropdown filters and `removed_at` tombstones for upstream-closed jobs the user has bookmarked. A `pg_cron` + `pg_net` schedule POSTs to `/admin/refresh-cache` every ~30 min (see `docs/sql/job_cache_cron_setup.sql`); ranked search reads from this table via the `search_cached_jobs_ranked` RPC, per [ADR-014](adr/ADR-014-postgres-rpc-for-ranked-search.md).
+Each `cached_jobs` row holds one upstream posting keyed on `(source, job_id)`. The table has GENERATED STORED columns (`work_mode`, `employment_type_norm`) backing the dropdown filters and `removed_at` tombstones for upstream-closed jobs the user has bookmarked. A `pg_cron` + `pg_net` schedule (`cached_jobs_refresh_4h`) POSTs to `/admin/refresh-cache` every 4 hours, six times a day (see `docs/sql/job_cache_cron_setup.sql` for the template — production runs `0 */4 * * *`); ranked search reads from this table via the `search_cached_jobs_ranked` RPC, per [ADR-014](adr/ADR-014-postgres-rpc-for-ranked-search.md).
 
 ## Testing Model
 

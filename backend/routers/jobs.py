@@ -29,7 +29,7 @@ def search_jobs(
 
     Default path (`live=false`): query the cached_jobs Supabase table
     via Postgres full-text — ~30ms, no upstream load. The cache is
-    refreshed every 30 min by /admin/refresh-cache.
+    refreshed every 4 hours by /admin/refresh-cache.
 
     Escape hatch (`?live=true`): bypass the cache and fan out to
     every configured Greenhouse / Lever board live. Slower (1-3s) and
@@ -89,7 +89,8 @@ def refresh_cache(
 ):
     """Refresh cached_jobs from all configured providers.
 
-    This is what Supabase pg_cron hits every 30 min. Returns the
+    This is what Supabase pg_cron hits every 4 hours (six times a
+    day on the `0 */4 * * *` schedule). Returns the
     structured refresh report (see `refresh_cached_jobs`) so cron
     output can be inspected when something goes wrong.
     """

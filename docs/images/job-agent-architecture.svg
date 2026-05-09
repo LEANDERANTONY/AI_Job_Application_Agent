@@ -57,7 +57,7 @@
     <text x="100" y="22" class="badge-blue">CACHED JOB INDEX</text>
     <text x="100" y="44" class="nh">~12,000 open roles</text>
     <text x="100" y="62" class="nd">Greenhouse · Lever</text>
-    <text x="100" y="76" class="nd">Ashby · Workday  ·  30-min refresh</text>
+    <text x="100" y="76" class="nd">Ashby · Workday  ·  4-hour refresh</text>
   </g>
 
   <!-- Selected JD — taller so "LLM-parsed" reads as the same shape as Resume above -->
