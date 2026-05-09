@@ -65,7 +65,7 @@ def test_lever_adapter_returns_normalized_results():
     assert response.results[0].metadata["site_name"] == "example"
     assert response.results[0].metadata["salary_text"].startswith("INR 3,000,000 - 4,500,000")
     assert response.source_details["example"] == "matched"
-    assert fake_session.calls[0]["params"] == {"mode": "json", "limit": 100}
+    assert fake_session.calls[0]["params"] == {"mode": "json"}
 
 
 def test_lever_adapter_matches_bangalore_query_to_bengaluru_location():

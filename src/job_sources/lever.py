@@ -323,9 +323,16 @@ class LeverJobSourceAdapter(JobSourceAdapter):
         )
 
     def _fetch_site_payload(self, site_name: str) -> list[dict]:
+        # No `limit`: Lever's public postings API returns the full
+        # site list in a single response, so passing `limit=100`
+        # silently truncated boards like Mistral (162) and Palantir
+        # (226) down to 100. Greenhouse and Ashby take the same
+        # "single GET, take everything" approach. The largest
+        # public Lever board we've measured is in the low hundreds,
+        # so memory is not a concern.
         response = self._http_session.get(
             self._list_url(site_name),
-            params={"mode": "json", "limit": 100},
+            params={"mode": "json"},
             timeout=self._timeout_seconds,
         )
         response.raise_for_status()
