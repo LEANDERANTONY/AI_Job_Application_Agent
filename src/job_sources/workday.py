@@ -294,13 +294,29 @@ class WorkdayJobSourceAdapter(JobSourceAdapter):
     def _fetch_board_jobs(self, board: tuple[str, str, str]) -> list[dict]:
         """Paginate Workday's POST /jobs API up to _MAX_JOBS_PER_BOARD.
 
-        Stops early when the API reports fewer total jobs than our
-        cap, or when a page returns empty. Each request is its own
-        POST — Workday doesn't expose a streaming endpoint.
+        Stops early when offset reaches the API's reported `total`,
+        or when a page returns empty. Each request is its own POST —
+        Workday doesn't expose a streaming endpoint.
+
+        Workday's CXS quirk: on boards with `total > ~600` (nvidia,
+        walmart, citi, micron, hpe, adobe, boeing observed) the
+        first page returns the real total, but pages 2+ return
+        `total: 0` while STILL serving real `jobPostings`. The old
+        code took whichever total each response had, which made the
+        offset >= total check trip after page 2 (offset=40, total=0)
+        and we silently dropped 200+ jobs per board. We now trust
+        only the first non-zero total and ignore later zeros — the
+        empty-page break still covers the genuine end-of-list case.
         """
         api = self._api_url(board)
         all_jobs: list[dict] = []
         offset = 0
+        # `total_known` is the authoritative count from the first
+        # response that gave us a non-zero. Stays at 0 until then,
+        # which means we never trigger the offset-vs-total stop on
+        # the first request and we never trigger it again on later
+        # zero-total quirky responses.
+        total_known = 0
         while offset < _MAX_JOBS_PER_BOARD:
             # Throttle between pages of the SAME board. The first page
             # has no preceding call, so skip the sleep then. Workday
@@ -329,9 +345,11 @@ class WorkdayJobSourceAdapter(JobSourceAdapter):
             if not page:
                 break
             all_jobs.extend(page)
-            total = int(payload.get("total") or 0)
+            page_total = int(payload.get("total") or 0)
+            if page_total > 0:
+                total_known = page_total
             offset += _PAGE_SIZE
-            if offset >= total:
+            if total_known > 0 and offset >= total_known:
                 break
         return all_jobs[:_MAX_JOBS_PER_BOARD]
 

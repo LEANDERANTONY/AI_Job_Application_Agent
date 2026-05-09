@@ -225,6 +225,61 @@ def test_adapter_paginates_until_max_or_total():
     assert len(fake.calls) == PAGES_TO_RETURN
 
 
+def test_adapter_treats_zero_total_on_later_pages_as_quirk_not_end_of_list():
+    """Regression: Workday's CXS API returns the real `total` on page 1,
+    but `total: 0` on pages 2+ for boards with `total` > ~600 — verified
+    live against nvidia.wd5, walmart.wd5, citi.wd5, micron.wd1.
+    Real `jobPostings` are still served in those zero-total responses.
+
+    The earlier code took `total` from each response and stopped when
+    `offset >= total`. With page 2 reporting total=0, the stop would
+    trip immediately (offset=PAGE_SIZE >= 0), capping every large
+    board at 2 pages × PAGE_SIZE = ~40 jobs and silently losing 200+
+    per board.
+
+    The fix: trust `total` only from the first non-zero response and
+    ignore later zeros. Empty `jobPostings` still terminates the
+    loop, so a genuine end-of-list still stops cleanly.
+    """
+    from src.job_sources.workday import _PAGE_SIZE, _MAX_JOBS_PER_BOARD
+
+    api_url = (
+        "https://nvidia.wd5.myworkdayjobs.com/wday/cxs/"
+        "nvidia/NVIDIAExternalCareerSite/jobs"
+    )
+
+    REAL_TOTAL = 2000  # The real Workday total for nvidia
+    # Build enough mock pages to exhaust _MAX_JOBS_PER_BOARD/_PAGE_SIZE
+    # so the loop doesn't run out of pages mid-test.
+    EXPECTED_PAGES = _MAX_JOBS_PER_BOARD // _PAGE_SIZE + 2
+    pages = []
+    for p in range(EXPECTED_PAGES):
+        pages.append({
+            "jobPostings": [
+                _job_payload(req_id=f"R{p * _PAGE_SIZE + i}", title=f"Job {p * _PAGE_SIZE + i}")
+                for i in range(_PAGE_SIZE)
+            ],
+            # Page 1 reports real total; pages 2+ report 0 (the quirk).
+            "total": REAL_TOTAL if p == 0 else 0,
+        })
+    fake = _FakeSession({api_url: pages})
+    adapter = WorkdayJobSourceAdapter(
+        board_tokens=["nvidia:wd5:NVIDIAExternalCareerSite"],
+        http_session=fake,
+    )
+    results = list(adapter.fetch_all_postings())
+    assert len(results) == 1
+    label, status, postings = results[0]
+    assert status == "ok"
+    # Adapter should NOT bail at offset=PAGE_SIZE just because page 2
+    # reported total=0. It should keep paginating up to the
+    # _MAX_JOBS_PER_BOARD cap.
+    assert len(postings) == _MAX_JOBS_PER_BOARD, (
+        f"Expected {_MAX_JOBS_PER_BOARD} postings (cap), got {len(postings)}. "
+        f"If <50, the zero-total quirk is tripping the early-stop again."
+    )
+
+
 def test_adapter_unconfigured_returns_not_configured():
     adapter = WorkdayJobSourceAdapter(board_tokens=[])
     response = adapter.search(JobSearchQuery(query="anything", page_size=10))
