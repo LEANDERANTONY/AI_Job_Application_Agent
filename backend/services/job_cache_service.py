@@ -138,24 +138,30 @@ def refresh_cached_jobs(
             providers_report[source_name] = provider_report
             continue
 
-        # Upsert in chunks. 100 rows per request keeps each transaction
-        # short enough to avoid Supabase throttling on the service-role
-        # endpoint — earlier 200-row chunks intermittently failed
-        # mid-refresh after sustained writes (likely the supabase REST
-        # tier's per-connection write budget). 100 is a good middle
-        # ground for the lighter-payload sources.
+        # Upsert in chunks. The cached_jobs table has a GENERATED
+        # STORED `search_tsv` tsvector column that gets re-derived on
+        # every row insert plus index churn on every chunk; that work
+        # has to fit inside Supabase's default 60 s
+        # `statement_timeout` for the service_role REST path.
         #
-        # Ashby is the exception: its postings carry much larger
-        # description bodies, and the GENERATED STORED `search_tsv`
-        # column has to be re-derived on every row insert. At
-        # chunk_size=100 we observed five consecutive statement
-        # timeouts per refresh ("canceling statement due to statement
-        # timeout") on Supabase's default 60 s `statement_timeout`,
-        # silently losing ~500 rows. chunk_size=30 finishes each
-        # chunk in well under 60 s; total Ashby refresh goes from
-        # ~18 requests to ~60, but every row lands.
+        # Sized history:
+        #   - 200 → intermittently failed after sustained writes
+        #   - 100 → fine for greenhouse + lever + workday early on,
+        #     but Ashby (heavier descriptions) was hitting the
+        #     timeout consistently, dropping ~500 rows per refresh.
+        #     We patched Ashby alone to 30 and kept the others at
+        #     100 in commit 18fde26.
+        #   - As the table grew past 12 K rows, indexes/tsvector
+        #     work scaled, and at 13 K rows greenhouse + lever
+        #     started hitting the 60 s wall too at chunk_size=100,
+        #     silently dropping ~100-200 rows per refresh.
+        #
+        # 30 across all sources is the conservative resolution.
+        # Trade-off: ~3-4× more HTTP roundtrips per refresh (an
+        # extra ~250 calls), but each one comfortably finishes
+        # inside the statement_timeout, so every row lands.
         if all_postings:
-            chunk_size = 30 if source_name == "ashby" else 100
+            chunk_size = 30
             for i in range(0, len(all_postings), chunk_size):
                 chunk = all_postings[i : i + chunk_size]
                 try:
