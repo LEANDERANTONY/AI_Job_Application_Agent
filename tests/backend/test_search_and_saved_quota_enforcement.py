@@ -527,31 +527,34 @@ def _save_workspace_snapshot(*, auth_context, store):
             )
 
 
-def test_2nd_saved_workspace_on_free_returns_429():
-    """Free's saved_workspaces cap is 1. The first save succeeds; the
-    second attempt (with one row already present) rejects with cap=1.
+def test_free_re_save_upserts_existing_workspace():
+    """Free's saved_workspaces cap is 1, but re-saving an existing
+    workspace is an UPDATE to the same slot rather than a new slot —
+    so the gate must NOT 429. This is what the frontend autosave
+    relies on: every snapshot refresh after the first save calls
+    /workspace/save without pre-delete; blocking those would break
+    the autosave UX for every Free user past their first save.
 
-    The current single-row schema means save 1 puts 1 row + save 2
-    would normally overwrite it. The gate REJECTS the overwrite to
-    keep the Free=1 ceiling explicit -- users delete their existing
-    workspace before saving a new one. This is the documented
-    eviction policy from the brief.
+    The cap (1) governs the maximum number of *distinct slots* a Free
+    user can occupy, not the number of write operations against their
+    existing slot. Today's one-row-per-user schema can't actually
+    produce a >1 distinct-slot state for a single user, so the
+    "(cap+1)-th distinct save" assertion lands with the multi-row
+    schema migration (see test_distinct_2nd_workspace_blocks_when_multi_slot_lands).
+
+    Regression for Codex P1 flagged on PR #2 (May 2026).
     """
     auth_context = _build_auth_context(user_id="user-free-workspace-1")
     store = _FakeSavedWorkspaceStore()
 
     # First save: 0 existing -> allowed.
-    result = _save_workspace_snapshot(auth_context=auth_context, store=store)
-    assert result["status"] == "saved"
+    first = _save_workspace_snapshot(auth_context=auth_context, store=store)
+    assert first["status"] == "saved"
 
-    # Second save: 1 existing -> rejected.
-    with pytest.raises(QuotaExceededError) as exc_info:
-        _save_workspace_snapshot(auth_context=auth_context, store=store)
-    err = exc_info.value
-    assert err.counter == "saved_workspaces"
-    assert err.cap == TIER_CAPS["free"]["saved_workspaces"] == 1
-    assert err.current == 1
-    assert err.tier == "free"
+    # Second save: same user_id, store upserts -> still an update to
+    # the user's existing slot, NOT a new slot. Must succeed.
+    second = _save_workspace_snapshot(auth_context=auth_context, store=store)
+    assert second["status"] == "saved"
 
 
 def test_pro_saved_workspace_with_existing_row_is_allowed(monkeypatch):
@@ -579,15 +582,21 @@ def test_pro_saved_workspace_with_existing_row_is_allowed(monkeypatch):
 
 
 def test_saved_workspace_delete_then_save_works():
-    """Deleting the saved workspace frees the slot so the user can save
-    again -- the gate is consistent with the "delete to make room"
-    UX in the 429 message.
+    """Deleting the saved workspace and re-saving the next snapshot
+    both succeed. With the post-Codex-fix gate, re-saving never
+    requires a pre-delete (upserts are always allowed against an
+    existing slot), so the explicit DELETE is purely UX-driven --
+    e.g. when the user wants to clear their workspace from the
+    saved-jobs sidebar. This test pins that DELETE + save round-trips
+    cleanly even after the gate is in place.
     """
     auth_context = _build_auth_context(user_id="user-free-workspace-delete-1")
     store = _FakeSavedWorkspaceStore()
-    _save_workspace_snapshot(auth_context=auth_context, store=store)
-    with pytest.raises(QuotaExceededError):
-        _save_workspace_snapshot(auth_context=auth_context, store=store)
+    # First save: 0 existing -> allowed.
+    first = _save_workspace_snapshot(auth_context=auth_context, store=store)
+    assert first["status"] == "saved"
+    # Explicit delete (user-driven clean slate).
     store.delete_workspace("access", "refresh", "user-free-workspace-delete-1")
-    result = _save_workspace_snapshot(auth_context=auth_context, store=store)
-    assert result["status"] == "saved"
+    # Save again from 0 existing -> allowed.
+    second = _save_workspace_snapshot(auth_context=auth_context, store=store)
+    assert second["status"] == "saved"

@@ -114,23 +114,27 @@ def save_workspace_snapshot(
         raise RuntimeError("Saved workspace persistence is not configured.")
 
     # Persistent-count quota gate. Skip when the tier cap is UNLIMITED
-    # (Business). For capped tiers, count existing slots: the current
-    # store has at most one row per user, so the count is 0 or 1.
-    # `load_workspace` returns `(record, status)` -- status is
-    # "missing" / "expired" / "available". Anything other than
-    # "available" means there's no live row.
+    # (Business). For capped tiers, the rule is: a NEW slot creation
+    # counts toward the cap; UPDATES to an existing slot do not.
     #
-    # Eviction policy at-cap: REJECT, do not auto-evict. Users must
-    # explicitly delete an existing saved workspace before saving a
-    # new one. This matches the saved_jobs gate. The "overwrite" UX
-    # for Free at cap=1 is achieved client-side: the frontend deletes
-    # the existing workspace before issuing the new save.
+    # Today's store upserts on user_id (one row per user). So when the
+    # user already has an "available" record, this save is an UPDATE to
+    # their existing slot, not a new slot — the cap doesn't apply and
+    # the save proceeds. This is critical for the frontend autosave UX:
+    # every snapshot refresh after the first save would otherwise 429
+    # for Free users (cap=1, 1 >= 1 blocks the upsert).
     #
-    # Pro cap=5 / Business UNLIMITED are future-schema slots. Today
-    # the store upserts on user_id (one row per user) so Pro and
-    # Business never functionally reach the cap; the gate remains
-    # tier-correct so the next schema migration (e.g. per-slug rows)
-    # doesn't require revisiting this code path.
+    # When the schema migrates to per-slot rows (e.g. one row per
+    # saved-workspace slug, future PR), `existing_count` becomes the
+    # user's actual distinct-slot count and `is_creating_new_slot`
+    # becomes True only when the save's slug isn't already in the
+    # user's set. The gate logic then naturally blocks the (cap+1)-th
+    # distinct slot without revisiting this code path.
+    #
+    # The 429 message + the saved_jobs gate's parallel "delete to make
+    # room" UX still apply for genuinely-new slot creation; this just
+    # carves out the upsert path so autosave doesn't break under tier
+    # caps the user hasn't actually exceeded.
     tier = resolve_user_tier(context.app_user)
     cap = TIER_CAPS[tier]["saved_workspaces"]
     quota_user_id = str(getattr(context.app_user, "id", "") or "")
@@ -140,12 +144,12 @@ def save_workspace_snapshot(
             refresh_token,
             quota_user_id,
         )
-        existing_count = (
-            1
-            if existing_status == "available" and existing_record is not None
-            else 0
+        is_existing_slot_update = (
+            existing_status == "available" and existing_record is not None
         )
-        if existing_count >= cap:
+        existing_count = 1 if is_existing_slot_update else 0
+        is_creating_new_slot = not is_existing_slot_update
+        if is_creating_new_slot and existing_count >= cap:
             raise QuotaExceededError(
                 "You have reached the saved-workspaces limit for your "
                 "plan. Delete an existing saved workspace to make room, "
