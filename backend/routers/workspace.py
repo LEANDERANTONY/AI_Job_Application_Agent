@@ -36,6 +36,7 @@ from backend.services.workspace_service import (
     answer_workspace_question,
     parse_job_description_upload,
     parse_resume_upload,
+    prepare_stream_workspace_question,
     run_workspace_analysis,
     stream_workspace_question,
 )
@@ -142,12 +143,26 @@ def _attach_persistence_status(
 
 @router.post("/resume/upload")
 @limiter.limit(LIMIT_PARSE)
-def upload_resume(request: Request, payload: UploadedFilePayloadModel):
+def upload_resume(
+    request: Request,
+    payload: UploadedFilePayloadModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    """Parse an uploaded resume into a CandidateProfile.
+
+    Auth tokens are optional (anonymous users can still preview a
+    parse) but are threaded through to ``parse_resume_upload`` so the
+    resume_parses quota gate can attribute the credit. The gate
+    short-circuits cleanly when tokens are empty.
+    """
+    access_token, refresh_token = auth_tokens
     try:
         return parse_resume_upload(
             filename=payload.filename,
             mime_type=payload.mime_type,
             content_base64=payload.content_base64,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
         )
     except AppError as error:
         _raise_http_error(error)
@@ -171,7 +186,16 @@ def upload_job_description(request: Request, payload: UploadedFilePayloadModel):
 def start_resume_builder_route(request: Request, auth_tokens=Depends(get_optional_auth_tokens)):
     access_token, refresh_token = auth_tokens
     try:
-        payload = start_resume_builder_session()
+        # The resume_builder_sessions quota gate fires inside
+        # start_resume_builder_session -- we pass the auth tokens so it
+        # can attribute the credit. Free tier consumes a LIFETIME slot
+        # (cap 1, one onboarding ever); Pro and Business consume from
+        # a MONTHLY slot pool (3 / 15). The lifetime/monthly switch
+        # lives inside the service so the route stays tier-agnostic.
+        payload = start_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
         persist_result = persist_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
@@ -185,6 +209,8 @@ def start_resume_builder_route(request: Request, auth_tokens=Depends(get_optiona
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
+    except AppError as error:
+        _raise_http_error(error)
 
 
 @router.get("/resume-builder/latest")
@@ -499,12 +525,25 @@ def stream_assistant_answer(
     (or ``error`` → ``done`` on failure). See
     ``stream_workspace_question`` for the event contract.
 
+    The quota gate (assistant_turns) runs in
+    ``prepare_stream_workspace_question`` BEFORE StreamingResponse is
+    constructed. That keeps a quota rejection out of the SSE channel
+    entirely — the global QuotaExceededError handler in backend.app
+    converts it to the canonical 429 JSON the same way the sync
+    surface does. Mixing a 429 into an open ``text/event-stream`` is
+    not supported by the HTTP spec or by browsers, so the gate has to
+    win the race against StreamingResponse's status-line commit.
+
     The ``X-Accel-Buffering: no`` header tells Caddy (and any other
     well-behaved reverse proxy) to flush each frame immediately
     instead of buffering the response. The Caddyfile also sets
     ``flush_interval -1`` for belt-and-braces.
     """
     access_token, refresh_token = auth_tokens
+    prepared = prepare_stream_workspace_question(
+        access_token=access_token or "",
+        refresh_token=refresh_token or "",
+    )
     return StreamingResponse(
         stream_workspace_question(
             question=payload.question,
@@ -516,8 +555,7 @@ def stream_assistant_answer(
             ),
             workspace_snapshot=payload.workspace_snapshot,
             history=[item.model_dump() for item in payload.history],
-            access_token=access_token or "",
-            refresh_token=refresh_token or "",
+            prepared=prepared,
         ),
         media_type="text/event-stream",
         headers={

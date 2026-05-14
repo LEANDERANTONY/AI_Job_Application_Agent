@@ -100,18 +100,83 @@ def _enrich_job_description_from_imported_posting(job_description, imported_job_
     return job_description
 
 
-def parse_resume_upload(*, filename: str, mime_type: str, content_base64: str):
-    uploaded_file = _InMemoryUploadedFile(
-        file_bytes=_decode_base64_content(content_base64),
-        filename=filename,
-        mime_type=mime_type,
-    )
-    resume_document = parse_resume_document(uploaded_file, source=f"workspace:{filename}")
-    candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
-    return {
-        "resume_document": _serialize(resume_document),
-        "candidate_profile": _serialize(candidate_profile),
-    }
+def parse_resume_upload(
+    *,
+    filename: str,
+    mime_type: str,
+    content_base64: str,
+    access_token: str = "",
+    refresh_token: str = "",
+):
+    """Parse a user-uploaded resume.
+
+    Quota gate (Step 5 of tier-enforcement):
+      * `resume_parses` is monthly: Free 3 / Pro 25 / Business 100.
+      * Gate runs BEFORE `parse_resume_document` so we don't burn
+        the parse if we'd just reject. Refund-on-failure pattern
+        mirrors `run_workspace_analysis` -- a parser exception
+        rolls the credit back so a corrupted PDF doesn't cost the
+        user a credit.
+      * Anonymous uploads (no auth tokens) skip the gate. The
+        existing rate-limit on the route still bounds abuse for
+        unauthenticated traffic.
+
+      Note (deferred enhancement): the original brief mentioned a
+      "5 lifetime grace + 3/month" structure for Free tier. That's
+      a UX nicety that requires a second counter
+      (resume_parses_lifetime) and a layered gate; this PR ships
+      the simpler 3/25/100 monthly form and defers the grace
+      window. If real-world Free users hit the 3/mo wall on first
+      signup we can wire the lifetime grace as a follow-up without
+      touching call sites -- just add the second counter check.
+    """
+    auth_context = None
+    if access_token and refresh_token:
+        auth_context = resolve_authenticated_context(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+
+    app_user = getattr(auth_context, "app_user", None) if auth_context is not None else None
+    tier = resolve_user_tier(app_user)
+    quota_user_id = str(getattr(app_user, "id", "") or "") if app_user is not None else ""
+    quota_consumed = False
+    if quota_user_id:
+        quota.check_and_increment("resume_parses", quota_user_id, tier)
+        quota_consumed = True
+
+    try:
+        uploaded_file = _InMemoryUploadedFile(
+            file_bytes=_decode_base64_content(content_base64),
+            filename=filename,
+            mime_type=mime_type,
+        )
+        resume_document = parse_resume_document(uploaded_file, source=f"workspace:{filename}")
+        candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
+        return {
+            "resume_document": _serialize(resume_document),
+            "candidate_profile": _serialize(candidate_profile),
+        }
+    except BaseException:
+        # Refund-on-failure: if the parse blew up (corrupted file,
+        # OCR timeout, etc.) roll back the credit so the user gets
+        # another shot. Best-effort -- a refund failure logs but
+        # doesn't mask the original parsing exception.
+        if quota_consumed:
+            try:
+                quota.refund("resume_parses", quota_user_id, tier)
+            except Exception:  # noqa: BLE001 - refund is best-effort
+                log_event(
+                    _QUOTA_LOGGER,
+                    logging.WARNING,
+                    "resume_parse_quota_refund_failed",
+                    "Refund after resume parse failure raised; user credit "
+                    "was not restored.",
+                    counter="resume_parses",
+                    user_id=quota_user_id,
+                    tier=tier,
+                )
+        raise
 
 
 def parse_job_description_upload(*, filename: str, mime_type: str, content_base64: str):
@@ -347,6 +412,22 @@ def answer_workspace_question(
     access_token: str = "",
     refresh_token: str = "",
 ):
+    """Sync workspace assistant endpoint.
+
+    Quota gate (Step 4 of tier-enforcement):
+      * For authenticated users we atomically increment
+        ``assistant_turns`` BEFORE invoking the LLM. The streaming
+        sibling (`stream_workspace_question`) routes through the same
+        counter, so a single user mixing /assistant/answer and
+        /assistant/answer/stream still shares one monthly budget.
+      * On any generation failure we refund the credit — same pattern
+        as ``run_workspace_analysis``. A transient OpenAI hiccup
+        shouldn't burn one of the user's monthly turns.
+      * Anonymous traffic (no user_id) skips the gate entirely. The
+        deterministic fallback path inside ``AssistantService`` still
+        runs, so unauthenticated users still see a useful answer —
+        they're just not metered against the per-tier monthly cap.
+    """
     workflow_view_model = None
     artifact = None
     app_context = {
@@ -402,23 +483,68 @@ def answer_workspace_question(
         and str(item.get("answer", "") or "").strip()
     ]
 
-    openai_service = None
+    auth_context = None
     if access_token and refresh_token:
         auth_context = resolve_authenticated_context(
             access_token=access_token,
             refresh_token=refresh_token,
         )
+
+    # Quota gate. assistant_turns is monthly: 20 / 150 / 500 across
+    # tiers. The gate routes through `resolve_user_tier` so anonymous
+    # callers are skipped (no user_id → no row to bill). The refund
+    # on failure mirrors `run_workspace_analysis`: an OpenAI / parser
+    # error mid-answer rolls back so the user doesn't lose a credit.
+    #
+    # `app_user` is pulled via getattr so older test stubs that return
+    # a plain dict from resolve_authenticated_context still work — the
+    # absence of an .app_user attribute is treated identically to the
+    # anonymous case (no credit consumed).
+    app_user = getattr(auth_context, "app_user", None) if auth_context is not None else None
+    tier = resolve_user_tier(app_user)
+    quota_user_id = str(getattr(app_user, "id", "") or "") if app_user is not None else ""
+    quota_consumed = False
+    if quota_user_id:
+        quota.check_and_increment("assistant_turns", quota_user_id, tier)
+        quota_consumed = True
+
+    openai_service = None
+    if auth_context is not None:
         openai_service, _ = build_openai_service_for_context(auth_context)
 
-    response: AssistantResponse = AssistantService(openai_service=openai_service).answer(
-        question,
-        current_page=current_page,
-        workflow_view_model=workflow_view_model,
-        artifact=artifact,
-        history=compact_history,
-        app_context=app_context,
-    )
-    return _serialize(response)
+    try:
+        response: AssistantResponse = AssistantService(openai_service=openai_service).answer(
+            question,
+            current_page=current_page,
+            workflow_view_model=workflow_view_model,
+            artifact=artifact,
+            history=compact_history,
+            app_context=app_context,
+        )
+        return _serialize(response)
+    except BaseException:
+        # Refund-on-failure for the same reason as run_workspace_analysis:
+        # the credit was incremented before the LLM ran, so a transient
+        # generation error shouldn't cost the user a turn. Only refund
+        # when the increment above actually consumed a credit; if the
+        # gate itself raised, `quota_consumed` is still False and no
+        # decrement is needed.
+        if quota_consumed:
+            try:
+                quota.refund("assistant_turns", quota_user_id, tier)
+            except Exception:  # noqa: BLE001 - refund is best-effort
+                log_event(
+                    _QUOTA_LOGGER,
+                    logging.WARNING,
+                    "assistant_quota_refund_failed",
+                    "Refund after sync assistant failure raised; user credit "
+                    "was not restored. The original error is the one that "
+                    "will surface to the client.",
+                    counter="assistant_turns",
+                    user_id=quota_user_id,
+                    tier=tier,
+                )
+        raise
 
 
 _STREAM_LOGGER = get_logger("backend.services.workspace_service.stream")
@@ -477,6 +603,85 @@ def _compute_assistant_sources(
     return deduped[:4]
 
 
+def prepare_stream_workspace_question(
+    *,
+    access_token: str = "",
+    refresh_token: str = "",
+):
+    """Run auth + the assistant_turns quota gate BEFORE the generator starts.
+
+    Returns a dict carrying the resolved openai_service and the bits the
+    generator needs for refund-on-failure (counter name, user_id, tier,
+    quota_consumed flag).
+
+    The route MUST call this before constructing
+    ``stream_workspace_question(...)``: because the streaming function
+    contains ``yield``, calling it does not execute its body until
+    iteration starts, and by then ``StreamingResponse`` has already
+    committed the response status (200) and headers. A
+    ``QuotaExceededError`` raised inside the generator body would be
+    silently turned into a 500 mid-stream by Starlette, NOT routed
+    through our global 429 handler. Doing the gate out-of-band keeps
+    the rejection surface uniform with the sync sibling.
+    """
+    auth_context = None
+    if access_token and refresh_token:
+        try:
+            auth_context = resolve_authenticated_context(
+                access_token=access_token,
+                refresh_token=refresh_token,
+            )
+        except AppError as auth_exc:
+            log_event(
+                _STREAM_LOGGER,
+                logging.WARNING,
+                "assistant_stream_auth_failed",
+                "Auth resolution failed for streaming assistant — falling back to anonymous deterministic path.",
+                error_message=auth_exc.user_message,
+                details=auth_exc.details,
+            )
+            auth_context = None
+
+    # Pull `app_user` via getattr so callers that hand us a duck-typed
+    # auth context (older test stubs return a plain dict from
+    # resolve_authenticated_context) don't crash on the attribute
+    # access. Anonymous paths surface as `None` here, which
+    # resolve_user_tier already accepts.
+    app_user = getattr(auth_context, "app_user", None) if auth_context is not None else None
+    tier = resolve_user_tier(app_user)
+    quota_user_id = str(getattr(app_user, "id", "") or "") if app_user is not None else ""
+    quota_consumed = False
+    if quota_user_id:
+        # Raises QuotaExceededError on cap breach. Because we run BEFORE
+        # the generator yields its first frame, the exception surfaces
+        # at the route call site (the request is still pre-stream) and
+        # backend.app's global handler builds the canonical 429.
+        quota.check_and_increment("assistant_turns", quota_user_id, tier)
+        quota_consumed = True
+
+    openai_service = None
+    if auth_context is not None:
+        try:
+            openai_service, _ = build_openai_service_for_context(auth_context)
+        except AppError as auth_exc:
+            log_event(
+                _STREAM_LOGGER,
+                logging.WARNING,
+                "assistant_stream_openai_init_failed",
+                "OpenAI service init failed for streaming assistant — falling back to deterministic path.",
+                error_message=auth_exc.user_message,
+                details=auth_exc.details,
+            )
+            openai_service = None
+
+    return {
+        "openai_service": openai_service,
+        "tier": tier,
+        "quota_user_id": quota_user_id,
+        "quota_consumed": quota_consumed,
+    }
+
+
 def stream_workspace_question(
     *,
     question: str,
@@ -484,8 +689,7 @@ def stream_workspace_question(
     workspace_state: dict[str, Any] | None = None,
     workspace_snapshot: dict[str, Any] | None,
     history: list[dict[str, str]] | None,
-    access_token: str = "",
-    refresh_token: str = "",
+    prepared,
 ) -> Iterable[str]:
     """Generator yielding SSE frames for the assistant streaming
     endpoint.
@@ -496,12 +700,22 @@ def stream_workspace_question(
     frontend is expected to close the stream on either ``done`` or
     ``error``.
 
+    ``prepared`` must be the dict returned by
+    ``prepare_stream_workspace_question``; the route calls that first so
+    a quota rejection raises pre-stream and lands in the global 429
+    handler instead of polluting an in-flight SSE stream.
+
     A ``followups`` event used to sit between the last ``delta`` and
     ``done``, but the suggested-follow-up panel was removed from the
     UI as a deliberate product call (commit 9138ead) and the wire
     event was dead code in both directions, so it was dropped here.
     Re-add it alongside any UI re-introduction.
     """
+    openai_service = prepared.get("openai_service")
+    tier = prepared.get("tier", "free")
+    quota_user_id = str(prepared.get("quota_user_id", "") or "")
+    quota_consumed = bool(prepared.get("quota_consumed", False))
+
     workflow_view_model = None
     artifact = None
     app_context: dict[str, Any] = {
@@ -558,26 +772,8 @@ def stream_workspace_question(
     # before any answer text starts arriving.
     yield _sse_event("meta", {"sources": sources})
 
-    openai_service = None
-    if access_token and refresh_token:
-        try:
-            auth_context = resolve_authenticated_context(
-                access_token=access_token,
-                refresh_token=refresh_token,
-            )
-            openai_service, _ = build_openai_service_for_context(auth_context)
-        except AppError as auth_exc:
-            log_event(
-                _STREAM_LOGGER,
-                logging.WARNING,
-                "assistant_stream_auth_failed",
-                "Auth resolution failed for streaming assistant — falling back to anonymous deterministic path.",
-                error_message=auth_exc.user_message,
-                details=auth_exc.details,
-            )
-            openai_service = None
-
     assistant = AssistantService(openai_service=openai_service)
+    stream_raised = False
     try:
         produced_any = False
         for chunk in assistant.stream_answer(
@@ -606,6 +802,7 @@ def stream_workspace_question(
                 },
             )
     except AppError as exc:
+        stream_raised = True
         log_event(
             _STREAM_LOGGER,
             logging.WARNING,
@@ -616,6 +813,7 @@ def stream_workspace_question(
         )
         yield _sse_event("error", {"detail": exc.user_message})
     except Exception as exc:  # noqa: BLE001 - boundary for streaming surface
+        stream_raised = True
         log_event(
             _STREAM_LOGGER,
             logging.ERROR,
@@ -629,4 +827,23 @@ def stream_workspace_question(
             {"detail": "The assistant stream failed. Please try again."},
         )
     finally:
+        # Refund-on-failure: a generator exception AFTER the credit was
+        # consumed should not burn the user's monthly turn. The gate
+        # itself ran outside the generator (see
+        # `prepare_stream_workspace_question`), so reaching this branch
+        # always means a successful increment we want to roll back.
+        if stream_raised and quota_consumed and quota_user_id:
+            try:
+                quota.refund("assistant_turns", quota_user_id, tier)
+            except Exception:  # noqa: BLE001 - refund is best-effort
+                log_event(
+                    _STREAM_LOGGER,
+                    logging.WARNING,
+                    "assistant_stream_quota_refund_failed",
+                    "Refund after streaming assistant failure raised; user "
+                    "credit was not restored.",
+                    counter="assistant_turns",
+                    user_id=quota_user_id,
+                    tier=tier,
+                )
         yield _sse_event("done", {})

@@ -8,6 +8,9 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 from uuid import uuid4
 
+from backend import quota
+from backend.services.auth_session_service import resolve_authenticated_context
+from backend.tiers import resolve_user_tier
 from src.config import get_openai_max_completion_tokens_for_task
 from src.errors import AgentExecutionError
 from src.exporters import export_docx_bytes, export_pdf_bytes
@@ -1646,10 +1649,81 @@ def has_resume_builder_session(session_id: str) -> bool:
     return str(session_id or "").strip() in _SESSIONS
 
 
-def start_resume_builder_session():
-    session = ResumeBuilderSession(session_id=str(uuid4()))
-    _SESSIONS[session.session_id] = session
-    return _serialize_session(session)
+def start_resume_builder_session(
+    *,
+    access_token: str = "",
+    refresh_token: str = "",
+):
+    """Begin a new resume-builder intake.
+
+    Quota gate (Step 5 of tier-enforcement):
+      `resume_builder_sessions` is the special case from the brief:
+        Free  -> lifetime counter, cap 1   (one onboarding ever)
+        Pro   -> monthly counter,  cap 3
+        Business -> monthly counter, cap 15
+      We pass `lifetime=True` to `check_and_increment` ONLY when
+      `tier == "free"`. Other tiers fall through to the default
+      monthly period_key. The credit is consumed on session creation
+      (not per intake turn) so users can chat freely once they're in.
+
+    Failure refund: if the in-memory session insert fails we
+    refund. Realistically this can only fail if the in-process
+    dict mutation raises (e.g. interpreter shutdown) -- the gate
+    pattern is here for consistency with the rest of the series.
+
+    Anonymous flow: when no auth tokens are passed the gate skips
+    and the session is created without any credit being charged.
+    Anonymous resume-builder usage was already the existing
+    pre-quota behavior; we preserve it.
+    """
+    auth_context = None
+    if access_token and refresh_token:
+        auth_context = resolve_authenticated_context(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+
+    app_user = getattr(auth_context, "app_user", None) if auth_context is not None else None
+    tier = resolve_user_tier(app_user)
+    quota_user_id = str(getattr(app_user, "id", "") or "") if app_user is not None else ""
+    # Lifetime ONLY on Free -- Pro and Business get monthly slots.
+    lifetime = tier == "free"
+    quota_consumed = False
+    if quota_user_id:
+        quota.check_and_increment(
+            "resume_builder_sessions",
+            quota_user_id,
+            tier,
+            lifetime=lifetime,
+        )
+        quota_consumed = True
+
+    try:
+        session = ResumeBuilderSession(session_id=str(uuid4()))
+        _SESSIONS[session.session_id] = session
+        return _serialize_session(session)
+    except BaseException:
+        if quota_consumed:
+            try:
+                quota.refund(
+                    "resume_builder_sessions",
+                    quota_user_id,
+                    tier,
+                    lifetime=lifetime,
+                )
+            except Exception:  # noqa: BLE001 - refund is best-effort
+                log_event(
+                    LOGGER,
+                    logging.WARNING,
+                    "resume_builder_session_quota_refund_failed",
+                    "Refund after resume-builder session creation failure "
+                    "raised; user credit was not restored.",
+                    counter="resume_builder_sessions",
+                    user_id=quota_user_id,
+                    tier=tier,
+                    lifetime=lifetime,
+                )
+        raise
 
 
 _VALID_STATUSES = {"collecting", "reviewing", "ready"}
