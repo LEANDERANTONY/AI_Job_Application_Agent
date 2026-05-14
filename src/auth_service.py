@@ -253,13 +253,18 @@ class AuthService:
                 auth_flow = cookie_payload.get("auth_flow")
                 if auth_flow:
                     redirect_to = _with_query_params(self.redirect_url, auth_flow=auth_flow)
-        if not code_verifier and not auth_flow:
-            latest_flow = _consume_latest_pkce_flow()
-            if latest_flow:
-                auth_flow = latest_flow.get("auth_flow")
-                code_verifier = latest_flow.get("code_verifier")
-                if auth_flow:
-                    redirect_to = _with_query_params(self.redirect_url, auth_flow=auth_flow)
+        # NOTE: a previous defensive fallback consumed the most-recently-
+        # created PKCE flow from the shared `_pkce_flows` table when both
+        # `auth_flow` AND `code_verifier` were missing. Codex P2 finding
+        # on PR #2 (May 2026) correctly flagged this as a cross-user
+        # contamination vector: the store is shared across users, so a
+        # malformed or malicious /auth/google/exchange request would
+        # steal another user's pending verifier and break their
+        # legitimate sign-in callback. Removed in favour of a clean
+        # "session expired" error — legitimate users who lost their
+        # cookie mid-flow re-run sign-in (rare), which is way less
+        # bad than letting one user's exchange request hijack another
+        # user's PKCE state.
         if not code_verifier:
             raise AppError("Google sign-in session expired. Start the sign-in flow again.")
         client = self._create_client()

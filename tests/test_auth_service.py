@@ -276,22 +276,28 @@ def test_exchange_code_for_session_uses_local_flow_store_when_memory_is_missing(
     assert auth_service_module._consume_pkce_flow("flow-123") is None
 
 
-def test_exchange_code_for_session_uses_latest_local_flow_store_when_auth_flow_is_missing(
+def test_exchange_code_for_session_does_not_consume_other_users_pkce_flow_when_auth_flow_is_missing(
     monkeypatch,
     tmp_path,
 ):
-    response = SimpleNamespace(
-        session=SimpleNamespace(
-            access_token="access-token",
-            refresh_token="refresh-token",
-            user=SimpleNamespace(
-                id="user-123",
-                email="user@example.com",
-                user_metadata={"full_name": "Leander Antony"},
-            ),
-        )
-    )
-    auth_client = FakeAuthClient(exchange_response=response)
+    """Security regression — Codex P2 finding on PR #2 (May 2026).
+
+    The `_pkce_flows` SQLite store is shared across users. A previous
+    defensive fallback path consumed the most-recently-created flow
+    when neither `auth_flow` nor `code_verifier` was supplied, which
+    let one user's exchange request hijack another user's pending
+    PKCE state (DoS on their sign-in callback at minimum, full
+    session steal in the worst case if the attacker also controlled
+    the auth_code).
+
+    This test pins the post-fix behaviour: when the caller arrives
+    with no auth_flow and no code_verifier, the exchange MUST raise
+    "session expired" rather than reach into the shared store. The
+    legitimate-user-lost-their-cookie recovery case is unfortunate
+    but rare and cleanly recovered by re-running sign-in; the
+    cross-user attack vector is way worse.
+    """
+    auth_client = FakeAuthClient(exchange_response=None)
 
     monkeypatch.setattr(
         "src.auth_service.create_client",
@@ -307,7 +313,10 @@ def test_exchange_code_for_session_uses_latest_local_flow_store_when_auth_flow_i
         tmp_path / "auth.sqlite3",
     )
 
-    auth_service_module._store_pkce_flow("flow-123", "stored-verifier")
+    # Seed the shared store with a pending PKCE flow belonging to
+    # "user A" (the victim). The test simulates "user B" calling
+    # exchange without their own auth_flow.
+    auth_service_module._store_pkce_flow("victim-flow-123", "victim-verifier")
 
     service = AuthService(
         supabase_url="https://project.supabase.co",
@@ -315,15 +324,12 @@ def test_exchange_code_for_session_uses_latest_local_flow_store_when_auth_flow_i
         redirect_url="http://localhost:8501",
     )
 
-    session = service.exchange_code_for_session("auth-code", auth_flow=None)
+    with pytest.raises(AppError, match="session expired"):
+        service.exchange_code_for_session("auth-code", auth_flow=None)
 
-    assert auth_client.exchange_payload == {
-        "auth_code": "auth-code",
-        "code_verifier": "stored-verifier",
-        "redirect_to": "http://localhost:8501?auth_flow=flow-123",
-    }
-    assert session.user.user_id == "user-123"
-    assert auth_service_module._consume_latest_pkce_flow() is None
+    # Victim's PKCE flow is still pristine in the store — the
+    # request did NOT steal it.
+    assert auth_service_module._consume_pkce_flow("victim-flow-123") == "victim-verifier"
 
 
 def test_exchange_code_for_session_requires_pkce_verifier(monkeypatch):
