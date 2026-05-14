@@ -37,6 +37,7 @@
 | **Artifact export** | Two themes (`classic_ats` for ATS parsers, `professional_neutral` for human readers) in DOCX or PDF. The same source data feeds either pathway. |
 | **Grounded assistant** | Floating workspace chat with full context of the loaded resume, JD, analysis state, and saved jobs. Streams answers as they generate. |
 | **Command palette** | `⌘K` / `Ctrl+K` from anywhere — jump between steps, load a saved job, re-ask a recent assistant question, or run the analysis. |
+| **Tier enforcement** | Per-(user, period, counter) atomic quota gates on every gated action (tailored applications, premium applications, assistant turns, resume parses, resume-builder sessions, job searches, saved jobs, saved workspaces). Free / Pro / Business cap matrix. Premium opt-in routes review + resume-gen + cover-letter to `gpt-5.5` while keeping tailoring on mini for COGS reasons. Refund-on-failure so a transient workflow error doesn't burn a credit. |
 
 ---
 
@@ -75,7 +76,7 @@ Each agent follows the same operating shape: deterministic baseline first, LLM-a
 
 - **44 Python test files** cover parsing, normalization, fitting, tailoring, orchestration, builders, exports, auth, quotas, persistence, error handling, and the four ATS adapters.
 - **Quality runners** in `tests/quality/` produce evidence for each LLM-driven stage (parser, tailoring, review, resume gen, cover letter, assistant, JD parser, latency baseline).
-- **19 ADRs** in `docs/adr/` record the architectural decisions, including the Streamlit-first → Next.js + FastAPI transition (ADR-012), DOCX-first export (ADR-015), conversational builder (ADR-016), state-aware assistant (ADR-017), and three-layer retry stack (ADR-018).
+- **23 ADRs** in `docs/adr/` record the architectural decisions, including the Streamlit-first → Next.js + FastAPI transition (ADR-012), DOCX-first export (ADR-015), conversational builder (ADR-016), state-aware assistant (ADR-017), three-layer retry stack (ADR-018), independent step navigation (ADR-019), tier resolution shim (ADR-020), atomic quota with refund (ADR-021), tier-aware model selection (ADR-022), and Lemon Squeezy as Merchant of Record for v1 (ADR-023).
 - **Architecture details** live in [docs/architecture.md](docs/architecture.md).
 
 ## Deployment
