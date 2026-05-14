@@ -100,6 +100,50 @@ TIER_CAPS: dict[Tier, dict[str, int]] = {
 }
 
 
+# Tier-aware retention for saved workspaces (Step 8). Free plans get a
+# 7-day rolling retention window; Pro plans get 30 days; Business is
+# unbounded. None is the "unbounded" sentinel rather than a large
+# integer so callers can do a single `if days is None: continue` test
+# without comparing against a "fake infinity" magic number.
+#
+# These numbers live HERE (not in TIER_CAPS) because retention is a
+# duration, not a count -- conflating them would force a second
+# TypedDict field whose semantics differ from every other cap. The
+# sweeper reads from this table, the brief locks the values:
+#
+#     TIER       SAVED_WORKSPACE RETENTION
+#     free       7 days
+#     pro        30 days
+#     business   unbounded (None)
+#
+# If marketing copy on the pricing page changes, update this mapping
+# AND `frontend/src/components/landing/pricing.tsx` in the same PR.
+_RETENTION_DAYS_BY_TIER: dict[Tier, int | None] = {
+    "free": 7,
+    "pro": 30,
+    "business": None,
+}
+
+
+def retention_days_for_tier(tier: Tier) -> int | None:
+    """Return the saved-workspace retention duration for a tier.
+
+    Returns a positive integer for capped tiers (Free 7, Pro 30) and
+    ``None`` for unbounded retention (Business). The sweeper treats
+    None as "skip this row" -- the workspace stays forever until the
+    user explicitly deletes it.
+
+    Mirrors HelpmateAI's `TIER_LIMITS[tier]["retention_days"]` shape
+    but lives in a separate mapping because:
+      * Retention is a duration, not a count, so it doesn't belong
+        next to the integer caps in TIER_CAPS.
+      * The unbounded sentinel is `None` here; TIER_CAPS uses -1.
+        Mixing both in one TypedDict would force every caller to
+        carry both type-narrowing branches around.
+    """
+    return _RETENTION_DAYS_BY_TIER[tier]
+
+
 def resolve_user_tier(app_user: AppUserRecord | None) -> Tier:
     """Resolve the active subscription tier for an authenticated user.
 
@@ -130,4 +174,5 @@ __all__ = [
     "UNLIMITED",
     "Tier",
     "resolve_user_tier",
+    "retention_days_for_tier",
 ]
