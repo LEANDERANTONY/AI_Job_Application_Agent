@@ -73,6 +73,17 @@ begin
 end;
 $$;
 
+-- Lock down execution. Without this, Supabase grants EXECUTE on
+-- public-schema functions to PUBLIC, anon, and authenticated by
+-- default — meaning any caller with the public anon key could trigger
+-- arbitrary expired-session cleanup via the REST RPC surface. The
+-- pg_cron job runs as the cron owner (postgres) so the unschedule/
+-- schedule below still work; the backend never calls this function
+-- directly. (Mirrored on prod by migration `revoke_public_from_existing_definer_rpcs`.)
+revoke all on function public.cleanup_expired_resume_builder_sessions() from public;
+revoke all on function public.cleanup_expired_resume_builder_sessions() from anon;
+revoke all on function public.cleanup_expired_resume_builder_sessions() from authenticated;
+
 -- Reset the cron schedule idempotently so re-running this file
 -- doesn't queue duplicate jobs.
 do $$

@@ -168,25 +168,26 @@ alter table public.saved_jobs enable row level security;
 
 create extension if not exists pg_cron with schema extensions;
 
-create or replace function public.cleanup_expired_saved_workspaces()
-returns integer
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-    deleted_count integer := 0;
-begin
-    delete from public.saved_workspaces
-    where expires_at <= timezone('utc', now());
-
-    get diagnostics deleted_count = row_count;
-    return deleted_count;
-end;
-$$;
-
-revoke all on function public.cleanup_expired_saved_workspaces() from public;
-grant execute on function public.cleanup_expired_saved_workspaces() to service_role;
+-- Note: the saved-workspaces retention path was originally a SQL-only
+-- sweeper (cleanup_expired_saved_workspaces RPC) running on a 5-minute
+-- pg_cron schedule. Step 8 of the tier-enforcement series replaced
+-- that with a Python sweeper in backend/maintenance.py that:
+--   1. Does what this RPC did (DELETE expired saved_workspaces rows)
+--   2. Is tier-aware (Free 7d / Pro 30d / Business unbounded) instead
+--      of the single hardcoded expires_at-based deletion
+--   3. Routes through resolve_user_tier so payment integration flips
+--      retention semantics with a single switch
+--
+-- The Python sweeper is scheduled via VPS crontab (daily):
+--     17 3 * * * cd /app && python -m backend.maintenance >> /var/log/maintenance.log 2>&1
+--
+-- Both running in parallel would race: pg_cron could delete a row
+-- before the Python sweeper iterated it, breaking tier semantics for
+-- Business users whose expires_at was set under the old default.
+--
+-- Applied to prod by Supabase migration `drop_legacy_saved_workspaces_cleanup`
+-- (20260514183110). Git history of this file preserves the original
+-- RPC + cron block before the cleanup.
 
 drop policy if exists "users can read own saved workspace" on public.saved_workspaces;
 create policy "users can read own saved workspace"
@@ -249,25 +250,9 @@ for delete
 to authenticated
 using (auth.uid() = user_id);
 
-select public.cleanup_expired_saved_workspaces();
-
-do $$
-begin
-    if exists (
-        select 1
-        from cron.job
-        where jobname = 'cleanup-expired-saved-workspaces'
-    ) then
-        perform cron.unschedule('cleanup-expired-saved-workspaces');
-    end if;
-exception
-    when undefined_table then
-        null;
-end;
-$$;
-
-select cron.schedule(
-    'cleanup-expired-saved-workspaces',
-    '*/5 * * * *',
-    $$select public.cleanup_expired_saved_workspaces();$$
-);
+-- The legacy `cleanup-expired-saved-workspaces` pg_cron job + manual
+-- invocation (formerly here) were removed alongside the RPC. See the
+-- comment above the (removed) cleanup_expired_saved_workspaces RPC
+-- block earlier in this file for the rationale and replacement path.
+-- The VPS-side Python sweeper at backend/maintenance.py is the
+-- single source of truth for saved_workspaces retention.
