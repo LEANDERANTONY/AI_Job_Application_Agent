@@ -5,8 +5,11 @@ import json
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
+from backend.quota import current_period_key
 from backend.services.auth_session_service import resolve_authenticated_context
+from backend.tiers import TIER_CAPS, UNLIMITED, resolve_user_tier
 from src.cover_letter_builder import build_cover_letter_artifact
+from src.errors import QuotaExceededError
 from src.resume_builder import build_tailored_resume_artifact
 from src.saved_workspace_store import SavedWorkspaceStore
 from src.services.jd_summary_service import generate_job_summary_view
@@ -69,6 +72,34 @@ def save_workspace_snapshot(
     refresh_token: str,
     workspace_snapshot: dict[str, Any] | None,
 ):
+    """Persist (or overwrite) the user's saved workspace.
+
+    Quota gate (Step 6 of tier-enforcement):
+      `saved_workspaces` is a PERSISTENT row-count cap, NOT a
+      period-keyed counter: Free 1 / Pro 5 / Business UNLIMITED.
+
+      Today's SavedWorkspaceStore upserts on user_id, so a single
+      user only ever has at most ONE saved-workspace row -- the
+      Free=1 cap is automatically satisfied by the upsert, and
+      Pro=5 / Business=UNLIMITED are effectively unused capacity
+      against the current schema. The gate enforces the cap
+      generically anyway so:
+        (a) when the schema migrates to multi-row saved workspaces
+            (e.g. one row per saved_workspace_slug or uuid), the
+            gate already enforces the Pro=5 ceiling without
+            further changes, and
+        (b) the structured 429 surface is consistent across saved
+            jobs / saved workspaces / period-keyed counters.
+
+      Eviction policy at-cap: REJECT, do not auto-evict the oldest.
+      Auto-eviction is surprising; users should explicitly delete a
+      saved workspace to make room. The 429 message points them at
+      that affordance.
+
+      Re-saving the SAME workspace (same user_id under the upsert
+      semantic) is always allowed -- the cap counts distinct slots,
+      not lifetime write operations.
+    """
     try:
         snapshot = _validate_workspace_snapshot(workspace_snapshot)
     except ValueError as exc:
@@ -81,6 +112,50 @@ def save_workspace_snapshot(
     saved_workspace_store = SavedWorkspaceStore(context.auth_service)
     if not saved_workspace_store.is_configured():
         raise RuntimeError("Saved workspace persistence is not configured.")
+
+    # Persistent-count quota gate. Skip when the tier cap is UNLIMITED
+    # (Business). For capped tiers, count existing slots: the current
+    # store has at most one row per user, so the count is 0 or 1.
+    # `load_workspace` returns `(record, status)` -- status is
+    # "missing" / "expired" / "available". Anything other than
+    # "available" means there's no live row.
+    #
+    # Eviction policy at-cap: REJECT, do not auto-evict. Users must
+    # explicitly delete an existing saved workspace before saving a
+    # new one. This matches the saved_jobs gate. The "overwrite" UX
+    # for Free at cap=1 is achieved client-side: the frontend deletes
+    # the existing workspace before issuing the new save.
+    #
+    # Pro cap=5 / Business UNLIMITED are future-schema slots. Today
+    # the store upserts on user_id (one row per user) so Pro and
+    # Business never functionally reach the cap; the gate remains
+    # tier-correct so the next schema migration (e.g. per-slug rows)
+    # doesn't require revisiting this code path.
+    tier = resolve_user_tier(context.app_user)
+    cap = TIER_CAPS[tier]["saved_workspaces"]
+    quota_user_id = str(getattr(context.app_user, "id", "") or "")
+    if cap != UNLIMITED and quota_user_id:
+        existing_record, existing_status = saved_workspace_store.load_workspace(
+            access_token,
+            refresh_token,
+            quota_user_id,
+        )
+        existing_count = (
+            1
+            if existing_status == "available" and existing_record is not None
+            else 0
+        )
+        if existing_count >= cap:
+            raise QuotaExceededError(
+                "You have reached the saved-workspaces limit for your "
+                "plan. Delete an existing saved workspace to make room, "
+                "or upgrade to continue saving more.",
+                counter="saved_workspaces",
+                current=existing_count,
+                cap=cap,
+                reset_period=current_period_key(),  # informational only -- persistent counters don't reset
+                tier=tier,
+            )
 
     artifacts = dict(snapshot.get("artifacts") or {})
     record = saved_workspace_store.save_workspace(

@@ -2,6 +2,7 @@ import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
+from backend import quota
 from backend.models import (
     JobResolveRequestModel,
     JobResolutionResponseModel,
@@ -9,9 +10,13 @@ from backend.models import (
     JobSearchResponseModel,
 )
 from backend.rate_limit import LIMIT_LLM, limiter
+from backend.request_auth import get_optional_auth_tokens
+from backend.services.auth_session_service import resolve_authenticated_context
 from backend.services.job_cache_service import refresh_cached_jobs
 from backend.services.job_search_service import JobSearchService, get_job_search_service
+from backend.tiers import resolve_user_tier
 from src.config import REFRESH_CACHE_SECRET
+from src.errors import AppError
 
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -24,19 +29,61 @@ def search_jobs(
     payload: JobSearchRequestModel,
     live: bool = False,
     service: JobSearchService = Depends(get_job_search_service),
+    auth_tokens=Depends(get_optional_auth_tokens),
 ):
     """Search the job pool.
 
     Default path (`live=false`): query the cached_jobs Supabase table
-    via Postgres full-text — ~30ms, no upstream load. The cache is
+    via Postgres full-text -- ~30ms, no upstream load. The cache is
     refreshed every 4 hours by /admin/refresh-cache.
 
     Escape hatch (`?live=true`): bypass the cache and fan out to
     every configured Greenhouse / Lever board live. Slower (1-3s) and
-    costs upstream rate-limit budget — kept for debugging
+    costs upstream rate-limit budget -- kept for debugging
     'why doesn't this job appear in the cache?' questions and as a
     fallback if the cache misbehaves.
+
+    Quota gate (Step 6 of tier-enforcement):
+      `job_searches` is monthly: Free 50 / Pro UNLIMITED /
+      Business UNLIMITED. `check_and_increment` short-circuits when
+      the tier cap equals UNLIMITED (-1), so Pro / Business never
+      touch the counter row at all.
+
+      No refund-on-failure here: job search is cheap (FTS read,
+      30ms), and from the user's perspective an erroring search
+      still consumed a "search intent." Charging it matches how the
+      product surfaces results -- the search box accepted the
+      query, results were returned (even if empty due to error),
+      and the user can immediately try another. This is an
+      intentional divergence from the assistant_turns /
+      resume_parses / tailored_applications pattern, which gate
+      LLM-cost-bearing actions where a failure means no work was
+      actually done.
     """
+    access_token, refresh_token = auth_tokens
+    auth_context = None
+    if access_token and refresh_token:
+        try:
+            auth_context = resolve_authenticated_context(
+                access_token=access_token,
+                refresh_token=refresh_token,
+            )
+        except AppError:
+            # Same defensive fallback the streaming assistant uses:
+            # an auth-resolve failure shouldn't block an anonymous
+            # search flow. The user just doesn't get metered.
+            auth_context = None
+
+    app_user = getattr(auth_context, "app_user", None) if auth_context is not None else None
+    tier = resolve_user_tier(app_user)
+    quota_user_id = str(getattr(app_user, "id", "") or "") if app_user is not None else ""
+    if quota_user_id:
+        # Pro / Business have UNLIMITED job_searches; check_and_increment
+        # short-circuits on UNLIMITED so the row write is skipped.
+        # Free's cap of 50 enforces here; raising propagates to the
+        # global QuotaExceededError handler -> canonical 429.
+        quota.check_and_increment("job_searches", quota_user_id, tier)
+
     domain_query = payload.to_domain()
     result = service.search(domain_query) if live else service.search_cached(domain_query)
     return JobSearchResponseModel.from_domain(result)

@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
+from backend.quota import current_period_key
 from backend.services.auth_session_service import resolve_authenticated_context
+from backend.tiers import TIER_CAPS, UNLIMITED, resolve_user_tier
 from src.cached_jobs_store import CachedJobsStore
-from src.errors import InputValidationError
+from src.errors import InputValidationError, QuotaExceededError
 from src.saved_jobs_store import SavedJobsStore
 
 
@@ -119,6 +121,23 @@ def save_saved_job(
     refresh_token: str,
     job_posting: dict[str, Any] | None,
 ):
+    """Persist one job to the user's shortlist.
+
+    Quota gate (Step 6 of tier-enforcement):
+      `saved_jobs` is a PERSISTENT row-count cap, not a period-keyed
+      counter: Free 5 / Pro 1000 / Business UNLIMITED. The brief calls
+      this out as a different pattern from the period-keyed counters
+      -- we count existing rows via `SavedJobsStore.list_jobs` and
+      compare to `TIER_CAPS[tier]["saved_jobs"]`, rather than going
+      through `quota.check_and_increment`. No refund logic because
+      we're not incrementing anything.
+
+      The cap check is skipped when the tier cap is UNLIMITED (-1) so
+      Business saves never read the existing-row count -- they go
+      straight to the upsert. The store's upsert key is
+      (user_id, job_id), so re-saving the SAME job at the cap is
+      allowed (it's an update, not a new row).
+    """
     normalized_job = dict(job_posting or {})
     job_id = str(normalized_job.get("id", "") or "").strip()
     if not job_id:
@@ -133,6 +152,42 @@ def save_saved_job(
     saved_jobs_store = SavedJobsStore(context.auth_service)
     if not saved_jobs_store.is_configured():
         raise RuntimeError("Saved jobs persistence is not configured.")
+
+    # Persistent-count quota gate. Skip when the tier cap is UNLIMITED
+    # (Business) so we don't even pay the list-jobs round-trip. For
+    # capped tiers, count existing rows and compare to the cap; re-saving
+    # the SAME job_id is fine (the upsert below is an update, not a new
+    # row).
+    tier = resolve_user_tier(context.app_user)
+    cap = TIER_CAPS[tier]["saved_jobs"]
+    quota_user_id = str(getattr(context.app_user, "id", "") or "")
+    if cap != UNLIMITED and quota_user_id:
+        # The store's default page size of 20 is too small to inspect a
+        # capped quota -- a Pro user at 999 saved jobs would silently
+        # bypass the gate. Pass an explicit limit one above the cap so
+        # we always know whether the user is at-or-over.
+        existing_jobs = saved_jobs_store.list_jobs(
+            access_token,
+            refresh_token,
+            quota_user_id,
+            limit=cap + 1,
+        )
+        existing_ids = {str(getattr(record, "job_id", "")) for record in existing_jobs}
+        # Allow re-saves of an already-saved job_id -- the upsert below
+        # treats that as an UPDATE (same row), not a new row. Without
+        # this carve-out a user at the cap could never re-save a job
+        # they edited.
+        if job_id not in existing_ids and len(existing_jobs) >= cap:
+            raise QuotaExceededError(
+                "You have reached the saved-jobs limit for your plan. "
+                "Remove an existing saved job to make room, or upgrade "
+                "to continue saving more.",
+                counter="saved_jobs",
+                current=len(existing_jobs),
+                cap=cap,
+                reset_period=current_period_key(),  # informational only -- persistent counters don't reset
+                tier=tier,
+            )
 
     saved_job = saved_jobs_store.save_job(
         access_token,
