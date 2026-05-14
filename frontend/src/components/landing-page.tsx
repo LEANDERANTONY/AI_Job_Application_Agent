@@ -7,6 +7,8 @@ import Link from "next/link";
 import { BrandLogo } from "@/components/BrandLogo";
 import {
   exchangeGoogleCode,
+  getCheckoutUrl,
+  isLemonSqueezyEnabled,
   restoreAuthSession,
   signOutAuthSession,
   startWorkspaceHandoff,
@@ -361,6 +363,7 @@ export function LandingPage() {
           onPrimaryCta={() => void onPrimaryCta()}
           anyActionPending={anyActionPending}
           authStatus={authStatus}
+          userId={authSession?.app_user?.id ?? ""}
         />
 
         <FinalCtaSection
@@ -1048,7 +1051,14 @@ function ArrowGlyph({ direction }: { direction: "left" | "right" }) {
 // matched to HelpmateAI's pricing matrix (Free / Pro $9 / Business
 // $39 per seat) so the two products price coherently as siblings.
 
-type PricingProps = Omit<HeroProps, "authError">;
+// PricingSection takes everything HeroProps does (auth state + the
+// primary CTA handler) plus the Supabase user_id used to bind the
+// LS hosted checkout URL to the right account. userId is "" until the
+// user is signed in; the per-tier handler routes through the auth
+// flow first in that case.
+type PricingProps = Omit<HeroProps, "authError"> & {
+  userId: string;
+};
 
 type PricingTier = {
   id: "free" | "pro" | "business";
@@ -1058,8 +1068,15 @@ type PricingTier = {
   features: string[];
   featured?: boolean;
   ctaLabel: string;
-  ctaKind: "primary" | "mailto";
+  // "checkout" = paid tier with an LS hosted checkout URL.
+  // "signin" = free tier; clicking opens the same Google sign-in
+  //           flow the hero CTA uses.
+  // "mailto"  = Business tier; static anchor to email.
+  ctaKind: "signin" | "checkout" | "mailto";
   ctaHref?: string;
+  // Which LS variant this tier maps to in the hosted-checkout URL.
+  // Only populated for `ctaKind: "checkout"` tiers.
+  checkoutTier?: "pro" | "business";
 };
 
 const PRICING_TIERS: PricingTier[] = [
@@ -1069,7 +1086,7 @@ const PRICING_TIERS: PricingTier[] = [
     price: 0,
     blurb: "Get a feel for the workbench on a few applications.",
     ctaLabel: "Start free",
-    ctaKind: "primary",
+    ctaKind: "signin",
     features: [
       "3 tailored applications / month",
       "20 assistant chat turns / month",
@@ -1085,7 +1102,8 @@ const PRICING_TIERS: PricingTier[] = [
     blurb: "For active job seekers running multiple tailored applications a week.",
     featured: true,
     ctaLabel: "Get Pro",
-    ctaKind: "primary",
+    ctaKind: "checkout",
+    checkoutTier: "pro",
     features: [
       "20 tailored applications / month",
       "5 premium applications with GPT-5.5",
@@ -1100,9 +1118,14 @@ const PRICING_TIERS: PricingTier[] = [
     name: "Business",
     price: 39,
     blurb: "Career coaches and recruiting teams. Billed per seat, per month.",
-    ctaLabel: "Contact us",
-    ctaKind: "mailto",
-    ctaHref: "mailto:antony.leander@gmail.com?subject=Job%20Application%20Copilot%20%E2%80%94%20Business%20tier",
+    ctaLabel: "Get Business",
+    ctaKind: "checkout",
+    checkoutTier: "business",
+    // Fallback mailto: when LS isn't configured for Business yet,
+    // the Business CTA falls back to this href via the
+    // isLemonSqueezyEnabled() branch in PricingSection.
+    ctaHref:
+      "mailto:antony.leander@gmail.com?subject=Job%20Application%20Copilot%20%E2%80%94%20Business%20tier",
     features: [
       "Everything in Pro",
       "80 tailored applications / seat",
@@ -1141,14 +1164,63 @@ function PricingSection({
   pendingAction,
   onPrimaryCta,
   anyActionPending,
+  userId,
 }: PricingProps) {
-  // Free + Pro share the auth-aware disabled state with the hero /
-  // final CTA so they grey out during a redirect/restore. Business
-  // CTA is a plain anchor — no shared state, mailto is always
-  // clickable.
+  // The CTA disabled state is the same as the hero + final CTA so it
+  // greys out during restoring/redirecting. The Business mailto
+  // fallback is a plain <a href="mailto:..."> and is always
+  // clickable -- mailto doesn't get caught by primaryDisabled.
   const primaryDisabled = anyActionPending || authStatus === "restoring";
-  void isSignedIn;
+  const lsEnabled = isLemonSqueezyEnabled();
   void pendingAction;
+
+  // Resolve the per-tier click handler at render time so the JSX
+  // below stays declarative. The handler dispatches on:
+  //   * tier.ctaKind = "signin"   -> auth flow (Free).
+  //   * tier.ctaKind = "checkout" -> if LS is configured AND the
+  //                                  user is signed in, navigate to
+  //                                  the hosted checkout URL with
+  //                                  user_id binding. If LS is
+  //                                  configured but the user isn't
+  //                                  signed in, run auth first; the
+  //                                  user lands back here and can
+  //                                  re-click. If LS is NOT
+  //                                  configured, fall through to the
+  //                                  mailto fallback for Business or
+  //                                  disable the button for Pro.
+  //   * tier.ctaKind = "mailto"   -> plain mailto (rendered as <a>).
+  function buildCtaLabel(tier: PricingTier): string {
+    if (tier.ctaKind === "checkout" && !lsEnabled) {
+      return tier.checkoutTier === "business" && tier.ctaHref
+        ? "Contact us"
+        : "Coming soon";
+    }
+    return tier.ctaLabel;
+  }
+
+  // Onclick body for ctaKind="checkout" anchors. Inlined as a
+  // returned thunk so React infers the event type from the JSX
+  // attribute (matches the other onClick handlers in this file).
+  function buildCheckoutClickHandler(tier: PricingTier) {
+    return (event: { preventDefault: () => void }) => {
+      event.preventDefault();
+      if (primaryDisabled) return;
+      if (!tier.checkoutTier) return;
+      // Not signed in yet -> run auth first. The user lands back
+      // on the landing page; clicking Get Pro again takes them
+      // straight to the LS hosted checkout with the right user_id
+      // binding.
+      if (!isSignedIn || !userId) {
+        onPrimaryCta();
+        return;
+      }
+      const url = getCheckoutUrl(tier.checkoutTier, userId);
+      if (!url) return;
+      // window.location.assign to keep the back button useful
+      // (a post-checkout return navigates back here).
+      window.location.assign(url);
+    };
+  }
 
   return (
     <section className="l-pricing" id="pricing">
@@ -1161,6 +1233,17 @@ function PricingSection({
       <div className="l-pricing-grid">
         {PRICING_TIERS.map((tier) => {
           const isFeatured = Boolean(tier.featured);
+          // Business falls back to mailto when LS isn't configured
+          // (the mailto fallback is always available because of
+          // tier.ctaHref). Pro has no mailto fallback and renders
+          // as a disabled "Coming soon" button.
+          const fallbackToMailto =
+            tier.ctaKind === "checkout" &&
+            !lsEnabled &&
+            Boolean(tier.ctaHref);
+          const renderAsDisabled =
+            tier.ctaKind === "checkout" && !lsEnabled && !tier.ctaHref;
+          const ctaLabel = buildCtaLabel(tier);
           return (
             <article
               key={tier.id}
@@ -1186,9 +1269,9 @@ function PricingSection({
                   gets clobbered to the system "ButtonFace" dark gray. We
                   side-step the bug by rendering an <a role="button"> for
                   primary CTAs too; anchors respect CSS normally. The
-                  onClick still triggers the auth handoff, just without
-                  the native <button> semantics. */}
-              {tier.ctaKind === "primary" ? (
+                  onClick still triggers the auth handoff or LS checkout
+                  redirect, just without the native <button> semantics. */}
+              {tier.ctaKind === "signin" ? (
                 <a
                   className="l-pricing-cta"
                   role="button"
@@ -1201,11 +1284,37 @@ function PricingSection({
                     onPrimaryCta();
                   }}
                 >
-                  {tier.ctaLabel}
+                  {ctaLabel}
+                </a>
+              ) : tier.ctaKind === "checkout" && fallbackToMailto ? (
+                <a className="l-pricing-cta" href={tier.ctaHref}>
+                  {ctaLabel}
+                </a>
+              ) : tier.ctaKind === "checkout" && renderAsDisabled ? (
+                <a
+                  className="l-pricing-cta"
+                  role="button"
+                  href="#"
+                  tabIndex={-1}
+                  aria-disabled="true"
+                  onClick={(event) => event.preventDefault()}
+                >
+                  {ctaLabel}
+                </a>
+              ) : tier.ctaKind === "checkout" ? (
+                <a
+                  className="l-pricing-cta"
+                  role="button"
+                  href="#"
+                  tabIndex={primaryDisabled ? -1 : 0}
+                  aria-disabled={primaryDisabled || undefined}
+                  onClick={buildCheckoutClickHandler(tier)}
+                >
+                  {ctaLabel}
                 </a>
               ) : (
                 <a className="l-pricing-cta" href={tier.ctaHref}>
-                  {tier.ctaLabel}
+                  {ctaLabel}
                 </a>
               )}
               <ul className="l-pricing-features">

@@ -35,6 +35,7 @@ import {
   downloadBase64File,
   exportResumeBuilderArtifact,
   generateResumeBuilderResume,
+  getCustomerPortalUrl,
   loadLatestResumeBuilderSession,
   resolveJobUrl,
   searchJobs,
@@ -243,6 +244,28 @@ export function WorkspaceShell() {
       setPremium(false);
     }
   }, [workspaceQuota, premium]);
+
+  // Post-LS-checkout return: when the user comes back from the
+  // hosted checkout, LS redirects to our success URL with a
+  // `?ls_checkout=success` query param appended by the frontend's
+  // pricing CTA. We refresh the quota snapshot once so the tier
+  // badge picks up the new state without waiting for the next
+  // workflow run. The webhook handler also invalidates the backend
+  // cache, so the refresh sees the post-upsert tier value.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (authStatus !== "signed_in") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("ls_checkout") !== "success") return;
+    refreshWorkspaceQuota();
+    // Strip the param so a later refresh doesn't re-fire the
+    // refetch. replaceState keeps history clean (no extra back-
+    // button stop on the success URL).
+    params.delete("ls_checkout");
+    const search = params.toString();
+    const next = `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`;
+    window.history.replaceState(null, "", next);
+  }, [authStatus, refreshWorkspaceQuota]);
 
   // Workspace is for signed-in users only. The session restore in
   // `useWorkspaceSession` flips authStatus to "signed_out" once it's
@@ -1321,6 +1344,42 @@ export function WorkspaceShell() {
     setResumeBuilderNotice(null);
   }
 
+  // Open the Lemon Squeezy customer portal for the signed-in user.
+  // The backend mints a one-time signed URL (the LS customer
+  // resource's urls.customer_portal field) and returns it; we
+  // window.location.assign so the back button still works.
+  //
+  // The button rendering this is gated on quota.tier !== "free", so
+  // a 404 (no subscription record) shouldn't normally happen. We
+  // still surface a notice for the 503 (LS not configured), 401
+  // (session expired), and any other path defensively.
+  const [managingSubscription, setManagingSubscription] = useState(false);
+  async function handleManageSubscription() {
+    if (managingSubscription) return;
+    setManagingSubscription(true);
+    try {
+      const result = await getCustomerPortalUrl();
+      if (result.url) {
+        window.location.assign(result.url);
+        return;
+      }
+      setWorkspaceNotice({
+        level: "warning",
+        message: "Could not load the subscription portal. Please try again.",
+      });
+    } catch (error) {
+      setWorkspaceNotice({
+        level: "warning",
+        message: humanizeApiError(
+          error,
+          "Could not open the subscription portal.",
+        ),
+      });
+    } finally {
+      setManagingSubscription(false);
+    }
+  }
+
   // Reload-saved-workspace wraps the hook's `reloadSavedWorkspace` to
   // apply the returned snapshot across the shell's other slices and
   // surface the success notice.
@@ -1715,6 +1774,25 @@ export function WorkspaceShell() {
                         {workspaceReloading
                           ? "Reloading…"
                           : "Reload saved workspace"}
+                      </button>
+                    ) : null}
+                    {/* "Manage subscription" surfaces the LS customer
+                        portal for paid users. Gated on
+                        workspaceQuota.tier !== "free" so Free users
+                        don't see a button that would 404 on the
+                        backend (no subscription row exists). The
+                        loading state mirrors the other rd-btn-sm
+                        controls in this popover. */}
+                    {workspaceQuota && workspaceQuota.tier !== "free" ? (
+                      <button
+                        className="rd-btn rd-btn-ghost rd-btn-sm"
+                        disabled={managingSubscription || authActionLoading}
+                        onClick={() => void handleManageSubscription()}
+                        type="button"
+                      >
+                        {managingSubscription
+                          ? "Opening…"
+                          : "Manage subscription"}
                       </button>
                     ) : null}
                     <button

@@ -418,6 +418,103 @@ export async function getWorkspaceQuota() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Lemon Squeezy: hosted checkout URLs + customer portal redirect.
+//
+// The hosted checkout URL pattern is documented at
+// https://docs.lemonsqueezy.com/help/checkout/hosted-checkouts.
+// Format: https://{store_subdomain}.lemonsqueezy.com/buy/{variant_uuid}
+// We append checkout[custom][user_id] so the LS webhook can bind the
+// subscription back to our Supabase user. Without that binding the
+// webhook handler has no way to write the right row.
+//
+// Env vars (NEXT_PUBLIC_ prefix so Next.js inlines them into the JS
+// bundle at build time):
+//   NEXT_PUBLIC_LEMONSQUEEZY_STORE_ID — subdomain piece. "" disables.
+//   NEXT_PUBLIC_LEMONSQUEEZY_PRODUCT_VARIANT_PRO     — pro variant uuid
+//   NEXT_PUBLIC_LEMONSQUEEZY_PRODUCT_VARIANT_BUSINESS — business uuid
+//
+// When any of these are empty (the integration isn't live on this
+// deploy), getCheckoutUrl returns "" so the caller can render the CTA
+// as "Coming soon" / disabled.
+
+const LEMONSQUEEZY_STORE_ID =
+  process.env.NEXT_PUBLIC_LEMONSQUEEZY_STORE_ID ?? "";
+const LEMONSQUEEZY_VARIANT_PRO =
+  process.env.NEXT_PUBLIC_LEMONSQUEEZY_PRODUCT_VARIANT_PRO ?? "";
+const LEMONSQUEEZY_VARIANT_BUSINESS =
+  process.env.NEXT_PUBLIC_LEMONSQUEEZY_PRODUCT_VARIANT_BUSINESS ?? "";
+
+/** True when the LS env vars are populated. Pricing CTAs gate on this
+ *  to render "Coming soon" copy when the integration hasn't shipped
+ *  to this deploy yet. */
+export function isLemonSqueezyEnabled(): boolean {
+  return Boolean(
+    LEMONSQUEEZY_STORE_ID &&
+      (LEMONSQUEEZY_VARIANT_PRO || LEMONSQUEEZY_VARIANT_BUSINESS),
+  );
+}
+
+/** Build a Lemon Squeezy hosted checkout URL for a tier, bound to the
+ *  supplied Supabase user_id via checkout[custom][user_id]. The
+ *  webhook handler reads that field out of meta.custom_data on
+ *  subscription_created and writes the matching subscriptions row.
+ *
+ *  Also passes `checkout[success_url]` so the user lands back on the
+ *  workspace with `?ls_checkout=success` -- WorkspaceShell's effect
+ *  refreshes the quota snapshot on that param.
+ *
+ *  Returns "" when the integration isn't configured on this build.
+ *  The pricing CTA renders "Coming soon" in that branch. */
+export function getCheckoutUrl(
+  tier: "pro" | "business",
+  userId: string,
+): string {
+  if (!LEMONSQUEEZY_STORE_ID) return "";
+  const variant =
+    tier === "pro"
+      ? LEMONSQUEEZY_VARIANT_PRO
+      : LEMONSQUEEZY_VARIANT_BUSINESS;
+  if (!variant) return "";
+  const base = `https://${LEMONSQUEEZY_STORE_ID}.lemonsqueezy.com/buy/${variant}`;
+  if (!userId) return base;
+  // LS expects checkout fields as URL-encoded query params; the
+  // bracket syntax is the documented form for nested fields.
+  const query = new URLSearchParams();
+  query.set("checkout[custom][user_id]", userId);
+  // Per-checkout success URL override. Build off the current origin
+  // so dev / staging / prod each land on themselves; the LS
+  // dashboard's default success URL is still honored when this
+  // parameter isn't sent (e.g. a checkout link shared offline).
+  if (typeof window !== "undefined" && window.location?.origin) {
+    const successUrl = new URL(window.location.origin);
+    // Preserve the current path so a click from /pricing returns
+    // to /pricing; default to /workspace so the post-checkout user
+    // lands somewhere useful when initiated from the marketing
+    // site. The success param gates the quota refresh effect in
+    // WorkspaceShell.
+    successUrl.pathname = window.location.pathname || "/workspace";
+    successUrl.searchParams.set("ls_checkout", "success");
+    query.set("checkout[success_url]", successUrl.toString());
+  }
+  return `${base}?${query.toString()}`;
+}
+
+/** Hit the backend `/billing/portal` route to mint a one-time LS
+ *  customer portal URL and redirect the browser to it. The portal
+ *  lets the user update card details, cancel, or resume the
+ *  subscription.
+ *
+ *  Throws on 401 (sign in), 404 (no subscription), 503 (LS not
+ *  configured), 502 (LS upstream error). Callers wrap with a try/
+ *  catch + toast — the failure modes are user-meaningful so we
+ *  don't want them to surface as a generic "request failed". */
+export async function getCustomerPortalUrl(): Promise<{ url: string }> {
+  return request<{ url: string }>("/billing/portal", {
+    method: "POST",
+  });
+}
+
 export async function askWorkspaceAssistant(payload: WorkspaceAssistantRequest) {
   return request<WorkspaceAssistantResponse>("/workspace/assistant/answer", {
     method: "POST",
