@@ -4287,10 +4287,14 @@ code {
 /* Free + Business cards: accent border + outer glow, interior stays
    neutral dark. The Pro card sits between them solid-filled, so the
    accent rim on the outers ties the row into one coherent group
-   without diluting the focal anchor. */
+   without diluting the focal anchor.
+   Tight glow: 18px blur at ~28% alpha keeps the halo inside the
+   gap between cards. The earlier 32px / 45% halo bled across card
+   boundaries and made adjacent cards look like they were sharing
+   one wash of blue. */
 .l-pricing-card:not(.is-featured) {
   border-color: var(--accent);
-  box-shadow: 0 0 32px var(--accent-glow);
+  box-shadow: 0 0 18px rgba(48, 100, 255, 0.28);
 }
 
 .l-pricing-card-head {
@@ -4347,6 +4351,18 @@ code {
   font-weight: 500;
   text-decoration: none;
   cursor: pointer;
+  /* Chrome's modern <button> rendering applies a dark "ButtonFace"
+     background (rgb(28, 30, 31)) whenever the element's inherited
+     color-scheme is "dark" — even author `!important` background-
+     color is ignored. `appearance: none` alone doesn't fix it
+     because the dark-control style is keyed on color-scheme, not on
+     -webkit-appearance. The fix is to opt this button out of the
+     parent color-scheme so Chrome treats it as a normal styleable
+     control: `color-scheme: light` makes our white-bg + blue-text
+     inversion actually paint. */
+  appearance: none;
+  -webkit-appearance: none;
+  color-scheme: light;
   transition:
     background var(--l-duration) var(--l-ease),
     box-shadow var(--l-duration) var(--l-ease);
@@ -4403,10 +4419,20 @@ code {
 /* ---------- Featured (Pro) — filled accent ---------- */
 
 .l-pricing-card.is-featured {
-  background: linear-gradient(135deg, var(--accent), #114be9);
+  /* Deep navy — bluer than the page bg (#04070f) so the card still
+     reads as "filled" and distinct from the outer Free/Business
+     cards' neutral dark surface, but pulled WAY down from the
+     vivid --accent gradient we started with. Feels premium /
+     "tuxedo" rather than carnival. Outer cards keep their brighter
+     --accent rim glow so the contrast between "bright rim" and
+     "dark interior" reads as deliberate layering.
+     Tightened drop shadow: 28px blur instead of 48px, lower alpha,
+     so the Pro card's halo lands UNDER it rather than bleeding into
+     the neighbors. */
+  background: linear-gradient(135deg, #0c1530, #050a1c);
   border-color: transparent;
   box-shadow:
-    0 24px 48px -16px var(--accent-glow),
+    0 16px 28px -14px rgba(48, 100, 255, 0.28),
     0 0 0 1px rgba(255, 255, 255, 0.08) inset;
   transform: translateY(-6px);
 }
@@ -4425,28 +4451,33 @@ code {
 .l-pricing-card.is-featured .l-pricing-features svg {
   color: var(--accent-fg);
 }
-/* Pro CTA + badge punch through to the page color, reading as
-   near-black windows cut into the filled card. Same trick as
-   HelpmateAI — pulls the eye to the conversion target. */
+/* Pro CTA + badge use the brand --accent (bright blue) with white
+   text — same treatment as the Free/Business buttons. With the Pro
+   card now a deep navy, a black "punch-through" button would visually
+   merge into it; the bright blue is the strongest contrast available
+   without leaving the brand palette. Visual hierarchy still belongs
+   to the Pro card via its bluer tint, translateY lift, the MOST
+   POPULAR pill, and the outer cards' rim-vs-interior contrast. */
 .l-pricing-card.is-featured .l-pricing-cta {
-  background: var(--bg-page);
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
   border-color: transparent;
 }
 .l-pricing-card.is-featured .l-pricing-cta:hover {
-  background: #000;
+  background: var(--accent-strong);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
-    0 0 24px rgba(0, 0, 0, 0.5);
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset,
+    0 0 24px var(--accent-glow);
 }
-.l-pricing-card.is-featured .l-pricing-cta:disabled {
-  background: var(--bg-page);
-  color: var(--accent);
+.l-pricing-card.is-featured .l-pricing-cta:disabled,
+.l-pricing-card.is-featured .l-pricing-cta[aria-disabled="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
   opacity: 0.65;
 }
 .l-pricing-card.is-featured .l-pricing-badge {
-  background: var(--bg-page);
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 /* Mobile: stack to one column, drop the featured card's translateY so

@@ -1181,15 +1181,28 @@ function PricingSection({
                 <span className="num">${tier.price}</span>
                 <span className="per">/month</span>
               </p>
+              {/* Chrome 148+ in dark color-scheme refuses to honor
+                  background-color on <button> elements — even hex !important
+                  gets clobbered to the system "ButtonFace" dark gray. We
+                  side-step the bug by rendering an <a role="button"> for
+                  primary CTAs too; anchors respect CSS normally. The
+                  onClick still triggers the auth handoff, just without
+                  the native <button> semantics. */}
               {tier.ctaKind === "primary" ? (
-                <button
+                <a
                   className="l-pricing-cta"
-                  disabled={primaryDisabled}
-                  onClick={onPrimaryCta}
-                  type="button"
+                  role="button"
+                  href="#"
+                  tabIndex={primaryDisabled ? -1 : 0}
+                  aria-disabled={primaryDisabled || undefined}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (primaryDisabled) return;
+                    onPrimaryCta();
+                  }}
                 >
                   {tier.ctaLabel}
-                </button>
+                </a>
               ) : (
                 <a className="l-pricing-cta" href={tier.ctaHref}>
                   {tier.ctaLabel}
