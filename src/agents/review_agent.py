@@ -8,6 +8,7 @@ from src.schemas import (
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
+from src.schemas_llm_outputs import ReviewOutput, TailoringOutput
 from src.services.profile_service import build_candidate_context_text
 
 from .common import coerce_bool, coerce_string, coerce_string_list, unique_strings
@@ -38,28 +39,46 @@ class ReviewAgent:
                 tailored_draft,
                 tailoring_output,
             )
-            payload = self._openai_service.run_json_prompt(
-                prompt["system"],
-                prompt["user"],
-                expected_keys=prompt["expected_keys"],
-                max_completion_tokens=get_openai_max_completion_tokens_for_task("review"),
-                task_name="review",
-                model=self._model_override,
-                metadata=prompt.get("metadata"),
-            )
+            # Schema-strict path: ``corrected_tailoring`` arrives as a
+            # nested Pydantic object (or None) — we no longer have to
+            # check ``isinstance(payload, dict)`` because the schema
+            # constrains it at generation time. The legacy
+            # ``run_json_prompt`` branch is kept for test fakes that
+            # haven't been migrated.
+            if hasattr(self._openai_service, "run_structured_prompt"):
+                structured = self._openai_service.run_structured_prompt(
+                    prompt["system"],
+                    prompt["user"],
+                    response_model=ReviewOutput,
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task("review"),
+                    task_name="review",
+                    model=self._model_override,
+                    metadata=prompt.get("metadata"),
+                )
+            else:
+                payload = self._openai_service.run_json_prompt(
+                    prompt["system"],
+                    prompt["user"],
+                    expected_keys=prompt["expected_keys"],
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task("review"),
+                    task_name="review",
+                    model=self._model_override,
+                    metadata=prompt.get("metadata"),
+                )
+                structured = ReviewOutput.model_validate(payload)
             review_output = ReviewAgentOutput(
-                approved=coerce_bool(payload.get("approved")),
+                approved=coerce_bool(structured.approved),
                 grounding_issues=coerce_string_list(
-                    payload.get("grounding_issues"), limit=4
+                    structured.grounding_issues, limit=4
                 ),
                 unresolved_issues=coerce_string_list(
-                    payload.get("unresolved_issues"), limit=4
+                    structured.unresolved_issues, limit=4
                 ),
                 revision_requests=coerce_string_list(
-                    payload.get("revision_requests"), limit=4
+                    structured.revision_requests, limit=4
                 ),
-                final_notes=coerce_string_list(payload.get("final_notes"), limit=3),
-                corrected_tailoring=self._coerce_tailoring_output(payload.get("corrected_tailoring")),
+                final_notes=coerce_string_list(structured.final_notes, limit=3),
+                corrected_tailoring=self._coerce_tailoring_output(structured.corrected_tailoring),
             )
             return self._normalize_review_output(review_output)
         return self._fallback(candidate_profile, fit_analysis, tailoring_output)
@@ -83,15 +102,33 @@ class ReviewAgent:
         )
 
     @staticmethod
-    def _coerce_tailoring_output(payload):
-        if not isinstance(payload, dict):
+    def _coerce_tailoring_output(structured):
+        """Convert the Pydantic ``TailoringOutput`` (or None) into the
+        downstream ``TailoringAgentOutput`` dataclass.
+
+        Accepts a plain dict too so existing tests that pass a raw
+        payload (legacy run_json_prompt return shape) keep working
+        during the migration. The dataclass-side post-processing
+        (``coerce_string_list`` etc.) preserves the previous truncation
+        behavior.
+        """
+        if structured is None:
             return None
-        return TailoringAgentOutput(
-            professional_summary=coerce_string(payload.get("professional_summary")),
-            rewritten_bullets=coerce_string_list(payload.get("rewritten_bullets"), limit=5),
-            highlighted_skills=coerce_string_list(payload.get("highlighted_skills"), limit=8),
-            cover_letter_themes=coerce_string_list(payload.get("cover_letter_themes"), limit=4),
-        )
+        if isinstance(structured, TailoringOutput):
+            return TailoringAgentOutput(
+                professional_summary=coerce_string(structured.professional_summary),
+                rewritten_bullets=coerce_string_list(structured.rewritten_bullets, limit=5),
+                highlighted_skills=coerce_string_list(structured.highlighted_skills, limit=8),
+                cover_letter_themes=coerce_string_list(structured.cover_letter_themes, limit=4),
+            )
+        if isinstance(structured, dict):
+            return TailoringAgentOutput(
+                professional_summary=coerce_string(structured.get("professional_summary")),
+                rewritten_bullets=coerce_string_list(structured.get("rewritten_bullets"), limit=5),
+                highlighted_skills=coerce_string_list(structured.get("highlighted_skills"), limit=8),
+                cover_letter_themes=coerce_string_list(structured.get("cover_letter_themes"), limit=4),
+            )
+        return None
 
     @staticmethod
     def _fallback(

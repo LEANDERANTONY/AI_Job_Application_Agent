@@ -1,8 +1,13 @@
 from src.agents.resume_generation_agent import ResumeGenerationAgent
 from src.schemas import CandidateProfile, FitAnalysis, ResumeGenerationAgentOutput, TailoredResumeDraft, TailoringAgentOutput
+from src.schemas_llm_outputs import ResumeGenerationOutput
 
 
 class FakePronounResumeOpenAIService:
+    """Updated to match the schema-strict ``run_structured_prompt``
+    contract: the agent now receives a validated
+    ``ResumeGenerationOutput`` instance instead of a raw payload dict."""
+
     model = "fake-model"
 
     @staticmethod
@@ -10,17 +15,18 @@ class FakePronounResumeOpenAIService:
         return True
 
     @staticmethod
-    def run_json_prompt(system_prompt, user_prompt, expected_keys=None, **kwargs):
-        return {
-            "professional_summary": "I am a project-based machine learning candidate with strong predictive modeling experience.",
-            "highlighted_skills": ["Python", "SQL", "XGBoost"],
-            "experience_bullets": [
+    def run_structured_prompt(system_prompt, user_prompt, *, response_model, **kwargs):
+        assert response_model is ResumeGenerationOutput
+        return ResumeGenerationOutput(
+            professional_summary="I am a project-based machine learning candidate with strong predictive modeling experience.",
+            highlighted_skills=["Python", "SQL", "XGBoost"],
+            experience_bullets=[
                 "I built predictive models for fraud detection.",
                 "Leander Antony developed validation workflows for ML projects.",
             ],
-            "section_order": ["Professional Summary", "Core Skills", "Professional Experience", "Education"],
-            "template_hint": "classic_ats",
-        }
+            section_order=["Professional Summary", "Core Skills", "Professional Experience", "Education"],
+            template_hint="classic_ats",
+        )
 
 
 def test_resume_generation_agent_falls_back_when_ai_uses_self_referential_resume_voice():

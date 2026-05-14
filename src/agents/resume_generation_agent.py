@@ -11,6 +11,7 @@ from src.schemas import (
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
+from src.schemas_llm_outputs import ResumeGenerationOutput
 
 from .common import coerce_string, coerce_string_list, unique_strings
 
@@ -47,22 +48,36 @@ class ResumeGenerationAgent:
                 tailoring_output,
                 review_output,
             )
-            payload = self._openai_service.run_json_prompt(
-                prompt["system"],
-                prompt["user"],
-                expected_keys=prompt["expected_keys"],
-                max_completion_tokens=get_openai_max_completion_tokens_for_task(
-                    "resume_generation"
-                ),
-                task_name="resume_generation",
-                model=self._model_override,
-                metadata=prompt.get("metadata"),
-            )
+            if hasattr(self._openai_service, "run_structured_prompt"):
+                structured = self._openai_service.run_structured_prompt(
+                    prompt["system"],
+                    prompt["user"],
+                    response_model=ResumeGenerationOutput,
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task(
+                        "resume_generation"
+                    ),
+                    task_name="resume_generation",
+                    model=self._model_override,
+                    metadata=prompt.get("metadata"),
+                )
+            else:
+                payload = self._openai_service.run_json_prompt(
+                    prompt["system"],
+                    prompt["user"],
+                    expected_keys=prompt["expected_keys"],
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task(
+                        "resume_generation"
+                    ),
+                    task_name="resume_generation",
+                    model=self._model_override,
+                    metadata=prompt.get("metadata"),
+                )
+                structured = ResumeGenerationOutput.model_validate(payload)
             output = ResumeGenerationAgentOutput(
-                professional_summary=coerce_string(payload.get("professional_summary")),
-                highlighted_skills=coerce_string_list(payload.get("highlighted_skills"), limit=8),
-                experience_bullets=coerce_string_list(payload.get("experience_bullets"), limit=6),
-                section_order=coerce_string_list(payload.get("section_order"), limit=6),
+                professional_summary=coerce_string(structured.professional_summary),
+                highlighted_skills=coerce_string_list(structured.highlighted_skills, limit=8),
+                experience_bullets=coerce_string_list(structured.experience_bullets, limit=6),
+                section_order=coerce_string_list(structured.section_order, limit=6),
                 template_hint="classic_ats",
             )
             if self._contains_self_reference(candidate_profile, output):

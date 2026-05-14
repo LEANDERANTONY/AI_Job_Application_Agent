@@ -1,9 +1,10 @@
 import json
 import logging
 import time
-from typing import Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional, Type, TypeVar
 
 from openai import OpenAI
+from pydantic import BaseModel, ValidationError
 
 from src.config import (
     OPENAI_MODEL_DEFAULT,
@@ -14,6 +15,9 @@ from src.config import (
 )
 from src.errors import AgentExecutionError
 from src.logging_utils import get_logger, log_event
+
+
+_TModel = TypeVar("_TModel", bound=BaseModel)
 
 
 LOGGER = get_logger(__name__)
@@ -75,11 +79,150 @@ def _resolve_retryable_exception_types():
 _RETRYABLE_OPENAI_EXCEPTIONS = _resolve_retryable_exception_types()
 
 
+# ── USD pricing map (per 1 million tokens) ──────────────────────────
+# Source of truth for ``record_trace`` cost computation. Update this
+# table when OpenAI changes a price; the nightly tier-margin analysis
+# reads dollars-spent straight out of ``aijobagent_run_traces`` so
+# stale prices would silently bias the COGS report.
+#
+# Costs are stored as (input_per_million, output_per_million). The
+# computed cost for a single call is:
+#
+#     cost = (prompt_tokens * input_cost + completion_tokens * output_cost) / 1_000_000
+#
+# Costs for unknown models default to (0.0, 0.0) — the row is still
+# recorded so we can backfill once we learn the price. The OpenAI
+# bridge logs `unknown_model_pricing` once per cold-start so a model
+# that lands without a corresponding pricing entry is visible in the
+# operational log without spamming.
+_MODEL_PRICING_USD_PER_MILLION: dict[str, tuple[float, float]] = {
+    "gpt-5.4-nano": (0.10, 0.40),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.4": (2.00, 10.00),
+    "gpt-5.5": (5.00, 30.00),
+}
+
+
+def compute_call_cost_usd(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Return the USD cost for one LLM call.
+
+    Public helper so callers outside the OpenAIService class (e.g.
+    nightly_eval's cost rollup, future tier-margin dashboards) can
+    compute the same number without duplicating the pricing map.
+    """
+    pricing = _MODEL_PRICING_USD_PER_MILLION.get(str(model_name or "").strip())
+    if pricing is None:
+        return 0.0
+    input_per_million, output_per_million = pricing
+    cost = (
+        (max(int(prompt_tokens or 0), 0) * input_per_million)
+        + (max(int(completion_tokens or 0), 0) * output_per_million)
+    ) / 1_000_000.0
+    # Round to 6 decimals — the SQL column is numeric(10,6); rounding here
+    # avoids float-to-numeric drift on the wire and keeps the in-memory
+    # backend's rows directly comparable to the persisted ones.
+    return round(cost, 6)
+
+
 def _ensure_json_input_prompt(user_prompt):
     prompt_text = str(user_prompt or "")
     if "json" in prompt_text.lower():
         return prompt_text
     return "Respond in JSON only.\n\n{prompt}".format(prompt=prompt_text)
+
+
+# ── Pydantic → OpenAI structured-output schema helpers ───────────────
+# OpenAI's structured-outputs path is stricter than a vanilla JSON
+# Schema validator: every object must explicitly list its required
+# fields, ``additionalProperties: false`` must be set, and unsupported
+# constructs (anyOf with mismatched types, $defs at the root, etc.)
+# get rejected at request time. The two helpers below rewrite the raw
+# Pydantic-emitted schema into a shape the API accepts.
+
+
+def _schema_name_for_model(model_cls: Type[BaseModel], *, task_name=None) -> str:
+    """Build a deterministic name for the schema slot.
+
+    OpenAI requires a ``name`` alongside the schema. Including the
+    task name keeps logs / metrics correlatable across runs; we strip
+    non-identifier characters to satisfy the API's regex on the name
+    field.
+    """
+    base = model_cls.__name__
+    if task_name:
+        base = "{task}_{model}".format(task=task_name, model=base)
+    cleaned = "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in base)
+    return cleaned or "structured_output"
+
+
+def _build_response_format_schema(model_cls: Type[BaseModel]) -> dict:
+    """Return a dict-form JSON Schema accepted by OpenAI structured outputs.
+
+    Pydantic v2 emits a JSON schema via ``model_json_schema()`` that's
+    almost valid for the API — we just need to:
+      * inline ``$ref`` / ``$defs`` so the root schema is self-contained
+        (OpenAI accepts $defs at the root but inlining keeps the
+        structure simpler to debug from a log line);
+      * set ``additionalProperties: false`` on every object node;
+      * mark every property as required (OpenAI's strict mode treats
+        omitted-without-required as a parse error rather than a
+        missing-field signal — we use ``Optional[...]`` + a ``null``
+        type to express truly-optional fields, expressed via the
+        Pydantic schema's ``anyOf [type, "null"]`` automatically).
+    """
+    schema = model_cls.model_json_schema(ref_template="#/$defs/{model}")
+    defs = schema.pop("$defs", {}) or {}
+    inlined = _inline_refs(schema, defs)
+    return _enforce_strict_object_constraints(inlined)
+
+
+def _inline_refs(node: Any, defs: dict) -> Any:
+    """Recursively replace ``$ref`` markers with their definition.
+
+    Pydantic emits one ``$defs`` entry per nested model and uses
+    ``$ref`` from the parent. The API supports $defs but inlining
+    keeps logs readable + lets us walk + tighten every object node in
+    one pass below.
+    """
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str):
+            # Refs look like "#/$defs/ModelName"
+            name = ref.split("/")[-1]
+            target = defs.get(name)
+            if target is None:
+                return {k: _inline_refs(v, defs) for k, v in node.items() if k != "$ref"}
+            return _inline_refs(target, defs)
+        return {k: _inline_refs(v, defs) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_inline_refs(item, defs) for item in node]
+    return node
+
+
+def _enforce_strict_object_constraints(node: Any) -> Any:
+    """Recursively set ``additionalProperties: false`` and complete
+    the ``required`` list for every object node.
+
+    OpenAI structured outputs treats omission of either signal as a
+    schema rejection. Adding both unconditionally is safe — Pydantic
+    already enforces them on its side, so we're just teaching the
+    server what the client already enforced.
+    """
+    if isinstance(node, dict):
+        result = {key: _enforce_strict_object_constraints(value) for key, value in node.items()}
+        if result.get("type") == "object" or "properties" in result:
+            result.setdefault("additionalProperties", False)
+            properties = result.get("properties")
+            if isinstance(properties, dict):
+                # API requires every property in the required list. Optional
+                # fields are expressed via ``anyOf [type, "null"]`` in the
+                # Pydantic-emitted schema, so they still "exist" — they're
+                # just allowed to be null.
+                result["required"] = list(properties.keys())
+        return result
+    if isinstance(node, list):
+        return [_enforce_strict_object_constraints(item) for item in node]
+    return node
 
 
 class OpenAIService:
@@ -92,6 +235,8 @@ class OpenAIService:
         starting_usage=None,
         usage_event_recorder: Optional[Callable[[dict], None]] = None,
         quota_checker: Optional[Callable[[], None]] = None,
+        user_id: Optional[str] = None,
+        cost_trace_recorder: Optional[Callable[[dict], None]] = None,
     ):
         self._api_key = api_key if api_key is not None else load_openai_key(required=False)
         self.default_model = model or OPENAI_MODEL_DEFAULT
@@ -116,6 +261,15 @@ class OpenAIService:
         self._last_response_metadata = {}
         self._usage_event_recorder = usage_event_recorder
         self._quota_checker = quota_checker
+        # Cost tracking (step 3 of the production-safety pack). When
+        # ``user_id`` is set, every successful LLM call writes a row to
+        # ``aijobagent_run_traces`` carrying the per-call USD cost so the
+        # nightly tier-margin report can validate COGS without re-
+        # deriving prices. The ``cost_trace_recorder`` callable lets
+        # tests inject a list-append instead of going through the real
+        # ``backend.run_traces.record_trace`` (which talks to Supabase).
+        self._user_id = user_id
+        self._cost_trace_recorder = cost_trace_recorder
         if self._client is None and self._api_key:
             self._client = OpenAI(api_key=self._api_key, timeout=120.0, max_retries=2)
 
@@ -475,12 +629,251 @@ class OpenAIService:
                 "status": status or "",
             }
         )
+        self._record_cost_trace(
+            task_name=task_name,
+            model_name=resolved_model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            success=not bool(missing_keys),
+        )
         if missing_keys:
             raise AgentExecutionError(
                 "The AI workflow response was missing required fields.",
                 details=", ".join(missing_keys),
             )
         return payload
+
+    def run_structured_prompt(
+        self,
+        system_prompt,
+        user_prompt,
+        *,
+        response_model: Type[_TModel],
+        task_name=None,
+        max_completion_tokens=1200,
+        model=None,
+        metadata=None,
+        allow_output_budget_retry=True,
+        previous_response_id=None,
+    ) -> _TModel:
+        """Run a structured-output prompt bound to a Pydantic model.
+
+        Equivalent to ``run_json_prompt`` but uses OpenAI's
+        ``response_format={"type": "json_schema", ...}`` so the model is
+        CONSTRAINED at generation time to emit JSON that matches the
+        provided Pydantic schema. The returned value is the validated
+        instance, not a raw dict — callers don't need to call
+        ``model_validate`` themselves and don't need ``expected_keys``
+        because the schema already covers field presence.
+
+        Why this exists alongside ``run_json_prompt``:
+            * ``json_object`` (the run_json_prompt path) only guarantees
+              syntactic JSON; the model can still skip required fields
+              or emit weird types, which is exactly the failure class
+              the Prisha Singla "model drift" incident surfaced.
+            * ``json_schema`` is constrained at generation time — a
+              missing or mis-typed field can't make it through the
+              token stream, so we save the "retry on missing keys" path
+              that ``run_json_prompt`` carries.
+
+        Retry / metadata / budget enforcement match ``run_json_prompt``
+        so the cron-side cost-tracking story stays consistent across
+        both methods.
+        """
+        if not self.is_available():
+            raise AgentExecutionError(
+                "OpenAI is not configured for AI-assisted orchestration."
+            )
+
+        self._enforce_budget()
+        resolved_model = self._resolve_model(task_name=task_name, model=model)
+        reasoning_effort = self._resolve_reasoning_effort(task_name=task_name)
+        request_metadata = {
+            key: str(value)
+            for key, value in dict(metadata or {}).items()
+            if value is not None
+        }
+        if task_name:
+            request_metadata.setdefault("task_name", task_name)
+
+        schema_name = _schema_name_for_model(response_model, task_name=task_name)
+        json_schema = _build_response_format_schema(response_model)
+
+        started_at = time.perf_counter()
+        log_event(
+            LOGGER,
+            logging.INFO,
+            "openai_request_started",
+            "Starting OpenAI structured prompt request.",
+            model=resolved_model,
+            task_name=task_name,
+            reasoning_effort=reasoning_effort,
+            max_completion_tokens=max_completion_tokens,
+            response_model=response_model.__name__,
+            system_prompt_chars=len(system_prompt or ""),
+            user_prompt_chars=len(user_prompt or ""),
+            estimated_input_chars=request_metadata.get("estimated_input_chars"),
+            compacted_sections=request_metadata.get("compacted_sections"),
+            prompt_budget_mode=request_metadata.get("prompt_budget_mode"),
+            compacted_labels=request_metadata.get("compacted_labels"),
+        )
+
+        request_payload = {
+            "model": resolved_model,
+            "instructions": system_prompt,
+            "input": _ensure_json_input_prompt(user_prompt),
+            "store": False,
+            "max_output_tokens": max_completion_tokens,
+            "metadata": request_metadata or None,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": schema_name,
+                    "schema": json_schema,
+                    "strict": True,
+                }
+            },
+        }
+        if previous_response_id:
+            request_payload["previous_response_id"] = previous_response_id
+        if self._supports_reasoning_effort(resolved_model) and reasoning_effort:
+            request_payload["reasoning"] = {"effort": reasoning_effort}
+
+        try:
+            response = self._create_response_with_app_retry(
+                request_payload,
+                task_name=task_name,
+                resolved_model=resolved_model,
+                started_at=started_at,
+            )
+        except Exception as exc:
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "openai_request_failed",
+                "OpenAI structured prompt request failed (after SDK + app retries).",
+                model=resolved_model,
+                task_name=task_name,
+                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                error_type=type(exc).__name__,
+                details=str(exc),
+            )
+            raise AgentExecutionError(
+                "The AI workflow request failed.",
+                details=str(exc),
+            ) from exc
+
+        if allow_output_budget_retry and self._is_incomplete_due_to_output_tokens(response):
+            response, request_payload = self._retry_with_higher_output_budget(
+                response=response,
+                request_payload=request_payload,
+                resolved_model=resolved_model,
+                task_name=task_name,
+                reasoning_effort=reasoning_effort,
+                started_at=started_at,
+                retry_reason="structured_empty_incomplete_response",
+            )
+
+        content = self._extract_output_text(response)
+        try:
+            raw_payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            # Structured outputs is supposed to guarantee parseable JSON,
+            # but a truncation can still split a partial token. Re-raise
+            # as the same AgentExecutionError shape ``run_json_prompt``
+            # uses so callers don't need to learn a new error type.
+            raise AgentExecutionError(
+                "The AI workflow returned an invalid JSON response.",
+                details=content,
+            ) from exc
+
+        try:
+            validated = response_model.model_validate(raw_payload)
+        except ValidationError as exc:
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "openai_structured_validation_failed",
+                "Schema-strict response failed Pydantic validation.",
+                model=resolved_model,
+                task_name=task_name,
+                response_model=response_model.__name__,
+                error_count=len(exc.errors()),
+            )
+            raise AgentExecutionError(
+                "The AI workflow response did not match the expected schema.",
+                details=str(exc),
+            ) from exc
+
+        usage = getattr(response, "usage", None)
+        status = getattr(response, "status", None)
+        incomplete_details = getattr(response, "incomplete_details", None)
+        incomplete_reason = (
+            getattr(incomplete_details, "reason", None)
+            if incomplete_details
+            else None
+        )
+        output_token_details = getattr(usage, "output_tokens_details", None)
+        reasoning_tokens = getattr(output_token_details, "reasoning_tokens", 0) or 0
+        prompt_tokens = getattr(usage, "input_tokens", 0) or 0
+        completion_tokens = getattr(usage, "output_tokens", 0) or 0
+        total_tokens = getattr(usage, "total_tokens", 0) or 0
+        self._record_usage(resolved_model, prompt_tokens, completion_tokens, total_tokens)
+        self._last_response_metadata = {
+            "response_id": getattr(response, "id", None),
+            "status": status,
+            "incomplete_reason": incomplete_reason,
+            "model": resolved_model,
+            "task_name": task_name,
+            "estimated_input_chars": request_metadata.get("estimated_input_chars"),
+            "compacted_sections": request_metadata.get("compacted_sections"),
+            "compacted_labels": request_metadata.get("compacted_labels"),
+            "prompt_budget_mode": request_metadata.get("prompt_budget_mode"),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "response_model": response_model.__name__,
+        }
+        log_event(
+            LOGGER,
+            logging.INFO,
+            "openai_request_completed",
+            "OpenAI structured prompt request completed.",
+            model=resolved_model,
+            task_name=task_name,
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+            response_id=getattr(response, "id", None),
+            status=status,
+            incomplete_reason=incomplete_reason,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
+            session_request_count=self._usage_totals["request_count"],
+            session_total_tokens=self._usage_totals["total_tokens"],
+            response_model=response_model.__name__,
+        )
+        self._record_usage_event(
+            {
+                "task_name": task_name or "",
+                "model_name": resolved_model,
+                "request_count": 1,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "response_id": getattr(response, "id", None) or "",
+                "status": status or "",
+            }
+        )
+        self._record_cost_trace(
+            task_name=task_name,
+            model_name=resolved_model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            success=True,
+        )
+        return validated
 
     def run_text_stream(
         self,
@@ -673,6 +1066,13 @@ class OpenAIService:
                 "status": status or "",
             }
         )
+        self._record_cost_trace(
+            task_name=task_name,
+            model_name=resolved_model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            success=True,
+        )
 
     def _retry_with_higher_output_budget(
         self,
@@ -753,6 +1153,85 @@ class OpenAIService:
                 task_name=payload.get("task_name"),
                 model=payload.get("model_name"),
                 response_id=payload.get("response_id"),
+            )
+
+    def _record_cost_trace(
+        self,
+        *,
+        task_name: Optional[str],
+        model_name: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        success: bool = True,
+    ) -> None:
+        """Persist one cost-trace row.
+
+        Best-effort: any failure is logged and swallowed. The runtime
+        hot path stays clean even when Supabase blips, mirroring the
+        ``_record_usage_event`` semantics.
+
+        When ``cost_trace_recorder`` is set (test injection), we hand
+        the payload to that callable instead of calling
+        ``backend.run_traces.record_trace`` directly. Production runs
+        with both unset (no usage recorder, no test recorder) → no-op,
+        and with ``user_id`` set + the default recorder → Supabase row.
+        """
+        cost_usd = compute_call_cost_usd(model_name, prompt_tokens, completion_tokens)
+        payload = {
+            "task_name": task_name or "",
+            "model_name": model_name,
+            "prompt_tokens": int(prompt_tokens or 0),
+            "completion_tokens": int(completion_tokens or 0),
+            "cost_usd": cost_usd,
+            "user_id": self._user_id,
+            "success": bool(success),
+        }
+        if self._cost_trace_recorder is not None:
+            try:
+                self._cost_trace_recorder(dict(payload))
+            except Exception as exc:  # noqa: BLE001 - best-effort
+                log_event(
+                    LOGGER,
+                    logging.WARNING,
+                    "openai_cost_trace_persist_failed",
+                    "OpenAI cost trace recorder raised.",
+                    error_type=type(exc).__name__,
+                    details=str(exc),
+                    task_name=task_name,
+                    model=model_name,
+                )
+            return
+
+        # No injected recorder: only persist when we have a user_id.
+        # Recording trace rows without a user attribution would clutter
+        # the table with no tier-margin signal; the dev / fixture path
+        # often runs without auth, so the silent no-op is the right
+        # default. The `aijobagent_run_traces` schema permits NULL on
+        # user_id for completeness, but the application opts not to
+        # write that shape.
+        if not self._user_id:
+            return
+        try:
+            from backend.run_traces import record_trace  # local import to avoid circular
+            record_trace(
+                task_name=task_name or "",
+                model_name=model_name,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost_usd=cost_usd,
+                user_id=self._user_id,
+                success=success,
+            )
+        except Exception as exc:  # noqa: BLE001 - best-effort
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                "openai_cost_trace_persist_failed",
+                "OpenAI cost trace persistence failed.",
+                error_type=type(exc).__name__,
+                details=str(exc),
+                task_name=task_name,
+                model=model_name,
             )
 
     @classmethod

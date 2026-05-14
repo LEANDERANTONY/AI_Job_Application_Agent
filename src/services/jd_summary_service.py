@@ -5,6 +5,7 @@ from typing import Any
 from src.config import get_openai_max_completion_tokens_for_task
 from src.errors import AgentExecutionError
 from src.openai_service import OpenAIService
+from src.schemas_llm_outputs import JDSummaryOutput
 from src.services.job_service import extract_job_summary_sections
 
 
@@ -69,18 +70,38 @@ def generate_job_summary_view(*, openai_service: OpenAIService, job_description,
     )
 
     try:
-        payload = openai_service.run_json_prompt(
-            system_prompt,
-            user_prompt,
-            expected_keys=["sections"],
-            task_name="jd_summary",
-            max_completion_tokens=get_openai_max_completion_tokens_for_task("jd_summary", fallback=1400),
-            metadata={
-                "summary_type": "imported_job_description",
-                "job_source": job_source,
-                "estimated_input_chars": str(len(job_description.cleaned_text)),
-            },
-        )
+        # Schema-strict path: the summary contract has one top-level key
+        # (``sections``) but each item carries title + items. Production
+        # uses ``run_structured_prompt`` to constrain the shape at
+        # generation time; test fakes that only implement
+        # ``run_json_prompt`` still work via the legacy branch.
+        if hasattr(openai_service, "run_structured_prompt"):
+            structured = openai_service.run_structured_prompt(
+                system_prompt,
+                user_prompt,
+                response_model=JDSummaryOutput,
+                task_name="jd_summary",
+                max_completion_tokens=get_openai_max_completion_tokens_for_task("jd_summary", fallback=1400),
+                metadata={
+                    "summary_type": "imported_job_description",
+                    "job_source": job_source,
+                    "estimated_input_chars": str(len(job_description.cleaned_text)),
+                },
+            )
+            payload = structured.model_dump()
+        else:
+            payload = openai_service.run_json_prompt(
+                system_prompt,
+                user_prompt,
+                expected_keys=["sections"],
+                task_name="jd_summary",
+                max_completion_tokens=get_openai_max_completion_tokens_for_task("jd_summary", fallback=1400),
+                metadata={
+                    "summary_type": "imported_job_description",
+                    "job_source": job_source,
+                    "estimated_input_chars": str(len(job_description.cleaned_text)),
+                },
+            )
     except AgentExecutionError:
         return {"mode": "deterministic", "sections": deterministic_sections}
 

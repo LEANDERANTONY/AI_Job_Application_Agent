@@ -28,6 +28,7 @@ from src.schemas import (
     TailoredResumeDraft,
     WorkExperience,
 )
+from src.schemas_llm_outputs import ResumeBuilderStructuringOutput
 from src.utils import dedupe_strings, markdown_to_text, slugify_text
 
 
@@ -1228,17 +1229,38 @@ def _structure_via_llm(
 
     prompt = build_resume_builder_structuring_prompt(draft=asdict(session.draft))
     try:
-        payload = openai_service.run_json_prompt(
-            prompt["system"],
-            prompt["user"],
-            expected_keys=prompt["expected_keys"],
-            temperature=None,
-            max_completion_tokens=get_openai_max_completion_tokens_for_task(
-                "resume_builder_structuring"
-            ),
-            task_name="resume_builder_structuring",
-            allow_output_budget_retry=True,
-        )
+        # Schema-strict path: the structuring output is the biggest /
+        # most fragile JSON in the workflow (multiple arrays + optional
+        # categories + optional summary). Production runs through
+        # ``run_structured_prompt`` so the model is constrained at
+        # generation time to match ``ResumeBuilderStructuringOutput``.
+        # Test fakes that only implement the legacy ``run_json_prompt``
+        # still work via the ``hasattr`` shim below — the validation
+        # then happens here in Python rather than at the API edge.
+        if hasattr(openai_service, "run_structured_prompt"):
+            structured = openai_service.run_structured_prompt(
+                prompt["system"],
+                prompt["user"],
+                response_model=ResumeBuilderStructuringOutput,
+                max_completion_tokens=get_openai_max_completion_tokens_for_task(
+                    "resume_builder_structuring"
+                ),
+                task_name="resume_builder_structuring",
+                allow_output_budget_retry=True,
+            )
+            payload = structured.model_dump()
+        else:
+            payload = openai_service.run_json_prompt(
+                prompt["system"],
+                prompt["user"],
+                expected_keys=prompt["expected_keys"],
+                temperature=None,
+                max_completion_tokens=get_openai_max_completion_tokens_for_task(
+                    "resume_builder_structuring"
+                ),
+                task_name="resume_builder_structuring",
+                allow_output_budget_retry=True,
+            )
     except Exception as exc:  # noqa: BLE001 — any LLM error → fallback
         log_event(
             LOGGER,

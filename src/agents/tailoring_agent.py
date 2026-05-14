@@ -7,6 +7,7 @@ from src.schemas import (
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
+from src.schemas_llm_outputs import TailoringOutput
 
 from .common import coerce_string, coerce_string_list, unique_strings
 
@@ -16,12 +17,12 @@ class TailoringAgent:
         self._openai_service = openai_service
         # Optional per-tier model override resolved by
         # `backend.model_routing.select_workflow_model`. When set, the
-        # agent passes it as `model=` to `run_json_prompt`, bypassing
-        # the default task-name → model lookup. None means "use the
-        # standard model for this task". Tailoring stays on mini under
-        # premium per the COGS analysis, so this is almost always None;
-        # the parameter exists for symmetry with the other agents and
-        # to make the test surface explicit.
+        # agent passes it as `model=` to `run_structured_prompt`,
+        # bypassing the default task-name → model lookup. None means
+        # "use the standard model for this task". Tailoring stays on
+        # mini under premium per the COGS analysis, so this is almost
+        # always None; the parameter exists for symmetry with the
+        # other agents and to make the test surface explicit.
         self._model_override = model_override
 
     def run(
@@ -38,23 +39,41 @@ class TailoringAgent:
                 fit_analysis,
                 tailored_draft,
             )
-            payload = self._openai_service.run_json_prompt(
-                prompt["system"],
-                prompt["user"],
-                expected_keys=prompt["expected_keys"],
-                max_completion_tokens=get_openai_max_completion_tokens_for_task("tailoring"),
-                task_name="tailoring",
-                model=self._model_override,
-                metadata=prompt.get("metadata"),
-            )
+            # Schema-strict path: the Pydantic ``TailoringOutput`` mirrors
+            # the prompt's contract; OpenAI's structured outputs API
+            # constrains the model to produce JSON that already matches.
+            # Test fakes that only implement the legacy ``run_json_prompt``
+            # surface still work via the ``hasattr`` shim below — we
+            # validate the dict against the same Pydantic model client-side.
+            if hasattr(self._openai_service, "run_structured_prompt"):
+                structured = self._openai_service.run_structured_prompt(
+                    prompt["system"],
+                    prompt["user"],
+                    response_model=TailoringOutput,
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task("tailoring"),
+                    task_name="tailoring",
+                    model=self._model_override,
+                    metadata=prompt.get("metadata"),
+                )
+            else:
+                payload = self._openai_service.run_json_prompt(
+                    prompt["system"],
+                    prompt["user"],
+                    expected_keys=prompt["expected_keys"],
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task("tailoring"),
+                    task_name="tailoring",
+                    model=self._model_override,
+                    metadata=prompt.get("metadata"),
+                )
+                structured = TailoringOutput.model_validate(payload)
             return TailoringAgentOutput(
-                professional_summary=coerce_string(payload.get("professional_summary")),
-                rewritten_bullets=coerce_string_list(payload.get("rewritten_bullets"), limit=5),
+                professional_summary=coerce_string(structured.professional_summary),
+                rewritten_bullets=coerce_string_list(structured.rewritten_bullets, limit=5),
                 highlighted_skills=coerce_string_list(
-                    payload.get("highlighted_skills"), limit=8
+                    structured.highlighted_skills, limit=8
                 ),
                 cover_letter_themes=coerce_string_list(
-                    payload.get("cover_letter_themes"), limit=4
+                    structured.cover_letter_themes, limit=4
                 ),
             )
         return self._fallback(tailored_draft, fit_analysis)

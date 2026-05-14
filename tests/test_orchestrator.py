@@ -5,6 +5,21 @@ from src.services.job_service import build_job_description_from_text
 from src.services.profile_service import build_candidate_profile_from_resume
 
 
+def _materialize_structured(response, response_model):
+    """Helper for the fake services below.
+
+    The legacy ``run_json_prompt`` fakes returned raw dicts. After the
+    schema-strict migration the agents call ``run_structured_prompt``
+    and expect a validated Pydantic instance. We keep the queued
+    response shape as dicts (cleaner to read in the test setup) and
+    materialize the expected model here so tests don't have to be
+    rewritten as Pydantic constructors.
+    """
+    if isinstance(response, BaseException):
+        raise response
+    return response_model.model_validate(response)
+
+
 def _build_candidate_profile():
     return build_candidate_profile_from_resume(
         ResumeDocument(
@@ -87,6 +102,9 @@ class FakeOpenAIService:
     def run_json_prompt(self, system_prompt, user_prompt, expected_keys=None, **kwargs):
         return self._responses.pop(0)
 
+    def run_structured_prompt(self, system_prompt, user_prompt, *, response_model, **kwargs):
+        return _materialize_structured(self._responses.pop(0), response_model)
+
 
 class FailingOpenAIService:
     model = "failing-model"
@@ -97,6 +115,10 @@ class FailingOpenAIService:
 
     @staticmethod
     def run_json_prompt(system_prompt, user_prompt, expected_keys=None, **kwargs):
+        raise AgentExecutionError("boom")
+
+    @staticmethod
+    def run_structured_prompt(system_prompt, user_prompt, *, response_model, **kwargs):
         raise AgentExecutionError("boom")
 
 
@@ -203,6 +225,15 @@ class FlakyOpenAIService:
         if isinstance(item, BaseException):
             raise item
         return item
+
+    def run_structured_prompt(self, system_prompt, user_prompt, *, response_model, **kwargs):
+        self.call_count += 1
+        if not self._queue:
+            raise AssertionError(
+                "FlakyOpenAIService ran out of queued responses at call "
+                f"#{self.call_count}"
+            )
+        return _materialize_structured(self._queue.pop(0), response_model)
 
 
 def _tailoring_response():

@@ -12,6 +12,7 @@ from src.schemas import (
     TailoredResumeDraft,
     TailoringAgentOutput,
 )
+from src.schemas_llm_outputs import CoverLetterOutput
 
 from .common import coerce_string, coerce_string_list, unique_strings
 
@@ -46,22 +47,34 @@ class CoverLetterAgent:
                 review_output,
                 resume_generation_output,
             )
-            payload = self._openai_service.run_json_prompt(
-                prompt["system"],
-                prompt["user"],
-                expected_keys=prompt["expected_keys"],
-                max_completion_tokens=get_openai_max_completion_tokens_for_task("cover_letter"),
-                task_name="cover_letter",
-                model=self._model_override,
-                metadata=prompt.get("metadata"),
-            )
+            if hasattr(self._openai_service, "run_structured_prompt"):
+                structured = self._openai_service.run_structured_prompt(
+                    prompt["system"],
+                    prompt["user"],
+                    response_model=CoverLetterOutput,
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task("cover_letter"),
+                    task_name="cover_letter",
+                    model=self._model_override,
+                    metadata=prompt.get("metadata"),
+                )
+            else:
+                payload = self._openai_service.run_json_prompt(
+                    prompt["system"],
+                    prompt["user"],
+                    expected_keys=prompt["expected_keys"],
+                    max_completion_tokens=get_openai_max_completion_tokens_for_task("cover_letter"),
+                    task_name="cover_letter",
+                    model=self._model_override,
+                    metadata=prompt.get("metadata"),
+                )
+                structured = CoverLetterOutput.model_validate(payload)
             output = CoverLetterAgentOutput(
-                greeting=coerce_string(payload.get("greeting"), default="Dear Hiring Team"),
-                opening_paragraph=coerce_string(payload.get("opening_paragraph")),
-                body_paragraphs=coerce_string_list(payload.get("body_paragraphs"), limit=3),
-                closing_paragraph=coerce_string(payload.get("closing_paragraph")),
-                signoff=coerce_string(payload.get("signoff"), default="Sincerely"),
-                signature_name=coerce_string(payload.get("signature_name"), default=candidate_profile.full_name or "Candidate"),
+                greeting=coerce_string(structured.greeting, default="Dear Hiring Team"),
+                opening_paragraph=coerce_string(structured.opening_paragraph),
+                body_paragraphs=coerce_string_list(structured.body_paragraphs, limit=3),
+                closing_paragraph=coerce_string(structured.closing_paragraph),
+                signoff=coerce_string(structured.signoff, default="Sincerely"),
+                signature_name=coerce_string(structured.signature_name, default=candidate_profile.full_name or "Candidate"),
             )
             if self._contains_third_person_self_reference(candidate_profile, output):
                 return self._fallback(

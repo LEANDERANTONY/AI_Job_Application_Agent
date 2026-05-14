@@ -1,8 +1,14 @@
 from src.agents.cover_letter_agent import CoverLetterAgent
 from src.schemas import CandidateProfile, FitAnalysis, JobDescription, JobRequirements, TailoredResumeDraft, TailoringAgentOutput, WorkExperience
+from src.schemas_llm_outputs import CoverLetterOutput
 
 
 class FakeThirdPersonOpenAIService:
+    """Fake OpenAI service that returns an already-validated
+    ``CoverLetterOutput`` from ``run_structured_prompt``. The
+    schema-strict migration replaced the previous ``run_json_prompt``
+    surface; this mock matches the new contract."""
+
     model = "fake-model"
 
     @staticmethod
@@ -10,17 +16,21 @@ class FakeThirdPersonOpenAIService:
         return True
 
     @staticmethod
-    def run_json_prompt(system_prompt, user_prompt, expected_keys=None, **kwargs):
-        return {
-            "greeting": "Dear Hiring Team",
-            "opening_paragraph": "I am excited to apply for the Data Scientist role. Leander Antony is a project-based machine-learning candidate with hands-on Python experience.",
-            "body_paragraphs": [
+    def run_structured_prompt(system_prompt, user_prompt, *, response_model, **kwargs):
+        assert response_model is CoverLetterOutput
+        return CoverLetterOutput(
+            greeting="Dear Hiring Team",
+            opening_paragraph=(
+                "I am excited to apply for the Data Scientist role. Leander Antony is a "
+                "project-based machine-learning candidate with hands-on Python experience."
+            ),
+            body_paragraphs=[
                 "His portfolio work includes predictive modeling and validation projects.",
             ],
-            "closing_paragraph": "He would welcome the opportunity to discuss the role further.",
-            "signoff": "Sincerely",
-            "signature_name": "Leander Antony",
-        }
+            closing_paragraph="He would welcome the opportunity to discuss the role further.",
+            signoff="Sincerely",
+            signature_name="Leander Antony",
+        )
 
 
 def test_cover_letter_agent_falls_back_when_ai_uses_third_person_self_reference():
