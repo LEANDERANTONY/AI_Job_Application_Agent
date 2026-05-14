@@ -423,7 +423,13 @@ export async function getWorkspaceQuota() {
 //
 // The hosted checkout URL pattern is documented at
 // https://docs.lemonsqueezy.com/help/checkout/hosted-checkouts.
-// Format: https://{store_subdomain}.lemonsqueezy.com/buy/{variant_uuid}
+// Format: https://{store_subdomain}.lemonsqueezy.com/checkout/buy/{variant_uuid}
+// An earlier draft used `/buy/<variant>` which is a non-checkout
+// endpoint (Codex P1 finding on HelpmateAI's PR #4, mirrored here
+// because the LS scaffold for both apps was built from the same
+// template). Paid conversion fails the moment LS goes live with the
+// wrong path, so this fix lands BEFORE KYC clears.
+//
 // We append checkout[custom][user_id] so the LS webhook can bind the
 // subscription back to our Supabase user. Without that binding the
 // webhook handler has no way to write the right row.
@@ -476,7 +482,7 @@ export function getCheckoutUrl(
       ? LEMONSQUEEZY_VARIANT_PRO
       : LEMONSQUEEZY_VARIANT_BUSINESS;
   if (!variant) return "";
-  const base = `https://${LEMONSQUEEZY_STORE_ID}.lemonsqueezy.com/buy/${variant}`;
+  const base = `https://${LEMONSQUEEZY_STORE_ID}.lemonsqueezy.com/checkout/buy/${variant}`;
   if (!userId) return base;
   // LS expects checkout fields as URL-encoded query params; the
   // bracket syntax is the documented form for nested fields.
