@@ -25,6 +25,15 @@ class WorkspaceAnalyzeRequestModel(BaseModel):
     job_description_text: str = Field(min_length=1)
     imported_job_posting: dict[str, Any] | None = None
     run_assisted: bool = False
+    # `premium` opts into the higher-trust model routing (lands in a
+    # later step) AND charges against the tier's premium_applications
+    # counter instead of tailored_applications. Free tier has a
+    # premium cap of 0, so a Free user setting premium=True gets a
+    # 429 with a "Pro+ only" message via the global quota handler.
+    # Defaults to False so existing callers (and clients on the
+    # current frontend) keep landing on the standard tailored path
+    # without a wire-protocol change.
+    premium: bool = False
 
     @field_validator(
         "resume_text",

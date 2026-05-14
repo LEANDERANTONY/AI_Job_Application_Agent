@@ -30,10 +30,15 @@ from src.services.profile_service import (
     build_candidate_profile_from_resume_auto,
 )
 from src.services.tailoring_service import build_tailored_resume_draft
+from backend import quota
 from backend.services.auth_session_service import (
     build_openai_service_for_context,
     resolve_authenticated_context,
 )
+from backend.tiers import resolve_user_tier
+
+
+_QUOTA_LOGGER = get_logger("backend.services.workspace_service.quota")
 
 
 class _InMemoryUploadedFile(BytesIO):
@@ -139,25 +144,41 @@ def run_workspace_analysis(
     job_description_text: str,
     imported_job_posting: dict[str, Any] | None,
     run_assisted: bool,
+    premium: bool = False,
     access_token: str = "",
     refresh_token: str = "",
     progress_callback=None,
 ):
+    """Build a tailored application bundle for a single (resume, JD) pair.
+
+    Quota gate (Step 3 of tier-enforcement):
+      * For authenticated users, the gate resolves the user's tier via
+        `resolve_user_tier` and atomically increments either
+        `tailored_applications` (premium=False) or
+        `premium_applications` (premium=True) BEFORE the workflow runs.
+        Burning the credit up-front means concurrent /workspace/analyze
+        calls from the same user can't both squeeze past the cap.
+      * If the workflow then raises, we refund the increment so a
+        transient orchestrator failure doesn't cost the user a credit.
+        Refunding only after a successful increment is critical -- if
+        the increment itself raised QuotaExceededError, no row was
+        written and the refund must be skipped (the brief calls this
+        out explicitly).
+      * For anonymous users the gate is bypassed because there's no
+        stable user_id to attribute the increment to. The Free-tier
+        guard against premium=True still fires (we resolve the tier
+        as "free" for the synthetic anonymous context, and the
+        QuotaExceededError carries the "Pro+ only" copy) so anonymous
+        callers can't slip through the premium model surface.
+
+    Anonymous + premium=True is rejected by raising a QuotaExceededError
+    with cap=0; the FastAPI handler converts it to the standard 429
+    payload so the frontend renders the same upgrade nudge.
+    """
     resume_document = _build_resume_document(
         resume_text=resume_text,
         resume_filetype=resume_filetype,
         resume_source=resume_source,
-    )
-    candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
-    job_description = _enrich_job_description_from_imported_posting(
-        build_job_description_from_text_auto(job_description_text),
-        imported_job_posting,
-    )
-    fit_analysis = build_fit_analysis(candidate_profile, job_description)
-    tailored_draft = build_tailored_resume_draft(
-        candidate_profile,
-        job_description,
-        fit_analysis,
     )
 
     auth_context = None
@@ -167,75 +188,153 @@ def run_workspace_analysis(
             refresh_token=refresh_token,
         )
 
-    openai_service = None
-    if auth_context is not None:
-        openai_service, _ = build_openai_service_for_context(auth_context)
-
-    jd_summary_view = generate_job_summary_view(
-        openai_service=openai_service,
-        job_description=job_description,
-        imported_job_posting=imported_job_posting,
+    # Quota gate. Runs BEFORE expensive work (orchestrator, OpenAI
+    # calls, artifact rendering) so a rejection is cheap. The gate is
+    # the ONLY place that decides per-tier limits -- per the brief,
+    # no scattered `if tier == "free"` checks live downstream.
+    counter_name = "premium_applications" if premium else "tailored_applications"
+    tier = resolve_user_tier(
+        auth_context.app_user if auth_context is not None else None
     )
+    quota_user_id = (
+        auth_context.app_user.id if auth_context is not None else ""
+    )
+    quota_consumed = False
+    if quota_user_id:
+        # Authenticated path: real user_id, real Supabase row. Raises
+        # QuotaExceededError on cap breach; the route's global handler
+        # converts that to 429 with the canonical payload.
+        quota.check_and_increment(counter_name, quota_user_id, tier)
+        quota_consumed = True
+    elif premium:
+        # Anonymous + premium=True: resolve tier as free (already
+        # done) and surface the same Pro+ rejection message a
+        # signed-in free user would see. We construct the error
+        # directly rather than calling check_and_increment because
+        # the helper requires a user_id; the user-facing 429 looks
+        # identical either way.
+        from backend.tiers import TIER_CAPS
+        from src.errors import QuotaExceededError
 
-    agent_result = None
-    workflow_mode = "deterministic_preview"
-    fallback_reason = ""
+        raise QuotaExceededError(
+            "Premium applications are a Pro+ feature. Sign in and upgrade "
+            "to run premium tailoring for this job.",
+            counter=counter_name,
+            current=0,
+            cap=TIER_CAPS[tier][counter_name],
+            reset_period=quota.current_period_key(),
+            tier=tier,
+        )
 
-    if run_assisted:
-        if auth_context is None and assisted_workflow_requires_login():
-            raise InputValidationError(
-                "Sign in with Google before running the AI-assisted workflow."
-            )
-        if openai_service is None:
-            openai_service = OpenAIService()
-        agent_result = ApplicationOrchestrator(openai_service=openai_service).run(
+    try:
+        candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
+        job_description = _enrich_job_description_from_imported_posting(
+            build_job_description_from_text_auto(job_description_text),
+            imported_job_posting,
+        )
+        fit_analysis = build_fit_analysis(candidate_profile, job_description)
+        tailored_draft = build_tailored_resume_draft(
             candidate_profile,
             job_description,
-            fit_analysis=fit_analysis,
-            tailored_draft=tailored_draft,
-            progress_callback=progress_callback,
+            fit_analysis,
         )
-        workflow_mode = agent_result.mode
-        fallback_reason = agent_result.fallback_reason
 
-    tailored_resume_artifact = build_tailored_resume_artifact(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-        tailored_draft,
-        agent_result=agent_result,
-    )
-    cover_letter_artifact = build_cover_letter_artifact(
-        candidate_profile,
-        job_description,
-        fit_analysis,
-        tailored_draft,
-        agent_result=agent_result,
-    )
+        openai_service = None
+        if auth_context is not None:
+            openai_service, _ = build_openai_service_for_context(auth_context)
 
-    review = getattr(agent_result, "review", None)
+        jd_summary_view = generate_job_summary_view(
+            openai_service=openai_service,
+            job_description=job_description,
+            imported_job_posting=imported_job_posting,
+        )
 
-    return {
-        "resume_document": _serialize(resume_document),
-        "candidate_profile": _serialize(candidate_profile),
-        "job_description": _serialize(job_description),
-        "jd_summary_view": _serialize(jd_summary_view),
-        "fit_analysis": _serialize(fit_analysis),
-        "tailored_draft": _serialize(tailored_draft),
-        "agent_result": _serialize(agent_result) if agent_result else None,
-        "artifacts": {
-            "tailored_resume": _serialize(tailored_resume_artifact),
-            "cover_letter": _serialize(cover_letter_artifact),
-        },
-        "workflow": {
-            "mode": workflow_mode,
-            "assisted_requested": bool(run_assisted),
-            "assisted_available": bool(openai_service and openai_service.is_available()),
-            "review_approved": bool(review.approved) if review else False,
-            "fallback_reason": fallback_reason,
-        },
-        "imported_job_posting": imported_job_posting,
-    }
+        agent_result = None
+        workflow_mode = "deterministic_preview"
+        fallback_reason = ""
+
+        if run_assisted:
+            if auth_context is None and assisted_workflow_requires_login():
+                raise InputValidationError(
+                    "Sign in with Google before running the AI-assisted workflow."
+                )
+            if openai_service is None:
+                openai_service = OpenAIService()
+            agent_result = ApplicationOrchestrator(openai_service=openai_service).run(
+                candidate_profile,
+                job_description,
+                fit_analysis=fit_analysis,
+                tailored_draft=tailored_draft,
+                progress_callback=progress_callback,
+            )
+            workflow_mode = agent_result.mode
+            fallback_reason = agent_result.fallback_reason
+
+        tailored_resume_artifact = build_tailored_resume_artifact(
+            candidate_profile,
+            job_description,
+            fit_analysis,
+            tailored_draft,
+            agent_result=agent_result,
+        )
+        cover_letter_artifact = build_cover_letter_artifact(
+            candidate_profile,
+            job_description,
+            fit_analysis,
+            tailored_draft,
+            agent_result=agent_result,
+        )
+
+        review = getattr(agent_result, "review", None)
+
+        return {
+            "resume_document": _serialize(resume_document),
+            "candidate_profile": _serialize(candidate_profile),
+            "job_description": _serialize(job_description),
+            "jd_summary_view": _serialize(jd_summary_view),
+            "fit_analysis": _serialize(fit_analysis),
+            "tailored_draft": _serialize(tailored_draft),
+            "agent_result": _serialize(agent_result) if agent_result else None,
+            "artifacts": {
+                "tailored_resume": _serialize(tailored_resume_artifact),
+                "cover_letter": _serialize(cover_letter_artifact),
+            },
+            "workflow": {
+                "mode": workflow_mode,
+                "assisted_requested": bool(run_assisted),
+                "assisted_available": bool(openai_service and openai_service.is_available()),
+                "review_approved": bool(review.approved) if review else False,
+                "fallback_reason": fallback_reason,
+            },
+            "imported_job_posting": imported_job_posting,
+        }
+    except BaseException:
+        # Refund on failure. Only runs when the increment actually
+        # consumed a credit -- if the quota gate above raised
+        # QuotaExceededError, no row was written and `quota_consumed`
+        # is still False, so we don't accidentally decrement somebody
+        # else's count.
+        #
+        # Use BaseException so SystemExit / KeyboardInterrupt in tests
+        # also refund cleanly. The refund itself is best-effort and
+        # logs on its own internal failure, so the original exception
+        # is always the one that surfaces.
+        if quota_consumed:
+            try:
+                quota.refund(counter_name, quota_user_id, tier)
+            except Exception:  # noqa: BLE001 - refund is best-effort
+                log_event(
+                    _QUOTA_LOGGER,
+                    logging.WARNING,
+                    "workspace_quota_refund_failed",
+                    "Refund after workflow failure raised; the user's quota "
+                    "credit was not restored. The original workflow error is "
+                    "the one that will surface to the client.",
+                    counter=counter_name,
+                    user_id=quota_user_id,
+                    tier=tier,
+                )
+        raise
 
 
 def answer_workspace_question(

@@ -84,6 +84,7 @@ def _run_job(
     resume_source: str,
     job_description_text: str,
     imported_job_posting: dict[str, Any] | None,
+    premium: bool,
     access_token: str,
     refresh_token: str,
 ) -> None:
@@ -96,6 +97,7 @@ def _run_job(
                 job_description_text=job_description_text,
                 imported_job_posting=imported_job_posting,
                 run_assisted=True,
+                premium=premium,
                 access_token=access_token,
                 refresh_token=refresh_token,
                 progress_callback=lambda title, detail, value: _update_job_progress(
@@ -155,6 +157,7 @@ def start_workspace_analysis_job(
     resume_source: str,
     job_description_text: str,
     imported_job_posting: dict[str, Any] | None,
+    premium: bool = False,
     access_token: str,
     refresh_token: str,
 ) -> dict[str, Any]:
@@ -182,6 +185,7 @@ def start_workspace_analysis_job(
                 "resume_source": resume_source,
                 "job_description_text": job_description_text,
                 "imported_job_posting": imported_job_posting,
+                "premium": premium,
                 "access_token": access_token,
                 "refresh_token": refresh_token,
             },

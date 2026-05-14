@@ -60,13 +60,19 @@ from backend.workspace_models import (
     WorkspaceAnalyzeJobCreatedResponseModel,
     WorkspaceAnalyzeJobStatusResponseModel,
 )
-from src.errors import AppError
+from src.errors import AppError, QuotaExceededError
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
 
 def _raise_http_error(error: AppError):
+    # QuotaExceededError is an AppError subclass but it needs to
+    # propagate out of the route so the global FastAPI handler can
+    # build the canonical 429 payload. Re-raise so the exception
+    # handler chain wins over the generic 400-on-AppError fallback.
+    if isinstance(error, QuotaExceededError):
+        raise error
     raise HTTPException(status_code=400, detail=error.user_message)
 
 
@@ -383,6 +389,7 @@ def analyze_workspace(
             job_description_text=payload.job_description_text,
             imported_job_posting=payload.imported_job_posting,
             run_assisted=payload.run_assisted,
+            premium=payload.premium,
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
@@ -408,6 +415,7 @@ def start_workspace_analysis_job_route(
             resume_source=payload.resume_source,
             job_description_text=payload.job_description_text,
             imported_job_posting=payload.imported_job_posting,
+            premium=payload.premium,
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
@@ -420,6 +428,13 @@ def start_workspace_analysis_job_route(
             ),
             headers={"Retry-After": str(JOB_RETRY_AFTER_SECONDS)},
         )
+    except QuotaExceededError:
+        # Let the global handler build the structured 429. Without
+        # this re-raise the surrounding `except WorkspaceRunJobCapacityError`
+        # path would still allow QuotaExceededError to propagate, but
+        # being explicit here documents that quota rejection is the
+        # second supported failure mode on this surface.
+        raise
 
 
 @router.get(
