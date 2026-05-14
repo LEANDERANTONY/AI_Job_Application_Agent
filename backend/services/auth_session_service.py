@@ -246,6 +246,14 @@ def build_openai_service_for_context(context: AuthenticatedContext):
         OpenAIService(
             usage_event_recorder=usage_event_recorder,
             quota_checker=quota_checker,
+            # Threading user_id through here lets the cost-tracking
+            # bridge inside OpenAIService record per-call USD into
+            # aijobagent_run_traces with the right user attribution.
+            # See ``src/openai_service.compute_call_cost_usd`` and
+            # ``backend/run_traces.record_trace``. The unauthenticated
+            # branch above (`OpenAIService()`) doesn't pass user_id;
+            # cost rows are skipped in that case by design.
+            user_id=context.app_user.id,
         ),
         daily_quota,
     )
