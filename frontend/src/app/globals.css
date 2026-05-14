@@ -2926,6 +2926,18 @@ code {
   --l-fg-4:       #5e6677;
   --l-ease:       cubic-bezier(0.16, 1, 0.30, 1);
   --l-duration:   320ms;
+  /* Accent companions for sections that need the full --accent-* set
+     (pricing card variants, glow halos). Base --accent / --accent-strong
+     / --accent-soft come from :root; these extend it so pricing-style
+     code can reference --accent-fg / --accent-tint / --accent-glow
+     without per-rule fallbacks. --bg-page is exposed as a token so
+     cards can punch a near-black "window cut into the page" element
+     (the Pro card's CTA + MOST POPULAR pill) using a token instead
+     of a magic hex. */
+  --accent-fg:    #ffffff;
+  --accent-tint:  rgba(48, 100, 255, 0.14);
+  --accent-glow:  rgba(48, 100, 255, 0.45);
+  --bg-page:      #04070f;
 
   position: relative;
   display: flex;
@@ -4225,6 +4237,231 @@ code {
   border: 1px solid rgba(48, 100, 255, 0.32);
   color: var(--l-fg);
   align-self: flex-end;
+}
+
+/* ── Pricing ─────────────────────────────────────────────────────── */
+
+/* Three-tier pricing card. Middle "Pro" tier is the focal anchor —
+   solid accent (blue) gradient fill with white text and dark MOST
+   POPULAR pill + Get Pro button (both using --bg-page so they read as
+   windows cut into the filled card exposing the page color behind).
+   Outer Free / Business cards share an accent border + soft outer
+   glow but stay dark inside — no interior tint to compete with the
+   filled Pro card. CTAs alternate contrast across the row: accent on
+   dark, dark on accent, accent on dark.
+
+   This is intentionally the same visual structure as HelpmateAI's
+   pricing.tsx (mint accent there). One vocabulary across both
+   products keeps the design system coherent. */
+
+.l-pricing {
+  padding: 90px 32px 70px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.l-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 8px;
+  align-items: stretch;
+}
+
+.l-pricing-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 28px;
+  border-radius: var(--l-radius-lg);
+  background: var(--l-card);
+  border: 1px solid var(--l-line);
+  transition:
+    background var(--l-duration) var(--l-ease),
+    border-color var(--l-duration) var(--l-ease),
+    box-shadow var(--l-duration) var(--l-ease),
+    transform var(--l-duration) var(--l-ease);
+}
+
+/* Free + Business cards: accent border + outer glow, interior stays
+   neutral dark. The Pro card sits between them solid-filled, so the
+   accent rim on the outers ties the row into one coherent group
+   without diluting the focal anchor. */
+.l-pricing-card:not(.is-featured) {
+  border-color: var(--accent);
+  box-shadow: 0 0 32px var(--accent-glow);
+}
+
+.l-pricing-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.l-pricing-name {
+  margin: 0;
+  font-family: var(--font-space-grotesk), "Space Grotesk", "Inter", system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--l-fg);
+  letter-spacing: -0.005em;
+}
+
+.l-pricing-blurb {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--l-fg-3);
+}
+
+.l-pricing-price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+}
+.l-pricing-price .num {
+  font-family: var(--font-space-grotesk), "Space Grotesk", "Inter", system-ui, sans-serif;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  color: var(--l-fg);
+}
+.l-pricing-price .per {
+  font-size: 13px;
+  color: var(--l-fg-3);
+}
+
+.l-pricing-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 14px;
+  border-radius: var(--l-radius);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--l-duration) var(--l-ease),
+    box-shadow var(--l-duration) var(--l-ease);
+}
+.l-pricing-cta:hover {
+  background: var(--accent-strong);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 24px var(--accent-glow);
+}
+.l-pricing-cta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.l-pricing-features {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.l-pricing-features li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--l-fg-2);
+}
+.l-pricing-features svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.l-pricing-badge {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ---------- Featured (Pro) — filled accent ---------- */
+
+.l-pricing-card.is-featured {
+  background: linear-gradient(135deg, var(--accent), #114be9);
+  border-color: transparent;
+  box-shadow:
+    0 24px 48px -16px var(--accent-glow),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  transform: translateY(-6px);
+}
+.l-pricing-card.is-featured .l-pricing-name,
+.l-pricing-card.is-featured .l-pricing-price .num {
+  color: var(--accent-fg);
+}
+.l-pricing-card.is-featured .l-pricing-blurb,
+.l-pricing-card.is-featured .l-pricing-price .per,
+.l-pricing-card.is-featured .l-pricing-features li {
+  /* Accent-foreground is white here, so "secondary" type just steps
+     down opacity for a faded effect rather than mixing toward a
+     different color. */
+  color: rgba(255, 255, 255, 0.78);
+}
+.l-pricing-card.is-featured .l-pricing-features svg {
+  color: var(--accent-fg);
+}
+/* Pro CTA + badge punch through to the page color, reading as
+   near-black windows cut into the filled card. Same trick as
+   HelpmateAI — pulls the eye to the conversion target. */
+.l-pricing-card.is-featured .l-pricing-cta {
+  background: var(--bg-page);
+  color: var(--accent);
+  border-color: transparent;
+}
+.l-pricing-card.is-featured .l-pricing-cta:hover {
+  background: #000;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+    0 0 24px rgba(0, 0, 0, 0.5);
+}
+.l-pricing-card.is-featured .l-pricing-cta:disabled {
+  background: var(--bg-page);
+  color: var(--accent);
+  opacity: 0.65;
+}
+.l-pricing-card.is-featured .l-pricing-badge {
+  background: var(--bg-page);
+  color: var(--accent);
+}
+
+/* Mobile: stack to one column, drop the featured card's translateY so
+   it doesn't punch into the next card. */
+@media (max-width: 760px) {
+  .l-pricing {
+    padding: 60px 24px 40px;
+  }
+  .l-pricing-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .l-pricing-card.is-featured {
+    transform: none;
+  }
 }
 
 /* ── Final CTA ────────────────────────────────────────────────────── */

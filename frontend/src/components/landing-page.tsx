@@ -355,6 +355,14 @@ export function LandingPage() {
 
         <BentoSection />
 
+        <PricingSection
+          isSignedIn={isSignedIn}
+          pendingAction={pendingAction}
+          onPrimaryCta={() => void onPrimaryCta()}
+          anyActionPending={anyActionPending}
+          authStatus={authStatus}
+        />
+
         <FinalCtaSection
           authStatus={authStatus}
           isSignedIn={isSignedIn}
@@ -1023,6 +1031,183 @@ function ArrowGlyph({ direction }: { direction: "left" | "right" }) {
       <path d="M5 12h14" />
       <path d="m13 5 7 7-7 7" />
     </svg>
+  );
+}
+
+// ─── Pricing ──────────────────────────────────────────────────────────
+//
+// Three-tier card with the middle "Pro" tier filled-and-floated as the
+// focal anchor. Same visual structure as HelpmateAI's landing-pricing
+// (mint accent over there, electric blue here). Free + Pro CTAs route
+// through the existing onPrimaryCta auth handoff so a click here is
+// identical to clicking "Sign in with Google" in the hero. Business
+// is a mailto until there's a real sales flow.
+//
+// Tier caps are aspirational — there's no backend enforcement of these
+// values yet; that's a follow-up. The numbers below are stylistically
+// matched to HelpmateAI's pricing matrix (Free / Pro $9 / Business
+// $39 per seat) so the two products price coherently as siblings.
+
+type PricingProps = Omit<HeroProps, "authError">;
+
+type PricingTier = {
+  id: "free" | "pro" | "business";
+  name: string;
+  price: number;
+  blurb: string;
+  features: string[];
+  featured?: boolean;
+  ctaLabel: string;
+  ctaKind: "primary" | "mailto";
+  ctaHref?: string;
+};
+
+const PRICING_TIERS: PricingTier[] = [
+  {
+    id: "free",
+    name: "Free",
+    price: 0,
+    blurb: "Try the workbench on a few applications.",
+    ctaLabel: "Start free",
+    ctaKind: "primary",
+    features: [
+      "3 tailored resumes / month",
+      "3 cover letters / month",
+      "Basic job-search filters",
+      "1 resume theme",
+      "10 saved jobs",
+    ],
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: 9,
+    blurb: "Unlimited applications for active job seekers.",
+    featured: true,
+    ctaLabel: "Get Pro",
+    ctaKind: "primary",
+    features: [
+      "50 tailored resumes / month",
+      "Unlimited cover letters",
+      "All resume themes",
+      "ATS-optimized exports (PDF + DOCX)",
+      "Application tracker",
+      "Advanced filters + saved alerts",
+    ],
+  },
+  {
+    id: "business",
+    name: "Business",
+    price: 39,
+    blurb: "Coaches and career centers. Billed per seat.",
+    ctaLabel: "Contact us",
+    ctaKind: "mailto",
+    ctaHref: "mailto:antony.leander@gmail.com?subject=Job%20Application%20Copilot%20%E2%80%94%20Business%20tier",
+    features: [
+      "Everything in Pro",
+      "Unlimited tailored resumes",
+      "5 client profiles per seat",
+      "White-label branded exports",
+      "Funnel analytics",
+      "Bulk operations",
+      "Priority support",
+    ],
+  },
+];
+
+function PricingCheck() {
+  // Inline SVG so we don't import an icon set just for one section.
+  // Stroke weight matches the rest of the landing.
+  return (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function PricingSection({
+  authStatus,
+  isSignedIn,
+  pendingAction,
+  onPrimaryCta,
+  anyActionPending,
+}: PricingProps) {
+  // Free + Pro share the auth-aware disabled state with the hero /
+  // final CTA so they grey out during a redirect/restore. Business
+  // CTA is a plain anchor — no shared state, mailto is always
+  // clickable.
+  const primaryDisabled = anyActionPending || authStatus === "restoring";
+  void isSignedIn;
+  void pendingAction;
+
+  return (
+    <section className="l-pricing" id="pricing">
+      <div className="l-section-head">
+        <span className="l-eyebrow">Pricing</span>
+        <h2 className="l-section-title">
+          Start free, upgrade when you need more
+        </h2>
+      </div>
+      <div className="l-pricing-grid">
+        {PRICING_TIERS.map((tier) => {
+          const isFeatured = Boolean(tier.featured);
+          return (
+            <article
+              key={tier.id}
+              className={
+                isFeatured ? "l-pricing-card is-featured" : "l-pricing-card"
+              }
+            >
+              {isFeatured ? (
+                <span className="l-pricing-badge" aria-hidden>
+                  Most popular
+                </span>
+              ) : null}
+              <header className="l-pricing-card-head">
+                <p className="l-pricing-name">{tier.name}</p>
+                <p className="l-pricing-blurb">{tier.blurb}</p>
+              </header>
+              <p className="l-pricing-price">
+                <span className="num">${tier.price}</span>
+                <span className="per">/month</span>
+              </p>
+              {tier.ctaKind === "primary" ? (
+                <button
+                  className="l-pricing-cta"
+                  disabled={primaryDisabled}
+                  onClick={onPrimaryCta}
+                  type="button"
+                >
+                  {tier.ctaLabel}
+                </button>
+              ) : (
+                <a className="l-pricing-cta" href={tier.ctaHref}>
+                  {tier.ctaLabel}
+                </a>
+              )}
+              <ul className="l-pricing-features">
+                {tier.features.map((feature) => (
+                  <li key={feature}>
+                    <PricingCheck />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
