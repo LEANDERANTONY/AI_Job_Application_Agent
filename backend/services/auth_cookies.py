@@ -22,10 +22,21 @@ ACCESS_TOKEN_COOKIE = "ja_access_token"
 REFRESH_TOKEN_COOKIE = "ja_refresh_token"
 
 # Sliding expiries. Refresh token controls "stay signed in" duration; the
-# access token mirrors it so a quiet tab doesn't lose only half its
-# credentials. AuthService rotates tokens on restore, and the router
+# access cookie mirrors it so a quiet tab doesn't lose only half its
+# credentials. AuthService rotates tokens on restore (Supabase mints a
+# fresh access JWT from the still-valid refresh JWT), and the router
 # re-issues both cookies on every restore call.
-_ACCESS_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 7        # 7 days
+#
+# The COOKIE's max_age controls when the browser purges the cookie;
+# the JWT inside has its own short-lived exp claim (Supabase rotates
+# on restore). Keeping both cookies at the same max_age means a user
+# returning within the refresh window always has both cookies present
+# for the restore call to use — without that, a 7+ day quiet user
+# would lose their access cookie while the refresh cookie is still
+# valid and `resolve_authenticated_context` would reject the
+# half-credentialed restore, forcing an unnecessary re-login (Codex
+# P1 finding on PR #2, May 2026).
+_ACCESS_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 30       # 30 days
 _REFRESH_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 30      # 30 days
 
 
