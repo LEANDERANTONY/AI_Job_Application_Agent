@@ -307,13 +307,18 @@ def _run_orchestrator_e2e(openai_service) -> RunnerOutcome:
     )
 
 
-def _run_resume_parser(_openai_service) -> RunnerOutcome:
+def _run_resume_parser(openai_service) -> RunnerOutcome:
     """Deterministic resume-parser scorecard.
 
     Always-deterministic — the regex parser doesn't care whether
     OpenAI is configured. A regression here usually means a fixture
     edit changed canonical skills.
+
+    The `openai_service` arg is accepted (and ignored) for signature
+    symmetry with the LLM-backed runners — the main loop calls all
+    five runners uniformly with the resolved service.
     """
+    del openai_service
     from tests.quality.parser_quality_runner import (
         FIXTURES_DIR,
         EXPECTED_DIR,
@@ -350,8 +355,11 @@ def _run_resume_parser(_openai_service) -> RunnerOutcome:
     )
 
 
-def _run_jd_parser(_openai_service) -> RunnerOutcome:
-    """Deterministic JD-parser scorecard. Same shape as resume_parser."""
+def _run_jd_parser(openai_service) -> RunnerOutcome:
+    """Deterministic JD-parser scorecard. Same shape as resume_parser.
+
+    `openai_service` accepted (and ignored) for runner-loop symmetry."""
+    del openai_service
     from tests.quality.jd_parser_quality_runner import (
         FIXTURES_DIR,
         EXPECTED_DIR,
