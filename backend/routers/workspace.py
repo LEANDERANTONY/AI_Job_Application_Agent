@@ -490,8 +490,17 @@ def get_workspace_quota_route(auth_tokens=Depends(get_optional_auth_tokens)):
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
-    except WorkspaceQuotaAuthRequired as exc:
-        raise HTTPException(status_code=401, detail=str(exc))
+    except WorkspaceQuotaAuthRequired:
+        # The exception's message is already user-facing, but the
+        # error_messages lint specifically forbids `str(exc)` as a
+        # detail source (it allows an exception's raw repr to leak
+        # if a future refactor changes the type). Use a fixed string
+        # literal so the lint stays clean. Matches the message text
+        # WorkspaceQuotaAuthRequired itself uses at both raise sites.
+        raise HTTPException(
+            status_code=401,
+            detail="Sign in to view your workspace quota.",
+        )
     except AppError as error:
         _raise_http_error(error)
 
