@@ -669,3 +669,55 @@ Tests: 17 new resilience tests pin the contracts —
 - [ADR-017: Workspace assistant — ungated + state-aware context](docs/adr/ADR-017-workspace-assistant-state-aware-context.md)
 - [ADR-018: Three-layer LLM retry + per-agent fallback isolation](docs/adr/ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md)
 - [ADR-019: Independent step navigation in the workspace](docs/adr/ADR-019-independent-step-navigation.md)
+
+## Day 42: Tier Enforcement — Quota Counters, Caps, And Premium Model Routing
+
+Eight-step series shipped across `feat/tier-enforcement` and merged + deployed (commits `ff2fe2d` through `0ede6ea`). Until now the product had a single `usage_events` daily-quota path inherited from the Streamlit era — a per-day cap on assisted requests with no notion of subscription tiers, no per-action gating, and no separate premium pathway. Day 42 lands the full tier-enforcement matrix end-to-end. Today every quota gate routes through one cap table; payments will land in a separate week (see Day 43) and flip a single function body.
+
+### Eight logical steps
+
+1. **Tier shim + cap matrix** (`ff2fe2d`) — `backend/tiers.py` introduces `resolve_user_tier(app_user) -> Literal["free", "pro", "business"]` (returns `"free"` for everyone today, the single function body to swap once subscriptions go live) and the `TIER_CAPS` table covering eight counters: `tailored_applications`, `premium_applications`, `resume_builder_sessions`, `assistant_turns`, `resume_parses`, `job_searches`, `saved_jobs`, `saved_workspaces`. `UNLIMITED = -1` is the no-cap sentinel.
+2. **Atomic check-and-increment** (`b2a4947`) — `aijobagent_quota_counters` table + `increment_aijobagent_counter` RPC in `docs/sql/supabase-quota-counters.sql`. The RPC does INSERT-ON-CONFLICT inside `FOR UPDATE`, raises SQLSTATE `P0001` with detail `aijobagent_quota_exceeded` on overrun. `backend/quota.py::check_and_increment` translates the P0001 into `QuotaExceededError`, surfaced as a uniform 429 via the single global handler in `backend/app.py`. Concurrent workspace runs from the same user produce N+1 and N+2 — never both N+1. Refund-on-failure (`backend.quota.refund`) decrements by 1 (floored at zero) from the workflow-failure path so a transient orchestrator error doesn't burn a credit.
+3. **Workspace gates: tailored + premium applications** (`6e893e6`) — both counters wired at `/workspace/analyze`. Free-tier premium=True is rejected with a tier-specific message ("Premium applications are a Pro+ feature.") before any agent runs.
+4. **Workspace gates: assistant turns + resume parses + resume-builder sessions** (`2dc76cd`) — three more gates with a special case: `assistant_turns` is gated on the streaming SSE path *and* the non-streaming JSON path separately so SSE clients can't sneak past by reconnecting mid-flight. `resume_builder_sessions` uses the new `lifetime=True` kwarg on Free (lifetime period_key, cap 1) and the standard monthly partition on Pro/Business (cap 3 / 15).
+5. **Search + saved gates with persistent row-count counters** (`d249b28`) — `job_searches` (monthly) plus `saved_jobs` and `saved_workspaces` (persistent caps backed by the corresponding store's row count, not the counter table). The persistent counters bypass `check_and_increment` entirely on the read path; `/workspace/quota` reads row counts directly from `SavedJobsStore` / `SavedWorkspaceStore`.
+6. **Tier-aware model routing** (`68be1d5`) — `backend/model_routing.py::select_workflow_model` returns `gpt-5.5` for `review` / `resume_generation` / `cover_letter` when `(premium=True, tier in {pro, business})` and `None` (= use the standard `OPENAI_MODEL_ROUTING[task]`) otherwise. Tailoring stays on `gpt-5.4-mini` regardless — COGS analysis pinned the upgrade to the three "high-trust" agents only, and keeping tailoring on mini is the difference between premium being sustainable and not.
+7. **`/workspace/quota` endpoint + frontend Premium toggle** (`24a1840`) — read-only snapshot for the eight counters plus an `upgrade_url` field driven by `AIJOBAGENT_UPGRADE_URL`. Frontend renders a Premium toggle that's disabled+tooltip on Free without a second lookup (`premium_available` is True only on tiers with `premium_applications > 0`).
+8. **Tier-aware saved-workspace retention sweeper** (`c57d658`, `0ede6ea`) — `backend/maintenance.py::sweep_expired_workspaces` deletes rows older than `retention_days_for_tier(tier)` (Free 7, Pro 30, Business None = unbounded). Replaces the legacy unconditional 24-hour sweeper that Supabase pg_cron had been calling. The supabase migration drops the legacy SQL function and hardens RPC grants so only `service_role` can call `increment_aijobagent_counter` (granting EXECUTE to `authenticated` would have let any signed-in user burn another user's quota by passing their UUID).
+
+### Tests
+
+99 new tier-enforcement tests across `tests/backend/test_tiers.py`, `test_quota.py`, `test_workspace_quota_enforcement.py`, `test_assistant_quota_enforcement.py`, `test_resume_quota_enforcement.py`, `test_search_and_saved_quota_enforcement.py`, `test_tier_aware_workflow_model.py`, `test_workspace_quota_snapshot.py`, `test_workspace_retention.py`. Includes refund-on-failure recovery, atomic concurrency under thread races, lifetime-vs-monthly period switching, P0001 → 429 translation, and Business `None`-retention skip behaviour.
+
+### Deploy status
+
+Merged to `main` and deployed end-to-end. Quota gates are live; every user currently resolves to `free` until the payment cutover.
+
+### ADRs added
+
+- [ADR-020: Tier resolution via a single shim function](docs/adr/ADR-020-tier-resolution-via-single-shim-function.md)
+- [ADR-021: Atomic quota with refund-on-failure](docs/adr/ADR-021-atomic-quota-with-refund-on-failure.md)
+- [ADR-022: Tier-aware model selection via constructor injection](docs/adr/ADR-022-tier-aware-model-selection-via-constructor-injection.md)
+
+## Day 43: Lemon Squeezy Payment Scaffold (Awaiting Variant IDs)
+
+Four commits on `feat/lemonsqueezy-integration` wire the end-to-end paid-tier path on top of the Day 42 enforcement layer. Ready to ship — only waiting on the LS dashboard's final Pro / Business variant IDs to flip live. Until then, every code path stays env-gated behind a "Coming soon" fallback so the production frontend keeps shipping without holding the LS account hostage.
+
+### Four commits
+
+1. **Subscriptions table + tier resolution swap** (`1b8cf95`) — `aijobagent_subscriptions` table holds one row per active or past subscription (`user_id`, `processor`, `processor_subscription_id`, `tier`, `status`, `current_period_end`, `created_at`, `updated_at`) with a partial unique index on `(user_id) WHERE status = 'active'` so a user has at most one active sub. `backend/subscriptions.py` is the thin store wrapper. Crucially, the body of `backend/tiers.py::resolve_user_tier` is updated to consult this store: if an active subscription exists whose `current_period_end > now()`, return its `tier`; else return `"free"`. **This is the one-function change that ADR-020 promised.** Every existing quota gate flips from gating Free to gating the user's real tier with zero call-site churn.
+2. **HMAC-verified webhook endpoint** (`c3c3348`) — `POST /api/webhooks/lemonsqueezy` parses the LS event, verifies the HMAC-SHA256 signature from the `X-Signature` header against `LEMONSQUEEZY_WEBHOOK_SECRET` using `hmac.compare_digest`, and routes by `meta.event_name` to the subscription store: `subscription_created` / `subscription_updated` upsert by `processor_subscription_id`, `subscription_payment_success` bumps `current_period_end`, `subscription_cancelled` / `subscription_expired` mark `status = 'cancelled'` or `'expired'`. The variant_id → tier mapping reads from `LEMONSQUEEZY_VARIANT_PRO` / `LEMONSQUEEZY_VARIANT_BUSINESS`; unknown variants log a warning and 200-OK (LS retries 4xx, so silent ack on unknown variants prevents stuck retry loops on misconfiguration).
+3. **Frontend Upgrade CTA + customer portal link** (`c3a80ea`) — the Premium toggle's "Upgrade" CTA now opens the LS hosted checkout for the relevant variant when `NEXT_PUBLIC_LEMONSQUEEZY_*` env vars are set; falls back to a "Coming soon" disabled-button-plus-tooltip when they're not. Customer portal link in the account popover routes to `customer.lemonsqueezy.com/billing/{customer_id}` for active subscribers (read from `aijobagent_subscriptions.processor_customer_id`).
+4. **Env vars + setup walkthrough** (`a236c81`) — `.env.example` entries for `LEMONSQUEEZY_WEBHOOK_SECRET`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_VARIANT_PRO`, `LEMONSQUEEZY_VARIANT_BUSINESS`, `NEXT_PUBLIC_LEMONSQUEEZY_STORE_ID`, `NEXT_PUBLIC_LEMONSQUEEZY_VARIANT_PRO`, `NEXT_PUBLIC_LEMONSQUEEZY_VARIANT_BUSINESS`. `docs/lemon-squeezy.md` walks through the LS dashboard setup (store creation, two variant rows, webhook URL pointed at `api.job-application-copilot.xyz/api/webhooks/lemonsqueezy`, secret rotation procedure) plus the Supabase migration step.
+
+### Architectural neutrality
+
+`aijobagent_subscriptions.processor` is a text column, not a Lemon Squeezy-specific enum. When a future Stripe + Razorpay path lands (see ADR-023), the same store handles both — each processor writes its own row, `resolve_user_tier` picks the row with the highest active tier. No table migration needed at processor #2.
+
+### Deploy status
+
+Branch is local; commits not yet pushed. Going live needs three things — the two LS dashboard variant IDs, the webhook secret pasted into the VPS env, and the `aijobagent_subscriptions` migration applied to the prod Supabase project. After that, removing the env-gated fallback in the frontend is a one-line change.
+
+### ADRs added
+
+- [ADR-023: Lemon Squeezy as Merchant of Record for v1](docs/adr/ADR-023-lemon-squeezy-merchant-of-record-for-v1.md)
