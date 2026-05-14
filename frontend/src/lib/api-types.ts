@@ -494,6 +494,70 @@ export type WorkspaceAnalysisRequest = {
   job_description_text: string;
   imported_job_posting?: JobPosting | null;
   run_assisted: boolean;
+  /** Opt-in per-run premium routing (Step 7a). When true AND the
+   *  user's tier supports it (Pro+), the workflow agents route to
+   *  gpt-5.5 for review / resume_generation / cover_letter and the
+   *  request burns a `premium_applications` credit. Free tier with
+   *  premium=true is rejected at the gate with a 429 + "Pro+ only"
+   *  message; the toggle is disabled for Free in the UI so this
+   *  combination shouldn't occur on the happy path. Optional so
+   *  existing callers keep working without an explicit field. */
+  premium?: boolean;
+};
+
+/** Per-counter snapshot returned by GET /workspace/quota.
+ *  `limit === -1` is the UNLIMITED sentinel — render as "Unlimited"
+ *  pill instead of a number. `remaining === -1` mirrors the same.
+ *  `reset_period`:
+ *    - "monthly"    — resets on the 1st of next month UTC
+ *    - "lifetime"   — Free-tier resume_builder_sessions only; never resets
+ *    - "persistent" — row-count quota (saved_jobs, saved_workspaces);
+ *                     decreases when the user explicitly deletes a row */
+export type WorkspaceQuotaCounter = {
+  current: number;
+  limit: number;
+  remaining: number;
+  reset_period: "monthly" | "lifetime" | "persistent";
+};
+
+/** Full /workspace/quota response. Drives the Premium toggle's
+ *  enabled/disabled state, the per-counter indicators, and the
+ *  upgrade CTA URL. Counter keys match `backend.tiers.TIER_CAPS`. */
+export type WorkspaceQuotaResponse = {
+  tier: "free" | "pro" | "business";
+  counters: {
+    tailored_applications: WorkspaceQuotaCounter;
+    premium_applications: WorkspaceQuotaCounter;
+    resume_builder_sessions: WorkspaceQuotaCounter;
+    assistant_turns: WorkspaceQuotaCounter;
+    resume_parses: WorkspaceQuotaCounter;
+    job_searches: WorkspaceQuotaCounter;
+    saved_jobs: WorkspaceQuotaCounter;
+    saved_workspaces: WorkspaceQuotaCounter;
+  };
+  /** True when the tier's premium_applications cap is non-zero —
+   *  drives the Premium toggle's enabled/disabled state. Free → false,
+   *  Pro/Business → true. */
+  premium_available: boolean;
+  /** First-of-month UTC date in YYYY-MM-DD; UI uses this for
+   *  "resets on X" copy. */
+  period_start: string;
+  /** Upgrade page URL; the 429 toast and the disabled-toggle tooltip
+   *  both deep-link here. */
+  upgrade_url: string;
+};
+
+/** Structured 429 body returned by the global QuotaExceededError
+ *  handler. Frontend's fetch wrapper parses this and surfaces a
+ *  toast with an "Upgrade" CTA rather than the generic error path. */
+export type TierLimitExceededPayload = {
+  detail: string;
+  code: "tier_limit_exceeded";
+  counter: string;
+  current: number;
+  cap: number;
+  reset_period: string;
+  tier: "free" | "pro" | "business";
 };
 
 /**

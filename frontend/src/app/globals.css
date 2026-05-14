@@ -5079,6 +5079,31 @@ code {
   background: rgba(255, 139, 139, 0.07);
   color: var(--danger);
 }
+.b-shell .b-notice-message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Inline upgrade CTA inside a notice (Step 7b). Used by the 429
+   tier-limit toast to deep-link to /pricing without auto-redirecting
+   the user. */
+.b-shell .b-notice-action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.b-shell .b-notice-action:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
 
 /* ── Topbar ────────────────────────────────────────────────────── */
 .b-topbar {
@@ -6607,6 +6632,61 @@ code {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Premium toggle (Step 7b). Renders as a pill checkbox next to the
+   Run analysis CTA. Disabled state covers anonymous, Free tier, and
+   mid-run; active state turns the pill gold-ish to telegraph the
+   premium upgrade visually. */
+.b-premium-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--rule-1);
+  background: var(--surface-1);
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.b-premium-toggle input[type="checkbox"] {
+  margin: 0;
+  width: 12px;
+  height: 12px;
+  cursor: inherit;
+  accent-color: #d4a017;
+}
+.b-premium-toggle[data-active="true"] {
+  border-color: #d4a017;
+  background: rgba(212, 160, 23, 0.08);
+  color: #b3870e;
+}
+.b-premium-toggle[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: var(--surface-2);
+}
+.b-premium-toggle[data-disabled="true"] input[type="checkbox"] {
+  cursor: not-allowed;
+}
+.b-premium-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.b-premium-toggle-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--fg-3);
+  letter-spacing: 0.02em;
+}
+.b-premium-toggle[data-active="true"] .b-premium-toggle-count {
+  color: #b3870e;
 }
 
 .b-pipeline {

@@ -88,11 +88,20 @@ import {
 } from "@/hooks/useAssistantHistory";
 import { useAnalysisJob } from "@/hooks/useAnalysisJob";
 import { useSavedJobs } from "@/hooks/useSavedJobs";
+import { useWorkspaceQuota } from "@/hooks/useWorkspaceQuota";
 import { useWorkspaceSession } from "@/hooks/useWorkspaceSession";
 
 type Notice = {
   level: "info" | "success" | "warning";
   message: string;
+  /** Optional CTA shown alongside the message. Used by the 429
+   *  tier-limit handling (Step 7b) to render an "Upgrade" link
+   *  pointing at the pricing page. Other notices leave this
+   *  undefined and only the message renders. */
+  action?: {
+    label: string;
+    href: string;
+  };
 } | null;
 
 type WorkspaceMainTab = "resume" | "jobs" | "jd" | "analysis";
@@ -188,6 +197,16 @@ export function WorkspaceShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [forceAssistantOpen, setForceAssistantOpen] = useState(false);
   const [workspaceNotice, setWorkspaceNotice] = useState<Notice>(null);
+  // Premium toggle state. Owned at this level so both AnalysisRunner
+  // (UI) and useAnalysisJob (network call) read the same source of
+  // truth. We deliberately DO NOT reset between runs -- if the user
+  // turned the toggle on, a Re-run should respect that intent (the
+  // toggle is right next to the Run button, so the user sees what
+  // they're committing to). The defensive effect below force-flips
+  // it off when the quota snapshot reports premium isn't available
+  // (e.g. tier downgrade between sessions), so a stale toggle from
+  // a previous Pro session can never accidentally fire on Free.
+  const [premium, setPremium] = useState(false);
 
   const {
     authStatus,
@@ -207,6 +226,23 @@ export function WorkspaceShell() {
   } = useWorkspaceSession({ setNotice: setWorkspaceNotice });
   void _setAuthSession;
   void _setWorkspaceSaveMeta;
+
+  // Quota snapshot for the Premium toggle + per-counter indicators.
+  // The hook owns the fetch lifecycle (mount + refresh after each
+  // workflow run) and gates itself on authStatus="signed_in" so we
+  // don't spam the backend with 401s while auth is restoring.
+  const { quota: workspaceQuota, refresh: refreshWorkspaceQuota } =
+    useWorkspaceQuota({ authStatus });
+
+  // Defensive: if the quota snapshot says premium isn't available
+  // (e.g. user signed out + back in as a Free tier), force the
+  // toggle off so the next run doesn't 429 with a Pro+ rejection.
+  useEffect(() => {
+    if (!workspaceQuota) return;
+    if (!workspaceQuota.premium_available && premium) {
+      setPremium(false);
+    }
+  }, [workspaceQuota, premium]);
 
   // Workspace is for signed-in users only. The session restore in
   // `useWorkspaceSession` flips authStatus to "signed_out" once it's
@@ -418,6 +454,8 @@ export function WorkspaceShell() {
     resumeSource: activeResumeState?.resume_document.source,
     importedJobPosting: activeJob,
     authStatus,
+    premium,
+    onRunFinished: refreshWorkspaceQuota,
     setNotice: setWorkspaceNotice,
     setAnalysisState,
     onCompleted: onAnalysisCompleted,
@@ -1818,7 +1856,19 @@ export function WorkspaceShell() {
       <div className="b-canvas">
         {workspaceNotice ? (
           <div className={noticeClassName(workspaceNotice.level)}>
-            {workspaceNotice.message}
+            <span className="b-notice-message">
+              {workspaceNotice.message}
+            </span>
+            {workspaceNotice.action ? (
+              <a
+                className="b-notice-action"
+                href={workspaceNotice.action.href}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                {workspaceNotice.action.label}
+              </a>
+            ) : null}
           </div>
         ) : null}
 
@@ -1942,7 +1992,10 @@ export function WorkspaceShell() {
               analysisState={analysisState}
               currentWorkflowStage={currentWorkflowStage}
               onClearRole={clearWorkspaceRole}
+              onPremiumChange={setPremium}
               onRunAnalysis={() => void handleRunAnalysis()}
+              premium={premium}
+              quota={workspaceQuota}
               ready={stepReady.analysis}
             />
 

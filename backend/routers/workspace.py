@@ -32,6 +32,10 @@ from backend.services.resume_builder_service import (
     start_resume_builder_session,
     update_resume_builder_session,
 )
+from backend.services.workspace_quota_service import (
+    WorkspaceQuotaAuthRequired,
+    get_workspace_quota_snapshot,
+)
 from backend.services.workspace_service import (
     answer_workspace_question,
     parse_job_description_upload,
@@ -461,6 +465,35 @@ def start_workspace_analysis_job_route(
         # being explicit here documents that quota rejection is the
         # second supported failure mode on this surface.
         raise
+
+
+@router.get("/quota")
+def get_workspace_quota_route(auth_tokens=Depends(get_optional_auth_tokens)):
+    """Per-user quota snapshot for the workspace UI (Step 7b).
+
+    Drives the Premium toggle's enabled / disabled state, the
+    per-counter "X of Y remaining this month" indicators, and the
+    upgrade CTA URL. Read-only — calling this endpoint never
+    increments a counter, never writes to Supabase, never burns
+    quota credit. Safe to call on every workspace mount and after
+    every workflow run, which the frontend does to keep the
+    indicators in sync with the actual backend state.
+
+    Anonymous callers get a 401 — the snapshot only makes sense for
+    an authenticated user and we don't want to leak per-tier cap
+    numbers on an unauthenticated probe. The frontend's API client
+    handles 401 by prompting re-auth and skipping the quota render.
+    """
+    access_token, refresh_token = auth_tokens
+    try:
+        return get_workspace_quota_snapshot(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
+    except WorkspaceQuotaAuthRequired as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+    except AppError as error:
+        _raise_http_error(error)
 
 
 @router.get(

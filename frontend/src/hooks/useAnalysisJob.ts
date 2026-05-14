@@ -23,6 +23,7 @@ import {
 import {
   getWorkspaceAnalysisJob,
   startWorkspaceAnalysisJob,
+  TierLimitExceededError,
 } from "@/lib/api";
 import type {
   JobPosting,
@@ -33,7 +34,14 @@ import { humanizeApiError } from "@/lib/humanizeApiError";
 import type { WorkflowStage } from "@/components/workspace/AnalysisRunner";
 
 type Notice =
-  | { level: "info" | "success" | "warning"; message: string }
+  | {
+      level: "info" | "success" | "warning";
+      message: string;
+      /** Optional CTA (Step 7b). When set, the workspace renders an
+       *  "Upgrade" link next to the message. Used for tier-limit
+       *  429 toasts; left undefined for plain notices. */
+      action?: { label: string; href: string };
+    }
   | null;
 
 type WorkflowRunMode = "preview" | "agentic";
@@ -81,6 +89,16 @@ export type UseAnalysisJobOptions = {
   resumeSource: string | undefined;
   importedJobPosting: JobPosting | null;
   authStatus: "loading" | "restoring" | "signed_out" | "signed_in";
+  /** Whether the user has opted into per-run premium routing via
+   *  the Premium toggle (Step 7b). The toggle is gated by
+   *  `premium_available` from /workspace/quota; the parent passes
+   *  the current toggle state here so each run picks up the latest
+   *  value without the hook owning the toggle state itself. */
+  premium?: boolean;
+  /** Called after each run finishes (success OR failure), so the
+   *  parent can refetch /workspace/quota and keep the toggle's
+   *  indicator in sync with the actual backend state. */
+  onRunFinished?: () => void;
   setNotice: (notice: Notice) => void;
   /**
    * Owner of the canonical `analysisState`. Polling completion calls
@@ -125,6 +143,8 @@ export function useAnalysisJob({
   resumeSource,
   importedJobPosting,
   authStatus,
+  premium,
+  onRunFinished,
   setNotice,
   setAnalysisState,
   onCompleted,
@@ -141,10 +161,12 @@ export function useAnalysisJob({
   const setNoticeRef = useRef(setNotice);
   const onCompletedRef = useRef(onCompleted);
   const setAnalysisStateRef = useRef(setAnalysisState);
+  const onRunFinishedRef = useRef(onRunFinished);
   useEffect(() => {
     setNoticeRef.current = setNotice;
     onCompletedRef.current = onCompleted;
     setAnalysisStateRef.current = setAnalysisState;
+    onRunFinishedRef.current = onRunFinished;
   });
 
   // True until the hook unmounts. Distinct from the polling effect's
@@ -228,6 +250,11 @@ export function useAnalysisJob({
           if (mountedRef.current) {
             setNoticeRef.current({ level: "success", message });
           }
+          // Tell the parent to refetch /workspace/quota — the run
+          // consumed a tailored_applications (or premium_applications)
+          // credit, so the toggle's "X of Y remaining" indicator
+          // needs to update.
+          onRunFinishedRef.current?.();
           return;
         }
 
@@ -240,6 +267,10 @@ export function useAnalysisJob({
           });
           setAnalysisLoading(false);
           setAnalysisRunMode(null);
+          // Refetch quota on failure too — the backend's refund-on-
+          // failure path SHOULD have rolled the credit back, but
+          // we re-sync to be sure the indicator reflects truth.
+          onRunFinishedRef.current?.();
           return;
         }
       } catch (error) {
@@ -315,6 +346,14 @@ export function useAnalysisJob({
         job_description_text: jobDescriptionText.trim(),
         imported_job_posting: importedJobPosting,
         run_assisted: true,
+        // Premium opts the workflow into gpt-5.5 for the three
+        // high-trust agents AND burns a `premium_applications`
+        // credit. The Premium toggle is disabled for Free tier
+        // (premium_available=false on /workspace/quota), so this
+        // value should already be safe by the time we get here.
+        // Defensive: the backend rejects free+premium=true with a
+        // 429, which surfaces as TierLimitExceededError below.
+        premium: Boolean(premium),
       });
       setAnalysisJobState({
         ...response,
@@ -322,13 +361,41 @@ export function useAnalysisJob({
         error_message: null,
       });
     } catch (error) {
-      setNotice({
-        level: "warning",
-        message: humanizeApiError(error, "Workspace analysis failed unexpectedly."),
-      });
+      // Tier-limit 429s get a specialized notice with an Upgrade CTA
+      // — separate code path from the generic warning so the toast
+      // can deep-link to the pricing page. The error's `detail`
+      // already carries a user-friendly message ("You have reached
+      // your X cap, upgrade to continue.").
+      if (error instanceof TierLimitExceededError) {
+        setNotice({
+          level: "warning",
+          message: error.message,
+          action: {
+            label: "Upgrade plan",
+            // Hardcoded production landing path — the upgrade page
+            // URL also rides on the /workspace/quota response, but
+            // we don't have access to it in this catch branch and
+            // the path is stable across environments. The link
+            // opens in a new tab so the in-flight workspace state
+            // isn't lost.
+            href: "/pricing",
+          },
+        });
+      } else {
+        setNotice({
+          level: "warning",
+          message: humanizeApiError(error, "Workspace analysis failed unexpectedly."),
+        });
+      }
       setAnalysisLoading(false);
       setAnalysisRunMode(null);
       setAnalysisJobState(null);
+      // Even on failure the parent should refetch quota — a 429
+      // doesn't burn credit, but a transient backend error might
+      // still have rotated the counter (and a refund-failure path
+      // would have shifted it too). Mirrors HelpmateAI's pattern of
+      // "refetch after every run, win or lose".
+      onRunFinishedRef.current?.();
     }
   }
 

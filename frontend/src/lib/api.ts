@@ -16,6 +16,7 @@ import type {
   SavedJobsResponse,
   SaveWorkspaceResponse,
   SaveSavedJobResponse,
+  TierLimitExceededPayload,
   UploadedFilePayload,
   WorkspaceAnalysisRequest,
   WorkspaceAnalysisJobCreatedResponse,
@@ -31,8 +32,34 @@ import type {
   WorkspaceAssistantRequest,
   WorkspaceAssistantResponse,
   WorkspaceJobDescriptionUploadResponse,
+  WorkspaceQuotaResponse,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
+
+/** Error subclass thrown when the backend returns a 429 with the
+ *  `tier_limit_exceeded` payload (Step 7b). Callers `instanceof`-check
+ *  this to render a toast with an upgrade CTA rather than the generic
+ *  error path. Falling through to the generic path would surface a
+ *  red toast with the raw `detail` text — usable, but missing the
+ *  upgrade affordance. */
+export class TierLimitExceededError extends Error {
+  readonly code = "tier_limit_exceeded" as const;
+  readonly counter: string;
+  readonly current: number;
+  readonly cap: number;
+  readonly resetPeriod: string;
+  readonly tier: "free" | "pro" | "business";
+
+  constructor(payload: TierLimitExceededPayload) {
+    super(payload.detail);
+    this.name = "TierLimitExceededError";
+    this.counter = payload.counter;
+    this.current = payload.current;
+    this.cap = payload.cap;
+    this.resetPeriod = payload.reset_period;
+    this.tier = payload.tier;
+  }
+}
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
@@ -84,6 +111,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     .catch(() => null);
 
   if (!response.ok) {
+    // 429 with the canonical tier-limit body gets converted to a
+    // typed exception so the caller can render a structured upgrade
+    // toast (counter + cap + upgrade CTA). Falls through to the
+    // generic Error path for any other 429 (e.g. SlowAPI's
+    // rate-limit middleware uses a different body shape).
+    if (
+      response.status === 429 &&
+      payload &&
+      typeof payload === "object" &&
+      "code" in payload &&
+      (payload as { code?: unknown }).code === "tier_limit_exceeded"
+    ) {
+      throw new TierLimitExceededError(payload as TierLimitExceededPayload);
+    }
     const detail =
       payload && typeof payload === "object" && payload !== null
         ? "detail" in payload
@@ -358,6 +399,21 @@ export async function startWorkspaceAnalysisJob(payload: WorkspaceAnalysisReques
 
 export async function getWorkspaceAnalysisJob(jobId: string) {
   return request<WorkspaceAnalysisJobStatusResponse>(`/workspace/analyze-jobs/${jobId}`, {
+    method: "GET",
+  });
+}
+
+/** Fetch the read-only quota snapshot for the workspace UI.
+ *  Drives the Premium toggle's enabled/disabled state and per-counter
+ *  indicators. The hook owning the toggle calls this on mount and
+ *  after every workflow run so the indicator stays in sync with the
+ *  actual backend state.
+ *
+ *  Anonymous callers get a 401 here; the caller is expected to skip
+ *  the quota render in that branch rather than treat it as a hard
+ *  error. */
+export async function getWorkspaceQuota() {
+  return request<WorkspaceQuotaResponse>("/workspace/quota", {
     method: "GET",
   });
 }

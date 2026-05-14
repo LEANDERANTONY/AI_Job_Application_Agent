@@ -20,6 +20,7 @@
 import type {
   WorkspaceAnalysisJobStatusResponse,
   WorkspaceAnalysisResponse,
+  WorkspaceQuotaResponse,
 } from "@/lib/api-types";
 import { PlayIcon } from "@/components/workspace/icons";
 
@@ -39,6 +40,19 @@ export type AnalysisRunnerProps = {
   onClearRole: () => void;
   /** True when both a resume + JD are present. */
   ready: boolean;
+  /** Quota snapshot from GET /workspace/quota. Null when anonymous,
+   *  auth restoring, or the fetch failed — the toggle renders in the
+   *  disabled state in that case (the safe default). */
+  quota: WorkspaceQuotaResponse | null;
+  /** Premium toggle state. True = user wants to run this workflow on
+   *  gpt-5.5 (Pro+/Business only). Free tier never reaches this with
+   *  premium=true because the toggle is disabled when
+   *  `quota.premium_available` is false. */
+  premium: boolean;
+  /** Setter for the toggle. The parent (WorkspaceShell) owns the
+   *  state because both this component and the run-hook need to read
+   *  it. */
+  onPremiumChange: (next: boolean) => void;
 };
 
 // Pipeline stages shown in the redesigned layout.
@@ -101,7 +115,33 @@ export function AnalysisRunner({
   onRunAnalysis,
   onClearRole,
   ready,
+  quota,
+  premium,
+  onPremiumChange,
 }: AnalysisRunnerProps) {
+  // Premium toggle gating logic.
+  //   * Disabled when quota is null (anonymous / restoring / fetch
+  //     failed) — the safe default.
+  //   * Disabled when `quota.premium_available` is false (Free tier).
+  //   * Disabled while a workflow is running — no point letting the
+  //     user flip mid-run.
+  //
+  // The tooltip copy adapts: when premium isn't available we point
+  // at the upgrade page; when it IS available we surface the
+  // remaining credits.
+  const premiumAvailable = Boolean(quota?.premium_available);
+  const premiumCounter = quota?.counters.premium_applications ?? null;
+  const premiumRemaining = premiumCounter?.remaining ?? 0;
+  const premiumLimit = premiumCounter?.limit ?? 0;
+  const premiumOutOfCredits =
+    premiumAvailable && premiumLimit > 0 && premiumRemaining <= 0;
+  const premiumDisabled =
+    !premiumAvailable || analysisLoading || premiumOutOfCredits;
+  const premiumTooltip = !premiumAvailable
+    ? "Upgrade to Pro for premium AI (GPT-5.5)"
+    : premiumOutOfCredits
+      ? "You've used all your premium credits this month"
+      : `${premiumRemaining} of ${premiumLimit} premium credits left this month`;
   const liveStageTitle = currentWorkflowStage?.title ?? null;
   const livePercent =
     analysisJobState?.progress_percent ?? currentWorkflowStage?.value ?? null;
@@ -190,6 +230,28 @@ export function AnalysisRunner({
           ) : null}
         </div>
         <div className="b-run-bar-actions">
+          <label
+            className="b-premium-toggle"
+            data-disabled={premiumDisabled ? "true" : "false"}
+            data-active={premium && !premiumDisabled ? "true" : "false"}
+            title={premiumTooltip}
+          >
+            <input
+              aria-label="Run with premium AI (GPT-5.5)"
+              checked={premium && !premiumDisabled}
+              disabled={premiumDisabled}
+              onChange={(event) => onPremiumChange(event.target.checked)}
+              type="checkbox"
+            />
+            <span className="b-premium-toggle-label">
+              Premium
+              {premiumAvailable && premiumLimit > 0 ? (
+                <span className="b-premium-toggle-count">
+                  {premiumRemaining}/{premiumLimit}
+                </span>
+              ) : null}
+            </span>
+          </label>
           <button
             className="rd-btn rd-btn-primary rd-btn-sm"
             disabled={!ready || analysisLoading}

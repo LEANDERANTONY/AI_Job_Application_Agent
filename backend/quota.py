@@ -41,6 +41,7 @@ Backend selection:
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -52,6 +53,17 @@ from src.config import (
     SUPABASE_URL,
 )
 from src.errors import QuotaExceededError
+
+
+# Upgrade-page URL surfaced in 429 payloads and the /workspace/quota
+# response so the frontend's upgrade-nudge CTA points somewhere real.
+# Reads from AIJOBAGENT_UPGRADE_URL at import time so prod / staging /
+# dev can each point at the right pricing page. The default mirrors
+# the production landing site -- update if the marketing URL moves.
+UPGRADE_URL = os.getenv(
+    "AIJOBAGENT_UPGRADE_URL",
+    "https://ai-job-agent.example.com/pricing",
+).strip()
 
 
 try:  # supabase is an optional dep in some test paths
@@ -189,6 +201,21 @@ class _InMemoryQuotaBackend:
             self._store[key] = new
             return new
 
+    def read(
+        self,
+        *,
+        user_id: str,
+        period_key: str,
+        counter_name: str,
+    ) -> int:
+        """Pure read of the current counter value. Returns 0 when no
+        row exists -- the period hasn't been touched yet. No locking
+        needed for a single dict lookup; the value is a momentary
+        snapshot, not transactional with respect to concurrent
+        increments (which is fine for /workspace/quota's
+        informational read)."""
+        return int(self._store.get((user_id, period_key, counter_name), 0))
+
 
 class _QuotaExceededAtBackend(Exception):
     """Internal signal raised by either backend when the SQL/in-memory
@@ -274,6 +301,49 @@ class _SupabaseQuotaBackend:
         if data is None:
             return 0
         return int(data)
+
+    def read(
+        self,
+        *,
+        user_id: str,
+        period_key: str,
+        counter_name: str,
+    ) -> int:
+        """Best-effort read of the current counter value from the
+        Supabase row, used by /workspace/quota. Returns 0 when no row
+        exists or when the Supabase round-trip fails -- the read is
+        purely informational (drives the UI's used/limit indicator),
+        so swallowing transient errors is the right behavior; the
+        next increment still goes through the atomic RPC."""
+        try:
+            client = self._require_client()
+            response = (
+                client.table("aijobagent_quota_counters")
+                .select("count")
+                .eq("user_id", user_id)
+                .eq("period_key", period_key)
+                .eq("counter_name", counter_name)
+                .limit(1)
+                .execute()
+            )
+        except Exception:  # noqa: BLE001 - read is best-effort
+            logger.exception(
+                "quota_read_failed counter=%s user_id=%s period_key=%s",
+                counter_name,
+                user_id,
+                period_key,
+            )
+            return 0
+        data = getattr(response, "data", None) or []
+        if not data:
+            return 0
+        first = data[0] if isinstance(data, list) else data
+        if not isinstance(first, dict):
+            return 0
+        try:
+            return int(first.get("count", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
 
 
 def _parse_current_from_rpc_error(message: str, *, fallback: int) -> int:
@@ -383,6 +453,45 @@ def check_and_increment(
     )
 
 
+def read_counter(
+    counter_name: str,
+    user_id: str,
+    tier: Tier,
+    *,
+    lifetime: bool = False,
+    now: Optional[datetime] = None,
+) -> int:
+    """Read the current counter value WITHOUT incrementing it.
+
+    Used by /workspace/quota (step 7b) to populate the per-user quota
+    snapshot the frontend renders. Returns 0 when:
+      * the counter row hasn't been written this period yet, OR
+      * the tier cap is UNLIMITED (the helper never writes a row for
+        unlimited counters -- there's no useful number to track).
+
+    No exception path: read failures from the Supabase backend log and
+    return 0 so a transient cache miss doesn't break the /workspace/quota
+    UI. The next `check_and_increment` call still goes through the
+    atomic RPC, so a wrong-by-one informational read can't lead to a
+    cap breach.
+    """
+    cap = _cap_for(tier, counter_name)
+    if cap == UNLIMITED:
+        # No row is ever written for unlimited counters (see
+        # check_and_increment); the helper short-circuits to 0 to
+        # keep the UI's used/limit copy stable rather than throwing
+        # on a "no such row" round-trip.
+        return 0
+
+    period_key = _period_key_for(lifetime=lifetime, now=now)
+    backend = _select_backend()
+    return backend.read(
+        user_id=user_id,
+        period_key=period_key,
+        counter_name=counter_name,
+    )
+
+
 def refund(
     counter_name: str,
     user_id: str,
@@ -440,8 +549,10 @@ def refund(
 __all__ = [
     "LIFETIME_PERIOD_KEY",
     "QuotaResult",
+    "UPGRADE_URL",
     "check_and_increment",
     "current_period_key",
+    "read_counter",
     "refund",
     "reset_in_memory_backend",
 ]
