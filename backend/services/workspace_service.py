@@ -31,6 +31,7 @@ from src.services.profile_service import (
 )
 from src.services.tailoring_service import build_tailored_resume_draft
 from backend import quota
+from backend.model_routing import build_workflow_model_overrides
 from backend.services.auth_session_service import (
     build_openai_service_for_context,
     resolve_authenticated_context,
@@ -325,7 +326,27 @@ def run_workspace_analysis(
                 )
             if openai_service is None:
                 openai_service = OpenAIService()
-            agent_result = ApplicationOrchestrator(openai_service=openai_service).run(
+            # Tier-aware model selection (Step 7a). The premium flag
+            # is the source of truth — never autodetect or sniff. The
+            # gate above already burned a premium_applications credit
+            # when premium=True for authenticated users, OR rejected
+            # the request entirely for premium=True + Free (cap=0).
+            # So if we're here on premium=True, the user genuinely
+            # has a premium credit being charged AND select_workflow_model
+            # will resolve to the upgraded model.
+            #
+            # For anonymous + premium=False (the deterministic preview
+            # path) the override map is all-None and the orchestrator
+            # falls through to the standard task-routed models. No
+            # behavioral change for that path.
+            model_overrides = build_workflow_model_overrides(
+                tier=tier,
+                premium=bool(premium),
+            )
+            agent_result = ApplicationOrchestrator(
+                openai_service=openai_service,
+                model_overrides=model_overrides,
+            ).run(
                 candidate_profile,
                 job_description,
                 fit_analysis=fit_analysis,

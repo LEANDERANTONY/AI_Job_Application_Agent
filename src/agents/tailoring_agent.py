@@ -12,8 +12,17 @@ from .common import coerce_string, coerce_string_list, unique_strings
 
 
 class TailoringAgent:
-    def __init__(self, openai_service=None):
+    def __init__(self, openai_service=None, *, model_override=None):
         self._openai_service = openai_service
+        # Optional per-tier model override resolved by
+        # `backend.model_routing.select_workflow_model`. When set, the
+        # agent passes it as `model=` to `run_json_prompt`, bypassing
+        # the default task-name → model lookup. None means "use the
+        # standard model for this task". Tailoring stays on mini under
+        # premium per the COGS analysis, so this is almost always None;
+        # the parameter exists for symmetry with the other agents and
+        # to make the test surface explicit.
+        self._model_override = model_override
 
     def run(
         self,
@@ -35,6 +44,7 @@ class TailoringAgent:
                 expected_keys=prompt["expected_keys"],
                 max_completion_tokens=get_openai_max_completion_tokens_for_task("tailoring"),
                 task_name="tailoring",
+                model=self._model_override,
                 metadata=prompt.get("metadata"),
             )
             return TailoringAgentOutput(

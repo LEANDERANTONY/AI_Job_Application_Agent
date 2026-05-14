@@ -14,8 +14,13 @@ from .common import coerce_bool, coerce_string, coerce_string_list, unique_strin
 
 
 class ReviewAgent:
-    def __init__(self, openai_service=None):
+    def __init__(self, openai_service=None, *, model_override=None):
         self._openai_service = openai_service
+        # See TailoringAgent for the rationale. When premium=True and
+        # the user's tier supports it (Pro / Business), the
+        # orchestrator passes gpt-5.5 here; otherwise None and the
+        # default `OPENAI_MODEL_ROUTING["review"]` (gpt-5.4) wins.
+        self._model_override = model_override
 
     def run(
         self,
@@ -39,6 +44,7 @@ class ReviewAgent:
                 expected_keys=prompt["expected_keys"],
                 max_completion_tokens=get_openai_max_completion_tokens_for_task("review"),
                 task_name="review",
+                model=self._model_override,
                 metadata=prompt.get("metadata"),
             )
             review_output = ReviewAgentOutput(

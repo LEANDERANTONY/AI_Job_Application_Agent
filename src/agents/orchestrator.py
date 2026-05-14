@@ -28,10 +28,27 @@ ProgressCallback = Callable[[str, str, int], None]
 
 
 class ApplicationOrchestrator:
-    def __init__(self, openai_service=None, allow_fallback=True, max_revision_passes=1):
+    def __init__(
+        self,
+        openai_service=None,
+        allow_fallback=True,
+        max_revision_passes=1,
+        *,
+        model_overrides: Optional[dict] = None,
+    ):
         self._openai_service = openai_service or OpenAIService()
         self._allow_fallback = allow_fallback
         self._max_revision_passes = max(0, int(max_revision_passes))
+        # Per-task model overrides for tier-aware premium routing.
+        # Keyed by agent task name ("tailoring", "review",
+        # "resume_generation", "cover_letter"); values are either an
+        # explicit model name (e.g. "gpt-5.5") or None / missing,
+        # which means "use the standard model for this task". The
+        # workspace service computes this map via
+        # `backend.model_routing.build_workflow_model_overrides`
+        # before calling .run(). Defaults to {} so existing callers
+        # (tests, eval scripts) work unchanged.
+        self._model_overrides = dict(model_overrides or {})
 
     def run(
         self,
@@ -80,6 +97,7 @@ class ApplicationOrchestrator:
                     max_revision_passes=self._max_revision_passes,
                     attempted_assisted=True,
                     progress_callback=progress_callback,
+                    model_overrides=self._model_overrides,
                 )
             except AgentExecutionError as exc:
                 fallback_reason = exc.user_message
@@ -117,6 +135,7 @@ class ApplicationOrchestrator:
             fallback_reason=fallback_reason,
             fallback_details=fallback_details,
             progress_callback=progress_callback,
+            model_overrides=self._model_overrides,
         )
 
     @staticmethod
@@ -139,10 +158,26 @@ class ApplicationOrchestrator:
         fallback_reason="",
         fallback_details="",
         progress_callback: Optional[ProgressCallback] = None,
+        model_overrides: Optional[dict] = None,
     ):
-        tailoring_agent = TailoringAgent(openai_service)
-        review_agent = ReviewAgent(openai_service)
-        cover_letter_agent = CoverLetterAgent(openai_service)
+        # `model_overrides` is keyed by agent task name and carries an
+        # explicit model string (e.g. "gpt-5.5") or None when the
+        # standard task-routed model should win. Missing keys are
+        # treated as None — the agents themselves default to the
+        # task_name lookup when `model_override` is None.
+        overrides = model_overrides or {}
+        tailoring_agent = TailoringAgent(
+            openai_service,
+            model_override=overrides.get("tailoring"),
+        )
+        review_agent = ReviewAgent(
+            openai_service,
+            model_override=overrides.get("review"),
+        )
+        cover_letter_agent = CoverLetterAgent(
+            openai_service,
+            model_override=overrides.get("cover_letter"),
+        )
 
         final_tailoring_output = None
         review_output = None
@@ -452,7 +487,10 @@ class ApplicationOrchestrator:
         )
         resume_generation_output = run_agent_step(
             "resume_generation",
-            lambda: ResumeGenerationAgent(openai_service).run(
+            lambda: ResumeGenerationAgent(
+                openai_service,
+                model_override=overrides.get("resume_generation"),
+            ).run(
                 candidate_profile,
                 job_description,
                 fit_analysis,

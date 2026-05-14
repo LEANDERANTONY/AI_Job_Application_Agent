@@ -21,8 +21,10 @@ _CANDIDATE_LABEL_RE = re.compile(r"\b(the candidate|this candidate)\b", re.IGNOR
 
 
 class CoverLetterAgent:
-    def __init__(self, openai_service=None):
+    def __init__(self, openai_service=None, *, model_override=None):
         self._openai_service = openai_service
+        # See TailoringAgent for the rationale.
+        self._model_override = model_override
 
     def run(
         self,
@@ -50,6 +52,7 @@ class CoverLetterAgent:
                 expected_keys=prompt["expected_keys"],
                 max_completion_tokens=get_openai_max_completion_tokens_for_task("cover_letter"),
                 task_name="cover_letter",
+                model=self._model_override,
                 metadata=prompt.get("metadata"),
             )
             output = CoverLetterAgentOutput(

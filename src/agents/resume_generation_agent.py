@@ -22,8 +22,12 @@ _RESUME_SELF_REFERENCE_RE = re.compile(
 
 
 class ResumeGenerationAgent:
-    def __init__(self, openai_service=None):
+    def __init__(self, openai_service=None, *, model_override=None):
         self._openai_service = openai_service
+        # See TailoringAgent for the rationale. Premium runs route this
+        # agent to gpt-5.5 because the final resume's structured-output
+        # quality is the most user-visible payoff of the upgrade.
+        self._model_override = model_override
 
     def run(
         self,
@@ -51,6 +55,7 @@ class ResumeGenerationAgent:
                     "resume_generation"
                 ),
                 task_name="resume_generation",
+                model=self._model_override,
                 metadata=prompt.get("metadata"),
             )
             output = ResumeGenerationAgentOutput(

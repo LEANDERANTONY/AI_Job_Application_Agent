@@ -19,6 +19,17 @@ OPENAI_MODEL_DEFAULT = os.getenv(
     os.getenv("OPENAI_MODEL", "gpt-5.4-mini"),
 )
 OPENAI_MODEL_HIGH_TRUST = os.getenv("OPENAI_MODEL_HIGH_TRUST", "gpt-5.4")
+# Premium tier upgrade for the three high-trust agents (review,
+# resume_generation, cover_letter) when the caller passes premium=True
+# AND the user's tier supports it (Pro / Business). Tailoring stays on
+# mini regardless — the COGS analysis showed that only the three
+# review-grade agents benefit from the upgrade.
+#
+# Selection is enforced in `backend/model_routing.select_workflow_model`;
+# the global default below stays at gpt-5.5 so a premium override can be
+# resolved through `get_openai_model_for_task("premium_high_trust")`
+# without callers having to know the env var name.
+OPENAI_MODEL_PREMIUM = os.getenv("OPENAI_MODEL_PREMIUM", "gpt-5.5")
 OPENAI_MODEL_MID_TIER = os.getenv("OPENAI_MODEL_MID_TIER", OPENAI_MODEL_DEFAULT)
 OPENAI_MODEL_PRODUCT_HELP = os.getenv(
     "OPENAI_MODEL_PRODUCT_HELP", OPENAI_MODEL_MID_TIER
@@ -45,6 +56,15 @@ OPENAI_MODEL_ROUTING = {
     "resume_generation": os.getenv(
         "OPENAI_MODEL_RESUME_GENERATION", OPENAI_MODEL_HIGH_TRUST
     ),
+    # Premium upgrade slot — used by `select_workflow_model` when the
+    # request opts into premium AND the user's tier supports it. The
+    # task-name "premium_high_trust" doesn't appear in any agent's
+    # own task_name (agents always set their own task name like
+    # "review" / "cover_letter"); it's looked up via
+    # `get_openai_model_for_task("premium_high_trust")` from the
+    # routing helper, then passed as an explicit `model=` override
+    # into `run_json_prompt`.
+    "premium_high_trust": OPENAI_MODEL_PREMIUM,
     "assistant": OPENAI_MODEL_ASSISTANT,
     "assistant_product_help": OPENAI_MODEL_PRODUCT_HELP,
     "assistant_application_qa": OPENAI_MODEL_APPLICATION_QA,
