@@ -8,13 +8,13 @@ saved jobs, saved workspaces) reads from `TIER_CAPS` keyed by the tier
 returned from `resolve_user_tier`. No other module should re-derive
 the tier — that's the whole point of this indirection.
 
-Tier resolution intentionally returns ``"free"`` for every user in the
-initial enforcement PRs. When Stripe (or whatever billing surface we
-land on) ships, swap the body of `resolve_user_tier` to look up the
-user's active subscription. Every call site already routes through
-this helper, so there is exactly one place to flip when payments go
-live. The shim is the canary — if its return type stays Literal but
-the body grows, downstream gates don't need to change at all.
+`resolve_user_tier` consults `backend.subscriptions.get_active_subscription`,
+which reads from the Supabase `subscriptions` table populated by the
+Lemon Squeezy webhook handler. The read is LRU-cached for up to 60
+seconds (keyed by user_id + current UTC minute) so the gate never
+blocks on a network round-trip. The webhook handler invalidates the
+cache on every upsert so paid tier access kicks in within "one page
+load" of a successful checkout.
 
 Source of truth for the cap numbers is the landing-page pricing
 matrix; if you change a value here, update the pricing UI in the same
@@ -40,12 +40,37 @@ when the cap equals this sentinel rather than performing an increment.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Literal
 
 from src.schemas import AppUserRecord
 
 
 Tier = Literal["free", "pro", "business"]
+
+
+# Statuses that grant paid tier access while `current_period_end >
+# now()`. Mirrors the Lemon Squeezy subscription state machine:
+#   * "active":    fully paid, current_period_end is the next renewal.
+#   * "cancelled": user clicked cancel but tier access continues until
+#                  the end of the paid period (LS leaves the
+#                  subscription at status='active' on the data
+#                  payload and sets cancel_at_period_end=true; the
+#                  webhook router maps that to status='cancelled' on
+#                  our row so the resolver can branch on it
+#                  explicitly).
+#   * "past_due":  payment retry pending (dunning). LS retries 3x
+#                  over ~14 days. We keep tier access during that
+#                  window so a transient card decline doesn't
+#                  immediately downgrade a paying user.
+# "expired" / "paused" / unknown statuses always resolve to Free.
+_PAID_STATUSES_DURING_PERIOD: frozenset[str] = frozenset(
+    {"active", "cancelled", "past_due"}
+)
+# Tier values we accept from the subscription row. Anything else
+# (typo, future tier we haven't shipped yet) resolves to Free
+# defensively.
+_PAID_TIERS: frozenset[str] = frozenset({"pro", "business"})
 
 
 # Sentinel for "no cap on this counter at this tier". The
@@ -147,26 +172,70 @@ def retention_days_for_tier(tier: Tier) -> int | None:
 def resolve_user_tier(app_user: AppUserRecord | None) -> Tier:
     """Resolve the active subscription tier for an authenticated user.
 
-    Returns ``"free"`` for every user in this PR — intentionally. When
-    Stripe (or the eventual billing surface) lands, swap the body of
-    this function to consult the user's actual subscription. Every
-    quota gate already routes through here, so there's exactly one
-    place to update when payments go live.
+    Consults `backend.subscriptions.get_active_subscription`, which
+    reads from the Supabase ``subscriptions`` table populated by the
+    Lemon Squeezy webhook handler. The read is LRU-cached for up to
+    60 seconds so this function never blocks on a network round-trip
+    -- it sits on every quota gate's hot path.
 
-    The `app_user` argument is currently unused. We accept it (and
-    reference its id via the local binding below) so the signature is
-    stable across the payment cutover — gates pass `app_user` today
-    and they'll keep passing `app_user` tomorrow.
+    Tier resolution rules:
 
-    Accepts `None` defensively because some upstream paths (anonymous
-    workflows, tests with bare contexts) hand off without a synced app
-    user. Anonymous traffic is "free" by definition.
+      * No app_user (anonymous): "free".
+      * No subscription row: "free".
+      * subscription row with status in {"active", "cancelled",
+        "past_due"} AND current_period_end > now: return the
+        subscription's tier. "cancelled" still grants access during
+        the paid period; "past_due" is the LS dunning window.
+      * Anything else (status="expired" / "paused", current_period_end
+        in the past, unknown tier value): "free".
+
+    Lazy import of `backend.subscriptions` so circular imports during
+    test collection don't crash a bare `from backend.tiers import
+    TIER_CAPS` path that doesn't need subscriptions.
     """
-    # Touch app_user.id so the intent of "we'll read this later" is
-    # explicit in the diff. The leading underscore signals
-    # intentionally-unused to readers and lint configs.
-    _user_id = getattr(app_user, "id", None)
-    return "free"
+    if app_user is None:
+        return "free"
+    user_id = getattr(app_user, "id", None)
+    if not user_id:
+        return "free"
+
+    # Local import avoids a hard cycle in test collection: anything
+    # importing `backend.tiers` (e.g. quota.py) doesn't need to drag
+    # `backend.subscriptions` in if it's never actually resolving a
+    # user. Same pattern HelpmateAI uses for its tier shim.
+    from backend.subscriptions import get_active_subscription
+
+    sub = get_active_subscription(str(user_id))
+    if sub is None:
+        return "free"
+
+    if sub.tier not in _PAID_TIERS:
+        # Defensive: the table has a CHECK constraint that limits
+        # this to {"pro", "business"}, but if the constraint is ever
+        # relaxed or a future migration adds a tier we haven't
+        # shipped frontend support for, fall back to Free rather
+        # than letting an unrecognized string flow into TIER_CAPS as
+        # a KeyError at gate-check time.
+        return "free"
+
+    if sub.status not in _PAID_STATUSES_DURING_PERIOD:
+        return "free"
+
+    period_end = sub.current_period_end
+    if period_end is None:
+        # No period boundary on the row -- conservatively downgrade.
+        # An active subscription should always have a
+        # current_period_end set by the webhook; missing values
+        # indicate a bug we'd rather catch on the free side than the
+        # paid side.
+        return "free"
+
+    if period_end <= datetime.now(timezone.utc):
+        return "free"
+
+    # mypy/pyright: tier is narrowed to "pro" | "business" by the
+    # `not in _PAID_TIERS` guard above; cast via the Literal return.
+    return "pro" if sub.tier == "pro" else "business"
 
 
 __all__ = [
