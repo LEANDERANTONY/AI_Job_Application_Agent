@@ -123,6 +123,17 @@ export function VoiceInputButton({
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const mimeRef = useRef<string>("audio/webm");
+  // Mirror the latest onTranscript/onError props into a ref so the
+  // MediaRecorder ``stop`` event listener — registered once when
+  // recording starts — reads the FRESH callbacks at firing time, not
+  // the snapshot from when the recorder was constructed. Without
+  // this, a parent that re-renders with new callback identities
+  // between start and stop (e.g. because `question` state changed)
+  // would have the stop handler invoke stale callbacks, potentially
+  // routing the transcript to the wrong component state. Codex P2
+  // on PR #3 round 5.
+  const propsRef = useRef({ onTranscript, onError });
+  propsRef.current = { onTranscript, onError };
 
   // Run the feature detect once on the client after mount — we can't
   // call it during render because `navigator` doesn't exist in SSR.
@@ -225,18 +236,22 @@ export function VoiceInputButton({
     chunksRef.current = [];
     recorderRef.current = null;
 
+    // Read the LATEST callbacks via propsRef so a parent re-render
+    // mid-recording doesn't leave us calling stale closure values.
+    const currentProps = propsRef.current;
+
     if (!chunks.length) {
       // Browser stopped without buffering anything (rare — usually a
       // permission revoke during recording or a system audio service
       // glitch). Treat as a soft failure.
       setState("idle");
-      onError?.("No audio captured. Try recording again.");
+      currentProps.onError?.("No audio captured. Try recording again.");
       return;
     }
     const blob = new Blob(chunks, { type: mimeRef.current });
     if (blob.size === 0) {
       setState("idle");
-      onError?.("Empty recording — make sure your mic is unmuted and try again.");
+      currentProps.onError?.("Empty recording — make sure your mic is unmuted and try again.");
       return;
     }
 
@@ -245,9 +260,9 @@ export function VoiceInputButton({
       const result = await transcribeAudio(blob);
       const text = (result.text || "").trim();
       if (text) {
-        onTranscript(text);
+        currentProps.onTranscript(text);
       } else {
-        onError?.(
+        currentProps.onError?.(
           "We couldn't make out any words in that recording. Try speaking more clearly or recording in a quieter spot.",
         );
       }
@@ -256,7 +271,7 @@ export function VoiceInputButton({
         error instanceof Error && error.message
           ? error.message
           : "Voice transcription failed. Try recording again.";
-      onError?.(message);
+      currentProps.onError?.(message);
     } finally {
       setState("idle");
     }

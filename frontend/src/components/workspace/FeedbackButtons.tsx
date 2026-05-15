@@ -164,6 +164,13 @@ export function FeedbackButtons({
             ? error.message
             : "Couldn't save your feedback. Try again in a moment.";
         setState({ kind: "error", rating, message });
+      } finally {
+        // Reset the guard so a subsequent rated-pending state can
+        // still trigger the unmount flush. Without this, after the
+        // first submit ``committingRef`` would stay stuck at true,
+        // and a user who re-rates and closes the tab would lose the
+        // second rating. Codex P2 on PR #3 round 5.
+        committingRef.current = false;
       }
     },
     [clearTimer, surface, traceId],
