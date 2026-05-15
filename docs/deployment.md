@@ -1,9 +1,9 @@
-# Operations runbook
+# Deployment
 
-Day-2 operational tasks that don't fit cleanly into `architecture.md`
-or an ADR. Scheduled-job inventory, observability env vars, manual
-runbook entries, and the operational gotchas that bit hard enough to
-need writing down.
+The day-2 operational runbook: scheduled-job inventory, observability
+env vars, manual runbook entries, and the operational gotchas that bit
+hard enough to need writing down. Anything that doesn't fit cleanly
+into `architecture.md` or an ADR lives here.
 
 ## Scheduled jobs — the complete inventory
 

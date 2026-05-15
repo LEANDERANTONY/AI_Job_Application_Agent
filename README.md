@@ -78,7 +78,7 @@ Each agent follows the same operating shape: deterministic baseline first, LLM-a
 - **Quality runners** in `tests/quality/` produce evidence for each LLM-driven stage (parser, tailoring, review, resume gen, cover letter, assistant, JD parser, latency baseline). `backend/nightly_eval.py` wraps them into a single regression-checked batch — manual-only at pre-revenue stage by design, see [ADR-026](docs/adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md).
 - **Every LLM prompt loads from a versioned JSON registry** (`prompts/<name>/v1.json`) — all 11 builders migrated off Python f-string concats, each guarded by a byte-identity test so a template can't silently drift from its original.
 - **26 ADRs** in `docs/adr/` record the architectural decisions, including the Streamlit-first → Next.js + FastAPI transition (ADR-012), DOCX-first export (ADR-015), conversational builder (ADR-016), state-aware assistant (ADR-017), three-layer retry stack (ADR-018), independent step navigation (ADR-019), tier resolution shim (ADR-020), atomic quota with refund (ADR-021), tier-aware model selection (ADR-022), Lemon Squeezy as Merchant of Record for v1 (ADR-023), the observability stack (ADR-024), the EU cookie consent banner (ADR-025), and manual-only nightly eval (ADR-026).
-- **Architecture details** live in [docs/architecture.md](docs/architecture.md); day-2 operations in [docs/operations.md](docs/operations.md).
+- **Architecture details** live in [docs/architecture.md](docs/architecture.md); the day-2 operational runbook in [docs/deployment.md](docs/deployment.md).
 
 ## Deployment
 

@@ -53,5 +53,5 @@ Observability env vars (`NEXT_PUBLIC_SENTRY_*`, `NEXT_PUBLIC_POSTHOG_*`, `SENTRY
 - Add the Vercel workspace URL to Supabase allowed redirect URLs because Google sign-in returns to `/workspace`.
 - Keep the backend CORS list aligned with the Vercel domain and any custom domain placed in front of it.
 - On the VPS, set `AI_JOB_APPLICATION_API_DOMAIN` in `backend/vps/.env` so Caddy serves the FastAPI container on the final API subdomain.
-- The VPS runs a single shared ingress proxy on `80/443` routing multiple domains/subdomains to separate app containers — do not stand up a second public Caddy stack competing for those ports. See `docs/operations.md` for the Caddy-state-must-be-in-git gotcha.
+- The VPS runs a single shared ingress proxy on `80/443` routing multiple domains/subdomains to separate app containers — do not stand up a second public Caddy stack competing for those ports. See `docs/deployment.md` for the Caddy-state-must-be-in-git gotcha.
 - The frontend is build-verified with `npm run build`; source maps upload to Sentry on every Vercel deploy via `withSentryConfig`.

@@ -18,7 +18,7 @@ This is the docs-governance file for the AI Job Application Agent. It catalogs e
 | File | Audience | Update trigger |
 |---|---|---|
 | [`docs/architecture.md`](architecture.md) | New contributor or external reviewer reading the full runtime | Runtime-shape change (new module, new persisted table, new observability surface, retired component) |
-| [`docs/operations.md`](operations.md) | Operator running / troubleshooting the VPS + Supabase + Vercel stack | Scheduled-job changes, observability env-var changes, a new operational gotcha that bit hard enough to need a runbook entry |
+| [`docs/deployment.md`](deployment.md) | Operator deploying / troubleshooting the VPS + Supabase + Vercel stack | Scheduled-job changes, observability env-var changes, a new operational gotcha that bit hard enough to need a runbook entry |
 | [`docs/lemon-squeezy.md`](lemon-squeezy.md) | Operator wiring Lemon Squeezy for the first time | LS event-mapping changes, new variant ID / pricing tier, webhook URL or secret rotation |
 | [`prompts/README.md`](../prompts/README.md) | Anyone editing an LLM prompt | Registry schema changes, a new prompt version (`v2.json`) lands, a builder is added or migrated |
 | [`frontend/README.md`](../frontend/README.md) | First-time visitor to the `frontend/` package | Build / dev / lint commands change, package layout reorganizes |
@@ -97,7 +97,7 @@ Keep a new doc untracked (and add it to `.gitignore` in the same commit) when **
 
 1. **Pick the right home.** Decision records → `docs/adr/`. Operational guidance → `docs/`. Code-package docs (like `frontend/README.md`) stay next to their code.
 2. **Add a row to the tables above.** The audience + update-trigger fields are load-bearing — without them, a future contributor doesn't know whether the doc is edited per-PR or only on a specific event.
-3. **Cross-link from the canonical readers** (`README.md`, `architecture.md`, `operations.md`) if relevant. Orphan docs rot.
+3. **Cross-link from the canonical readers** (`README.md`, `architecture.md`, `deployment.md`) if relevant. Orphan docs rot.
 4. **Commit the new doc + this index update + any cross-links in the same commit.** Don't let docs governance lag behind the docs.
 
 ---
