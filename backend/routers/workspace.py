@@ -601,20 +601,31 @@ def record_workspace_feedback_route(
             refresh_token=refresh_token,
         )
     except InputValidationError:
-        # Narrow the catch to InputValidationError — the explicit
-        # contract ``resolve_authenticated_context`` uses for
-        # missing/invalid credentials. Other AppError subclasses
-        # (BackendIntegrationError, AgentExecutionError) bubble up
-        # from session restore / user sync / quota load and represent
-        # backend-side problems unrelated to user credentials. Those
-        # should NOT become 401 "session expired" — they bubble to
-        # the generic AppError handler below so the frontend sees a
-        # 502 + "service temporarily unavailable" instead of a
-        # misleading re-auth prompt. Codex P2 on PR #3 final round
-        # (mirrors the earlier transcribe-route fix).
+        # Missing/invalid credentials per ``resolve_authenticated_context``'s
+        # explicit contract — translate to 401 so the frontend's
+        # re-auth interceptor triggers.
         raise HTTPException(
             status_code=401,
             detail="Your session has expired. Sign in again to record feedback.",
+        )
+    except AppError as error:
+        # Non-credential AppError subclasses (BackendIntegrationError,
+        # AgentExecutionError, etc.) from session restore / user sync /
+        # quota load. These represent backend-side problems, not auth
+        # failures — route them through _raise_http_error for the right
+        # status code instead of letting them fall through to an
+        # unhandled 500. Codex P1 on PR #3 round 4 caught that the
+        # earlier narrow ``except InputValidationError`` left this gap.
+        _raise_http_error(error)
+
+    # Belt-and-suspenders: ``_resolve_openai_service`` documents
+    # ``resolve_authenticated_context`` as nullable, and reading
+    # ``auth_context.app_user`` on None would raise AttributeError →
+    # generic 500 instead of the intended 401. CodeRabbit on PR #3 round 4.
+    if auth_context is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Couldn't resolve your session. Sign in again to record feedback.",
         )
 
     user_id = str(getattr(auth_context.app_user, "id", "") or "")
@@ -638,11 +649,10 @@ def record_workspace_feedback_route(
     except InvalidFeedbackError as error:
         raise HTTPException(status_code=400, detail=str(error))
     except AppError as error:
-        # AppError subclasses from resolve_authenticated_context's
-        # internal calls land here (BackendIntegrationError,
-        # AgentExecutionError) — route them through the canonical
-        # _raise_http_error so the user sees the right status code +
-        # message, not a generic 502.
+        # AppError subclasses from record_feedback's internal calls
+        # (BackendIntegrationError from Supabase, etc.) — route through
+        # the canonical _raise_http_error so the user sees the right
+        # status code + message, not a generic 502.
         _raise_http_error(error)
     except Exception as error:  # noqa: BLE001 - boundary translation
         # Any other unexpected error: 502 with generic detail so we

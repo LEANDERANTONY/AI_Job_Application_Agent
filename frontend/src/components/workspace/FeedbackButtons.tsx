@@ -122,6 +122,14 @@ export function FeedbackButtons({
   const commentRef = useRef<string>(comment);
   stateRef.current = state;
   commentRef.current = comment;
+  // Belt-and-suspenders against the unmount race Codex flagged on
+  // PR #3 round 4: setState is async, so between a Send/Skip click
+  // (or auto-commit timer firing) and the next render, stateRef
+  // still says "rated-pending" — and an unmount during that window
+  // would fire a second recordFeedback. ``committingRef`` flips true
+  // the instant any commit path starts; the unmount effect bails out
+  // if it's set, ensuring exactly one submitFeedback per user action.
+  const committingRef = useRef<boolean>(false);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -136,6 +144,11 @@ export function FeedbackButtons({
   const commitFeedback = useCallback(
     async (rating: "up" | "down", commentText: string) => {
       clearTimer();
+      // Mark in-flight synchronously BEFORE the async setState. The
+      // unmount effect reads this to decide whether to fire its own
+      // best-effort flush — without the flag, an unmount between
+      // the Send click and the next render would double-submit.
+      committingRef.current = true;
       setState({ kind: "submitting", rating });
       try {
         await recordFeedback({
@@ -168,13 +181,15 @@ export function FeedbackButtons({
   );
 
   // Best-effort flush on unmount: if the user navigated away while
-  // a rating is still pending, fire one final commit so the rating
-  // isn't silently dropped.
+  // a rating is still pending AND no commit path has started, fire
+  // one final recordFeedback so the rating isn't silently dropped.
+  // The committingRef guard prevents the race where Send/Skip
+  // already started a commit but state hasn't re-rendered yet.
   useEffect(() => {
     return () => {
       clearTimer();
       const current = stateRef.current;
-      if (current.kind === "rated-pending") {
+      if (current.kind === "rated-pending" && !committingRef.current) {
         void recordFeedback({
           surface,
           rating: current.rating,
@@ -207,6 +222,13 @@ export function FeedbackButtons({
     }
     // Fresh rating or switching ratings while pending — land in
     // rated-pending with the latest rating and restart the timer.
+    //
+    // Clear any leftover comment text: a comment typed under the
+    // PRIOR rating shouldn't auto-submit with the new rating.
+    // Without this, a user could type "wrong tone" under 👎, switch
+    // to 👍, and the 8s auto-commit fires with rating="up" + stale
+    // "wrong tone" comment. CodeRabbit + Codex P2 on PR #3 round 4.
+    setComment("");
     setState({ kind: "rated-pending", rating });
     scheduleAutoCommit(rating);
   }

@@ -221,10 +221,10 @@ _BACKEND_ALLOWLIST: set[tuple[str, int]] = {
     # "Rating must be 'up' or 'down', got ...", "user_id is required
     # to record feedback."). Surfacing them directly helps the client
     # debug a bad payload; there's no internal state in the string.
-    # Line moved from 617 → 629 → 639 as the AuthRequiredError handler
-    # for /workspace/transcribe + the narrowed AppError catch in
-    # /workspace/feedback were added above this line.
-    (_os_for_paths.path.join("backend", "routers", "workspace.py"), 639),
+    # Line drifts each time the feedback / transcribe route grows a
+    # new auth-handling branch above this InvalidFeedbackError site.
+    # 617 → 629 → 639 → 650. Update when CI flags a new line number.
+    (_os_for_paths.path.join("backend", "routers", "workspace.py"), 650),
 }
 
 

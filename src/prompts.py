@@ -169,6 +169,46 @@ def _build_contract(contract: Dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _strict_expected_keys(template, *, fallback: list[str] | None = None) -> list[str]:
+    """Pull ``metadata.expected_keys`` off a registry-loaded template
+    with strict type checking. Used by every prompt builder that
+    delegates to the registry — keeps the validation logic in one
+    place so a registry mistake fails fast and identically across all
+    builders.
+
+    Three invariants:
+      1. None / missing → fall back to the caller-supplied default
+         (only the tailoring builder uses this — it shipped a hardcoded
+         default before the migration). All other builders pass None
+         which means "no default; missing is an error".
+      2. Non-list → ``TypeError`` (CodeRabbit on PR #3 round 1).
+      3. List with non-string entry → ``TypeError`` (CodeRabbit on
+         PR #3 round 4). The previous ``[str(k) for k in ...]``
+         coerced ``["answer", 1]`` to ``["answer", "1"]``, silently
+         changing the output contract; this raises instead.
+    """
+    raw = template.metadata.get("expected_keys")
+    if raw is None:
+        if fallback is not None:
+            return list(fallback)
+        raise TypeError(
+            f"{template.name} prompt metadata.expected_keys is missing; "
+            "the registry entry must include a list of string keys."
+        )
+    if not isinstance(raw, list):
+        raise TypeError(
+            f"{template.name} prompt metadata.expected_keys must be a list of "
+            f"strings, got {type(raw).__name__!s}."
+        )
+    for index, item in enumerate(raw):
+        if not isinstance(item, str):
+            raise TypeError(
+                f"{template.name} prompt metadata.expected_keys[{index}] must "
+                f"be a string, got {type(item).__name__!s} ({item!r})."
+            )
+    return list(raw)
+
+
 def build_tailoring_agent_prompt(
     candidate_profile: CandidateProfile,
     job_description: JobDescription,
@@ -208,21 +248,15 @@ def build_tailoring_agent_prompt(
     # break downstream response parsing without a clear error. The
     # explicit type check raises a TypeError instead. CodeRabbit
     # finding on PR #3.
-    raw_expected_keys = template.metadata.get("expected_keys")
-    if raw_expected_keys is None:
-        expected_keys = [
+    expected_keys = _strict_expected_keys(
+        template,
+        fallback=[
             "professional_summary",
             "rewritten_bullets",
             "highlighted_skills",
             "cover_letter_themes",
-        ]
-    elif isinstance(raw_expected_keys, list):
-        expected_keys = [str(key) for key in raw_expected_keys]
-    else:
-        raise TypeError(
-            "tailoring prompt metadata.expected_keys must be a list of "
-            f"strings, got {type(raw_expected_keys).__name__!s}."
-        )
+        ],
+    )
     return {
         "system": template.system,
         "user": user_prompt,
@@ -252,19 +286,7 @@ def build_review_agent_prompt(
         ("Tailoring Agent Output", tailoring_output, 1400),
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
-    raw_expected_keys = template.metadata.get("expected_keys")
-    if raw_expected_keys is None or not isinstance(raw_expected_keys, list):
-        # Match the tailoring builder's contract: a missing or
-        # non-list ``expected_keys`` is a registry misconfiguration
-        # that would silently disable downstream key-contract checks
-        # and let malformed model output flow through. Raise instead
-        # of defaulting to [] so the failure is loud at startup.
-        # CodeRabbit on PR #3 final round.
-        raise TypeError(
-            f"{template.name} prompt metadata.expected_keys must be a list of "
-            f"strings, got {type(raw_expected_keys).__name__!s}."
-        )
-    expected_keys = [str(k) for k in raw_expected_keys]
+    expected_keys = _strict_expected_keys(template)
     return {
         "system": template.system,
         "user": user_prompt,
@@ -294,19 +316,7 @@ def build_resume_generation_agent_prompt(
         ("Tailoring Agent Output", tailoring_output, 1400),
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
-    raw_expected_keys = template.metadata.get("expected_keys")
-    if raw_expected_keys is None or not isinstance(raw_expected_keys, list):
-        # Match the tailoring builder's contract: a missing or
-        # non-list ``expected_keys`` is a registry misconfiguration
-        # that would silently disable downstream key-contract checks
-        # and let malformed model output flow through. Raise instead
-        # of defaulting to [] so the failure is loud at startup.
-        # CodeRabbit on PR #3 final round.
-        raise TypeError(
-            f"{template.name} prompt metadata.expected_keys must be a list of "
-            f"strings, got {type(raw_expected_keys).__name__!s}."
-        )
-    expected_keys = [str(k) for k in raw_expected_keys]
+    expected_keys = _strict_expected_keys(template)
     return {
         "system": template.system,
         "user": user_prompt,
@@ -341,19 +351,7 @@ def build_cover_letter_agent_prompt(
     if resume_generation_output:
         sections.append(("Resume Generation Output", resume_generation_output, 1200))
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
-    raw_expected_keys = template.metadata.get("expected_keys")
-    if raw_expected_keys is None or not isinstance(raw_expected_keys, list):
-        # Match the tailoring builder's contract: a missing or
-        # non-list ``expected_keys`` is a registry misconfiguration
-        # that would silently disable downstream key-contract checks
-        # and let malformed model output flow through. Raise instead
-        # of defaulting to [] so the failure is loud at startup.
-        # CodeRabbit on PR #3 final round.
-        raise TypeError(
-            f"{template.name} prompt metadata.expected_keys must be a list of "
-            f"strings, got {type(raw_expected_keys).__name__!s}."
-        )
-    expected_keys = [str(k) for k in raw_expected_keys]
+    expected_keys = _strict_expected_keys(template)
     return {
         "system": template.system,
         "user": user_prompt,
