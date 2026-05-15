@@ -196,7 +196,10 @@ def test_feedback_route_writes_row_and_echoes_payload(app_client, fake_auth):
         json={
             "surface": "tailored_resume",
             "rating": "up",
-            "trace_id": "trace-uuid-123",
+            # UUID-shaped because FeedbackRequest now validates trace_id
+            # as a UUID at the request boundary — see CodeRabbit Major
+            # on PR #3.
+            "trace_id": "00000000-0000-0000-0000-000000000123",
             "comment": "Loved the bullets",
         },
         cookies={
@@ -254,6 +257,49 @@ def test_feedback_route_rejects_invalid_rating(app_client, fake_auth):
         },
     )
     assert response.status_code == 422
+
+
+def test_feedback_route_rejects_non_uuid_trace_id(app_client, fake_auth):
+    """Pydantic-level guard: a non-UUID-shaped trace_id is a client
+    error (422), not something that should silently flow through to
+    the Supabase column and surface as an opaque 502 on the write.
+    Locks the CodeRabbit Major finding from PR #3."""
+    response = app_client.post(
+        "/api/workspace/feedback",
+        json={
+            "surface": "tailored_resume",
+            "rating": "up",
+            "trace_id": "not-a-uuid",
+        },
+        cookies={
+            "ja_access_token": "access-token-value",
+            "ja_refresh_token": "refresh-token-value",
+        },
+    )
+    assert response.status_code == 422
+    assert "uuid" in response.text.lower()
+
+
+def test_feedback_route_accepts_bare_32char_uuid(app_client, fake_auth):
+    """``uuid.UUID`` accepts both the canonical hyphenated form and
+    the bare 32-character hex form. Both must round-trip through the
+    validator — we re-emit the canonical form so downstream code
+    never has to handle both representations."""
+    response = app_client.post(
+        "/api/workspace/feedback",
+        json={
+            "surface": "tailored_resume",
+            "rating": "up",
+            "trace_id": "00000000000000000000000000000456",  # bare 32-char
+        },
+        cookies={
+            "ja_access_token": "access-token-value",
+            "ja_refresh_token": "refresh-token-value",
+        },
+    )
+    assert response.status_code == 200
+    rows = feedback_service.in_memory_rows()
+    assert rows[0]["trace_id"] == "00000000-0000-0000-0000-000000000456"
 
 
 def test_feedback_route_normalizes_empty_trace_id_to_null(

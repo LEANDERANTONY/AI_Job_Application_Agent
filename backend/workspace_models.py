@@ -285,8 +285,11 @@ class WorkspaceFeedbackRequestModel(BaseModel):
     rating: Literal["up", "down"]
     # trace_id is a UUID-shaped string when present; we don't validate
     # the UUID pattern at the model boundary because the table accepts
-    # any uuid-shaped value the application produces — extra strict
-    # validation here would over-couple the model to the column type.
+    # Persistence target (``aijobagent_feedback.trace_id``) is a UUID
+    # column — validate the shape at the request boundary so a
+    # malformed value produces a clean 422 with a field-specific error
+    # rather than falling through to the Supabase write and surfacing
+    # as an opaque 502. CodeRabbit Major on PR #3.
     trace_id: str | None = Field(default=None, max_length=120)
     # 4096-char cap mirrors COMMENT_MAX_CHARS in feedback_service.py.
     # Pydantic rejects anything longer at parse time — defense in depth
@@ -299,7 +302,21 @@ class WorkspaceFeedbackRequestModel(BaseModel):
         if value is None:
             return None
         stripped = str(value).strip()
-        return stripped or None
+        if not stripped:
+            return None
+        # Reject non-UUID shapes at the request boundary so bad data
+        # never reaches the Supabase column. ``uuid.UUID`` accepts
+        # both hyphenated and bare 32-char forms; we re-emit the
+        # canonical hyphenated string so downstream code doesn't have
+        # to handle two representations.
+        import uuid as _uuid
+
+        try:
+            return str(_uuid.UUID(stripped))
+        except (ValueError, AttributeError):
+            raise ValueError(
+                "trace_id must be a UUID (canonical or 32-char hex form)."
+            )
 
     @field_validator("comment", mode="before")
     @classmethod

@@ -201,12 +201,28 @@ def build_tailoring_agent_prompt(
         ("Deterministic Tailored Draft", tailored_draft, 1800),
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
-    expected_keys = list(template.metadata.get("expected_keys") or [
-        "professional_summary",
-        "rewritten_bullets",
-        "highlighted_skills",
-        "cover_letter_themes",
-    ])
+    # Validate ``expected_keys`` is a list, not a string. A
+    # misconfigured registry entry that put the keys in as a string
+    # (``"professional_summary,rewritten_bullets,..."``) would silently
+    # ``list(...)`` into a character array (``["p","r","o",...]``) and
+    # break downstream response parsing without a clear error. The
+    # explicit type check raises a TypeError instead. CodeRabbit
+    # finding on PR #3.
+    raw_expected_keys = template.metadata.get("expected_keys")
+    if raw_expected_keys is None:
+        expected_keys = [
+            "professional_summary",
+            "rewritten_bullets",
+            "highlighted_skills",
+            "cover_letter_themes",
+        ]
+    elif isinstance(raw_expected_keys, list):
+        expected_keys = [str(key) for key in raw_expected_keys]
+    else:
+        raise TypeError(
+            "tailoring prompt metadata.expected_keys must be a list of "
+            f"strings, got {type(raw_expected_keys).__name__!s}."
+        )
     return {
         "system": template.system,
         "user": user_prompt,

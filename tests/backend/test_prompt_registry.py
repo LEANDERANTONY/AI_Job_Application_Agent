@@ -41,13 +41,25 @@ def isolated_registry(tmp_path, monkeypatch):
     """Point the registry loader at a fresh tmp dir per test so the
     in-process cache + the on-disk state stay test-local. Returns the
     Path so tests can write fixture JSON into it.
+
+    Pin both env-driven knobs:
+      - AIJOBAGENT_PROMPT_REGISTRY_ROOT: the directory we just minted.
+        ``_registry_root()`` reads this at lookup time (env override)
+        so a plain ``setenv`` is enough — no need to monkeypatch a
+        module-level constant.
+      - AIJOBAGENT_PROMPT_REGISTRY_DISABLE_RELOAD: cleared so the mtime
+        watch always runs in tests. Without this, a developer's local
+        env that disabled reload (legit in production) would make the
+        cache-invalidation test silently fall back to the cached
+        template and pass even when the fix is broken. CodeRabbit
+        finding on PR #3.
     """
     monkeypatch.setenv("AIJOBAGENT_PROMPT_REGISTRY_ROOT", str(tmp_path))
-    # Re-evaluate the env-driven root override; the module captures it
-    # at import time so we patch the constant directly too.
-    monkeypatch.setattr(
-        prompt_registry, "_REGISTRY_ROOT_OVERRIDE", str(tmp_path)
-    )
+    monkeypatch.setenv("AIJOBAGENT_PROMPT_REGISTRY_DISABLE_RELOAD", "")
+    # _DISABLE_RELOAD was captured at module import — pin the
+    # in-memory constant too so tests don't depend on whether this
+    # module was reloaded after the setenv.
+    monkeypatch.setattr(prompt_registry, "_DISABLE_RELOAD", False)
     reset_cache()
     yield tmp_path
     reset_cache()

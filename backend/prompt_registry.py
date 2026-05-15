@@ -60,7 +60,6 @@ logger = logging.getLogger(__name__)
 # server runs depends on the deploy target (systemd unit, docker, dev
 # shell), so we anchor relative to this file's location and walk up to
 # the project root.
-_REGISTRY_ROOT_OVERRIDE = os.getenv("AIJOBAGENT_PROMPT_REGISTRY_ROOT", "").strip()
 _DEFAULT_REGISTRY_ROOT = (
     Path(__file__).resolve().parent.parent / "prompts"
 )
@@ -71,9 +70,17 @@ def _registry_root() -> Path:
 
     Tests can monkeypatch the env var to point at a fixture directory
     so a test prompt doesn't have to live in the production tree.
+
+    The env override is read at LOOKUP time (each call), not at module
+    import. A module-import-time read meant that setting
+    AIJOBAGENT_PROMPT_REGISTRY_ROOT after the registry had already
+    been imported elsewhere had no effect — which broke tests that
+    used monkeypatch.setenv mid-suite, and confused operators who
+    expected env-based config to behave dynamically. Codex P2 on PR #3.
     """
-    if _REGISTRY_ROOT_OVERRIDE:
-        return Path(_REGISTRY_ROOT_OVERRIDE)
+    override = os.getenv("AIJOBAGENT_PROMPT_REGISTRY_ROOT", "").strip()
+    if override:
+        return Path(override)
     return _DEFAULT_REGISTRY_ROOT
 
 
@@ -218,13 +225,29 @@ def _load_template_file(name: str, version: str) -> PromptTemplate:
                 f"{path} version field {payload['version']!r} "
                 f"does not match filename {version!r}."
             )
+        # Guard metadata type: ``dict(payload.get("metadata") or {})``
+        # raises TypeError when the JSON contains a list/string/number
+        # under ``metadata`` instead of an object, bypassing the
+        # PromptValidationError contract and surfacing as a generic
+        # 500. Explicit validation gives the operator a useful error.
+        # CodeRabbit Major on PR #3.
+        metadata_value = payload.get("metadata")
+        if metadata_value is None:
+            metadata: dict[str, Any] = {}
+        elif isinstance(metadata_value, dict):
+            metadata = dict(metadata_value)
+        else:
+            raise PromptValidationError(
+                f"{path} metadata must be an object, got "
+                f"{type(metadata_value).__name__!s}."
+            )
         template = PromptTemplate(
             name=name,
             version=str(payload["version"]),
             owner=str(payload["owner"]),
             schema_ref=str(payload["schema_ref"]),
             system=str(payload["system"]),
-            metadata=dict(payload.get("metadata") or {}),
+            metadata=metadata,
         )
         _template_cache[cache_key] = template
         _template_mtime[cache_key] = mtime

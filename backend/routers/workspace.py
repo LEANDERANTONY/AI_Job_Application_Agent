@@ -74,7 +74,12 @@ from backend.workspace_models import (
     WorkspaceAnalyzeJobCreatedResponseModel,
     WorkspaceAnalyzeJobStatusResponseModel,
 )
-from src.errors import AppError, InputValidationError, QuotaExceededError
+from src.errors import (
+    AppError,
+    AuthRequiredError,
+    InputValidationError,
+    QuotaExceededError,
+)
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
@@ -248,6 +253,13 @@ async def transcribe_voice_route(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
+    except AuthRequiredError as error:
+        # 401, not 400 — the frontend's interceptor needs the 401 to
+        # trigger the re-auth flow. Previously both auth + payload
+        # failures collapsed onto InputValidationError → 400, which
+        # confused expired sessions with malformed bodies and broke
+        # re-auth. Codex P2 + CodeRabbit Major on PR #3.
+        raise HTTPException(status_code=401, detail=error.user_message)
     except InputValidationError as error:
         # 400-by-default at the global handler doesn't carry the
         # right semantic; an empty / oversize / wrong-type audio

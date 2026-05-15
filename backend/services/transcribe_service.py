@@ -35,7 +35,12 @@ from typing import Any
 from backend import run_traces
 from backend.services.auth_session_service import resolve_authenticated_context
 from src.config import load_openai_key
-from src.errors import AgentExecutionError, AppError, InputValidationError
+from src.errors import (
+    AgentExecutionError,
+    AppError,
+    AuthRequiredError,
+    InputValidationError,
+)
 from src.logging_utils import get_logger, log_event
 from src.openai_service import compute_call_cost_usd
 
@@ -103,14 +108,35 @@ _MIME_TO_EXTENSION = {
 
 
 def _normalize_mime(content_type: str) -> str:
-    """Trim parameters, lowercase, strip whitespace.
+    """Normalize a content-type value into the form ALLOWED_MIME_TYPES
+    uses as a key.
 
-    Browsers send `audio/webm;codecs=opus` and we want to match both
-    the bare and the parameterized form. We keep the codecs suffix in
-    ALLOWED_MIME_TYPES so the lookup is permissive without losing the
-    container hint Whisper needs.
+    Browsers don't agree on whether to put whitespace between the
+    media type and its parameters. Both ``audio/webm;codecs=opus``
+    and ``audio/webm; codecs=opus`` are valid per RFC 7231, but the
+    dict lookup is case- and whitespace-sensitive, so the latter
+    failed the whitelist check even though it's a perfectly valid
+    Chrome / Firefox MediaRecorder output. CodeRabbit Major on PR #3.
+
+    Normalization:
+      - lowercase the whole string (RFC 7231 says media types are
+        case-insensitive)
+      - strip outer whitespace
+      - collapse whitespace around ``;`` and ``=`` so
+        ``audio/webm; codecs = opus`` → ``audio/webm;codecs=opus``
     """
-    return str(content_type or "").strip().lower()
+    normalized = str(content_type or "").strip().lower()
+    if not normalized:
+        return ""
+    # Strip whitespace around ``;`` (parameter separator) and ``=``
+    # (parameter key/value separator). Doing this with a regex would
+    # be cleaner but adds an import for a one-line normalization.
+    parts = [part.strip() for part in normalized.split(";")]
+    parts = [
+        "=".join(piece.strip() for piece in part.split("=")) if "=" in part else part
+        for part in parts
+    ]
+    return ";".join(part for part in parts if part)
 
 
 def _extension_for_mime(mime: str) -> str:
@@ -209,10 +235,13 @@ def transcribe_audio(
     "transcribed 23 seconds of audio" affordance.
     """
     # ── Auth gate ─────────────────────────────────────────────────────
+    # AuthRequiredError (not InputValidationError) so the route can
+    # translate to a clean 401 — distinguishes "your session expired"
+    # from "your payload was malformed" and lets the frontend's
+    # re-auth flow trigger correctly. Codex P2 + CodeRabbit Major on
+    # PR #3.
     if not (access_token and refresh_token):
-        # Same exception class the rest of the service layer uses for
-        # "you need to sign in" failures. The route translates to 401.
-        raise InputValidationError(
+        raise AuthRequiredError(
             "Sign in with Google before transcribing voice input."
         )
 
@@ -222,8 +251,9 @@ def transcribe_audio(
             refresh_token=refresh_token,
         )
     except AppError:
-        # Token validation failed — surface as auth required.
-        raise InputValidationError(
+        # Token validation failed — surface as auth required, not
+        # generic validation.
+        raise AuthRequiredError(
             "Your session has expired. Sign in again before transcribing."
         )
 
