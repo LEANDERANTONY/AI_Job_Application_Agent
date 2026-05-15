@@ -134,6 +134,13 @@ export function VoiceInputButton({
   // on PR #3 round 5.
   const propsRef = useRef({ onTranscript, onError });
   propsRef.current = { onTranscript, onError };
+  // Mounted guard. The MediaRecorder ``stop`` event fires whenever
+  // the input track ends — including when the unmount cleanup below
+  // calls track.stop(). Without this guard, handleRecorderStop would
+  // run on an unmounted component, triggering React's "state update
+  // on unmounted component" warning and pointless transcribe work.
+  // Codex P1 on PR #3 round 5.
+  const mountedRef = useRef<boolean>(true);
 
   // Run the feature detect once on the client after mount — we can't
   // call it during render because `navigator` doesn't exist in SSR.
@@ -143,8 +150,11 @@ export function VoiceInputButton({
 
   // Stop the mic track when the component unmounts mid-recording so we
   // don't leave the browser's mic indicator on after a route change.
+  // Also flips mountedRef so the async handleRecorderStop bails before
+  // touching state on an unmounted component.
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       const stream = streamRef.current;
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());
@@ -236,6 +246,13 @@ export function VoiceInputButton({
     chunksRef.current = [];
     recorderRef.current = null;
 
+    // If the component already unmounted (typical path: the unmount
+    // cleanup stopped the stream, MediaRecorder fired ``stop`` in
+    // response, and we landed here), bail before touching state or
+    // invoking parent callbacks. Stream is already torn down so
+    // nothing leaks. Codex P1 on PR #3 round 5.
+    if (!mountedRef.current) return;
+
     // Read the LATEST callbacks via propsRef so a parent re-render
     // mid-recording doesn't leave us calling stale closure values.
     const currentProps = propsRef.current;
@@ -258,6 +275,10 @@ export function VoiceInputButton({
     setState("transcribing");
     try {
       const result = await transcribeAudio(blob);
+      // Second mountedRef check: the await is multi-second (Whisper
+      // round-trip) and the user may navigate during it. Skip
+      // post-await state updates if we've unmounted.
+      if (!mountedRef.current) return;
       const text = (result.text || "").trim();
       if (text) {
         currentProps.onTranscript(text);
@@ -267,13 +288,16 @@ export function VoiceInputButton({
         );
       }
     } catch (error) {
+      if (!mountedRef.current) return;
       const message =
         error instanceof Error && error.message
           ? error.message
           : "Voice transcription failed. Try recording again.";
       currentProps.onError?.(message);
     } finally {
-      setState("idle");
+      if (mountedRef.current) {
+        setState("idle");
+      }
     }
   }
 

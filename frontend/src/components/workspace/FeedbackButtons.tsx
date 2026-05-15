@@ -143,6 +143,13 @@ export function FeedbackButtons({
    *  cleanup all funnel here). */
   const commitFeedback = useCallback(
     async (rating: "up" | "down", commentText: string) => {
+      // Re-entry guard. ``committingRef`` is set true on entry; if
+      // a second trigger fires (auto-commit timer racing a Send/Skip
+      // click in the window before the disabled state has propagated
+      // to the DOM), this returns early instead of letting both paths
+      // call recordFeedback. Synchronous check + set guarantees only
+      // one entry per commit attempt. Codex P1 on PR #3 round 5.
+      if (committingRef.current) return;
       clearTimer();
       // Mark in-flight synchronously BEFORE the async setState. The
       // unmount effect reads this to decide whether to fire its own
