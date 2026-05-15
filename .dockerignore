@@ -8,6 +8,6 @@ __pycache__
 *.pyo
 *.pyd
 *.log
-DEVLOG.md
+docs/DEVLOG.md
 docs/pdf_rendered
 tests

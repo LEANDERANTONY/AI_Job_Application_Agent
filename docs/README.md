@@ -11,7 +11,7 @@ This is the docs-governance file for the AI Job Application Agent. It catalogs e
 | File | Audience | Update trigger |
 |---|---|---|
 | [`README.md`](../README.md) | First-time visitor to the GitHub repo | Headline capability ships (payments going live, a new pipeline stage), tech-stack additions, ADR/test counts drift, or links go stale |
-| [`DEVLOG.md`](../DEVLOG.md) | Future-me + external reviewers reading the chronology | Add a `## Day N` entry per substantial commit series (cadence ~per PR-cluster during heavy iteration). Latest entry at the bottom. Historical entries are never rewritten |
+| [`docs/DEVLOG.md`](DEVLOG.md) | Future-me + external reviewers reading the chronology | Add a `## Day N` entry per substantial commit series (cadence ~per PR-cluster during heavy iteration). Latest entry at the bottom. Historical entries are never rewritten |
 
 ### Architecture + how-it-works
 
@@ -78,7 +78,7 @@ A tracked doc is a candidate for removal when **any one** is true:
 3. **Its own preamble says it's not for public consumption.** Either commit to publishing it or move it to local-only.
 4. **The context it captured is no longer accurate.** A stale architecture doc is worse than no doc because a reader trusts it. Prefer rewriting as a new doc + deleting the stale one over incremental edits that leave half-truths.
 
-Before deleting, check whether the doc is referenced elsewhere (`grep -r "filename" docs/ README.md DEVLOG.md`) and update or remove the references in the same commit.
+Before deleting, check whether the doc is referenced elsewhere (`grep -r "filename" docs/ README.md`) and update or remove the references in the same commit.
 
 ---
 
