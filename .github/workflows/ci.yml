@@ -24,6 +24,22 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Verify uv.lock is in sync with pyproject.toml
+        # Fails fast when pyproject.toml has been edited without
+        # running ``uv lock`` to regenerate the lockfile. The
+        # production Dockerfile uses ``uv sync --frozen`` which
+        # installs strictly from uv.lock, so a drift between
+        # pyproject.toml (new dep added) and uv.lock (still old)
+        # silently ships a broken image. We caught this exact
+        # pattern when the Wave 2 PR added python-multipart to
+        # pyproject.toml but the lockfile wasn't regenerated — CI
+        # tests passed but the prod container crash-looped on
+        # ``import backend.routers.workspace`` because FastAPI's
+        # multipart-form decorator path raised at module load.
+        # ``uv lock --check`` exits non-zero if the lockfile would
+        # change, blocking the PR before merge.
+        run: uv lock --check
+
       - name: Sync dependencies
         run: uv sync --group dev --frozen
 
