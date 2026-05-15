@@ -154,10 +154,17 @@ export function VoiceInputButton({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       const mime = pickRecorderMimeType();
-      mimeRef.current = mime || "audio/webm";
       const recorder = mime
         ? new MediaRecorder(stream, { mimeType: mime })
         : new MediaRecorder(stream);
+      // After construction, the recorder knows what container it
+      // actually settled on. Prefer that over a hardcoded
+      // "audio/webm" fallback — browsers in the empty-mime path may
+      // choose a non-webm container (Safari often produces mp4),
+      // and labeling the blob as audio/webm anyway caused the
+      // server-side MIME whitelist check to reject perfectly valid
+      // recordings. Codex P2 on PR #3.
+      mimeRef.current = mime || recorder.mimeType || "audio/webm";
       recorderRef.current = recorder;
       chunksRef.current = [];
       recorder.addEventListener("dataavailable", (event) => {
@@ -170,6 +177,16 @@ export function VoiceInputButton({
       setState("recording");
     } catch (error) {
       setState("idle");
+      // Clean up any allocated mic stream so the OS-level mic
+      // indicator turns off. Without this, if getUserMedia succeeded
+      // but MediaRecorder construction / start failed, the tracks
+      // stay live and the user sees an unexplained mic-on indicator.
+      // CodeRabbit Major on PR #3.
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+      recorderRef.current = null;
       // The most common path here is the user clicking "Block" on the
       // mic permission prompt. The error name is "NotAllowedError" in
       // that case; other browser-specific shapes get a generic

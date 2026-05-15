@@ -45,7 +45,7 @@
  *     attribute (skipped by keyboard nav).
  */
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import type { FeedbackSurface } from "@/lib/api-types";
 import { recordFeedback } from "@/lib/api";
@@ -95,6 +95,14 @@ export function FeedbackButtons({
   const [commentSubmitting, setCommentSubmitting] = useState<boolean>(false);
   const [commentSubmitted, setCommentSubmitted] = useState<boolean>(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+  // useId guarantees a DOM-unique value per component instance — the
+  // prior ``feedback-comment-${surface}`` collided whenever the page
+  // mounted multiple FeedbackButtons with the same surface (notably
+  // multiple ``assistant_turn`` cards in one panel), causing every
+  // <label htmlFor=> to target the first matching textarea and the
+  // "tell us more" click to focus the wrong input.
+  // Flagged 3x: CodeRabbit Major + Codex P2 + Codex P3 on PR #3.
+  const commentTextareaId = useId();
 
   const currentRating =
     state.kind === "submitting" ||
@@ -240,14 +248,14 @@ export function FeedbackButtons({
       {hasRating && !commentSubmitted ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label
-            htmlFor={`feedback-comment-${surface}`}
+            htmlFor={commentTextareaId}
             style={{ fontSize: 11.5, color: "var(--fg-3)" }}
           >
             Want to tell us more? (optional)
           </label>
           <textarea
             disabled={commentSubmitting}
-            id={`feedback-comment-${surface}`}
+            id={commentTextareaId}
             maxLength={4096}
             onChange={(event) => setComment(event.target.value)}
             placeholder={

@@ -779,7 +779,22 @@ export async function recordFeedback(payload: FeedbackRequest) {
   });
 }
 
+// Mirrors MAX_AUDIO_BYTES in backend/services/transcribe_service.py
+// (Whisper's hard cap is 25 MB). Surfacing the check client-side
+// avoids burning a multi-MB upload over a slow connection only to be
+// rejected at the server with a 413. CodeRabbit on PR #3.
+const TRANSCRIBE_MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+
 export async function transcribeAudio(audioBlob: Blob): Promise<TranscribeResponse> {
+  // Client-side size guard so a slow uploader doesn't wait for a
+  // 413 to land after spending tens of seconds uploading. The
+  // server-side check is still authoritative (a hostile client can
+  // bypass this), so we keep the backend gate as defense in depth.
+  if (audioBlob.size > TRANSCRIBE_MAX_AUDIO_BYTES) {
+    throw new Error(
+      "Audio recording exceeds the 25 MB limit. Try a shorter recording or a more compressed format.",
+    );
+  }
   // FormData lets the browser set the multipart boundary correctly —
   // don't add Content-Type ourselves or fetch will pick the wrong
   // boundary and the upload will fail at FastAPI's parser.
