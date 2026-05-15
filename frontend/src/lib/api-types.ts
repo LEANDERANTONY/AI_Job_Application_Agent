@@ -742,3 +742,29 @@ export type RemoveSavedJobResponse = {
   status: string;
   job_id: string;
 };
+
+/**
+ * Online feedback surfaces. Mirrors the CHECK constraint on
+ * `aijobagent_feedback.surface` (see docs/sql/supabase-feedback.sql)
+ * so a typo at the call site fails at compile time instead of
+ * bouncing off the Postgres check.
+ */
+export type FeedbackSurface =
+  | "tailored_resume"
+  | "cover_letter"
+  | "jd_summary"
+  | "assistant_turn"
+  | "resume_builder_session";
+
+export type FeedbackRequest = {
+  surface: FeedbackSurface;
+  rating: "up" | "down";
+  trace_id?: string | null;
+  comment?: string;
+};
+
+export type FeedbackResponse = {
+  status: "recorded";
+  surface: FeedbackSurface;
+  rating: "up" | "down";
+};

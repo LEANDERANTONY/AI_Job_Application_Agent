@@ -177,19 +177,23 @@ def build_tailoring_agent_prompt(
 ) -> Dict[str, Any]:
     """Build the TailoringAgent prompt.
 
+    Migrated to the prompt registry: ``system`` is loaded from
+    ``prompts/tailoring/v1.json`` via ``backend.prompt_registry``.
+    The user prompt + budgeting glue stays in Python — that logic
+    is too procedural to express cleanly in JSON.
+
     Note: a previous version of this prompt also included the
     FitAgent's narrated 'top matches / key gaps' as an extra context
     block. That agent has been removed — TailoringAgent now reads the
-    structured FitAnalysis directly (matched_hard_skills, gaps,
-    recommendations etc. are all there in structured form). One
-    fewer LLM call per workspace analysis with no quality regression.
+    structured FitAnalysis directly. One fewer LLM call per workspace
+    analysis with no quality regression.
     """
-    contract = {
-        "professional_summary": "3-4 sentence tailored summary using only grounded claims",
-        "rewritten_bullets": "array of 3-5 tailored bullet ideas",
-        "highlighted_skills": "array of 4-8 skills to foreground",
-        "cover_letter_themes": "array of 2-4 cover-letter talking points",
-    }
+    # Local import: keeps src/prompts.py importable without the
+    # backend package on the path (e.g. some unit tests that exercise
+    # the deterministic builders directly).
+    from backend.prompt_registry import get_prompt
+
+    template = get_prompt("tailoring")
     sections = [
         ("Candidate Profile", candidate_profile, 2200),
         ("Job Description", job_description, 1800),
@@ -197,14 +201,16 @@ def build_tailoring_agent_prompt(
         ("Deterministic Tailored Draft", tailored_draft, 1800),
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
+    expected_keys = list(template.metadata.get("expected_keys") or [
+        "professional_summary",
+        "rewritten_bullets",
+        "highlighted_skills",
+        "cover_letter_themes",
+    ])
     return {
-        "system": (
-            "You are the Tailoring Agent. Improve the deterministic draft without inventing facts. "
-            "If evidence is weak, write conservatively and note transferable alignment instead of exaggerating. "
-            + _build_contract(contract)
-        ),
+        "system": template.system,
         "user": user_prompt,
-        "expected_keys": list(contract.keys()),
+        "expected_keys": expected_keys,
         "metadata": metadata,
     }
 

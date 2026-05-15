@@ -14,6 +14,7 @@
 //   - b-artifact-body — 2-col grid: doc body (iframe) + right-rail
 //   - b-artifact-aside — title, summary, download buttons, meta line
 
+import { FeedbackButtons } from "@/components/workspace/FeedbackButtons";
 import type { ArtifactTheme, WorkspaceArtifactKind } from "@/lib/api-types";
 
 export type ArtifactTab = "resume" | "cover-letter";
@@ -214,6 +215,23 @@ export function ArtifactViewer({
           {previewTitle ? (
             <div className="b-artifact-meta">Preview · {previewTitle}</div>
           ) : null}
+          {/* Online feedback — gathers a per-artifact 👍 / 👎 + optional
+              comment so we can correlate quality with the underlying
+              model + cost in the aggregate. The surface flips with the
+              active tab; trace_id is omitted at this layer because the
+              parent doesn't carry the per-call trace id today. */}
+          <hr className="rd-hairline" />
+          <FeedbackButtons
+            surface={
+              artifactKind === "tailored_resume"
+                ? "tailored_resume"
+                : "cover_letter"
+            }
+            // Re-mount the FeedbackButtons when the tab changes so the
+            // user starts fresh on the new artifact — submitted state
+            // shouldn't bleed across tabs.
+            key={artifactKind}
+          />
         </div>
       </div>
     </div>

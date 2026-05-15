@@ -1976,6 +1976,9 @@ export function WorkspaceShell() {
             }
             onBuilderExportThemeChange={setResumeBuilderExportTheme}
             onBuilderGenerate={() => void handleResumeBuilderGenerate()}
+            onBuilderVoiceError={(message) =>
+              setResumeBuilderNotice({ level: "warning", message })
+            }
             onClearUploadedResumeProfile={handleClearUploadedResumeProfile}
             onModeChange={setResumeIntakeMode}
             onResetBuilderInitialized={() =>

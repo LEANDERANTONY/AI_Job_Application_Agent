@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
@@ -6,6 +6,14 @@ from backend.request_auth import get_optional_auth_tokens
 from backend.services.auth_session_service import (
     build_openai_service_for_context,
     resolve_authenticated_context,
+)
+from backend.services.feedback_service import (
+    InvalidFeedbackError,
+    record_feedback,
+)
+from backend.services.transcribe_service import (
+    MAX_AUDIO_BYTES,
+    transcribe_audio,
 )
 from backend.services.resume_builder_persistence_service import (
     clear_resume_builder_session,
@@ -61,11 +69,12 @@ from backend.workspace_models import (
     WorkspaceAssistantRequestModel,
     WorkspaceArtifactExportRequestModel,
     WorkspaceArtifactPreviewRequestModel,
+    WorkspaceFeedbackRequestModel,
     WorkspaceSaveRequestModel,
     WorkspaceAnalyzeJobCreatedResponseModel,
     WorkspaceAnalyzeJobStatusResponseModel,
 )
-from src.errors import AppError, QuotaExceededError
+from src.errors import AppError, InputValidationError, QuotaExceededError
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
@@ -168,6 +177,83 @@ def upload_resume(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
+    except AppError as error:
+        _raise_http_error(error)
+
+
+@router.post("/transcribe")
+@limiter.limit(LIMIT_LLM)
+async def transcribe_voice_route(
+    request: Request,
+    file: UploadFile = File(...),
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    """Whisper-backed voice transcription for the Resume Builder chat
+    input (primary surface) and the Workspace assistant chat
+    (secondary).
+
+    Multipart audio blob in; ``{"text": str, "duration_seconds":
+    float}`` out. Auth required — anonymous callers get a 401. Cost is
+    recorded as a trace row with ``task_name="transcribe"`` so the
+    nightly tier-margin report breaks Whisper out as its own line item
+    next to the chat-model calls.
+
+    The 25 MB upper bound (``MAX_AUDIO_BYTES``) matches OpenAI's
+    Whisper API limit; we reject locally with a friendly message
+    instead of letting OpenAI surface a generic 413 through the agent
+    error path.
+
+    Quota: free for all tiers (Whisper is cheap enough). Downstream
+    caps still apply — the transcribed text flows into the resume
+    builder (``resume_builder_sessions``) or the assistant
+    (``assistant_turns``) which gate as usual. The dedicated rate
+    limit (``LIMIT_LLM`` = 30/minute) keeps a recorder loop from
+    nuking the budget.
+    """
+    access_token, refresh_token = auth_tokens
+    if not (access_token and refresh_token):
+        # Mirror the 401 the resume builder + quota endpoints use. We
+        # don't fall through to the service layer here because the
+        # service raises an InputValidationError that the catch-all
+        # converts to 400 — we want a clean 401 for the frontend's
+        # re-auth nudge.
+        raise HTTPException(
+            status_code=401,
+            detail="Sign in with Google before transcribing voice input.",
+        )
+
+    # Read the upload into memory. UploadFile.read() loads the whole
+    # body — fine for a 25 MB cap; FastAPI's spooled file would still
+    # buffer through memory at that size anyway. Reading once into
+    # bytes keeps the request-time error path simple.
+    audio_bytes = await file.read()
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        # Same threshold the service layer checks, but we catch here
+        # too so an oversize body doesn't even reach the OpenAI key
+        # resolution path. Returning 413 mirrors the HTTP-spec status
+        # for "request entity too large" — friendlier for a generic
+        # HTTP client than the 400 the service path would surface.
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "Audio exceeds the 25 MB limit. Try a shorter recording "
+                "or a more compressed format."
+            ),
+        )
+
+    try:
+        return transcribe_audio(
+            audio_bytes=audio_bytes,
+            content_type=file.content_type or "",
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
+    except InputValidationError as error:
+        # 400-by-default at the global handler doesn't carry the
+        # right semantic; an empty / oversize / wrong-type audio
+        # body is a client problem we want surfaced clearly. The
+        # detail copy is already user-facing.
+        raise HTTPException(status_code=400, detail=error.user_message)
     except AppError as error:
         _raise_http_error(error)
 
@@ -465,6 +551,81 @@ def start_workspace_analysis_job_route(
         # being explicit here documents that quota rejection is the
         # second supported failure mode on this surface.
         raise
+
+
+@router.post("/feedback")
+@limiter.limit(LIMIT_LLM)
+def record_workspace_feedback_route(
+    request: Request,
+    payload: WorkspaceFeedbackRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    """Record a single 👍 / 👎 feedback row.
+
+    Wired into every artifact surface (tailored resume, cover letter,
+    JD summary, assistant turn, resume-builder session). Validates
+    surface + rating at the Pydantic boundary so a typo in the
+    frontend fails fast with a 422 instead of bouncing off the
+    Postgres CHECK constraint.
+
+    Auth required: an anonymous caller has no user_id to attribute the
+    feedback to and the table's RLS policy + the service-role write
+    path would both reject the insert. Returns 401 for clean re-auth
+    plumbing — mirrors /workspace/quota.
+
+    Rate limit: LIMIT_LLM (30/min) is plenty for a real user (one
+    rating per artifact, < 10 surfaces per session) and high enough
+    not to interfere with rapid-clicking test runs.
+    """
+    access_token, refresh_token = auth_tokens
+    if not (access_token and refresh_token):
+        raise HTTPException(
+            status_code=401,
+            detail="Sign in with Google to record feedback.",
+        )
+    try:
+        auth_context = resolve_authenticated_context(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+    except AppError:
+        # Token validation failed -- surface as auth required.
+        raise HTTPException(
+            status_code=401,
+            detail="Your session has expired. Sign in again to record feedback.",
+        )
+
+    user_id = str(getattr(auth_context.app_user, "id", "") or "")
+    if not user_id:
+        # Defense in depth: a malformed JWT shouldn't get through
+        # resolve_authenticated_context but if it does, refusing the
+        # write with 401 is the right call.
+        raise HTTPException(
+            status_code=401,
+            detail="No user identity available for this session.",
+        )
+
+    try:
+        return record_feedback(
+            user_id=user_id,
+            surface=payload.surface,
+            rating=payload.rating,
+            trace_id=payload.trace_id,
+            comment=payload.comment,
+        )
+    except InvalidFeedbackError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except Exception as error:  # noqa: BLE001 - boundary translation
+        # The service layer re-raises any backend error; we convert to
+        # 502 so the frontend's optimistic UI can show "couldn't save"
+        # without confusing a real validation error with a Supabase
+        # outage. The detail copy is intentionally generic — surfacing
+        # the underlying Supabase error string would leak schema
+        # internals.
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't record feedback right now. Try again in a moment.",
+        ) from error
 
 
 @router.get("/quota")

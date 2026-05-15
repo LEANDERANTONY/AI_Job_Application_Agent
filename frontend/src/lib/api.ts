@@ -2,6 +2,8 @@ import type {
   ArtifactTheme,
   AuthSessionResponse,
   BackendHealth,
+  FeedbackRequest,
+  FeedbackResponse,
   GoogleSignInStartResponse,
   JobPosting,
   JobResolveResponse,
@@ -735,4 +737,79 @@ export async function previewWorkspaceArtifact(
     },
     body: JSON.stringify(payload),
   });
+}
+
+/**
+ * POST audio Blob (webm/mp4/wav from MediaRecorder) to the Whisper-
+ * backed transcription endpoint. Returns `{ text, duration_seconds }`.
+ *
+ * Used by:
+ *   * Resume Builder chat input (flagship surface — speak a long
+ *     answer about experience instead of typing one-liners)
+ *   * Workspace assistant chat (secondary)
+ *
+ * Auth required: anonymous callers get 401. The 25 MB cap on the
+ * server is checked locally too via the size of the Blob before the
+ * POST, but the route enforces the canonical limit.
+ */
+export type TranscribeResponse = {
+  text: string;
+  duration_seconds: number;
+};
+
+/**
+ * Record one 👍 / 👎 feedback row for a workspace artifact / turn.
+ *
+ * Each call writes ONE row — feedback is immutable from the app's
+ * perspective, so a follow-up comment becomes its own row that
+ * aggregations correlate by (user_id, surface, created_at).
+ *
+ * Auth is required (401 otherwise). The route validates surface +
+ * rating against a Pydantic Literal so a typo in this call site
+ * fails at the FastAPI parse boundary with a 422 — surfaced here as
+ * the generic request<>() path.
+ */
+export async function recordFeedback(payload: FeedbackRequest) {
+  return request<FeedbackResponse>("/workspace/feedback", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function transcribeAudio(audioBlob: Blob): Promise<TranscribeResponse> {
+  // FormData lets the browser set the multipart boundary correctly —
+  // don't add Content-Type ourselves or fetch will pick the wrong
+  // boundary and the upload will fail at FastAPI's parser.
+  const formData = new FormData();
+  // Filename hint: Whisper inspects the extension to pick a demuxer.
+  // The MIME comes off the Blob; the server normalizes both.
+  const extensionHint = audioBlob.type.includes("mp4")
+    ? "mp4"
+    : audioBlob.type.includes("wav")
+      ? "wav"
+      : audioBlob.type.includes("ogg")
+        ? "ogg"
+        : "webm";
+  formData.append("file", audioBlob, `voice.${extensionHint}`);
+
+  const response = await fetch(`${API_BASE_URL}/workspace/transcribe`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    body: formData,
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail =
+      payload && typeof payload === "object" && payload !== null && "detail" in payload
+        ? String((payload as { detail?: unknown }).detail ?? "")
+        : "";
+    throw new Error(
+      detail || `Voice transcription failed with status ${response.status}`,
+    );
+  }
+  return payload as TranscribeResponse;
 }

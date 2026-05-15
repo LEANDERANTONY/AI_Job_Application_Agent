@@ -254,3 +254,56 @@ class ResumeBuilderExportRequestModel(BaseModel):
     @classmethod
     def _strip_export_session_id(cls, value):
         return str(value or "").strip()
+
+
+class WorkspaceFeedbackRequestModel(BaseModel):
+    """Body shape for POST /workspace/feedback.
+
+    Each user 👍 / 👎 on a tailored artifact / cover letter / JD summary
+    / assistant turn / resume-builder session writes one row. The
+    Literal surface + rating echo the CHECK constraint in the SQL
+    migration so a typo in the client fails at the FastAPI parse
+    boundary instead of bouncing off Postgres's check.
+
+    trace_id is optional — some surfaces (resume_builder_session) don't
+    map to a single LLM call so there's nothing single-trace to point
+    at; others (tailored_resume, cover_letter, assistant_turn) DO have
+    a trace_id from the OpenAIService cost-trace bridge. The route
+    forwards whatever the client sends through to the service layer,
+    which normalizes empty strings to NULL.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    surface: Literal[
+        "tailored_resume",
+        "cover_letter",
+        "jd_summary",
+        "assistant_turn",
+        "resume_builder_session",
+    ]
+    rating: Literal["up", "down"]
+    # trace_id is a UUID-shaped string when present; we don't validate
+    # the UUID pattern at the model boundary because the table accepts
+    # any uuid-shaped value the application produces — extra strict
+    # validation here would over-couple the model to the column type.
+    trace_id: str | None = Field(default=None, max_length=120)
+    # 4096-char cap mirrors COMMENT_MAX_CHARS in feedback_service.py.
+    # Pydantic rejects anything longer at parse time — defense in depth
+    # against a malicious client posting megabytes of comment text.
+    comment: str = Field(default="", max_length=4096)
+
+    @field_validator("trace_id", mode="before")
+    @classmethod
+    def _strip_trace_id(cls, value):
+        if value is None:
+            return None
+        stripped = str(value).strip()
+        return stripped or None
+
+    @field_validator("comment", mode="before")
+    @classmethod
+    def _strip_comment(cls, value):
+        if value is None:
+            return ""
+        return str(value)
