@@ -25,10 +25,14 @@ def _to_serializable(value: Any):
 # Shared system-prompt block that teaches the assistant how to read and
 # use the live workspace-state projection sent on every turn (see
 # `WorkspaceStateContext` on the frontend / `WorkspaceStateContextModel`
-# on the backend). The same block is appended to both the JSON-contract
-# prompt (`build_assistant_prompt`) and the streaming prose prompt
-# (`build_assistant_text_prompt`) so behavior is identical regardless
-# of which path the call site takes.
+# on the backend).
+#
+# The canonical copy of this content now lives in ``prompts/assistant/v1.json``
+# (JSON-contract path) AND ``prompts/assistant_text/v1.json`` (SSE-streaming
+# prose path) — see prompts/README.md. This Python constant is retained as
+# the byte-identity reference for ``tests/test_prompts.py``, so any future
+# wording edit only has to land in three places (two JSON files and this
+# constant) and the test harness catches drift.
 _WORKSPACE_STATE_GUIDANCE = (
     "WORKSPACE STATE: A `workspace_state` object inside `product_context` reflects the user's live progress. Read it before answering ANY question that touches what the user has done so far. "
     "Fields: `current_step` (one of resume / jobs / jd / analysis — the tab the user is on right now), `has_resume` and `resume_summary` (parsed CandidateProfile — name, location, skills_count, experience_entries_count, has_certifications), `has_jd` and `jd_summary` (parsed JobDescription — title, location, hard_skills_count, soft_skills_count, must_haves_count), `has_analysis` (true once the analysis pipeline has produced a fit score), `saved_jobs_count` (size of the user's shortlist), `last_search_query` (last keyword they searched). "
@@ -365,11 +369,21 @@ def build_assistant_prompt(
     question: str,
     history: Any = None,
 ) -> Dict[str, Any]:
-    contract = {
-        "answer": "short, direct grounded answer that can explain product behavior, saved workspace behavior, or the user's current application outputs",
-        "sources": "array of 1-4 relevant pages, artifacts, or workflow signals used for the answer",
-        "suggested_follow_ups": "array of 0-3 follow-up questions the user may want to ask next",
-    }
+    """Unified in-app assistant prompt (JSON contract variant).
+
+    Migrated to the prompt registry: ``system`` and ``expected_keys`` are
+    loaded from ``prompts/assistant/v1.json``. The user prompt — the
+    serialized assistant context + question + optional recent history —
+    is composed in Python because it is dynamic per turn.
+
+    The system message embeds the same ``_WORKSPACE_STATE_GUIDANCE``
+    block used by ``build_assistant_text_prompt``; the two registry
+    entries must stay in lockstep so the streaming variant doesn't drift
+    from the JSON variant.
+    """
+    from backend.prompt_registry import get_prompt
+
+    template = get_prompt("assistant")
     user_prompt = "\n\n".join(
         [
             _json_block("Assistant Context", assistant_context),
@@ -377,25 +391,11 @@ def build_assistant_prompt(
         ]
         + ([_json_block("Recent History", history[-4:])] if history else [])
     )
+    expected_keys = _strict_expected_keys(template)
     return {
-        "system": (
-            "You are the in-app assistant for an AI job application app. "
-            "Stay strictly within scope: the job application product and the user's current workspace artifacts (resume, job description, fit analysis, tailored resume, cover letter). "
-            "If the user asks for entertainment recommendations (movies, books, music, shows, restaurants), lifestyle advice, jokes, opinions on unrelated topics, or anything outside the job application domain, decline in one short sentence and redirect to job application help — even if you could plausibly answer. "
-            "When refusing an off-topic ask: do NOT name specific titles, authors, or artists; do NOT offer to suggest one based on genre, mood, or any other angle; do NOT acknowledge the off-topic premise beyond a brief decline. The refusal must not engage with the off-topic question. "
-            "You answer both product questions and grounded questions about the user's current package in one conversation. "
-            "Explain only features and artifacts that are present in the provided context. "
-            "Use retrieved product knowledge hits when they are provided, but treat runtime session context as authoritative for current state such as quotas, page availability, saved workspace behavior, and active artifacts. "
-            "If the user asks about navigation, explain the current sidebar pages and signed-in actions from the provided context. "
-            "If the user asks about the current resume, cover letter, report, or fit analysis, ground the answer in the workflow context and say directly when evidence is weak or unavailable. "
-            "If the user asks for broader resume or application coaching, you may provide general advice, but anchor it back to the current package when possible and separate general guidance from context-specific recommendations when helpful. "
-            "If the user asks about limits, tokens, quota, warnings, or fallback behavior, explain the signed-in account-level daily quota using the provided context and do not describe any browser-session budget model. "
-            "If the user asks who you are or what your name is, answer as the in-app assistant for this product. "
-            + _WORKSPACE_STATE_GUIDANCE
-            + _build_contract(contract)
-        ),
+        "system": template.system,
         "user": user_prompt,
-        "expected_keys": list(contract.keys()),
+        "expected_keys": expected_keys,
     }
 
 
@@ -412,7 +412,16 @@ def build_assistant_text_prompt(
     streamed token-by-token. Sources and follow-up suggestions are
     computed deterministically from the workspace snapshot in the
     streaming caller (see ``stream_workspace_question``).
+
+    Migrated to the prompt registry: ``system`` is loaded from
+    ``prompts/assistant_text/v1.json``. The user prompt is composed in
+    Python because it is dynamic per turn. There is no ``expected_keys``
+    on the return value — the streaming caller handles prose chunks
+    directly without a JSON contract.
     """
+    from backend.prompt_registry import get_prompt
+
+    template = get_prompt("assistant_text")
     user_prompt = "\n\n".join(
         [
             _json_block("Assistant Context", assistant_context),
@@ -421,22 +430,7 @@ def build_assistant_text_prompt(
         + ([_json_block("Recent History", history[-4:])] if history else [])
     )
     return {
-        "system": (
-            "You are the in-app assistant for an AI job application app. "
-            "Stay strictly within scope: the job application product and the user's current workspace artifacts (resume, job description, fit analysis, tailored resume, cover letter). "
-            "If the user asks for entertainment recommendations (movies, books, music, shows, restaurants), lifestyle advice, jokes, opinions on unrelated topics, or anything outside the job application domain, decline in one short sentence and redirect to job application help — even if you could plausibly answer. "
-            "When refusing an off-topic ask: do NOT name specific titles, authors, or artists; do NOT offer to suggest one based on genre, mood, or any other angle; do NOT acknowledge the off-topic premise beyond a brief decline. The refusal must not engage with the off-topic question. "
-            "You answer both product questions and grounded questions about the user's current package in one conversation. "
-            "Explain only features and artifacts that are present in the provided context. "
-            "Use retrieved product knowledge hits when they are provided, but treat runtime session context as authoritative for current state such as quotas, page availability, saved workspace behavior, and active artifacts. "
-            "If the user asks about navigation, explain the current sidebar pages and signed-in actions from the provided context. "
-            "If the user asks about the current resume, cover letter, report, or fit analysis, ground the answer in the workflow context and say directly when evidence is weak or unavailable. "
-            "If the user asks for broader resume or application coaching, you may provide general advice, but anchor it back to the current package when possible and separate general guidance from context-specific recommendations when helpful. "
-            "If the user asks about limits, tokens, quota, warnings, or fallback behavior, explain the signed-in account-level daily quota using the provided context and do not describe any browser-session budget model. "
-            "If the user asks who you are or what your name is, answer as the in-app assistant for this product. "
-            + _WORKSPACE_STATE_GUIDANCE
-            + "Respond as a concise, direct prose answer. Do not return JSON, do not wrap the answer in code fences, and do not list sources — sources are surfaced separately by the app."
-        ),
+        "system": template.system,
         "user": user_prompt,
     }
 
@@ -447,34 +441,43 @@ def build_assistant_followup_prompt(
     assistant_scope: str = "assistant",
     state_updates: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    contract = {
-        "answer": "short, direct grounded answer to the user's latest question",
-        "sources": "array of 1-4 relevant pages, artifacts, or workflow signals used for the answer",
-        "suggested_follow_ups": "array of 0-3 useful next questions",
-    }
+    """Follow-up turn prompt for the in-app assistant.
+
+    Migrated to the prompt registry: ``system`` is loaded from
+    ``prompts/assistant_followup/v1.json`` with a single ``{scope}``
+    placeholder that is filled here via ``str.format(scope=...)``.
+    Pattern B (placeholder substitution) — the rest of the system text
+    is fully static. ``expected_keys`` comes from the registry metadata.
+    """
+    from backend.prompt_registry import get_prompt
+
+    template = get_prompt("assistant_followup")
+    # The template ships exactly one ``{scope}`` placeholder; format()
+    # would raise KeyError if the registry author added another curly
+    # token without supplying it here. We rely on the registry round-
+    # trip tests to catch a stray ``{`` rather than escape defensively.
+    rendered_system = template.system.format(scope=assistant_scope)
     user_sections = [
         _json_block("User Question", {"question": question}),
     ]
     if state_updates:
         user_sections.append(_json_block("State Updates", state_updates))
+    expected_keys = _strict_expected_keys(template)
     return {
-        "system": (
-            "You are continuing an in-app assistant conversation for an AI job application app. "
-            "Stay strictly within scope: the job application product and the user's current workspace artifacts. "
-            "If the user asks for entertainment recommendations, lifestyle advice, or anything outside the job application domain, decline in one short sentence and redirect — do not name specific titles, do not offer to suggest based on genre or mood, do not engage with the off-topic premise. "
-            "Use the existing conversation state as the primary memory for this session. "
-            "Use any provided state updates to refresh your understanding of the current page, product state, or workspace artifacts. "
-            "Keep answers grounded, concise, and directly useful. "
-            "If the question is about the current workspace, stay tied to the current fit, tailored resume, and cover letter context already established in the session. "
-            "If the question is product-help oriented, explain only features and behavior that match the current product. "
-            "Current assistant scope: {scope}. ".format(scope=assistant_scope)
-            + _build_contract(contract)
-        ),
+        "system": rendered_system,
         "user": "\n\n".join(user_sections),
-        "expected_keys": list(contract.keys()),
+        "expected_keys": expected_keys,
     }
 
 
+# Resume-builder field schema. The list of fields here drives
+# ``resume_builder_missing_fields`` (which the user prompt embeds as a
+# JSON block per turn), and the description text is also pre-rendered
+# into ``prompts/resume_builder/v1.json`` as the field-list block in the
+# system message. Both consumers must stay in sync: a tests/test_prompts
+# guard asserts the registry-loaded system matches the value computed
+# from this constant byte-for-byte, so a drifted edit lights up before
+# rollout.
 _RESUME_BUILDER_FIELD_DESCRIPTIONS = {
     "full_name": (
         "candidate's full name as they typed it — capture EVERY name "
@@ -569,23 +572,20 @@ def build_resume_builder_prompt(
     Rendering the resume itself is not the model's job — the dataclass
     is templated to markdown by `_build_resume_markdown` after the
     draft is captured.
+
+    Migrated to the prompt registry: ``system`` and ``expected_keys``
+    are loaded from ``prompts/resume_builder/v1.json``. Pattern A: the
+    field-descriptions block previously rendered from the module-level
+    ``_RESUME_BUILDER_FIELD_DESCRIPTIONS`` constant is now pre-baked
+    into the JSON. The constant still drives ``resume_builder_missing_fields``,
+    so any field-name or description edit MUST be mirrored in both
+    places to keep the user-prompt fields and the system-prompt
+    instructions in sync.
     """
-    contract = {
-        "draft_updates": (
-            "partial dict of resume-builder fields the user mentioned in this "
-            "turn or recent turns; OMIT fields you cannot ground in user text"
-        ),
-        "assistant_message": "the next conversational reply to show the user (1-2 sentences)",
-        "status": "one of: 'collecting' (more fields to gather), 'reviewing' (enough to draft), 'ready' (user confirmed)",
-        "focus_field": "the field your next question is about, or '' if none",
-    }
+    from backend.prompt_registry import get_prompt
 
-    field_lines = "\n".join(
-        f"  - {name}: {description}"
-        for name, description in _RESUME_BUILDER_FIELD_DESCRIPTIONS.items()
-    )
+    template = get_prompt("resume_builder")
     missing = resume_builder_missing_fields(draft)
-
     history_payload = list(history or [])[-12:]
 
     user_prompt = "\n\n".join(
@@ -597,43 +597,11 @@ def build_resume_builder_prompt(
         ]
     )
 
+    expected_keys = _strict_expected_keys(template)
     return {
-        "system": (
-            "You are a friendly resume-intake assistant inside a job-application app. "
-            "Your job: build a structured resume profile by chatting naturally with the user. "
-            "Each turn, listen for any of these fields the user mentions:\n"
-            f"{field_lines}\n"
-            "\n"
-            "These fields render into a resume shaped roughly as:\n"
-            "  # {full_name}\n"
-            "  {location}\n"
-            "  {contact_lines joined by ' | '}\n"
-            "  ## Professional Summary\n  {professional_summary}\n"
-            "  ## Core Skills\n  - {skills (one per bullet)}\n"
-            "  ## Professional Experience\n  {experience_notes — first line is the role headline, rest are bullets}\n"
-            "  ## Projects\n  {projects_notes — only when present}\n"
-            "  ## Education\n  {education_notes}\n"
-            "  ## Publications\n  - {publications (one per bullet, only when present)}\n"
-            "  ## Certifications\n  - {certifications (one per bullet)}\n"
-            "\n"
-            "Rules:\n"
-            "- Don't invent. Only put a field in `draft_updates` if the user actually said it (literally or via a clear paraphrase) in the latest message or recent conversation. If unsure, omit.\n"
-            "- Backtracking is fine: if the user corrects a previously captured field (e.g., 'actually my role is X'), overwrite that field in `draft_updates`.\n"
-            "- Replace, don't append. `draft_updates` values overwrite existing ones — for list fields (skills, contact_lines, certifications), include the FULL new list, not just additions.\n"
-            "- Be concise: one or two sentences per assistant_message. Acknowledge what you just captured, then ask the next most useful question.\n"
-            "- Pick the next gap from `Missing Fields` in roughly the listed order, but follow the user's lead if they jump ahead.\n"
-            "- Don't ask compound questions. One topic at a time.\n"
-            "- If the user gives a vague answer ('I'm a developer'), ask one targeted follow-up before moving on.\n"
-            "- The `experience_notes`, `education_notes`, and `projects_notes` fields capture the user's words verbatim — don't paraphrase or expand them in `draft_updates`. Downstream rendering handles voice.\n"
-            "- Projects + publications are OPTIONAL. Only ask about them when the user mentions a side project / open-source repo / paper / talk OR when their target_role is heavily technical (engineer, ML, data, research) AND they haven't already filled experience_notes with rich detail. Don't pressure for them — many candidates won't have any. After 'experience' is captured for a tech role, you may ask once: 'Do you want to include any side projects or papers?'. If they say no, move on.\n"
-            "- Crucial split: when a single user turn contains BOTH a broad self-description (no specific company/dates) AND specific role details, route the self-description to `professional_summary` and the role details to `experience_notes`. Example — user says 'I'm a senior backend engineer with 5 years experience. I worked at Acme from 2020-2024 on the billing pipeline.' → professional_summary captures the first sentence, experience_notes captures the second.\n"
-            "- Set status='collecting' while required fields (full_name, contact_lines, target_role, experience_notes, skills) are still empty; 'reviewing' once those are filled and the user could plausibly draft now; 'ready' only after the user explicitly confirms they're done.\n"
-            "- Set focus_field to whichever field your next question is about ('' if you're confirming completion).\n"
-            "- If the user asks an off-topic question (movies, jokes, lifestyle), decline in one sentence and steer back to resume building. Do not engage with the off-topic premise.\n"
-            + _build_contract(contract)
-        ),
+        "system": template.system,
         "user": user_prompt,
-        "expected_keys": list(contract.keys()),
+        "expected_keys": expected_keys,
     }
 
 
@@ -659,52 +627,15 @@ def build_resume_builder_structuring_prompt(
     failure (LLM unavailable, JSON malformed, schema mismatch) the
     caller falls back to the deterministic regex parsers, so this
     prompt is best-effort enrichment, not a hard dependency.
-    """
-    contract = {
-        "experience": (
-            "list of role objects with keys: title (string), organization (string), "
-            "location (string, '' if unknown), start (string like '2020' or 'Jan 2023', "
-            "'' if unknown), end (string, 'Present' for current roles, '' if unknown), "
-            "bullets (list of 2-4 short impact-focused strings). Order most-recent first."
-        ),
-        "education": (
-            "list of education objects with keys: institution (string), degree (string), "
-            "field_of_study (string, '' if degree already includes it), start (string, "
-            "'' if unknown), end (string, '' if unknown). Order most-recent first."
-        ),
-        "projects": (
-            "list of project objects with keys: name (string — short title), "
-            "description (string, '' if bullets capture it), bullets (list of 1-3 "
-            "short impact-focused strings), technologies (list of tech / framework "
-            "names that appear in the user's prose, max 8), start (string, '' if "
-            "unknown), end (string, '' if unknown), link (URL string, '' if none). "
-            "Empty list when projects_notes is empty. Order most-recent first."
-        ),
-        "skill_categories": (
-            "OPTIONAL dict mapping category labels to skill name lists, e.g. "
-            "{'Languages & Tools': ['Python', 'SQL'], 'ML / DL Frameworks': "
-            "['PyTorch', 'Scikit-learn'], 'GenAI & LLMs': ['LangChain', 'OpenAI API']}. "
-            "Generate this ONLY when the candidate has 8+ skills that obviously "
-            "cluster by category. Pick category labels that fit the candidate's "
-            "domain (common labels: 'Languages & Tools', 'ML / DL Frameworks', "
-            "'GenAI & LLMs', 'Vector Databases', 'Systems & Deployment', "
-            "'Data & Analysis', 'Cloud & Infrastructure', 'Frontend', 'Mobile'). "
-            "Skip and return {} when skills are sparse, uniform, or don't cluster "
-            "obviously — the renderer falls back to a flat list."
-        ),
-        "professional_summary": (
-            "OPTIONAL expanded summary (string). Generate ONLY when the user's "
-            "input professional_summary is shorter than ~80 characters AND there "
-            "is enough context elsewhere in the draft (target_role, experience, "
-            "skills) to write a polished 2-3 sentence headline. Output third-"
-            "person ATS-style prose ('Senior backend engineer specializing in...' "
-            "not 'I have 6 years experience'). FACT PRESERVATION IS MANDATORY — "
-            "every claim must be grounded in something the user already typed. "
-            "Don't invent years of experience, technologies, or impact. Return "
-            "'' to keep the user's original summary unchanged."
-        ),
-    }
 
+    Migrated to the prompt registry: ``system`` and ``expected_keys``
+    are loaded from ``prompts/resume_builder_structuring/v1.json``.
+    Pattern A (pure static): the intro, rules block, and rendered
+    contract are pre-baked into the JSON file.
+    """
+    from backend.prompt_registry import get_prompt
+
+    template = get_prompt("resume_builder_structuring")
     user_prompt = "\n\n".join(
         [
             _json_block(
@@ -731,68 +662,11 @@ def build_resume_builder_structuring_prompt(
         ]
     )
 
+    expected_keys = _strict_expected_keys(template)
     return {
-        "system": (
-            "You convert resume-builder intake notes into structured resume "
-            "entries. The user gave you their experience and education as "
-            "free-form prose. Your job is to split that prose into one entry "
-            "per role and one entry per degree, then return the structured "
-            "lists as JSON.\n"
-            "\n"
-            "Rules — read carefully:\n"
-            "- Split on role / degree boundaries: a new entry starts at every "
-            "company name (\"Senior X at Acme\") or transition word (\"prior\", "
-            "\"previously\", \"before that\", \"earlier\"). Multiple degrees on "
-            "one line (\"MS CS Stanford 2017, BTech IIT Madras 2015\") become "
-            "multiple education entries.\n"
-            "- Fact preservation is mandatory. Companies, schools, dates, and "
-            "skill names must come VERBATIM from the user's prose. Do not "
-            "invent employers, schools, dates, technologies, or impact "
-            "numbers the user did not mention.\n"
-            "- Bullet voice is yours. Convert the user's casual phrasing into "
-            "tight, ATS-style impact bullets ('Reduced p99 latency 30% by …', "
-            "'Owned ingestion pipeline for …'). Each bullet should start with "
-            "a strong verb and stay under ~22 words. If the user gave no "
-            "specifics for a role, return an EMPTY bullets list — do NOT "
-            "fabricate impact.\n"
-            "- Title inference is allowed only when context makes it "
-            "unambiguous. \"Senior Backend Engineer at TechCorp 2020-Present, "
-            "prior at FinStart 2017-2020\" → second role's title is "
-            "\"Backend Engineer\" (drop the seniority modifier). When in "
-            "doubt, copy the user's most recent explicit title or leave "
-            "title=\"Relevant Experience\".\n"
-            "- Dates: parse what the user wrote into start/end strings. "
-            "\"2020-Present\" → start='2020', end='Present'. \"(Jan 2023 - "
-            "Jan 2025)\" → start='Jan 2023', end='Jan 2025'. Single year → "
-            "start=year, end=''.\n"
-            "- Education degree vs field: \"BTech CS\" → degree='BTech', "
-            "field_of_study='CS'. \"MS Computer Science\" → degree='MS', "
-            "field_of_study='Computer Science'. Treat the abbreviation alone "
-            "as degree.\n"
-            "- Order most recent first in all three lists.\n"
-            "- Projects: same fact-preservation contract as experience. "
-            "Extract project name, link (any URL the user typed), "
-            "technologies (tech names appearing in the prose), and bullets "
-            "(impact + outcome). Don't invent metrics, GitHub URLs, or "
-            "technologies that aren't in the prose. If projects_notes is "
-            "empty, return projects=[].\n"
-            "- Skill categories: only emit when 8+ skills cluster naturally "
-            "by domain. Every skill that appears in skill_categories MUST "
-            "also appear in the original skills list — don't invent new "
-            "tech. Don't reorder the skill names within a bucket; preserve "
-            "the user's casing ('TensorFlow' not 'tensorflow').\n"
-            "- Summary expansion: emit professional_summary ONLY when the "
-            "user gave you a thin headline (under ~80 chars). Stay third-"
-            "person ATS voice. Pull every concrete claim from the rest of "
-            "the draft (target_role, role titles, technologies the user "
-            "named, schools, dates) — invent NOTHING. If the user's "
-            "summary is already 2+ sentences, return '' to leave it alone.\n"
-            "- If the user's prose is empty for a section, return an empty "
-            "list for that section.\n"
-            + _build_contract(contract)
-        ),
+        "system": template.system,
         "user": user_prompt,
-        "expected_keys": list(contract.keys()),
+        "expected_keys": expected_keys,
     }
 
 
@@ -801,6 +675,15 @@ def build_product_help_assistant_prompt(
     question: str,
     history: Any = None,
 ) -> Dict[str, Any]:
+    """Product-help variant of the in-app assistant.
+
+    Transitively migrated: this wrapper delegates to ``build_assistant_prompt``
+    so it inherits the registry-loaded ``prompts/assistant/v1.json`` system
+    message automatically. There is no separate prompt file because the
+    only difference from the unified assistant is the shape of the user-
+    facing assistant_context dict (``assistant_scope='product_help'`` and
+    nesting the caller-supplied ``app_context`` under ``product_context``).
+    """
     return build_assistant_prompt(
         {
             "assistant_scope": "product_help",
@@ -816,6 +699,14 @@ def build_application_qa_assistant_prompt(
     question: str,
     history: Any = None,
 ) -> Dict[str, Any]:
+    """Application-Q&A variant of the in-app assistant.
+
+    Transitively migrated: this wrapper delegates to ``build_assistant_prompt``
+    so it inherits the registry-loaded ``prompts/assistant/v1.json`` system
+    message automatically. The only call-site difference is the shape of the
+    user-facing assistant_context dict (``assistant_scope='application_qa'``
+    and surfacing the caller-supplied ``workflow_context``).
+    """
     return build_assistant_prompt(
         {
             "assistant_scope": "application_qa",

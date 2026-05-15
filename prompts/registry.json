@@ -2,5 +2,10 @@
     "tailoring": "v1",
     "review": "v1",
     "resume_generation": "v1",
-    "cover_letter": "v1"
+    "cover_letter": "v1",
+    "assistant": "v1",
+    "assistant_text": "v1",
+    "assistant_followup": "v1",
+    "resume_builder": "v1",
+    "resume_builder_structuring": "v1"
 }
