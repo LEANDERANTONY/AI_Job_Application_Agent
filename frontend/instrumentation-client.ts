@@ -48,6 +48,20 @@ function buildIntegrations(consent: "pending" | "accepted" | "declined"): Sentry
   const integrations: SentryIntegrations = [
     Sentry.feedbackIntegration({
       colorScheme: "dark",
+      // Brand the widget + popup to the workspace palette (globals.css):
+      // electric-blue accent (--accent #3064ff) on the darker surface
+      // (--surface-strong) so the trigger button + form match the rest
+      // of the app instead of Sentry's default purple-on-grey.
+      themeDark: {
+        background: "#05070c",
+        foreground: "#f5f8ff",
+        accentBackground: "#3064ff",
+        accentForeground: "#ffffff",
+        successColor: "#7fe0b0",
+        errorColor: "#ff8b8b",
+        boxShadow: "0 16px 48px rgba(0, 0, 0, 0.6)",
+        outline: "2px solid rgba(48, 100, 255, 0.6)",
+      },
       autoInject: true,
       showBranding: false,
       triggerLabel: "Report an issue",
