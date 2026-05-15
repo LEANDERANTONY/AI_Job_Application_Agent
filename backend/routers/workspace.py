@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from backend.observability import capture_event
 from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
 from backend.request_auth import get_optional_auth_tokens
 from backend.services.auth_session_service import (
@@ -639,7 +640,7 @@ def record_workspace_feedback_route(
         )
 
     try:
-        return record_feedback(
+        result = record_feedback(
             user_id=user_id,
             surface=payload.surface,
             rating=payload.rating,
@@ -661,6 +662,21 @@ def record_workspace_feedback_route(
             status_code=502,
             detail="Couldn't record feedback right now. Try again in a moment.",
         ) from error
+
+    # PostHog event — server-side capture so feedback funnels join the
+    # qa/workspace-analysis events that already use the same trace_id.
+    # No comment text in properties (PII-safe by default).
+    capture_event(
+        distinct_id=user_id,
+        event="feedback_submitted",
+        properties={
+            "rating": payload.rating,
+            "surface": payload.surface,
+            "trace_id": payload.trace_id,
+            "has_comment": bool(payload.comment),
+        },
+    )
+    return result
 
 
 @router.get("/quota")

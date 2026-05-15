@@ -1,3 +1,6 @@
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -5,6 +8,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from backend.config import get_backend_settings
+from backend.observability import (
+    initialize_observability,
+    shutdown_observability,
+)
 from backend.rate_limit import limiter, rate_limit_exceeded_handler
 from backend.routers.auth import router as auth_router
 from backend.routers.billing import router as billing_router
@@ -16,9 +23,35 @@ from src.errors import QuotaExceededError
 
 settings = get_backend_settings()
 
+# Initialize Sentry + PostHog BEFORE ``FastAPI()`` so Sentry's ASGI
+# middleware wraps the app at construction time. Both are no-ops when
+# their respective DSN / API key env vars are unset, so the order is
+# safe in environments that haven't wired the integration on yet
+# (local dev, CI, the test suite). See ``backend/observability.py``
+# for the bootstrap details.
+initialize_observability(settings)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # ``yield`` is the boundary: startup happens above (we already
+    # initialized observability at import time, so there's no setup
+    # work to do here), shutdown happens below.
+    try:
+        yield
+    finally:
+        # Flush the PostHog buffer on graceful termination. PostHog also
+        # registers its own atexit handler, but explicit drain via lifespan
+        # ensures buffered events leave the process even when the worker
+        # is killed by a signal that the interpreter atexit chain doesn't
+        # reach (eg. SIGTERM on a container redeploy).
+        shutdown_observability()
+
+
 app = FastAPI(
     title=settings.service_name,
     version=settings.service_version,
+    lifespan=_lifespan,
 )
 
 
@@ -83,6 +116,29 @@ def root():
         "frontend_url": settings.frontend_app_url,
         "health_url": f"{settings.api_prefix}/health",
     }
+
+
+@app.get("/health/sentry-debug")
+def sentry_debug() -> None:
+    """Raise an unhandled exception so Sentry sees the issue end-to-end.
+
+    Used once at deploy time to confirm the DSN, environment, and
+    release tag are wired. The route returns no JSON — Sentry's
+    FastAPI integration catches the raise, ships the event, and
+    FastAPI's default 500 handler returns "Internal Server Error" to
+    the caller. There is intentionally no auth on this route: it must
+    be callable from anywhere with curl. Remove or gate it behind a
+    feature flag if your threat model objects.
+
+    Path is OUTSIDE ``settings.api_prefix`` (no /api/) so it doesn't
+    accidentally appear in the workspace-API surface that auth /
+    middleware paths assume. Matches HelpmateAI's convention exactly.
+    """
+    # ``division by zero`` is the canonical Sentry-tutorial sample;
+    # keeping it deliberately recognizable so anyone reading the issue
+    # title in Sentry knows it's a smoke test, not a real bug.
+    division_by_zero = 1 / 0  # noqa: F841 — intentional crash for Sentry verification
+    return None
 
 
 app.include_router(health_router, prefix=settings.api_prefix)

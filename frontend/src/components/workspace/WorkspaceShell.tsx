@@ -63,6 +63,10 @@ import type {
   WorkspaceJobDescriptionUploadResponse,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
+import {
+  identifyPostHogUser,
+  setPostHogTierGroup,
+} from "@/components/posthog-provider";
 import { humanizeApiError } from "@/lib/humanizeApiError";
 import { buildJobReview } from "@/lib/job-workspace";
 import { CheckIcon, SearchIcon } from "@/components/workspace/icons";
@@ -642,6 +646,25 @@ export function WorkspaceShell() {
     authSession?.app_user.email ||
     "Signed in";
   const accountInitial = accountDisplayName.slice(0, 1).toUpperCase();
+
+  // Tie the PostHog session to the Supabase user id as soon as the
+  // workspace session resolves. ``identify`` is dedupe-safe inside
+  // posthog-js so re-firing on every re-render is harmless. Passing
+  // null on logout explicitly resets the SDK so subsequent anonymous
+  // events don't inherit the prior user's distinct_id.
+  const sessionUserId = authSession?.app_user.id ?? null;
+  const sessionUserEmail = authSession?.app_user.email ?? null;
+  const sessionUserDisplayName = authSession?.app_user.display_name ?? null;
+  const sessionUserTier = authSession?.app_user.plan_tier ?? null;
+  useEffect(() => {
+    identifyPostHogUser(sessionUserId, {
+      email: sessionUserEmail ?? undefined,
+      display_name: sessionUserDisplayName ?? undefined,
+    });
+  }, [sessionUserId, sessionUserEmail, sessionUserDisplayName]);
+  useEffect(() => {
+    setPostHogTierGroup(sessionUserTier);
+  }, [sessionUserTier]);
 
   // ── Effects (preserved verbatim from previous shell) ────────────
   useEffect(() => {

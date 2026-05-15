@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { DM_Sans, Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { CookieConsentBanner } from "@/components/cookie-consent";
+import { PostHogProvider } from "@/components/posthog-provider";
 import "./globals.css";
 
 // Landing-page typography (unchanged from before the redesign).
@@ -50,7 +52,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body>
-        {children}
+        <PostHogProvider>{children}</PostHogProvider>
+        <CookieConsentBanner />
         <Analytics />
       </body>
     </html>

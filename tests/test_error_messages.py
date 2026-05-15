@@ -223,8 +223,12 @@ _BACKEND_ALLOWLIST: set[tuple[str, int]] = {
     # debug a bad payload; there's no internal state in the string.
     # Line drifts each time the feedback / transcribe route grows a
     # new auth-handling branch above this InvalidFeedbackError site.
-    # 617 → 629 → 639 → 650. Update when CI flags a new line number.
-    (_os_for_paths.path.join("backend", "routers", "workspace.py"), 650),
+    # 617 → 629 → 639 → 650 → 651. Update when CI flags a new line
+    # number. Latest drift: observability commit captured the result
+    # variable instead of returning record_feedback() inline so the
+    # capture_event call could fire AFTER the write succeeds; that
+    # added one line above the InvalidFeedbackError branch.
+    (_os_for_paths.path.join("backend", "routers", "workspace.py"), 651),
 }
 
 
