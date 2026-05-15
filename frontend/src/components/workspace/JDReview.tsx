@@ -22,6 +22,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { UploadIcon } from "@/components/workspace/icons";
 import { CollapsibleSection } from "@/components/workspace/CollapsibleSection";
+import { FeedbackButtons } from "@/components/workspace/FeedbackButtons";
 
 // Count-up animation for the big JD metric numbers. Animates from 0
 // to the parsed integer over ~600ms using requestAnimationFrame, then
@@ -383,6 +384,13 @@ export function JDReview({
           >
             {summaryText}
           </p>
+          {/* Online feedback for the JD summary — surfaces the LLM-
+              produced narrative directly to the user so a stale /
+              hallucinated paragraph gets caught fast. */}
+          <FeedbackButtons
+            surface="jd_summary"
+            prompt="Was this summary accurate?"
+          />
         </CollapsibleSection>
       ) : null}
 

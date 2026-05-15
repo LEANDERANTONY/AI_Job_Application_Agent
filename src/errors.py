@@ -15,6 +15,19 @@ class InputValidationError(AppError):
     """Raised when a user input or UI state is invalid for the current action."""
 
 
+class AuthRequiredError(AppError):
+    """Raised when an authenticated context is required but the request
+    arrives without one (missing tokens) or its tokens are expired /
+    invalid.
+
+    Routes translate this to HTTP 401. Keeping it distinct from
+    InputValidationError lets the frontend distinguish "your session
+    expired, please re-auth" from "your payload was malformed" — they
+    have very different user remediations. Previously both paths were
+    collapsed into InputValidationError and surfaced as 400, which
+    blocked the frontend's re-auth flow from triggering."""
+
+
 class AgentExecutionError(AppError):
     """Reserved for future supervised-agent execution failures."""
 

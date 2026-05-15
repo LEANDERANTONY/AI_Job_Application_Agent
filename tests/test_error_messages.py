@@ -209,7 +209,23 @@ def _audit_python_file(path: Path) -> list[dict]:
 # raw str(...) or non-literal detail because the surrounding service
 # raises with a hand-written user-facing string. Each entry is
 # (relative_path, line_number).
-_BACKEND_ALLOWLIST: set[tuple[str, int]] = set()
+#
+# Note: path uses os.sep, matching what `Path.relative_to(REPO_ROOT)`
+# returns on the current platform. On Windows that's backslash.
+import os as _os_for_paths
+
+_BACKEND_ALLOWLIST: set[tuple[str, int]] = {
+    # backend/routers/workspace.py — InvalidFeedbackError is raised in
+    # backend/services/feedback_service.py with three hand-written
+    # user-safe messages ("Unsupported feedback surface: ...",
+    # "Rating must be 'up' or 'down', got ...", "user_id is required
+    # to record feedback."). Surfacing them directly helps the client
+    # debug a bad payload; there's no internal state in the string.
+    # Line drifts each time the feedback / transcribe route grows a
+    # new auth-handling branch above this InvalidFeedbackError site.
+    # 617 → 629 → 639 → 650. Update when CI flags a new line number.
+    (_os_for_paths.path.join("backend", "routers", "workspace.py"), 650),
+}
 
 
 def test_backend_http_exceptions_use_friendly_detail():

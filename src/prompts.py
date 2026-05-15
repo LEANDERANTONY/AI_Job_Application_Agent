@@ -169,6 +169,46 @@ def _build_contract(contract: Dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _strict_expected_keys(template, *, fallback: list[str] | None = None) -> list[str]:
+    """Pull ``metadata.expected_keys`` off a registry-loaded template
+    with strict type checking. Used by every prompt builder that
+    delegates to the registry — keeps the validation logic in one
+    place so a registry mistake fails fast and identically across all
+    builders.
+
+    Three invariants:
+      1. None / missing → fall back to the caller-supplied default
+         (only the tailoring builder uses this — it shipped a hardcoded
+         default before the migration). All other builders pass None
+         which means "no default; missing is an error".
+      2. Non-list → ``TypeError`` (CodeRabbit on PR #3 round 1).
+      3. List with non-string entry → ``TypeError`` (CodeRabbit on
+         PR #3 round 4). The previous ``[str(k) for k in ...]``
+         coerced ``["answer", 1]`` to ``["answer", "1"]``, silently
+         changing the output contract; this raises instead.
+    """
+    raw = template.metadata.get("expected_keys")
+    if raw is None:
+        if fallback is not None:
+            return list(fallback)
+        raise TypeError(
+            f"{template.name} prompt metadata.expected_keys is missing; "
+            "the registry entry must include a list of string keys."
+        )
+    if not isinstance(raw, list):
+        raise TypeError(
+            f"{template.name} prompt metadata.expected_keys must be a list of "
+            f"strings, got {type(raw).__name__!s}."
+        )
+    for index, item in enumerate(raw):
+        if not isinstance(item, str):
+            raise TypeError(
+                f"{template.name} prompt metadata.expected_keys[{index}] must "
+                f"be a string, got {type(item).__name__!s} ({item!r})."
+            )
+    return list(raw)
+
+
 def build_tailoring_agent_prompt(
     candidate_profile: CandidateProfile,
     job_description: JobDescription,
@@ -177,19 +217,23 @@ def build_tailoring_agent_prompt(
 ) -> Dict[str, Any]:
     """Build the TailoringAgent prompt.
 
+    Migrated to the prompt registry: ``system`` is loaded from
+    ``prompts/tailoring/v1.json`` via ``backend.prompt_registry``.
+    The user prompt + budgeting glue stays in Python — that logic
+    is too procedural to express cleanly in JSON.
+
     Note: a previous version of this prompt also included the
     FitAgent's narrated 'top matches / key gaps' as an extra context
     block. That agent has been removed — TailoringAgent now reads the
-    structured FitAnalysis directly (matched_hard_skills, gaps,
-    recommendations etc. are all there in structured form). One
-    fewer LLM call per workspace analysis with no quality regression.
+    structured FitAnalysis directly. One fewer LLM call per workspace
+    analysis with no quality regression.
     """
-    contract = {
-        "professional_summary": "3-4 sentence tailored summary using only grounded claims",
-        "rewritten_bullets": "array of 3-5 tailored bullet ideas",
-        "highlighted_skills": "array of 4-8 skills to foreground",
-        "cover_letter_themes": "array of 2-4 cover-letter talking points",
-    }
+    # Local import: keeps src/prompts.py importable without the
+    # backend package on the path (e.g. some unit tests that exercise
+    # the deterministic builders directly).
+    from backend.prompt_registry import get_prompt
+
+    template = get_prompt("tailoring")
     sections = [
         ("Candidate Profile", candidate_profile, 2200),
         ("Job Description", job_description, 1800),
@@ -197,14 +241,26 @@ def build_tailoring_agent_prompt(
         ("Deterministic Tailored Draft", tailored_draft, 1800),
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
+    # Validate ``expected_keys`` is a list, not a string. A
+    # misconfigured registry entry that put the keys in as a string
+    # (``"professional_summary,rewritten_bullets,..."``) would silently
+    # ``list(...)`` into a character array (``["p","r","o",...]``) and
+    # break downstream response parsing without a clear error. The
+    # explicit type check raises a TypeError instead. CodeRabbit
+    # finding on PR #3.
+    expected_keys = _strict_expected_keys(
+        template,
+        fallback=[
+            "professional_summary",
+            "rewritten_bullets",
+            "highlighted_skills",
+            "cover_letter_themes",
+        ],
+    )
     return {
-        "system": (
-            "You are the Tailoring Agent. Improve the deterministic draft without inventing facts. "
-            "If evidence is weak, write conservatively and note transferable alignment instead of exaggerating. "
-            + _build_contract(contract)
-        ),
+        "system": template.system,
         "user": user_prompt,
-        "expected_keys": list(contract.keys()),
+        "expected_keys": expected_keys,
         "metadata": metadata,
     }
 
@@ -216,14 +272,12 @@ def build_review_agent_prompt(
     tailored_draft: TailoredResumeDraft,
     tailoring_output: TailoringAgentOutput,
 ) -> Dict[str, Any]:
-    contract = {
-        "approved": "boolean flag that must be true when the final outputs are safe to use after applying any review corrections; false only when unresolved issues still remain after review",
-        "grounding_issues": "array of 0-4 unsupported or weakly supported claims found in the incoming tailoring draft before review corrections",
-        "unresolved_issues": "array of 0-4 issues that still remain after review corrections are applied; return an empty array when the corrected outputs are safe to use",
-        "revision_requests": "array of 0-4 concise correction notes or fixes that were needed",
-        "final_notes": "array of 1-3 final quality notes",
-        "corrected_tailoring": "null when no tailoring changes are needed; otherwise an object matching the Tailoring Agent contract after review corrections are applied",
-    }
+    """Migrated to the prompt registry: system + expected_keys are
+    loaded from ``prompts/review/v1.json``; only the budgeted user
+    prompt + per-section truncation metadata stay in Python."""
+    from backend.prompt_registry import get_prompt
+
+    template = get_prompt("review")
     sections = [
         ("Candidate Profile", candidate_profile, 2000),
         ("Job Description", job_description, 1600),
@@ -232,16 +286,11 @@ def build_review_agent_prompt(
         ("Tailoring Agent Output", tailoring_output, 1400),
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
+    expected_keys = _strict_expected_keys(template)
     return {
-        "system": (
-            "You are the Review Agent. Your job is to reject embellishment and unsupported claims, then directly repair the tailoring output when fixes are straightforward. "
-            "Approve when the final corrected wording stays grounded in the source profile and deterministic analysis, even if the incoming draft had issues that you fixed. "
-            "Set approved to false only when unresolved issues remain after your corrections. "
-            "Return null for corrected_tailoring when the current output is already acceptable or when no change is needed. "
-            + _build_contract(contract)
-        ),
+        "system": template.system,
         "user": user_prompt,
-        "expected_keys": list(contract.keys()),
+        "expected_keys": expected_keys,
         "metadata": metadata,
     }
 
@@ -254,13 +303,11 @@ def build_resume_generation_agent_prompt(
     tailoring_output: TailoringAgentOutput,
     review_output: ReviewAgentOutput = None,
 ) -> Dict[str, Any]:
-    contract = {
-        "professional_summary": "2-4 sentence final summary for the tailored resume using only grounded claims",
-        "highlighted_skills": "array of 4-8 skills to surface in the tailored resume",
-        "experience_bullets": "array of 3-6 grounded experience bullets for the tailored resume",
-        "section_order": "array describing preferred section order for the resume",
-        "template_hint": "set this to classic_ats",
-    }
+    """Migrated to the prompt registry: system + expected_keys are
+    loaded from ``prompts/resume_generation/v1.json``."""
+    from backend.prompt_registry import get_prompt
+
+    template = get_prompt("resume_generation")
     sections = [
         ("Candidate Profile", candidate_profile, 1800),
         ("Job Description", job_description, 1500),
@@ -269,16 +316,11 @@ def build_resume_generation_agent_prompt(
         ("Tailoring Agent Output", tailoring_output, 1400),
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
+    expected_keys = _strict_expected_keys(template)
     return {
-        "system": (
-            "You are the Resume Generation Agent. Produce the final tailored resume content from grounded upstream analysis. "
-            "You may rewrite, reorder, and emphasize, but you must not invent employers, achievements, dates, metrics, or unsupported skills. "
-            "Write in standard resume style: no first-person or third-person pronouns, no full-name self-reference inside the summary or bullets, and no cover-letter phrasing. "
-            "Keep the output ATS-safe and recruiter-readable. "
-            + _build_contract(contract)
-        ),
+        "system": template.system,
         "user": user_prompt,
-        "expected_keys": list(contract.keys()),
+        "expected_keys": expected_keys,
         "metadata": metadata,
     }
 
@@ -292,14 +334,11 @@ def build_cover_letter_agent_prompt(
     review_output: ReviewAgentOutput = None,
     resume_generation_output=None,
 ) -> Dict[str, Any]:
-    contract = {
-        "greeting": "salutation such as Dear Hiring Team",
-        "opening_paragraph": "2-4 sentence opening paragraph grounded in the approved workflow outputs",
-        "body_paragraphs": "array of 1-3 grounded body paragraphs connecting evidence to the role",
-        "closing_paragraph": "1-2 sentence closing paragraph with grounded enthusiasm and next-step language",
-        "signoff": "closing signoff such as Sincerely",
-        "signature_name": "candidate name for the signature line",
-    }
+    """Migrated to the prompt registry: system + expected_keys are
+    loaded from ``prompts/cover_letter/v1.json``."""
+    from backend.prompt_registry import get_prompt
+
+    template = get_prompt("cover_letter")
     sections = [
         ("Candidate Profile", candidate_profile, 1800),
         ("Job Description", job_description, 1500),
@@ -312,18 +351,11 @@ def build_cover_letter_agent_prompt(
     if resume_generation_output:
         sections.append(("Resume Generation Output", resume_generation_output, 1200))
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
+    expected_keys = _strict_expected_keys(template)
     return {
-        "system": (
-            "You are the Cover Letter Agent. Write a recruiter-facing cover letter only after the review stage has approved or corrected the upstream outputs. "
-            "Write entirely in first person from the candidate's perspective. "
-            "Do not describe the candidate as he, she, him, his, her, or by full name anywhere in the letter body; reserve the candidate name for the signature line only. "
-            "Use the approved tailoring, review, and resume-generation context as the source of truth. "
-            "Do not invent employers, metrics, projects, technologies, or direct experience that are not supported by the provided inputs. "
-            "Keep the result specific to the role, grounded, and ready for packaging into the final artifact. "
-            + _build_contract(contract)
-        ),
+        "system": template.system,
         "user": user_prompt,
-        "expected_keys": list(contract.keys()),
+        "expected_keys": expected_keys,
         "metadata": metadata,
     }
 

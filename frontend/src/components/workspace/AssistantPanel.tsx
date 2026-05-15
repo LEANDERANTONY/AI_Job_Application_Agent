@@ -23,11 +23,18 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
+// Local notice surface for voice-input errors. The assistant panel
+// doesn't have an existing notice slot we can borrow, so we render a
+// short-lived inline message under the form. Cleared on the next
+// successful transcription, the next submit, or after 6 seconds.
+
 import {
   CloseIcon,
   SendIcon,
   SparkleIcon,
 } from "@/components/workspace/icons";
+import { FeedbackButtons } from "@/components/workspace/FeedbackButtons";
+import { VoiceInputButton } from "@/components/workspace/VoiceInputButton";
 import type { WorkspaceAssistantResponse } from "@/lib/api-types";
 
 export type AssistantTurn = {
@@ -93,7 +100,17 @@ export function AssistantPanel({
   onForceOpenHandled,
 }: AssistantPanelProps) {
   const [open, setOpen] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-clear the voice error after 6s so a stale message doesn't
+  // sit indefinitely under the input. Re-rendering with a fresh
+  // setTimeout is safer than relying on the user to dismiss it.
+  useEffect(() => {
+    if (!voiceError) return undefined;
+    const id = window.setTimeout(() => setVoiceError(null), 6000);
+    return () => window.clearTimeout(id);
+  }, [voiceError]);
 
   useEffect(() => {
     if (forceOpen) {
@@ -205,6 +222,13 @@ export function AssistantPanel({
                     <div className="rd-bubble rd-bubble-assistant">
                       {turn.response.answer}
                     </div>
+                    {/* Per-turn feedback so we can correlate satisfaction
+                        with the assistant scope (product help vs
+                        workspace QA) in aggregate. */}
+                    <FeedbackButtons
+                      surface="assistant_turn"
+                      prompt="Was this answer helpful?"
+                    />
                   </div>
                 ))}
                 {streamingTurn ? (
@@ -253,6 +277,22 @@ export function AssistantPanel({
             )}
           </div>
 
+          {voiceError ? (
+            <div
+              role="status"
+              style={{
+                margin: "0 12px 6px",
+                padding: "6px 10px",
+                fontSize: 12,
+                color: "#fbbf24",
+                background: "rgba(251, 191, 36, 0.08)",
+                border: "1px solid rgba(251, 191, 36, 0.3)",
+                borderRadius: 6,
+              }}
+            >
+              {voiceError}
+            </div>
+          ) : null}
           <form className="rd-assistant-form" onSubmit={handleSubmit}>
             <textarea
               className="rd-assistant-input"
@@ -265,6 +305,20 @@ export function AssistantPanel({
                   : "Ask how to use the workspace, what each step does…"
               }
               value={question}
+            />
+            {/* Voice input — secondary surface (the resume builder is
+                the flagship). Speaks a question into the input then
+                lets the user review + edit before submitting. */}
+            <VoiceInputButton
+              disabled={sending}
+              onTranscript={(text) => {
+                setVoiceError(null);
+                const trimmed = (question ?? "").trim();
+                onQuestionChange(trimmed ? `${trimmed} ${text}` : text);
+              }}
+              onError={(message) => setVoiceError(message)}
+              className="rd-assistant-iconbtn"
+              label=""
             />
             <button
               aria-label="Send"

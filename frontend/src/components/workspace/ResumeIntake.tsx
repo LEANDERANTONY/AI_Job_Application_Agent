@@ -30,6 +30,8 @@ import {
   UploadIcon,
 } from "@/components/workspace/icons";
 import { CollapsibleSection } from "@/components/workspace/CollapsibleSection";
+import { FeedbackButtons } from "@/components/workspace/FeedbackButtons";
+import { VoiceInputButton } from "@/components/workspace/VoiceInputButton";
 
 // Auto-grow textarea — sizes itself to fit the current value so the
 // draft profile no longer crams long answers into a tiny scroll-stuck
@@ -163,6 +165,14 @@ export type ResumeIntakeProps = {
   onBuilderGenerate: () => void;
   onBuilderCommit: () => void;
   onBuilderDraftSave: () => void;
+  /**
+   * Surface a voice-input error (mic permission denied, transcription
+   * failed, browser not supported). Parent renders it as a notice or
+   * toast. Defaults to a no-op when omitted so the prop stays
+   * backwards-compatible with parent components that haven't been
+   * updated yet.
+   */
+  onBuilderVoiceError?: (message: string) => void;
 };
 
 export function ResumeIntake({
@@ -199,6 +209,7 @@ export function ResumeIntake({
   onBuilderGenerate,
   onBuilderCommit,
   onBuilderDraftSave,
+  onBuilderVoiceError,
 }: ResumeIntakeProps) {
   function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
@@ -596,10 +607,17 @@ export function ResumeIntake({
                       onChange={(event) =>
                         onBuilderAnswerChange(event.target.value)
                       }
-                      placeholder="Reply naturally — the assistant will pull the right pieces into your resume."
+                      placeholder="Reply naturally — the assistant will pull the right pieces into your resume. Or use voice to speak your answer."
                       value={builderAnswer}
                     />
-                    <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <button
                         className="rd-btn rd-btn-primary rd-btn-sm"
                         disabled={builderLoading}
@@ -608,6 +626,25 @@ export function ResumeIntake({
                       >
                         {builderLoading ? "Saving…" : "Continue"}
                       </button>
+                      {/* Voice input — flagship surface for this
+                          feature. Speaking a long-form answer is much
+                          easier than typing one, so we render the mic
+                          right next to the Continue CTA. The transcript
+                          is appended to the textarea so the user sees
+                          it before submitting (review + edit flow). */}
+                      <VoiceInputButton
+                        disabled={builderLoading}
+                        onTranscript={(text) => {
+                          const trimmed = (builderAnswer ?? "").trim();
+                          const joined = trimmed
+                            ? `${trimmed} ${text}`
+                            : text;
+                          onBuilderAnswerChange(joined);
+                        }}
+                        onError={(message) =>
+                          onBuilderVoiceError?.(message)
+                        }
+                      />
                     </div>
                   </>
                 ) : null}
@@ -901,9 +938,20 @@ export function ResumeIntake({
                 </div>
 
                 {builderSession.generated_resume_markdown ? (
-                  <pre className="b-builder-preview">
-                    {builderSession.generated_resume_markdown}
-                  </pre>
+                  <>
+                    <pre className="b-builder-preview">
+                      {builderSession.generated_resume_markdown}
+                    </pre>
+                    {/* Online feedback for the resume-builder session.
+                        Rated AFTER the user sees the generated markdown
+                        so the rating reflects the full intake →
+                        structured-resume quality, not just a single
+                        chat turn. */}
+                    <FeedbackButtons
+                      surface="resume_builder_session"
+                      prompt="Did the generated resume capture your story?"
+                    />
+                  </>
                 ) : (
                   <div
                     className="b-twoup-empty"

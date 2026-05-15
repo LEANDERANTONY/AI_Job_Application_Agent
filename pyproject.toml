@@ -17,6 +17,10 @@ dependencies = [
     "reportlab==3.6.12",
     "python-dotenv==1.0.1",
     "slowapi==0.1.9",
+    # Required by FastAPI for multipart/form-data on /workspace/transcribe
+    # and /workspace/feedback. Without it, those routes throw at import
+    # time the moment a TestClient tries to POST form data.
+    "python-multipart==0.0.20",
 ]
 
 [dependency-groups]
