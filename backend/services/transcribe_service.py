@@ -239,7 +239,7 @@ def transcribe_audio(
     # translate to a clean 401 — distinguishes "your session expired"
     # from "your payload was malformed" and lets the frontend's
     # re-auth flow trigger correctly. Codex P2 + CodeRabbit Major on
-    # PR #3.
+    # PR #3 round 1.
     if not (access_token and refresh_token):
         raise AuthRequiredError(
             "Sign in with Google before transcribing voice input."
@@ -250,9 +250,18 @@ def transcribe_audio(
             access_token=access_token,
             refresh_token=refresh_token,
         )
-    except AppError:
-        # Token validation failed — surface as auth required, not
-        # generic validation.
+    except InputValidationError:
+        # InputValidationError is the contract resolve_authenticated_context
+        # uses specifically for missing/invalid credentials — translate
+        # to AuthRequiredError so the route returns 401. Codex P2 on PR #3
+        # round 3 caught that the original ``except AppError`` was too
+        # broad: other AppError subclasses (BackendIntegrationError,
+        # AgentExecutionError) bubble up from restore_session /
+        # _load_daily_quota and represent backend-side problems, not
+        # user credential issues. Those should NOT become 401s — they
+        # bubble to the route's generic AppError handler (→ 502) so
+        # the user sees "service temporarily unavailable" instead of
+        # a misleading "please sign in again" prompt.
         raise AuthRequiredError(
             "Your session has expired. Sign in again before transcribing."
         )
