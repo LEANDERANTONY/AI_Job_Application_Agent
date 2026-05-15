@@ -63,10 +63,14 @@ Step rail navigation: Resume / Job Search / Job Detail are independently accessi
 Owns the FastAPI API surface:
 
 - `backend/app.py` bootstraps the API
-- `backend/routers/health.py` exposes deployment smoke signals
+- `backend/observability.py` is the single observability bootstrap, imported before `FastAPI()` is constructed so the Sentry ASGI middleware wraps the app at startup; no-op when the Sentry DSN / PostHog key are empty; see the Observability And Telemetry Layer section and [ADR-024](adr/ADR-024-observability-stack-sentry-and-posthog.md)
+- `backend/nightly_eval.py` is the manual-only LLM quality-regression CLI; exists + tested but deliberately not on a production cron at pre-revenue stage; see [ADR-026](adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md)
+- `backend/routers/health.py` exposes deployment smoke signals (also the Sentry Uptime monitor target)
 - `backend/routers/jobs.py` exposes the cache-backed search, the `?live=true` escape-hatch fan-out, direct job-resolution endpoints, and the bearer-protected `POST /admin/refresh-cache` endpoint that drives the cached-jobs refresh worker
 - `backend/routers/auth.py` owns auth/session endpoints
-- `backend/routers/workspace.py` owns resume, JD, workflow, assistant (both non-streaming and SSE), persistence, preview, export, resume-builder chat, and resume-builder export endpoints
+- `backend/routers/workspace.py` owns resume, JD, workflow, assistant (both non-streaming and SSE), persistence, preview, export, resume-builder chat, resume-builder export, voice transcription (`/workspace/transcribe`), and artifact feedback (`/workspace/feedback`) endpoints
+- `backend/routers/billing.py` owns the HMAC-verified `POST /webhooks/lemonsqueezy` subscription-event endpoint + the customer-portal redirect; the signature-verification + event-routing logic lives in `backend/webhooks/lemonsqueezy.py`
+- `backend/prompt_registry.py` loads every LLM prompt from `prompts/<name>/<version>.json` — all 11 builders migrated off Python f-string concats; see [ADR-018](adr/ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md) family + the prompt-registry DEVLOG entries
 - `backend/services/job_cache_service.py` runs the per-source refresh + smart-cleanup worker invoked by the admin endpoint
 
 ### `src/services/`
@@ -213,6 +217,34 @@ Each `resume_builder_sessions` row stores one in-progress conversational resume-
 
 Each `cached_jobs` row holds one upstream posting keyed on `(source, job_id)`. The table has GENERATED STORED columns (`work_mode`, `employment_type_norm`) backing the dropdown filters and `removed_at` tombstones for upstream-closed jobs the user has bookmarked. A `pg_cron` + `pg_net` schedule (`cached_jobs_refresh_4h`) POSTs to `/admin/refresh-cache` every 4 hours, six times a day (see `docs/sql/job_cache_cron_setup.sql` for the template — production runs `0 */4 * * *`); ranked search reads from this table via the `search_cached_jobs_ranked` RPC, per [ADR-014](adr/ADR-014-postgres-rpc-for-ranked-search.md).
 
+`aijobagent_run_traces` is an append-only cost-attribution table — one row per successful LLM call (`user_id`, `model`, `task`, `prompt_tokens`, `completion_tokens`, `cost_usd`, `created_at`). Writes are best-effort: a missing table or a write error never propagates to the user-facing path. It is the canonical answer to "what is OpenAI spend doing", separate from the Sentry/PostHog telemetry surface.
+
+`aijobagent_feedback` holds one row per artifact thumbs-up/down (`user_id`, `workspace_id`, `artifact_kind`, `rating`, `comment`, `created_at`), RLS-scoped to the owning user; admin reads go through the service role.
+
+## Observability And Telemetry Layer
+
+Wired Day 46. The compliance posture is enforced at the SDK-init level, not as legalese on a privacy page — see [ADR-024](adr/ADR-024-observability-stack-sentry-and-posthog.md) and [ADR-025](adr/ADR-025-eu-cookie-consent-banner-and-gdpr-analytics-gating.md).
+
+Two vendors, one bootstrap path:
+
+- **Sentry** — error tracking, performance traces, AI Agents Monitoring (`OpenAIIntegration(include_prompts=False)` — token/model/latency spans without prompt-body PII), Logs, and session replay (errors-only). `backend/observability.py` is the only place the SDK is touched on the backend; it's imported before `FastAPI()` is constructed so the ASGI middleware wraps the app at startup. The `before_send` hook drops intentional `HTTPException` 4xx flow-control + the "not configured / temporarily unavailable" 5xx guards so the issue feed stays focused on genuine bugs. A `_running_under_pytest()` check skips Sentry entirely during the test suite. Frontend Sentry is wired via `instrumentation-client.ts` / `instrumentation.ts` / `sentry.server.config.ts` / `sentry.edge.config.ts`; `next.config.ts` uploads source maps through `withSentryConfig`.
+- **PostHog** — product analytics, session replay, identify/group cohorts. The free Developer plan caps at one project per org, so the project is shared with the developer's other product; every event carries a `product: "jobagent"` super-property (frontend `posthog.register`, backend `capture_event` merge) so dashboards slice cleanly with `where properties.product = 'jobagent'`. Exception capture is off — Sentry is the source of truth for errors.
+
+Both clients are no-ops when their DSN / key is empty, so dev, CI, and the test suite run without observability wiring or network calls.
+
+### Consent gating
+
+The single source of truth is `localStorage["jobagent-cookie-consent"]`, set by the custom in-house cookie banner (`frontend/src/components/cookie-consent.tsx`), three states: `pending` / `accepted` / `declined`. The split:
+
+- **Always-on** (legitimate interest, GDPR Art. 6(1)(f) — crash reporting is operationally necessary): Sentry error tracking + traces + Feedback widget. Load regardless of banner state.
+- **Consent-gated** (explicit opt-in required, ePrivacy Art. 5(3)): PostHog product analytics + PostHog session replay + Sentry Session Replay. Load only when consent `=== "accepted"`.
+
+A `jobagent-cookie-consent-change` custom event re-evaluates the gated integrations on flip without a page reload (`Sentry.addIntegration(...)` hot-adds Replay; PostHog `opt_in_capturing()` / `opt_out_capturing()`). The banner is in-bundle (no third-party JS loads before consent) and scoped under the `.ja-cookie-banner` CSS class.
+
+### Uptime
+
+A Sentry Uptime monitor pings `https://api.job-application-copilot.xyz/health` every 5 minutes from the EU region. Configured in the Sentry dashboard rather than in code — a fresh-project rebuild must recreate it manually.
+
 ## Testing Model
 
 The repo includes focused tests for:
@@ -236,8 +268,14 @@ The repo includes focused tests for:
 - assistant SSE streaming endpoint
 - OpenAI application-level retry contract (`tests/test_openai_app_retry.py`): retries on the narrow allow-list `APIConnectionError` / `APITimeoutError` / `InternalServerError`, does NOT retry on 4xx / auth / persistent rate-limit, returns success after retry, raises on double-failure
 - per-agent orchestrator behavior (`tests/test_orchestrator.py`): per-agent retry recovers a flaky agent, per-agent fallback isolates a single failing agent (downstream agents still use LLM), `result.mode` reconciles to `deterministic_fallback` when no agent succeeded with LLM
+- tier enforcement (`tests/backend/test_tiers.py`, `test_quota.py`, `test_workspace_quota_enforcement.py`, and siblings): atomic check-and-increment under thread races, refund-on-failure, lifetime-vs-monthly period switching, P0001 → 429 translation, Business unbounded-retention skip
+- Lemon Squeezy webhook (`tests/backend/test_lemonsqueezy_webhook.py`): HMAC signature verification, event routing, unknown-variant silent-ack
+- prompt registry byte-identity (`tests/test_prompts.py`): every one of the 11 migrated JSON templates is asserted bit-exact against the original Python concat
+- voice transcription + artifact feedback backend routes (`tests/backend/test_transcribe.py`, `test_feedback.py`): multipart handling, 60s overrun rejection, RLS-scoped feedback writes
 
-Tier-2 / Tier-3 quality runners under `tests/quality/` evaluate LLM-driven components (resume parser, JD parser, renderer fidelity, skill canonicalization, tailoring, review, resume generation, cover letter, resume builder, assistant, end-to-end orchestrator) on fixture sets with weighted scorecards and a `--include-llm` cost gate.
+The `_running_under_pytest()` guard means Sentry never initializes during the test run, so the observability wiring adds zero test-suite coupling beyond a small leaky-detail-allowlist line-offset in `tests/test_error_messages.py`.
+
+Tier-2 / Tier-3 quality runners under `tests/quality/` evaluate LLM-driven components (resume parser, JD parser, renderer fidelity, skill canonicalization, tailoring, review, resume generation, cover letter, resume builder, assistant, end-to-end orchestrator) on fixture sets with weighted scorecards and a `--include-llm` cost gate. `backend/nightly_eval.py` wraps these into a single unattended batch with regression-threshold checking — manual-only at pre-revenue stage, see [ADR-026](adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md).
 
 ## Current Constraints
 

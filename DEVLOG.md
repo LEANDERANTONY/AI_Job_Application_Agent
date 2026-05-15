@@ -721,3 +721,118 @@ Branch is local; commits not yet pushed. Going live needs three things — the t
 ### ADRs added
 
 - [ADR-023: Lemon Squeezy as Merchant of Record for v1](docs/adr/ADR-023-lemon-squeezy-merchant-of-record-for-v1.md)
+
+## Day 44: Schema-Strict Outputs, Nightly Eval CLI, Cost Tracking, And Codex Review Fixes
+
+A pre-PR batch of 10 commits landed straight to `main` on 2026-05-15 to harden the LLM-output contract layer, wire a production-grade nightly quality eval, attribute per-call OpenAI cost to a persistent table, and resolve the P1/P2 findings from Codex's review of the Day 42-43 chain.
+
+### Schema-strict LLM outputs
+
+- **Pydantic output models for all 9 LLM-producing agents** (`ce92097`) — every agent that produces structured output now defines a `*Output` Pydantic model in `src/schemas.py`. The 9 agents: resume parser, JD parser, JD summary, tailoring, review, resume generation, cover letter, resume builder, assistant grounded-mode. Schemas are reused as the JSON-mode contract argument and as the parsed return type.
+- **`run_structured_prompt` + 6 agent migrations** (`4cad3d7`) — new helper in `src/openai_service.py` that wraps `run_json_prompt` with a typed parse step. Returns `(parsed_pydantic_object, usage_metadata)` instead of a free-form dict. Six agents migrated: resume parser, JD parser, JD summary, tailoring, review, resume generation. The other 3 (cover letter, resume builder, assistant) already had their own custom parse paths and stayed on `run_json_prompt`.
+
+### Nightly eval CLI
+
+- **`backend/nightly_eval.py` CLI + ops doc cron entry** (`1f2aeb6`) — single CLI wraps the 5 quality runners (`resume_parser`, `jd_parser`, `tailoring`, `review`, `orchestrator_e2e`) with regression-threshold checking against a baseline JSON. Default deterministic-only mode is free; `--include-llm` opts into the ~$0.25-per-run full-LLM path. Documented under `docs/operations.md` with both a free deterministic cron and a paid LLM cron. The `--include-llm` flag is **not** added to the production crontab — that mode is reserved for deliberate ad-hoc operator runs after observed drift, because $0.25 × 30 nights = $7.50/mo recurring cost with no users yet to absorb it. See [ADR-026](docs/adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md).
+- **Runner signature fixup** (`9e83cf8`) — `openai_service.run_text_stream` had a kwarg-only `_progress_callback` that didn't match the position of the call site after the schema-strict refactor. Two-line patch to the runner shim.
+
+### Cost tracking
+
+- **`aijobagent_run_traces` table + `record_trace` helper** (`043304b`) — append-only table holds one row per LLM call: `user_id`, `model`, `task`, `prompt_tokens`, `completion_tokens`, `cost_usd`, `created_at`. Best-effort writes — runtime tolerates a missing table or a write-path error so the user-facing path never blocks on observability.
+- **`openai_service` cost computation + trace integration** (`3977af6`) — every `responses.create` in the codebase now computes a USD cost from `_MODEL_PRICING_USD_PER_MILLION` and emits a `record_trace(...)` call. Pricing map covers GPT-5-mini, GPT-5.4-mini, GPT-5.5, transcribe-mini. When OpenAI changes a price, both the map and the README pricing reference need updating.
+
+### Codex review fixes
+
+Three security/correctness P1+P2 findings from the Codex review on the Day 42-43 chain:
+
+1. **Free saved_workspace upsert allowed** (`48a6f6b`) — Codex P1. The Day 42 retention sweeper was correctly Free-7d-aware, but `/workspace/save` was returning 429 on the very first save for a Free user because the persistent-row-count check ran before the retention sweep had cleaned the prior row. Reordered: sweep first, then check count.
+2. **Access cookie lifetime aligned to refresh cookie** (`5494630`) — Codex P1. The access cookie was being set with a shorter `Max-Age` than the refresh cookie, so on browsers with strict cookie pruning the access cookie could die before the refresh cookie did, breaking the refresh flow. Aligned to the same TTL.
+3. **Removed cross-user PKCE flow fallback** (`b8fb594`) — Codex P2. A defensive fallback in the PKCE flow was searching for *any* matching code_verifier when the per-user one failed lookup. That was always paranoid and Codex flagged it as a privilege-escalation footgun — removed.
+
+Also: **`f23b273` Fix LS hosted checkout URL path** — the LS checkout URL builder was emitting `/buy/<variant>` but the actual LS path is `/checkout/buy/<variant>`. One-line fix; caught in manual smoke before any user hit it.
+
+### Deploy status
+
+All 10 commits merged + deployed end-to-end. Nightly eval cron is documented but **intentionally not installed** in production yet (see [ADR-026](docs/adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md)).
+
+### ADRs added
+
+- [ADR-026: Manual-only nightly eval at pre-revenue stage](docs/adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md)
+
+## Day 45: UX Pack Wave 2 — Voice, Feedback, And The Prompt Registry Migration
+
+Two PRs (#3 + #4) shipped on 2026-05-15, completing the second wave of workspace UX polish kicked off at Day 41. The headline additions are voice input on every text field, a thumbs-up/down + free-form feedback widget on every workflow artifact, and a full migration of every LLM prompt builder into a versioned JSON registry.
+
+### PR #3: voice + feedback + first 4 prompt builders (`e8cd3e5`)
+
+28 files changed, 3786 / 72 (insert/delete) lines. Six review rounds, 597 / 597 tests pass.
+
+- **Voice input** — `POST /workspace/transcribe` proxies a multipart audio upload through OpenAI's `gpt-5-mini-transcribe`, returns text only. The `VoiceInputButton` React component records via the browser's `MediaRecorder` API (16kHz mono webm/opus by default), shows a recording indicator + live level meter, and pipes the transcribed text back into whatever input field it's mounted on. Wired into the JD textarea, the resume-builder chat input, and the assistant input. Caps at 60 seconds per recording (frontend-enforced + backend-rejected on overrun).
+- **Artifact feedback** — `POST /workspace/feedback` and `aijobagent_feedback` Supabase table (`user_id`, `workspace_id`, `artifact_kind`, `rating`, `comment`, `created_at`). The `FeedbackButtons` component renders thumbs-up/thumbs-down next to every tailored-resume / cover-letter / assistant-reply artifact. Thumbs-down opens an optional comment textarea. RLS is `user_id = auth.uid()` on both read and write; admin queries go through service-role.
+- **Prompt registry (4 of 10 builders migrated)** — `backend/prompt_registry.py` introduces `load_prompt(name, version="v1") -> PromptDefinition` reading from `prompts/<name>/<version>.json`. Each JSON file holds `template`, `variables` (Pydantic schema for the inputs), `description`, and optional `examples`. Four builders migrated in this PR: `tailoring`, `review`, `resume_generation`, `cover_letter`. Each migration ships with a byte-identity test in `tests/test_prompts.py` that asserts the registry-built string is bit-exact to the original Python concat.
+
+### PR #4: prompt registry batch 2 — remaining 7 builders (`17afdfb`)
+
+Migrated the final 7 builders: `assistant`, `assistant_followup`, `assistant_text`, `resume_builder`, `resume_builder_structuring`, and the two parser prompts. After this PR every LLM call in the codebase loads its prompt from `prompts/<name>/v1.json`. `src/prompts.py` is now a thin pass-through registering each name with the registry; the actual templates live in `prompts/`.
+
+14 byte-identity tests in `tests/test_prompts.py` guard each migrated JSON against drift from the original Python concat. CodeRabbit had no actionable comments on the migration PR.
+
+### Why the registry
+
+The registry pays for itself in three places, all imminent:
+
+1. **A/B testing prompts.** With the prompt being a JSON file rather than a Python string concat, swapping `v1` → `v2` is a config change. The current product can already pick the version via env (`AIJOBAGENT_PROMPT_VERSION_TAILORING=v2`), even though no v2's are in flight yet.
+2. **Versioning across model upgrades.** When the codebase moves from GPT-5.4-mini to GPT-6 (or any other model with different prompt-engineering best-practices), the old `v1.json` stays pinned to the old model while `v2.json` ships for the new one. No big-bang flip.
+3. **Prompt review by non-coders.** A `.json` template is reviewable by anyone who can read JSON — the prompts no longer hide inside `src/prompts.py` as f-strings nested in helper functions.
+
+### Hotfix: `python-multipart` + CI lockfile guard
+
+The `/workspace/transcribe` route relies on FastAPI's `File(...)` parameter, which needs `python-multipart` as a runtime dep. The PR #3 merge missed adding it to `pyproject.toml`, the test suite passed (FastAPI's `TestClient` has its own multipart handling), and the production deploy crashed on the first multipart request.
+
+- **Hotfix: regenerate uv.lock to include python-multipart** (`618bf58`) — added the missing dep and regenerated `uv.lock`.
+- **CI: fail fast when uv.lock drifts from pyproject.toml** (`05e987e`) — added a `uv lock --locked` check to the CI workflow. If `uv.lock` doesn't match `pyproject.toml`, CI fails before deploy. Catches this class of mistake before it reaches production.
+
+### Deploy status
+
+Both PRs merged + deployed. 597 → 611 backend tests; frontend lint green.
+
+## Day 46: Observability Stack — Sentry + PostHog + EU Cookie Consent Banner
+
+PR #5 (`4e29b5a`) — 22 files changed, 4791 / 69 lines. Mirrors the HelpmateAI observability stack (which landed the same day for the sibling product). One Sentry org `leander-antony-a` now owns four projects: `helpmate-backend`, `helpmate-frontend`, `jobagent-backend`, `jobagent-frontend`. PostHog stays on the Developer free plan with a single project shared across both products, distinguished by a `product: "jobagent"` super-property on every event.
+
+### Sentry: jobagent-backend + jobagent-frontend
+
+- **`backend/observability.py`** is the single bootstrap module called from `backend/app.py` before `FastAPI()` is constructed (so the Sentry ASGI middleware wraps the app at startup, not as a late add-on). Backend integrations: `FastApiIntegration`, `StarletteIntegration`, `LoggingIntegration`, `OpenAIIntegration(include_prompts=False)` for AI Agents Monitoring without PII exposure. The `_running_under_pytest()` guard skips Sentry init entirely during the test suite. The `before_send` hook drops intentional `HTTPException` 4xx flow-control and the "service not configured / temporarily unavailable" 5xx guards so the issue feed stays focused on real bugs.
+- **Frontend wiring** — `instrumentation-client.ts`, `instrumentation.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`. The client-side `buildIntegrations(consent)` helper returns the always-on integrations (`feedbackIntegration` — legitimate interest) when consent is anything other than `"accepted"`, and adds `replayIntegration({maskAllText: false, blockAllMedia: true})` only when consent is `"accepted"`. The `Sentry.addIntegration(...)` API lets a user who later flips consent get Replay added without a page reload.
+- **Free-tier-maxed configuration** — `tracesSampleRate=0.1`, `profilesSampleRate=0.05`, `replaysSessionSampleRate=0`, `replaysOnErrorSampleRate=1.0`, `enableLogs=true`. The 0% ambient replay sampling avoids competing with PostHog's session replay (PostHog handles ambient sampling; Sentry handles errored-session-only coverage).
+- **Source-map upload** — `withSentryConfig(...)` in `next.config.ts` reads `SENTRY_AUTH_TOKEN`. The Sentry-Vercel marketplace integration's env-var-upsert step failed mid-install (it found a previously-set `NEXT_PUBLIC_SENTRY_DSN` and refused to upsert), so the manual env-var path was used instead. Both achieve the same source-map upload behavior; only the auto-created release markers per Vercel deploy are missing from the manual path (those can be backfilled via `VERCEL_GIT_COMMIT_SHA` if needed later).
+- **Code mappings** — both `jobagent-backend` and `jobagent-frontend` have stack-trace-to-GitHub-source-line deep links configured via the Sentry GitHub integration (paths `backend/` + `src/` for backend, `frontend/src/` for frontend, branch `main`).
+
+### PostHog: shared project + `product: "jobagent"` tag
+
+The Developer free plan caps at 1 project per org. The HelpmateAI integration landed its `posthog-provider.tsx` first; this PR shares the same project and distinguishes by tagging every event with `product: "jobagent"` via `posthog.register({product: "jobagent"})` at init. Backend events go through `backend/observability.py::capture_event(...)` which merges the same tag in. Dashboards filter on `where properties.product = 'jobagent'` to stay cleanly product-scoped.
+
+PostHog config: autocapture on, `maskAllInputs: true` for replay, heatmaps on, surveys on, **exception capture off** (Sentry is the source of truth for errors — letting both vendors collect them double-bills the free-tier quotas).
+
+### EU cookie consent banner
+
+The single banner in `frontend/src/components/cookie-consent.tsx` is the GDPR-compliance surface. localStorage key `jobagent-cookie-consent` is the source of truth with three states: `"pending"` (first visit), `"accepted"`, `"declined"`. A custom event `jobagent-cookie-consent-change` re-evaluates consent-gated integrations on flip without a page reload. CSS class prefix `.ja-cookie-banner` so it can't visually collide with the sibling HelpmateAI banner if a developer runs both products against the same `localhost`.
+
+Legal split: **always-on** = Sentry errors + traces + Feedback widget (legitimate interest under GDPR Art. 6(1)(f) — operationally necessary). **Consent-gated** = PostHog product analytics + PostHog session replay + Sentry Session Replay (require explicit opt-in per ePrivacy Art. 5(3)).
+
+### Uptime monitor
+
+Sentry's Uptime monitor pings `https://api.job-application-copilot.xyz/health` every 5 minutes from the EU region. The same monitor pattern the HelpmateAI deploy uses.
+
+### Tests
+
+8 lines moved in `tests/test_error_messages.py` — a leaky-detail allowlist needed a small line-drift adjustment after `backend/observability.py` was inserted between earlier modules. The `_running_under_pytest()` skip means Sentry never fires during the test run, so this was the only test churn.
+
+### Deploy status
+
+Merged + deployed. Backend container restarted on the VPS; Vercel auto-rebuilt the frontend. Source-maps uploading on every Vercel deploy. Uptime monitor returning green within 2 minutes of deploy.
+
+### ADRs added
+
+- [ADR-024: Observability stack — Sentry + PostHog with consent-gated analytics](docs/adr/ADR-024-observability-stack-sentry-and-posthog.md)
+- [ADR-025: EU cookie consent banner + GDPR-aligned analytics gating](docs/adr/ADR-025-eu-cookie-consent-banner-and-gdpr-analytics-gating.md)
