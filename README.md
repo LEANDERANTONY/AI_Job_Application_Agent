@@ -74,10 +74,11 @@ Each agent follows the same operating shape: deterministic baseline first, LLM-a
 
 ## Engineering notes
 
-- **44 Python test files** cover parsing, normalization, fitting, tailoring, orchestration, builders, exports, auth, quotas, persistence, error handling, and the four ATS adapters.
-- **Quality runners** in `tests/quality/` produce evidence for each LLM-driven stage (parser, tailoring, review, resume gen, cover letter, assistant, JD parser, latency baseline).
-- **23 ADRs** in `docs/adr/` record the architectural decisions, including the Streamlit-first → Next.js + FastAPI transition (ADR-012), DOCX-first export (ADR-015), conversational builder (ADR-016), state-aware assistant (ADR-017), three-layer retry stack (ADR-018), independent step navigation (ADR-019), tier resolution shim (ADR-020), atomic quota with refund (ADR-021), tier-aware model selection (ADR-022), and Lemon Squeezy as Merchant of Record for v1 (ADR-023).
-- **Architecture details** live in [docs/architecture.md](docs/architecture.md).
+- **61 Python test files** cover parsing, normalization, fitting, tailoring, orchestration, builders, exports, auth, quotas, persistence, the Lemon Squeezy webhook, voice transcription, artifact feedback, prompt-registry byte-identity, error handling, and the four ATS adapters.
+- **Quality runners** in `tests/quality/` produce evidence for each LLM-driven stage (parser, tailoring, review, resume gen, cover letter, assistant, JD parser, latency baseline). `backend/nightly_eval.py` wraps them into a single regression-checked batch — manual-only at pre-revenue stage by design, see [ADR-026](docs/adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md).
+- **Every LLM prompt loads from a versioned JSON registry** (`prompts/<name>/v1.json`) — all 11 builders migrated off Python f-string concats, each guarded by a byte-identity test so a template can't silently drift from its original.
+- **26 ADRs** in `docs/adr/` record the architectural decisions, including the Streamlit-first → Next.js + FastAPI transition (ADR-012), DOCX-first export (ADR-015), conversational builder (ADR-016), state-aware assistant (ADR-017), three-layer retry stack (ADR-018), independent step navigation (ADR-019), tier resolution shim (ADR-020), atomic quota with refund (ADR-021), tier-aware model selection (ADR-022), Lemon Squeezy as Merchant of Record for v1 (ADR-023), the observability stack (ADR-024), the EU cookie consent banner (ADR-025), and manual-only nightly eval (ADR-026).
+- **Architecture details** live in [docs/architecture.md](docs/architecture.md); day-2 operations in [docs/operations.md](docs/operations.md).
 
 ## Deployment
 
@@ -87,3 +88,17 @@ Each agent follows the same operating shape: deterministic baseline first, LLM-a
 - `backend/` → FastAPI + Uvicorn, async OpenAI client, Supabase Postgres
 - `backend/vps/` → Docker Compose + Caddy bundle for the backend stack
 - `src/` → shared Python core (orchestrator, agents, builders, schemas, services)
+
+## Production stack
+
+| Layer | Choice | Notes |
+|-------|--------|-------|
+| **Frontend** | Next.js on Vercel | Auto-deploys from `main`; source maps uploaded to Sentry on every deploy |
+| **Backend** | FastAPI in Docker on an EU VPS, fronted by Caddy | The reverse-proxy block is committed in `backend/vps/Caddyfile` — runtime-only Caddy config is wiped on restart |
+| **Data** | Supabase (EU region) | Auth (Google OAuth), per-user persistence, the `cached_jobs` index, quota counters, subscriptions, and the `aijobagent_run_traces` cost-attribution table |
+| **Scheduled work** | Supabase `pg_cron` + `pg_net` | `cached_jobs` refresh every 4h; expired resume-builder-session cleanup every 5 min. **Nothing scheduled spends OpenAI tokens** — the only LLM-spending job (`nightly_eval`) is deliberately manual-only |
+| **Error + perf** | Sentry (`jobagent-backend` + `jobagent-frontend`) | Error tracking + traces + AI Agents Monitoring (token/cost/latency spans, no prompt-body PII) + Logs + errors-only session replay + a 5-min EU Uptime monitor. Always-on as legitimate interest |
+| **Product analytics** | PostHog (EU, free Developer plan) | Autocapture + heatmaps + consent-gated session replay; every event tagged `product: "jobagent"`. Consent-gated per GDPR/ePrivacy |
+| **Payments** | Lemon Squeezy (Merchant of Record) | Scaffolded + HMAC-verified webhook live; env-gated behind a "Coming soon" frontend fallback until the dashboard's final variant IDs land |
+
+**GDPR posture:** a custom in-house cookie consent banner is the gate. Sentry error tracking + traces + Feedback load always (legitimate interest, GDPR Art. 6(1)(f) — crash reporting is operationally necessary). PostHog analytics + PostHog replay + Sentry Session Replay load only after explicit opt-in (ePrivacy Art. 5(3)). No third-party JS loads before consent. See [ADR-024](docs/adr/ADR-024-observability-stack-sentry-and-posthog.md) and [ADR-025](docs/adr/ADR-025-eu-cookie-consent-banner-and-gdpr-analytics-gating.md).
