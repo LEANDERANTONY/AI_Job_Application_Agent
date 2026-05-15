@@ -185,7 +185,7 @@
 
   <g transform="translate(620, 568)">
     <rect width="520" height="56" rx="8" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.4"/>
-    <text x="260" y="22" class="nh">Supabase auth · cached_jobs · saved workspaces · quota tracking</text>
-    <text x="260" y="40" class="nd">FastAPI on VPS (Caddy)  ·  Next.js on Vercel  ·  Postgres RPC</text>
+    <text x="260" y="22" class="nh">Supabase auth · cached_jobs · tier enforcement + payments</text>
+    <text x="260" y="40" class="nd">Observability: Sentry + PostHog  ·  FastAPI/VPS  ·  Next.js/Vercel</text>
   </g>
 </svg>
