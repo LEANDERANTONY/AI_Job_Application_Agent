@@ -240,6 +240,16 @@ def _init_posthog(settings: BackendSettings) -> None:
     logger.info("PostHog initialized (host=%s).", settings.posthog_host)
 
 
+# Every server-side event auto-tags with ``product: "jobagent"`` so
+# the shared PostHog project (179885, free-tier 1-project limit) can
+# split AI Job Agent's events from HelpmateAI's via a simple insight
+# filter (``where event.product = 'jobagent'``). HelpmateAI's
+# capture_event does the same with ``product: "helpmate"``. Keeps the
+# two products on the same free-tier quota while still giving us
+# product-scoped dashboards.
+_PRODUCT_TAG = "jobagent"
+
+
 def capture_event(
     distinct_id: str,
     event: str,
@@ -256,14 +266,22 @@ def capture_event(
     ``distinct_id`` is the Supabase user id from the auth context on
     the request scope — never a session token or anything that could
     leak credentials.
+
+    All events automatically include ``product: "jobagent"`` so the
+    shared PostHog project can split events by product on the
+    dashboards. Caller-supplied ``properties`` win on conflict, but
+    a caller would have no reason to override the product tag.
     """
     if _posthog_client is None:
         return
+    merged: dict[str, Any] = {"product": _PRODUCT_TAG}
+    if properties:
+        merged.update(properties)
     with suppress(Exception):
         _posthog_client.capture(
             distinct_id=distinct_id,
             event=event,
-            properties=properties or {},
+            properties=merged,
         )
 
 

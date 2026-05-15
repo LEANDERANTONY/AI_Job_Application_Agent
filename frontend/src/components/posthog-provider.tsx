@@ -57,6 +57,15 @@ function initPostHog(): void {
       respect_dnt: true,
       persistence: "localStorage+cookie",
     });
+    // Register ``product: "jobagent"`` as a super-property so every
+    // event the SDK emits (pageviews, autocaptured clicks, manual
+    // captures from feedback-buttons etc.) carries the tag. The
+    // shared PostHog project (free-tier 1-project limit) lets us
+    // run AI Job Agent + HelpmateAI side-by-side; insight filters
+    // ``where product = 'jobagent'`` split the two products cleanly.
+    // HelpmateAI's PostHog provider registers ``product: "helpmate"``
+    // the same way.
+    posthog.register({ product: "jobagent" });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn("[posthog] init failed", err);
