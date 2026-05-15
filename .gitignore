@@ -175,6 +175,14 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Working context briefing for new chat agents / LLMs picking up the
+# project. Untracked because it carries operational detail (VPS
+# hostname + SSH port, Supabase project ref, Sentry project IDs, the
+# painful-things runbook) that's working-briefing material, not part
+# of the public README story. Rebuild from commit history + the ADRs
+# if it's lost. The tracked docs-governance file is docs/README.md.
+AGENT.md
+
 # Local planning notes
 improvements.md
 deployment-plan.md
