@@ -45,7 +45,7 @@
  *     attribute (skipped by keyboard nav).
  */
 
-import { useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import type { FeedbackSurface } from "@/lib/api-types";
 import { recordFeedback } from "@/lib/api";
@@ -80,9 +80,22 @@ export type FeedbackButtonsProps = {
 
 type FeedbackState =
   | { kind: "idle" }
+  // rated-pending holds the rating locally without inserting a row.
+  // We only commit once the user sends a comment, skips, the auto-
+  // commit timer fires, or the component unmounts — guarantees
+  // exactly ONE submitFeedback call per user action. Codex P1 on
+  // PR #3 caught the previous design double-inserted (one row for
+  // the rating, a second for the comment).
+  | { kind: "rated-pending"; rating: "up" | "down" }
   | { kind: "submitting"; rating: "up" | "down" }
   | { kind: "submitted"; rating: "up" | "down" }
   | { kind: "error"; rating: "up" | "down"; message: string };
+
+/** Wait window after user activity before auto-committing the rating
+ *  alone. Long enough that a thoughtful comment has time to start
+ *  typing (each keystroke resets the timer), short enough that idle
+ *  users still get their rating captured. */
+const AUTO_COMMIT_MS = 8000;
 
 export function FeedbackButtons({
   surface,
@@ -92,9 +105,6 @@ export function FeedbackButtons({
 }: FeedbackButtonsProps) {
   const [state, setState] = useState<FeedbackState>({ kind: "idle" });
   const [comment, setComment] = useState<string>("");
-  const [commentSubmitting, setCommentSubmitting] = useState<boolean>(false);
-  const [commentSubmitted, setCommentSubmitted] = useState<boolean>(false);
-  const [commentError, setCommentError] = useState<string | null>(null);
   // useId guarantees a DOM-unique value per component instance — the
   // prior ``feedback-comment-${surface}`` collided whenever the page
   // mounted multiple FeedbackButtons with the same surface (notably
@@ -104,69 +114,132 @@ export function FeedbackButtons({
   // Flagged 3x: CodeRabbit Major + Codex P2 + Codex P3 on PR #3.
   const commentTextareaId = useId();
 
+  // Refs for the auto-commit timer + unmount best-effort flush.
+  // Read by handlers that need the LATEST values rather than the
+  // snapshot at first render.
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stateRef = useRef<FeedbackState>(state);
+  const commentRef = useRef<string>(comment);
+  stateRef.current = state;
+  commentRef.current = comment;
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  /** Single submit point. Sends EXACTLY ONE row per user action
+   *  (Send button, Skip button, auto-commit timer, or unmount
+   *  cleanup all funnel here). */
+  const commitFeedback = useCallback(
+    async (rating: "up" | "down", commentText: string) => {
+      clearTimer();
+      setState({ kind: "submitting", rating });
+      try {
+        await recordFeedback({
+          surface,
+          rating,
+          trace_id: traceId ?? null,
+          comment: commentText.slice(0, 4096),
+        });
+        setState({ kind: "submitted", rating });
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "Couldn't save your feedback. Try again in a moment.";
+        setState({ kind: "error", rating, message });
+      }
+    },
+    [clearTimer, surface, traceId],
+  );
+
+  const scheduleAutoCommit = useCallback(
+    (rating: "up" | "down") => {
+      clearTimer();
+      timerRef.current = setTimeout(() => {
+        if (stateRef.current.kind !== "rated-pending") return;
+        void commitFeedback(rating, commentRef.current);
+      }, AUTO_COMMIT_MS);
+    },
+    [clearTimer, commitFeedback],
+  );
+
+  // Best-effort flush on unmount: if the user navigated away while
+  // a rating is still pending, fire one final commit so the rating
+  // isn't silently dropped.
+  useEffect(() => {
+    return () => {
+      clearTimer();
+      const current = stateRef.current;
+      if (current.kind === "rated-pending") {
+        void recordFeedback({
+          surface,
+          rating: current.rating,
+          trace_id: traceId ?? null,
+          comment: commentRef.current.slice(0, 4096),
+        }).catch(() => {
+          // Unmount path: the user is gone, nothing to do with the error.
+        });
+      }
+    };
+  }, [clearTimer, surface, traceId]);
+
+  function handleRating(rating: "up" | "down") {
+    if (state.kind === "submitting") return;
+
+    if (state.kind === "rated-pending" && state.rating === rating) {
+      // Toggle off — return to idle without ever inserting a row.
+      // Analytics never see this rating; the user effectively
+      // un-rated before commit.
+      clearTimer();
+      setState({ kind: "idle" });
+      setComment("");
+      return;
+    }
+    if (state.kind === "submitted" && state.rating === rating) {
+      // Already committed; clicking the same thumb is a no-op.
+      // The backend row exists; clearing the UI without deleting
+      // the row would be misleading. (Backend has no DELETE policy.)
+      return;
+    }
+    // Fresh rating or switching ratings while pending — land in
+    // rated-pending with the latest rating and restart the timer.
+    setState({ kind: "rated-pending", rating });
+    scheduleAutoCommit(rating);
+  }
+
+  function handleCommentChange(value: string) {
+    setComment(value);
+    if (state.kind === "rated-pending") {
+      // Typing means the user is engaging with the comment — push
+      // the auto-commit timer out so they have time to finish.
+      scheduleAutoCommit(state.rating);
+    }
+  }
+
+  function handleSend() {
+    if (state.kind !== "rated-pending") return;
+    void commitFeedback(state.rating, comment.trim());
+  }
+
+  function handleSkipComment() {
+    if (state.kind !== "rated-pending") return;
+    void commitFeedback(state.rating, "");
+  }
+
   const currentRating =
+    state.kind === "rated-pending" ||
     state.kind === "submitting" ||
     state.kind === "submitted" ||
     state.kind === "error"
       ? state.rating
       : null;
-
-  async function handleRating(rating: "up" | "down") {
-    // Optimistic flip — don't wait for the POST. The "Thanks!" copy
-    // and the selected button state appear synchronously.
-    setState({ kind: "submitting", rating });
-    try {
-      await recordFeedback({
-        surface,
-        rating,
-        trace_id: traceId ?? null,
-        comment: "",
-      });
-      setState({ kind: "submitted", rating });
-    } catch (error) {
-      // Failure surface: we keep the rating "selected" so the user
-      // sees what they intended; the inline error nudges retry.
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : "Couldn't save your feedback. Try again in a moment.";
-      setState({ kind: "error", rating, message });
-    }
-  }
-
-  async function handleCommentSubmit() {
-    const text = comment.trim();
-    if (!text) return;
-    if (!currentRating) return;
-    setCommentSubmitting(true);
-    setCommentError(null);
-    try {
-      // A fresh row carries the comment text alongside the rating —
-      // feedback rows are immutable so a follow-up comment is its own
-      // row that aggregations correlate by (user_id, surface,
-      // created_at).
-      await recordFeedback({
-        surface,
-        rating: currentRating,
-        trace_id: traceId ?? null,
-        comment: text,
-      });
-      setCommentSubmitted(true);
-    } catch (error) {
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : "Couldn't save your comment. Try again.";
-      setCommentError(message);
-    } finally {
-      setCommentSubmitting(false);
-    }
-  }
-
-  const hasRating =
-    state.kind === "submitted" ||
-    state.kind === "error" ||
-    state.kind === "submitting";
+  const hasRating = currentRating !== null;
+  const isInFlight = state.kind === "submitting";
+  const showCommentArea = state.kind === "rated-pending";
 
   return (
     <div
@@ -192,8 +265,8 @@ export function FeedbackButtons({
           aria-label="Thumbs up — was helpful"
           aria-pressed={currentRating === "up"}
           className="rd-btn rd-btn-ghost rd-btn-sm"
-          disabled={state.kind === "submitting"}
-          onClick={() => void handleRating("up")}
+          disabled={isInFlight}
+          onClick={() => handleRating("up")}
           style={{
             padding: "2px 8px",
             opacity: currentRating === "down" ? 0.4 : 1,
@@ -207,8 +280,8 @@ export function FeedbackButtons({
           aria-label="Thumbs down — wasn't helpful"
           aria-pressed={currentRating === "down"}
           className="rd-btn rd-btn-ghost rd-btn-sm"
-          disabled={state.kind === "submitting"}
-          onClick={() => void handleRating("down")}
+          disabled={isInFlight}
+          onClick={() => handleRating("down")}
           style={{
             padding: "2px 8px",
             opacity: currentRating === "up" ? 0.4 : 1,
@@ -245,7 +318,7 @@ export function FeedbackButtons({
         </div>
       ) : null}
 
-      {hasRating && !commentSubmitted ? (
+      {showCommentArea ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label
             htmlFor={commentTextareaId}
@@ -254,10 +327,10 @@ export function FeedbackButtons({
             Want to tell us more? (optional)
           </label>
           <textarea
-            disabled={commentSubmitting}
+            disabled={isInFlight}
             id={commentTextareaId}
             maxLength={4096}
-            onChange={(event) => setComment(event.target.value)}
+            onChange={(event) => handleCommentChange(event.target.value)}
             placeholder={
               currentRating === "up"
                 ? "What worked? (e.g. specific bullets, summary tone)"
@@ -279,32 +352,23 @@ export function FeedbackButtons({
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button
               className="rd-btn rd-btn-soft rd-btn-sm"
-              disabled={!comment.trim() || commentSubmitting}
-              onClick={() => void handleCommentSubmit()}
+              disabled={isInFlight}
+              onClick={handleSend}
               style={{ fontSize: 11, padding: "3px 10px" }}
               type="button"
             >
-              {commentSubmitting ? "Saving…" : "Send"}
+              Send
             </button>
-            {commentError ? (
-              <span
-                role="status"
-                style={{ fontSize: 11, color: "#fbbf24" }}
-              >
-                {commentError}
-              </span>
-            ) : null}
+            <button
+              className="rd-btn rd-btn-ghost rd-btn-sm"
+              disabled={isInFlight}
+              onClick={handleSkipComment}
+              style={{ fontSize: 11, padding: "3px 10px" }}
+              type="button"
+            >
+              Skip
+            </button>
           </div>
-        </div>
-      ) : null}
-
-      {commentSubmitted ? (
-        <div
-          aria-live="polite"
-          role="status"
-          style={{ fontSize: 11, color: "var(--fg-2)" }}
-        >
-          Thanks for the detail.
         </div>
       ) : null}
     </div>
