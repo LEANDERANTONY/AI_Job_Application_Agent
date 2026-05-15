@@ -600,8 +600,18 @@ def record_workspace_feedback_route(
             access_token=access_token,
             refresh_token=refresh_token,
         )
-    except AppError:
-        # Token validation failed -- surface as auth required.
+    except InputValidationError:
+        # Narrow the catch to InputValidationError — the explicit
+        # contract ``resolve_authenticated_context`` uses for
+        # missing/invalid credentials. Other AppError subclasses
+        # (BackendIntegrationError, AgentExecutionError) bubble up
+        # from session restore / user sync / quota load and represent
+        # backend-side problems unrelated to user credentials. Those
+        # should NOT become 401 "session expired" — they bubble to
+        # the generic AppError handler below so the frontend sees a
+        # 502 + "service temporarily unavailable" instead of a
+        # misleading re-auth prompt. Codex P2 on PR #3 final round
+        # (mirrors the earlier transcribe-route fix).
         raise HTTPException(
             status_code=401,
             detail="Your session has expired. Sign in again to record feedback.",
@@ -627,13 +637,16 @@ def record_workspace_feedback_route(
         )
     except InvalidFeedbackError as error:
         raise HTTPException(status_code=400, detail=str(error))
+    except AppError as error:
+        # AppError subclasses from resolve_authenticated_context's
+        # internal calls land here (BackendIntegrationError,
+        # AgentExecutionError) — route them through the canonical
+        # _raise_http_error so the user sees the right status code +
+        # message, not a generic 502.
+        _raise_http_error(error)
     except Exception as error:  # noqa: BLE001 - boundary translation
-        # The service layer re-raises any backend error; we convert to
-        # 502 so the frontend's optimistic UI can show "couldn't save"
-        # without confusing a real validation error with a Supabase
-        # outage. The detail copy is intentionally generic — surfacing
-        # the underlying Supabase error string would leak schema
-        # internals.
+        # Any other unexpected error: 502 with generic detail so we
+        # don't leak Supabase internals or stack traces.
         raise HTTPException(
             status_code=502,
             detail="Couldn't record feedback right now. Try again in a moment.",

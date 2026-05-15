@@ -253,11 +253,18 @@ def build_review_agent_prompt(
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     raw_expected_keys = template.metadata.get("expected_keys")
-    expected_keys = (
-        [str(k) for k in raw_expected_keys]
-        if isinstance(raw_expected_keys, list)
-        else []
-    )
+    if raw_expected_keys is None or not isinstance(raw_expected_keys, list):
+        # Match the tailoring builder's contract: a missing or
+        # non-list ``expected_keys`` is a registry misconfiguration
+        # that would silently disable downstream key-contract checks
+        # and let malformed model output flow through. Raise instead
+        # of defaulting to [] so the failure is loud at startup.
+        # CodeRabbit on PR #3 final round.
+        raise TypeError(
+            f"{template.name} prompt metadata.expected_keys must be a list of "
+            f"strings, got {type(raw_expected_keys).__name__!s}."
+        )
+    expected_keys = [str(k) for k in raw_expected_keys]
     return {
         "system": template.system,
         "user": user_prompt,
@@ -288,11 +295,18 @@ def build_resume_generation_agent_prompt(
     ]
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     raw_expected_keys = template.metadata.get("expected_keys")
-    expected_keys = (
-        [str(k) for k in raw_expected_keys]
-        if isinstance(raw_expected_keys, list)
-        else []
-    )
+    if raw_expected_keys is None or not isinstance(raw_expected_keys, list):
+        # Match the tailoring builder's contract: a missing or
+        # non-list ``expected_keys`` is a registry misconfiguration
+        # that would silently disable downstream key-contract checks
+        # and let malformed model output flow through. Raise instead
+        # of defaulting to [] so the failure is loud at startup.
+        # CodeRabbit on PR #3 final round.
+        raise TypeError(
+            f"{template.name} prompt metadata.expected_keys must be a list of "
+            f"strings, got {type(raw_expected_keys).__name__!s}."
+        )
+    expected_keys = [str(k) for k in raw_expected_keys]
     return {
         "system": template.system,
         "user": user_prompt,
@@ -328,11 +342,18 @@ def build_cover_letter_agent_prompt(
         sections.append(("Resume Generation Output", resume_generation_output, 1200))
     user_prompt, metadata = _build_budgeted_user_prompt(sections)
     raw_expected_keys = template.metadata.get("expected_keys")
-    expected_keys = (
-        [str(k) for k in raw_expected_keys]
-        if isinstance(raw_expected_keys, list)
-        else []
-    )
+    if raw_expected_keys is None or not isinstance(raw_expected_keys, list):
+        # Match the tailoring builder's contract: a missing or
+        # non-list ``expected_keys`` is a registry misconfiguration
+        # that would silently disable downstream key-contract checks
+        # and let malformed model output flow through. Raise instead
+        # of defaulting to [] so the failure is loud at startup.
+        # CodeRabbit on PR #3 final round.
+        raise TypeError(
+            f"{template.name} prompt metadata.expected_keys must be a list of "
+            f"strings, got {type(raw_expected_keys).__name__!s}."
+        )
+    expected_keys = [str(k) for k in raw_expected_keys]
     return {
         "system": template.system,
         "user": user_prompt,

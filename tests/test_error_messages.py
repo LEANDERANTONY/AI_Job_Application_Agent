@@ -221,9 +221,10 @@ _BACKEND_ALLOWLIST: set[tuple[str, int]] = {
     # "Rating must be 'up' or 'down', got ...", "user_id is required
     # to record feedback."). Surfacing them directly helps the client
     # debug a bad payload; there's no internal state in the string.
-    # Line moved from 617 to 629 when the AuthRequiredError handler
-    # for /workspace/transcribe was added above it.
-    (_os_for_paths.path.join("backend", "routers", "workspace.py"), 629),
+    # Line moved from 617 → 629 → 639 as the AuthRequiredError handler
+    # for /workspace/transcribe + the narrowed AppError catch in
+    # /workspace/feedback were added above this line.
+    (_os_for_paths.path.join("backend", "routers", "workspace.py"), 639),
 }
 
 
