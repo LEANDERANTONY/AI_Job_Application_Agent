@@ -1040,16 +1040,18 @@ function ArrowGlyph({ direction }: { direction: "left" | "right" }) {
 // ─── Pricing ──────────────────────────────────────────────────────────
 //
 // Three-tier card with the middle "Pro" tier filled-and-floated as the
-// focal anchor. Same visual structure as HelpmateAI's landing-pricing
-// (mint accent over there, electric blue here). Free + Pro CTAs route
-// through the existing onPrimaryCta auth handoff so a click here is
-// identical to clicking "Sign in with Google" in the hero. Business
-// is a mailto until there's a real sales flow.
+// focal anchor. Free + Pro CTAs route through the existing onPrimaryCta
+// auth handoff so a click here is identical to clicking "Sign in with
+// Google" in the hero. Business is a mailto until there's a real sales
+// flow.
 //
-// Tier caps are aspirational — there's no backend enforcement of these
-// values yet; that's a follow-up. The numbers below are stylistically
-// matched to HelpmateAI's pricing matrix (Free / Pro $9 / Business
-// $39 per seat) so the two products price coherently as siblings.
+// The caps below ARE enforced — they mirror backend/tiers.py TIER_CAPS,
+// which the quota gates read on every metered action (tailored /
+// premium applications, assistant turns, resume parses, job searches,
+// saved jobs, saved workspaces). resolve_user_tier returns "free" for
+// every user until the Lemon Squeezy payment cutover (variant IDs
+// pending), so today the Free column is what everyone actually gets.
+// Keep these strings in sync with TIER_CAPS whenever a cap changes.
 
 // PricingSection takes everything HeroProps does (auth state + the
 // primary CTA handler) plus the Supabase user_id used to bind the
