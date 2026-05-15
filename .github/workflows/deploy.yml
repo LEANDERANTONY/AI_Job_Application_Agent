@@ -3,6 +3,13 @@ name: Build & Deploy
 on:
   push:
     branches: [main]
+    # Docs-only commits don't change the runtime image — skip the
+    # build + VPS container recreate. A mixed code+docs commit still
+    # deploys (paths-ignore only skips when ALL changed files match).
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
 
 env:
   IMAGE: ghcr.io/leanderantony/ai_job_application_agent/api
