@@ -1,0 +1,26 @@
+# CodeRabbit configuration
+# Docs: https://docs.coderabbit.ai/getting-started/configure-coderabbit
+
+reviews:
+  # Default is "chill" — we want it to surface issues without
+  # blocking on style nits.
+  profile: chill
+
+  # Auto-review configuration. By default CodeRabbit only reviews PRs
+  # where the BASE branch is the repo's default branch (main).
+  # We open one-off full-repo audit PRs against the `coderabbit-root`
+  # branch (a non-default branch pointing at the initial commit) so
+  # we can ask `@coderabbitai full review` over the entire codebase.
+  # Add coderabbit-root to the allowed base list so those audit PRs
+  # actually get reviewed instead of "Review skipped".
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+      - "coderabbit-root"
+
+  # Allow @coderabbitai review / full review on any PR opened against
+  # any base branch in this repo — overrides the default "only on
+  # default-branch base" policy so manual triggers always work.
+  request_changes_workflow: false
