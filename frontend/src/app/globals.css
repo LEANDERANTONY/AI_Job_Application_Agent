@@ -8104,3 +8104,151 @@ code {
   60%  { opacity: 1; transform: translateY(2px) scale(1.005); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* ------------------------------------------------------------------
+   Cookie consent banner — lives outside any shell scope (mounts in
+   layout.tsx) so it renders consistently on landing + workspace.
+   Hex values inlined intentionally: the surface tokens are scoped to
+   .l-shell / .b-shell, so this self-contained block doesn't depend
+   on either shell being mounted (renders on /privacy too). Uses the
+   Job Agent blue accent (#3064ff) — pair to HelpmateAI's green
+   banner in the sibling project.
+   ------------------------------------------------------------------ */
+
+.ja-cookie-banner {
+  position: fixed;
+  inset: auto 16px 16px 16px;
+  z-index: 9000;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  animation: ja-cookie-slide-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ja-cookie-content {
+  pointer-events: auto;
+  background: rgba(8, 10, 16, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(48, 100, 255, 0.12) inset;
+  padding: 18px 22px;
+  max-width: 720px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.ja-cookie-text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ja-cookie-heading {
+  color: #f5f8ff;
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  margin: 0;
+}
+
+.ja-cookie-body {
+  color: #c7cfdf;
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ja-cookie-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.ja-cookie-btn {
+  align-items: center;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 36px;
+  padding: 8px 16px;
+  transition:
+    background-color 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  white-space: nowrap;
+}
+
+.ja-cookie-btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #c7cfdf;
+}
+
+.ja-cookie-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.32);
+  color: #f5f8ff;
+}
+
+.ja-cookie-btn-primary {
+  background: #3064ff;
+  border: 1px solid transparent;
+  color: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 8px 24px rgba(48, 100, 255, 0.28);
+}
+
+.ja-cookie-btn-primary:hover {
+  background: #4171ff;
+}
+
+@keyframes ja-cookie-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .ja-cookie-banner {
+    inset: auto 12px 12px 12px;
+  }
+  .ja-cookie-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 16px 18px;
+  }
+  .ja-cookie-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .ja-cookie-btn {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ja-cookie-banner {
+    animation: none;
+  }
+}

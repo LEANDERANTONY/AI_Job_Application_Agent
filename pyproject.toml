@@ -21,6 +21,15 @@ dependencies = [
     # and /workspace/feedback. Without it, those routes throw at import
     # time the moment a TestClient tries to POST form data.
     "python-multipart==0.0.20",
+    # Observability — Sentry for error tracking + tracing + AI agents
+    # monitoring + Logs API + Crons. PostHog for product analytics
+    # (events, session replay via the JS SDK on the frontend) + LLM
+    # Analytics ($ai_generation events). Both are no-ops when their
+    # respective DSN / API-key env vars are unset, so adding them to
+    # the runtime image is safe in environments that haven't wired
+    # the integration on yet (local dev, CI, the test suite).
+    "sentry-sdk[fastapi]>=2.35,<3",
+    "posthog>=3.7,<4",
 ]
 
 [dependency-groups]
