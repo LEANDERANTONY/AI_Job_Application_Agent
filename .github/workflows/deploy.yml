@@ -3,13 +3,17 @@ name: Build & Deploy
 on:
   push:
     branches: [main]
-    # Docs-only commits don't change the runtime image — skip the
-    # build + VPS container recreate. A mixed code+docs commit still
-    # deploys (paths-ignore only skips when ALL changed files match).
+    # This pipeline builds + ships the BACKEND /api image to the VPS
+    # only. The frontend deploys independently via Vercel, so a
+    # frontend-only or docs-only commit never needs this pipeline —
+    # skip the GHCR rebuild + VPS container recreate for them. A mixed
+    # commit that also touches backend/src still deploys (paths-ignore
+    # only skips when ALL changed files match).
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
       - 'LICENSE'
+      - 'frontend/**'
 
 env:
   IMAGE: ghcr.io/leanderantony/ai_job_application_agent/api
