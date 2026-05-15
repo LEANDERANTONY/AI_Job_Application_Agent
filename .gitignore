@@ -183,13 +183,10 @@ cython_debug/
 # if it's lost. The tracked docs-governance file is docs/README.md.
 AGENT.md
 
-# Local planning notes
-improvements.md
-deployment-plan.md
-docs/project_strategy.md
-docs/recommended-changes-status-2026-03-16.md
-docs/supabase-setup-checklist.md
-docs/pdf_template/*.pdf
+# Local-only scratch images (exploration / draft diagrams not wired
+# into any tracked doc — the README uses docs/images/*.svg + landing_*.png)
+docs/images/architecture.png
+docs/images/landingpage.png
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
@@ -284,8 +281,6 @@ reports/
 # TypeScript incremental build cache
 *.tsbuildinfo
 
-# Local design/planning notes
-VISUAL_LOOP_MVP.md
 # Claude Code session state + worktrees (harness-managed, not source)
 .claude/
 
