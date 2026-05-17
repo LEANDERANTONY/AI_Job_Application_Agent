@@ -153,10 +153,19 @@ def parse_resume_upload(
             mime_type=mime_type,
         )
         resume_document = parse_resume_document(uploaded_file, source=f"workspace:{filename}")
-        candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
+        resume_outage: dict = {}
+        candidate_profile = build_candidate_profile_from_resume_auto(
+            resume_document, outage_sink=resume_outage
+        )
         return {
             "resume_document": _serialize(resume_document),
             "candidate_profile": _serialize(candidate_profile),
+            # Present + unavailable=True only when the parse silently
+            # degraded because OpenAI was down (not for a content
+            # issue). Lets the résumé step show the same honest notice
+            # the analysis screen does, so the user can re-upload once
+            # it clears instead of trusting a quietly worse parse.
+            "service_notice": resume_outage or None,
         }
     except BaseException:
         # Refund-on-failure: if the parse blew up (corrupted file,
@@ -293,9 +302,15 @@ def run_workspace_analysis(
         )
 
     try:
-        candidate_profile = build_candidate_profile_from_resume_auto(resume_document)
+        resume_parse_outage: dict = {}
+        jd_parse_outage: dict = {}
+        candidate_profile = build_candidate_profile_from_resume_auto(
+            resume_document, outage_sink=resume_parse_outage
+        )
         job_description = _enrich_job_description_from_imported_posting(
-            build_job_description_from_text_auto(job_description_text),
+            build_job_description_from_text_auto(
+                job_description_text, outage_sink=jd_parse_outage
+            ),
             imported_job_posting,
         )
         fit_analysis = build_fit_analysis(candidate_profile, job_description)
@@ -373,6 +388,33 @@ def run_workspace_analysis(
 
         review = getattr(agent_result, "review", None)
 
+        # Fold the pre-pipeline LLM stages (résumé parse, JD parse, JD
+        # summary) into the SAME honest signal the agent pipeline uses,
+        # so the existing analysis banner covers a provider outage that
+        # happened ANYWHERE upstream — not just inside the agents. A
+        # silently-degraded JD parse otherwise cascades into fit +
+        # tailoring + cover letter with no user notice.
+        pipeline_unavailable = bool(
+            getattr(agent_result, "service_unavailable", False)
+        )
+        upstream_outage = (
+            resume_parse_outage
+            or jd_parse_outage
+            or (
+                jd_summary_view.get("service_notice")
+                if isinstance(jd_summary_view, dict)
+                else None
+            )
+            or None
+        )
+        service_unavailable = pipeline_unavailable or bool(upstream_outage)
+        if upstream_outage and not pipeline_unavailable:
+            # Outage is the headline signal — it wins over any content
+            # per-agent fallback reason. The pipeline's own outage
+            # message (when pipeline_unavailable) is already cause-
+            # accurate, so we leave that path's fallback_reason intact.
+            fallback_reason = upstream_outage.get("message", "") or fallback_reason
+
         return {
             "resume_document": _serialize(resume_document),
             "candidate_profile": _serialize(candidate_profile),
@@ -391,13 +433,12 @@ def run_workspace_analysis(
                 "assisted_available": bool(openai_service and openai_service.is_available()),
                 "review_approved": bool(review.approved) if review else False,
                 "fallback_reason": fallback_reason,
-                # True only when the run downgraded because OpenAI itself
-                # was unreachable (not content degradation). Drives the
-                # honest "AI provider is having a moment" banner so an
-                # outage is never silently shipped as a normal result.
-                "service_unavailable": bool(
-                    getattr(agent_result, "service_unavailable", False)
-                ),
+                # True when ANY LLM stage (résumé parse, JD parse, JD
+                # summary, or the agent pipeline) downgraded because
+                # OpenAI itself was unreachable — never for plain
+                # content degradation. Drives the honest analysis
+                # banner so an outage is never silently shipped.
+                "service_unavailable": bool(service_unavailable),
             },
             "imported_job_posting": imported_job_posting,
         }

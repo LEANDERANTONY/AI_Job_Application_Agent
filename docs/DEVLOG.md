@@ -1274,9 +1274,53 @@ KEPT, later agents skip the LLM, `mode` stays `openai`,
 `service_unavailable` True). 31 targeted green; broader agent/
 workflow/openai slice green.
 
+### Refinement 2 — extend honest-outage surfacing to the non-pipeline parsers
+
+Operator follow-up: "what about the résumé parser, JD parser, and
+the other LLM interfaces?" Right call — the escalation + classification
+machinery lives in `openai_service`, so those callers already inherit
+fewer truncation fallbacks + a typed `OpenAIUnavailableError`. But the
+circuit breaker is orchestrator-only (a parser is a single call —
+nothing to "break"), and the résumé/JD auto-parsers + `jd_summary`
+were still doing `except Exception → deterministic`, *swallowing* the
+typed outage exactly like the pipeline used to. So a real OpenAI
+outage during résumé upload silently shipped a worse parse with no
+notice — the same silent degradation we'd just fixed for the pipeline.
+
+Closed it consistently. New `src/llm_outage.py` is the single source
+of cause-accurate, surface-neutral banner copy (`OUTAGE_USER_MESSAGE`,
+`message_for_category`, `outage_notice`); the orchestrator now imports
+from it instead of its own private map. `build_candidate_profile_from_resume_auto`
+and `build_job_description_from_text_auto` take a backward-compatible
+keyword `outage_sink`: they STILL return the deterministic result
+(never break upload), but when the caught exception is a genuine
+`OpenAIUnavailableError` they record `{unavailable, category, message}`
+into the sink (`outage_notice` returns None for content failures, so
+those stay silent as before). `jd_summary` attaches the same notice
+to its deterministic dict.
+
+`workspace_service` surfaces it: the standalone résumé-upload response
+gains a `service_notice` (the résumé step shows the existing
+`resumeNotice` warning with the cause-accurate copy instead of a
+false "ready" success); the analysis path folds résumé-parse +
+JD-parse + jd_summary outages into the SAME `workflow.service_unavailable`
++ `fallback_reason` the agent pipeline already uses — so the existing
+`AnalysisRunner` banner covers an outage anywhere upstream with zero
+new frontend surface there. New `ServiceNotice` type +
+`WorkspaceResumeUploadResponse.service_notice?`. Assistant +
+résumé-builder chat stay graceful-silent (the earlier deliberate
+interactive product call).
+
+Tests: new `test_llm_outage.py` (notice fires only for a real outage,
+not content; misconfig copy stays generic); `test_profile_service.py`
++2 and `test_job_service.py` +2 (sink populated on outage, empty on
+content, deterministic profile still returned); new
+`test_jd_summary_service.py` +2. 50 targeted green; broad
+workspace/parser/pipeline slice green. Frontend tsc + eslint clean.
+
 ### Deploy status
 
 Day-51 (`ee90373`) is committed locally and still unpushed. The
-Day-52 set + this refinement are also committed locally; all await
+Day-52 set + both refinements are also committed locally; all await
 the operator's push decision (backend re-deploy + a frontend rebuild
-for the banner).
+for the résumé-step + analysis banners).

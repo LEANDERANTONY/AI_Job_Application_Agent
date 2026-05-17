@@ -311,9 +311,23 @@ export type TailoredResumeArtifact = {
   validation_notes: string[];
 };
 
+/** Honest "an LLM stage degraded because OpenAI was down" notice.
+ *  Present + `unavailable: true` ONLY for a genuine provider outage
+ *  (not content degradation), so the surface can show a cause-
+ *  accurate "try again shortly" banner instead of silently shipping
+ *  a worse result. Mirrors `workflow.service_unavailable` /
+ *  `fallback_reason` for the standalone résumé-upload step (which has
+ *  no `workflow`). Null/absent when the stage was healthy. */
+export type ServiceNotice = {
+  unavailable: boolean;
+  category: string;
+  message: string;
+};
+
 export type WorkspaceResumeUploadResponse = {
   resume_document: ResumeDocument;
   candidate_profile: CandidateProfile;
+  service_notice?: ServiceNotice | null;
 };
 
 export type ResumeBuilderDraftProfile = {

@@ -1033,10 +1033,21 @@ export function WorkspaceShell() {
       const response = await uploadResumeFile(file);
       setResumeState(response);
       setResumeIntakeMode("upload");
-      setResumeNotice({
-        level: "success",
-        message: `${response.candidate_profile.full_name || response.resume_document.filetype} is ready in the workspace.`,
-      });
+      if (response.service_notice?.unavailable) {
+        // Parse silently fell back to the basic parser because OpenAI
+        // was down — say so (outage is the headline) instead of a
+        // false "ready" success, so the user can re-upload once it
+        // clears rather than trusting a quietly worse extraction.
+        setResumeNotice({
+          level: "warning",
+          message: response.service_notice.message,
+        });
+      } else {
+        setResumeNotice({
+          level: "success",
+          message: `${response.candidate_profile.full_name || response.resume_document.filetype} is ready in the workspace.`,
+        });
+      }
       setSelectedResumeFile(null);
     } catch (error) {
       setResumeNotice({

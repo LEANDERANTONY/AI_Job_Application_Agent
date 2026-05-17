@@ -1,8 +1,9 @@
 import logging
 import re
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 from src.errors import InputValidationError
+from src.llm_outage import outage_notice
 from src.openai_service import OpenAIService
 from src.parsers.jd import clean_text, extract_job_details
 from src.schemas import JobDescription, JobRequirements
@@ -209,6 +210,8 @@ def _build_job_description_from_llm_payload(
 def build_job_description_from_text_auto(
     raw_text: str,
     parser_service: JobDescriptionLLMParserService | None = None,
+    *,
+    outage_sink: Optional[dict] = None,
 ) -> JobDescription:
     """Production JD-parsing entry point. Mirror of the resume hybrid
     architecture: LLM source-of-truth with full deterministic fallback.
@@ -243,6 +246,15 @@ def build_job_description_from_text_auto(
             "JD parser fallback: LLM parsing failed (error=%s); returning deterministic profile.",
             exc,
         )
+        # Graceful deterministic fallback as before, but flag a genuine
+        # provider OUTAGE so the route can surface it (a degraded JD
+        # silently cascades into fit + tailoring + cover letter — the
+        # user deserves to know it wasn't the real AI parse). Non-
+        # outage failures return None and stay silent.
+        if outage_sink is not None:
+            notice = outage_notice(exc)
+            if notice:
+                outage_sink.update(notice)
         return deterministic_profile
 
     # Viability check: payload must have at least a title or one

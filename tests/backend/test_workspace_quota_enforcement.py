@@ -146,12 +146,12 @@ def stub_pipeline(monkeypatch):
     monkeypatch.setattr(
         workspace_service,
         "build_candidate_profile_from_resume_auto",
-        lambda _doc: profile,
+        lambda _doc, **_kwargs: profile,
     )
     monkeypatch.setattr(
         workspace_service,
         "build_job_description_from_text_auto",
-        lambda _text: jd,
+        lambda _text, **_kwargs: jd,
     )
     monkeypatch.setattr(
         workspace_service,

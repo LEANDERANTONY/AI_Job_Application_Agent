@@ -1,7 +1,22 @@
 import pytest
 
-from src.errors import InputValidationError
-from src.services.job_service import build_job_description_from_text, extract_job_summary_sections
+from src.errors import AgentExecutionError, InputValidationError, OpenAIUnavailableError
+from src.services.job_service import (
+    build_job_description_from_text,
+    build_job_description_from_text_auto,
+    extract_job_summary_sections,
+)
+
+
+class _FakeJDParser:
+    def __init__(self, raise_exc):
+        self._raise_exc = raise_exc
+
+    def is_available(self):
+        return True
+
+    def parse(self, raw_text):
+        raise self._raise_exc
 
 
 def test_build_job_description_from_text_extracts_requirement_signals():
@@ -82,3 +97,33 @@ def test_extract_job_summary_sections_falls_back_to_overview():
             "items": ["focused on building internal tooling and APIs for analytics teams."],
         }
     ]
+
+
+def test_jd_auto_parser_flags_outage_into_sink_but_returns_deterministic():
+    """Provider outage during JD parsing → deterministic JD (never
+    breaks the flow) + an outage notice in the sink so the route can
+    surface it (a silently degraded JD cascades into fit/tailoring)."""
+    sink: dict = {}
+    jd = build_job_description_from_text_auto(
+        "Senior AI Engineer\nRequired: Python, SQL.\n",
+        parser_service=_FakeJDParser(
+            OpenAIUnavailableError("429", category="rate_limited")
+        ),
+        outage_sink=sink,
+    )
+
+    assert jd.title  # deterministic parse still produced a JD
+    assert sink["unavailable"] is True
+    assert sink["category"] == "rate_limited"
+
+
+def test_jd_auto_parser_content_failure_stays_silent():
+    sink: dict = {}
+    jd = build_job_description_from_text_auto(
+        "Senior AI Engineer\nRequired: Python, SQL.\n",
+        parser_service=_FakeJDParser(AgentExecutionError("bad json")),
+        outage_sink=sink,
+    )
+
+    assert jd.title
+    assert sink == {}

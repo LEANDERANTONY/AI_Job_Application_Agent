@@ -1,3 +1,4 @@
+from src.errors import AgentExecutionError, OpenAIUnavailableError
 from src.schemas import ResumeDocument
 from src.services.profile_service import (
     build_candidate_profile_from_resume,
@@ -118,15 +119,18 @@ def test_build_candidate_profile_from_resume_handles_wrapped_education_specializ
 
 
 class _FakeLLMParser:
-    def __init__(self, payload=None, available=True, should_raise=False):
+    def __init__(self, payload=None, available=True, should_raise=False, raise_exc=None):
         self._payload = payload or {}
         self._available = available
         self._should_raise = should_raise
+        self._raise_exc = raise_exc
 
     def is_available(self):
         return self._available
 
     def parse(self, resume_document):
+        if self._raise_exc is not None:
+            raise self._raise_exc
         if self._should_raise:
             raise RuntimeError("parse failed")
         return self._payload
@@ -209,3 +213,47 @@ def test_build_candidate_profile_from_resume_auto_falls_back_when_llm_parser_fai
 
     assert profile.full_name == "Leander Antony"
     assert profile.experience
+
+
+def _doc():
+    return ResumeDocument(
+        text="Leander Antony\nChennai\nBuilt ML APIs.\n",
+        filetype="DOCX",
+        source="uploaded",
+    )
+
+
+def test_resume_auto_parser_flags_outage_into_sink_but_still_returns_profile():
+    """A genuine provider outage during résumé parsing must still
+    return the deterministic profile (never break upload) AND record
+    the outage so the route can tell the user instead of silently
+    shipping a worse parse."""
+    sink: dict = {}
+    profile = build_candidate_profile_from_resume_auto(
+        _doc(),
+        parser_service=_FakeLLMParser(
+            raise_exc=OpenAIUnavailableError("down", category="outage")
+        ),
+        outage_sink=sink,
+    )
+
+    assert profile.full_name == "Leander Antony"  # deterministic fallback worked
+    assert sink["unavailable"] is True
+    assert sink["category"] == "outage"
+    assert "OpenAI" in sink["message"]
+
+
+def test_resume_auto_parser_does_not_flag_content_failure_as_outage():
+    """A plain content AgentExecutionError still degrades silently —
+    the sink stays empty so we don't wrongly blame OpenAI."""
+    sink: dict = {}
+    profile = build_candidate_profile_from_resume_auto(
+        _doc(),
+        parser_service=_FakeLLMParser(
+            raise_exc=AgentExecutionError("invalid JSON")
+        ),
+        outage_sink=sink,
+    )
+
+    assert profile.full_name == "Leander Antony"
+    assert sink == {}

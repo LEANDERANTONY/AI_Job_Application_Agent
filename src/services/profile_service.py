@@ -1,7 +1,8 @@
 import logging
 import re
-from typing import List
+from typing import List, Optional
 
+from src.llm_outage import outage_notice
 from src.openai_service import OpenAIService
 from src.schemas import (
     CandidateProfile,
@@ -2027,6 +2028,8 @@ def _build_candidate_profile_from_llm_payload(
 def build_candidate_profile_from_resume_auto(
     resume_document: ResumeDocument,
     parser_service: ResumeLLMParserService | None = None,
+    *,
+    outage_sink: Optional[dict] = None,
 ) -> CandidateProfile:
     """Production resume-parsing entry point.
 
@@ -2073,6 +2076,16 @@ def build_candidate_profile_from_resume_auto(
             resume_document.source,
             exc,
         )
+        # Still degrade gracefully to the deterministic profile (never
+        # break the upload), but if this was a genuine provider OUTAGE
+        # — not a content problem — record it so the route can tell
+        # the user honestly instead of silently shipping a worse
+        # parse. `outage_notice` returns None for non-outage failures,
+        # so content degradation stays silent as before.
+        if outage_sink is not None:
+            notice = outage_notice(exc)
+            if notice:
+                outage_sink.update(notice)
         return deterministic_profile
 
     if not _llm_payload_has_viable_snapshot(

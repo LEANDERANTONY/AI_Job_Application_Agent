@@ -3,6 +3,7 @@ import time
 from typing import Callable, Optional
 
 from src.errors import AgentExecutionError, OpenAIUnavailableError
+from src.llm_outage import message_for_category
 from src.logging_utils import get_logger, log_event
 from src.openai_service import OpenAIService
 from src.schemas import (
@@ -27,27 +28,12 @@ LOGGER = get_logger(__name__)
 ProgressCallback = Callable[[str, str, int], None]
 
 
-# User-facing banner copy per provider-failure category. Honest and
-# cause-accurate: a real outage blames OpenAI; a rate-limit tells the
-# user to retry shortly; a misconfig stays GENERIC (it's our key /
-# model bug — don't publicly blame OpenAI; the operator gets the loud
-# `orchestrator_openai_misconfigured` ERROR log instead).
-_OUTAGE_USER_MESSAGE = {
-    "outage": (
-        "Our AI provider (OpenAI) is having a moment, so we built a "
-        "baseline version of your application. Re-run in a few minutes "
-        "for the full AI-tailored result."
-    ),
-    "rate_limited": (
-        "OpenAI is rate-limiting us right now, so we built a baseline "
-        "version of your application. Try again in a minute for the "
-        "full AI-tailored result."
-    ),
-    "misconfigured": (
-        "AI assistance is temporarily unavailable, so we built a "
-        "baseline version of your application. Please try again shortly."
-    ),
-}
+# Honest, cause-accurate banner copy lives in src.llm_outage so the
+# pipeline, the résumé/JD parsers and the JD-summary panel all speak
+# with one voice. A real outage blames OpenAI; a rate-limit says
+# "retry shortly"; a misconfig stays GENERIC (it's our key/model bug —
+# the operator gets the loud `orchestrator_openai_misconfigured` ERROR
+# log instead of OpenAI being publicly blamed).
 
 
 class ApplicationOrchestrator:
@@ -703,9 +689,7 @@ class ApplicationOrchestrator:
         )
         if outage_state["tripped"]:
             outage_category = outage_state["category"] or "outage"
-            reported_fallback_reason = _OUTAGE_USER_MESSAGE.get(
-                outage_category, _OUTAGE_USER_MESSAGE["outage"]
-            )
+            reported_fallback_reason = message_for_category(outage_category)
             outage_error = outage_state["error"]
             if outage_error is not None:
                 reported_fallback_details = (

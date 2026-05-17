@@ -4,6 +4,7 @@ from typing import Any
 
 from src.config import get_openai_max_completion_tokens_for_task
 from src.errors import AgentExecutionError
+from src.llm_outage import outage_notice
 from src.openai_service import OpenAIService
 from src.schemas_llm_outputs import JDSummaryOutput
 from src.services.job_service import extract_job_summary_sections
@@ -102,8 +103,18 @@ def generate_job_summary_view(*, openai_service: OpenAIService, job_description,
                     "estimated_input_chars": str(len(job_description.cleaned_text)),
                 },
             )
-    except AgentExecutionError:
-        return {"mode": "deterministic", "sections": deterministic_sections}
+    except AgentExecutionError as exc:
+        # Graceful deterministic summary as before. If the cause was a
+        # genuine provider OUTAGE (OpenAIUnavailableError ⊂
+        # AgentExecutionError), attach a notice so the analysis screen
+        # can tell the user — consistent with the résumé/JD parsers and
+        # the pipeline. A plain content AgentExecutionError → no notice
+        # (outage_notice returns None), silent as before.
+        result = {"mode": "deterministic", "sections": deterministic_sections}
+        notice = outage_notice(exc)
+        if notice:
+            result["service_notice"] = notice
+        return result
 
     ai_sections = _normalize_section_payload(payload)
     if not ai_sections:

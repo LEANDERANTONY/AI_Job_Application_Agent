@@ -119,7 +119,7 @@ def stub_resume_parser(monkeypatch):
     monkeypatch.setattr(
         workspace_service,
         "build_candidate_profile_from_resume_auto",
-        lambda _doc: profile,
+        lambda _doc, **_kwargs: profile,
     )
 
 
