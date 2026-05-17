@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from typing import Any, Callable, Iterable, Optional, Type, TypeVar
+from typing import Any, Callable, Iterable, NoReturn, Optional, Type, TypeVar
 
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
@@ -78,6 +78,77 @@ def _resolve_retryable_exception_types():
 
 
 _RETRYABLE_OPENAI_EXCEPTIONS = _resolve_retryable_exception_types()
+
+
+# Technical user_message per category. The orchestrator rewrites these
+# into friendly, audience-appropriate banner copy — these are the
+# precise-cause strings that land in logs / fallback_details.
+_PROVIDER_FAILURE_MESSAGE = {
+    "rate_limited": "The AI provider rate-limited the request.",
+    "misconfigured": "The AI provider rejected our credentials or model.",
+    "outage": "The AI provider was temporarily unreachable.",
+}
+
+
+def _classify_openai_exception(exc) -> Optional[str]:
+    """Classify an exception that already SURVIVED the SDK's 2 retries
+    + our 1 app-level retry (several seconds of backoff). The transient
+    window is therefore already past — we classify the *nature* of what
+    persisted, not whether it might recover in 3 s (unknowable here;
+    the user's re-run is the "is it back yet" path).
+
+    Returns the ``OpenAIUnavailableError`` category, or ``None`` when
+    the failure is a per-request CONTENT problem (400 / 422) that must
+    stay isolated to the one agent (raised as plain
+    ``AgentExecutionError`` by the caller) instead of tripping the
+    pipeline-wide circuit breaker.
+    """
+    try:
+        import openai
+    except Exception:
+        # SDK import somehow unavailable — treat any failure as a
+        # generic outage (conservative; circuit-breaks safely).
+        return "outage"
+
+    rate_cls = getattr(openai, "RateLimitError", None)
+    if rate_cls is not None and isinstance(exc, rate_cls):
+        return "rate_limited"
+
+    for name in ("AuthenticationError", "PermissionDeniedError", "NotFoundError"):
+        cls = getattr(openai, name, None)
+        if cls is not None and isinstance(exc, cls):
+            return "misconfigured"
+
+    for name in ("BadRequestError", "UnprocessableEntityError"):
+        cls = getattr(openai, name, None)
+        if cls is not None and isinstance(exc, cls):
+            # 400 / 422 — bad or oversized request. NOT a provider
+            # outage: it's specific to THIS call's payload, so let it
+            # stay a per-agent content failure and keep the LLM for
+            # the rest of the pipeline.
+            return None
+
+    # Connection / timeout / 5xx, or any unrecognised transport
+    # failure → genuine provider unavailability.
+    return "outage"
+
+
+def _raise_classified_provider_failure(exc) -> NoReturn:
+    """Re-raise a caught provider exception as the right typed error:
+    a per-request 400/422 becomes a content ``AgentExecutionError``
+    (isolated per-agent); everything else becomes a categorised
+    ``OpenAIUnavailableError`` (trips the circuit breaker)."""
+    category = _classify_openai_exception(exc)
+    if category is None:
+        raise AgentExecutionError(
+            "The AI request was rejected as invalid.",
+            details=str(exc),
+        ) from exc
+    raise OpenAIUnavailableError(
+        _PROVIDER_FAILURE_MESSAGE.get(category, _PROVIDER_FAILURE_MESSAGE["outage"]),
+        details=str(exc),
+        category=category,
+    ) from exc
 
 
 # ── USD pricing map (per 1 million tokens) ──────────────────────────
@@ -506,10 +577,7 @@ class OpenAIService:
             # availability problem, not a content problem. Distinct
             # error type so the orchestrator surfaces an honest outage
             # notice instead of silently shipping degraded output.
-            raise OpenAIUnavailableError(
-                "The AI provider was unreachable.",
-                details=str(exc),
-            ) from exc
+            _raise_classified_provider_failure(exc)
 
         if allow_output_budget_retry and self._is_incomplete_due_to_output_tokens(response):
             response, request_payload = self._retry_with_higher_output_budget(
@@ -763,10 +831,7 @@ class OpenAIService:
                 error_type=type(exc).__name__,
                 details=str(exc),
             )
-            raise OpenAIUnavailableError(
-                "The AI provider was unreachable.",
-                details=str(exc),
-            ) from exc
+            _raise_classified_provider_failure(exc)
 
         if allow_output_budget_retry and self._is_incomplete_due_to_output_tokens(response):
             response, request_payload = self._retry_with_higher_output_budget(
@@ -1038,10 +1103,7 @@ class OpenAIService:
                 error_type=type(exc).__name__,
                 details=str(exc),
             )
-            raise OpenAIUnavailableError(
-                "The AI provider was unreachable.",
-                details=str(exc),
-            ) from exc
+            _raise_classified_provider_failure(exc)
 
         usage = getattr(final_response, "usage", None) if final_response else None
         status = getattr(final_response, "status", None) if final_response else None
@@ -1194,10 +1256,7 @@ class OpenAIService:
                     retry_reason=retry_reason,
                     escalation_attempt=escalations,
                 )
-                raise OpenAIUnavailableError(
-                    "The AI provider was unreachable.",
-                    details=str(retry_exc),
-                ) from retry_exc
+                _raise_classified_provider_failure(retry_exc)
 
             working_payload = retry_payload
             # Stop as soon as the response is no longer truncated by the

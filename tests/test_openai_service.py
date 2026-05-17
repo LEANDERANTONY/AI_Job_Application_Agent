@@ -4,8 +4,10 @@ import pytest
 
 from pydantic import BaseModel
 
+import openai
+
 from src.errors import AgentExecutionError, OpenAIUnavailableError
-from src.openai_service import OpenAIService
+from src.openai_service import OpenAIService, _classify_openai_exception
 
 
 class FakeCompletions:
@@ -417,3 +419,72 @@ def test_run_structured_prompt_escalates_on_truncated_partial_json():
     assert validated.approved is True
     assert len(client.responses.calls) == 2
     assert client.responses.calls[1]["max_output_tokens"] == 500
+
+
+def _exc(cls):
+    """Instantiate an openai SDK exception for isinstance checks
+    without satisfying its real (response/body) constructor."""
+    return type(f"_T{cls.__name__}", (cls,), {"__init__": lambda self: None})()
+
+
+def test_classify_openai_exception_maps_each_failure_to_the_right_policy():
+    """Pins the intelligent-failure taxonomy. These exceptions have
+    already survived the SDK's 2 retries + our app retry, so we
+    classify the NATURE of what persisted: 429 → throttled, 4xx
+    auth/perm/notfound → our misconfig (not an outage), 400/422 →
+    a per-request content problem (None → stays per-agent, NOT a
+    pipeline-wide outage), everything else → genuine outage."""
+    assert _classify_openai_exception(_exc(openai.RateLimitError)) == "rate_limited"
+    assert _classify_openai_exception(_exc(openai.AuthenticationError)) == "misconfigured"
+    assert _classify_openai_exception(_exc(openai.PermissionDeniedError)) == "misconfigured"
+    assert _classify_openai_exception(_exc(openai.NotFoundError)) == "misconfigured"
+    # 400 / 422 → content problem, NOT a provider outage.
+    assert _classify_openai_exception(_exc(openai.BadRequestError)) is None
+    assert _classify_openai_exception(_exc(openai.UnprocessableEntityError)) is None
+    # conn / timeout / 5xx / anything unrecognised → outage.
+    assert _classify_openai_exception(_exc(openai.APITimeoutError)) == "outage"
+    assert _classify_openai_exception(_exc(openai.InternalServerError)) == "outage"
+    assert _classify_openai_exception(RuntimeError("socket reset")) == "outage"
+
+
+class _BadRequest400(openai.BadRequestError):
+    def __init__(self):  # bypass the SDK ctor's required args
+        pass
+
+    def __str__(self):
+        return "context_length_exceeded"
+
+
+def test_bad_request_becomes_content_error_not_provider_outage():
+    """A 400 (e.g. prompt too long) is specific to THIS call's payload
+    — it must surface as a content AgentExecutionError so it stays
+    isolated to the one agent, NOT as an OpenAIUnavailableError that
+    would trip the pipeline-wide circuit breaker."""
+    client = FakeClient([_BadRequest400()])
+    service = OpenAIService(client=client)
+
+    with pytest.raises(AgentExecutionError) as error:
+        service.run_json_prompt("system", "user", expected_keys=["approved"])
+
+    assert not isinstance(error.value, OpenAIUnavailableError)
+
+
+class _RateLimit429(openai.RateLimitError):
+    def __init__(self):
+        pass
+
+    def __str__(self):
+        return "rate limit exceeded"
+
+
+def test_rate_limit_is_classified_outage_error_with_category():
+    """A 429 that outlived the SDK's retry-after → OpenAIUnavailableError
+    tagged rate_limited (the orchestrator uses the category for the
+    'try again shortly' copy and to NOT keep hammering)."""
+    client = FakeClient([_RateLimit429()])
+    service = OpenAIService(client=client)
+
+    with pytest.raises(OpenAIUnavailableError) as error:
+        service.run_json_prompt("system", "user", expected_keys=["approved"])
+
+    assert error.value.category == "rate_limited"

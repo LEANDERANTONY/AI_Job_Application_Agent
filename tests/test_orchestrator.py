@@ -156,6 +156,61 @@ def test_orchestrator_flags_openai_outage_and_surfaces_it():
     assert result.tailoring.professional_summary
 
 
+class MidRunOutageOpenAIService:
+    """Tailoring (1st structured call) succeeds on the LLM; review
+    (2nd) hits a provider outage. Proves the circuit breaker keeps
+    earlier LLM work and skips the LLM for the rest."""
+
+    model = "fake-model"
+
+    def __init__(self):
+        self._structured_calls = 0
+
+    @staticmethod
+    def is_available():
+        return True
+
+    def run_structured_prompt(self, system_prompt, user_prompt, *, response_model, **kwargs):
+        self._structured_calls += 1
+        if self._structured_calls == 1:
+            return _materialize_structured(
+                {
+                    "professional_summary": "Grounded summary for the role.",
+                    "rewritten_bullets": [
+                        "Built production applications using Python and Docker."
+                    ],
+                    "highlighted_skills": ["Python", "SQL", "Docker"],
+                    "cover_letter_themes": ["Strong implementation fit."],
+                },
+                response_model,
+            )
+        raise OpenAIUnavailableError(
+            "The AI provider was temporarily unreachable.", category="outage"
+        )
+
+    @staticmethod
+    def run_json_prompt(system_prompt, user_prompt, expected_keys=None, **kwargs):
+        # resume_generation / cover_letter — must NEVER be reached: the
+        # breaker is already open, so they skip the LLM entirely.
+        raise AssertionError(
+            "LLM should be skipped for later agents once the circuit is open"
+        )
+
+
+def test_orchestrator_mid_run_outage_keeps_earlier_llm_work():
+    orchestrator = ApplicationOrchestrator(openai_service=MidRunOutageOpenAIService())
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    assert result.service_unavailable is True
+    # Partial run is honest: tailoring succeeded on the LLM, so the
+    # mode stays "openai" — we did NOT tear the whole thing down.
+    assert result.mode == "openai"
+    assert "OpenAI" in result.fallback_reason
+    # The LLM tailoring output is preserved, not discarded.
+    assert result.tailoring.professional_summary == "Grounded summary for the role."
+
+
 def test_orchestrator_content_failure_is_not_flagged_as_outage():
     """A content AgentExecutionError still falls back, but is NOT an
     outage — service_unavailable stays False so we don't wrongly

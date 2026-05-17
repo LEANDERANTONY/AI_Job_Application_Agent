@@ -1227,8 +1227,56 @@ failure is the pre-existing environmental `test_workspace_retention`
 sweep — reproduced identically on clean HEAD with changes stashed).
 Frontend tsc + eslint clean.
 
+### Refinement — classification-based intelligent failing (circuit breaker)
+
+Operator pushback on the first cut: "so one agent fails and you make
+the WHOLE pipeline deterministic?" Fair — the a42418e cut fail-fast
+tore down the run on the first `OpenAIUnavailableError`, discarding
+agents that already succeeded on the LLM and over-degrading on a
+transient/partial blip. Reworked into classification + a circuit
+breaker.
+
+Key framing: the SDK's 2 retries + our 1 app retry (several seconds,
+backoff) ARE the transient filter. Anything that escapes has already
+outlived the transient window, so we don't guess "will it recover in
+3 s" (unknowable here — the user's re-run is that path); we classify
+the *nature* of what persisted and act per cause.
+
+`OpenAIUnavailableError` now carries a `category`, set by
+`_classify_openai_exception` at the catch site:
+
+- conn / timeout / 5xx (or anything unrecognised) → `outage`
+- 429 that outlived the SDK retry-after → `rate_limited`
+- 401 / 403 / 404 → `misconfigured` (our key/model/perms — NOT an
+  outage: generic user copy + a loud `orchestrator_openai_misconfigured`
+  ERROR log; we don't publicly blame OpenAI for our bug)
+- 400 / 422 → returns `None` → raised as a plain content
+  `AgentExecutionError`, NOT an outage. A too-long/bad request is
+  specific to one agent's payload, so it stays per-agent isolated and
+  the rest of the pipeline keeps using the LLM.
+
+Orchestrator is now a **circuit breaker**, not a teardown: the first
+provider-level failure trips a per-run breaker; that agent takes its
+deterministic fallback, and every *remaining* agent skips the LLM
+(no point hammering a down/limited/misconfigured provider — and more
+429s only make it worse). Agents that ALREADY succeeded on the LLM
+keep their output untouched. If ≥1 agent succeeded the run stays
+`mode="openai"` (honest partial) with `service_unavailable=True` and
+the cause-accurate banner; if none did it reconciles to
+`deterministic_fallback` as before. Net: a one-off bad-request no
+longer degrades anything beyond its own agent; only a genuine
+provider-wide problem circuit-breaks, fast, with honest copy.
+
+Tests: `test_openai_service.py` +3 (full taxonomy table; 400 →
+content not outage; 429 → category `rate_limited`).
+`test_orchestrator.py` +1 (mid-run outage: tailoring's LLM output is
+KEPT, later agents skip the LLM, `mode` stays `openai`,
+`service_unavailable` True). 31 targeted green; broader agent/
+workflow/openai slice green.
+
 ### Deploy status
 
-Day-51 (`ee90373`) is committed locally and still unpushed. This
-Day-52 set is also committed locally; both await the operator's push
-decision (backend re-deploy + a frontend rebuild for the banner).
+Day-51 (`ee90373`) is committed locally and still unpushed. The
+Day-52 set + this refinement are also committed locally; all await
+the operator's push decision (backend re-deploy + a frontend rebuild
+for the banner).

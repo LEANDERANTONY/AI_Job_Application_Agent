@@ -27,6 +27,29 @@ LOGGER = get_logger(__name__)
 ProgressCallback = Callable[[str, str, int], None]
 
 
+# User-facing banner copy per provider-failure category. Honest and
+# cause-accurate: a real outage blames OpenAI; a rate-limit tells the
+# user to retry shortly; a misconfig stays GENERIC (it's our key /
+# model bug — don't publicly blame OpenAI; the operator gets the loud
+# `orchestrator_openai_misconfigured` ERROR log instead).
+_OUTAGE_USER_MESSAGE = {
+    "outage": (
+        "Our AI provider (OpenAI) is having a moment, so we built a "
+        "baseline version of your application. Re-run in a few minutes "
+        "for the full AI-tailored result."
+    ),
+    "rate_limited": (
+        "OpenAI is rate-limiting us right now, so we built a baseline "
+        "version of your application. Try again in a minute for the "
+        "full AI-tailored result."
+    ),
+    "misconfigured": (
+        "AI assistance is temporarily unavailable, so we built a "
+        "baseline version of your application. Please try again shortly."
+    ),
+}
+
+
 class ApplicationOrchestrator:
     def __init__(
         self,
@@ -101,12 +124,15 @@ class ApplicationOrchestrator:
                     model_overrides=self._model_overrides,
                 )
             except AgentExecutionError as exc:
-                # OpenAIUnavailableError is a subclass, so it's caught
-                # here too — but it means the PROVIDER was down, not
-                # that our content degraded. Flag it so the result
-                # carries an honest outage signal and the user sees a
-                # "try again shortly" notice instead of silently
-                # receiving a deterministic-quality application.
+                # Defensive residual. The normal provider-failure path
+                # is the circuit breaker INSIDE _run_pipeline (keeps
+                # succeeded agents, degrades the rest, returns a
+                # flagged result — no exception escapes). We only reach
+                # here if _run_pipeline genuinely raised: a content
+                # AgentExecutionError whose per-agent fallback ALSO
+                # failed, or (shouldn't happen) an OpenAIUnavailableError
+                # from a step with no fallback runner. Still flag the
+                # outage subclass so even this edge stays honest.
                 service_unavailable = isinstance(exc, OpenAIUnavailableError)
                 fallback_details = exc.details or ""
                 if service_unavailable:
@@ -225,6 +251,18 @@ class ApplicationOrchestrator:
             "first_llm_error": None,
         }
 
+        # Circuit breaker for PROVIDER-level failures (outage /
+        # rate-limit / misconfig). Once one agent hits an
+        # OpenAIUnavailableError that survived the SDK+app retries, the
+        # wall is pipeline-wide — every later agent would hit it too.
+        # We do NOT tear the run down (agents that already succeeded on
+        # the LLM keep their output); instead we open the breaker so
+        # the remaining agents skip straight to their deterministic
+        # fallback (no wasted retries hammering a down/limited/broken
+        # provider) and the result is flagged with the specific
+        # category so the UI shows an honest, cause-accurate notice.
+        outage_state = {"tripped": False, "category": "", "error": None}
+
         def stage_progress(current_stage_index):
             if total_stage_count <= 1:
                 return 95
@@ -269,6 +307,33 @@ class ApplicationOrchestrator:
             # Only AgentExecutionError is retried/fallback'd. Other
             # exceptions (bugs, contract violations) propagate
             # immediately — they wouldn't change on retry.
+
+            # Circuit OPEN: a prior agent already hit a provider-level
+            # failure. The wall is pipeline-wide, so don't make the
+            # user wait while THIS agent also burns SDK+app retries
+            # against a down/limited/misconfigured provider — go
+            # straight to its deterministic fallback. Agents that
+            # already succeeded on the LLM (earlier in the sequence)
+            # are untouched; we never throw good work away.
+            if (
+                outage_state["tripped"]
+                and mode == "openai"
+                and deterministic_fallback_runner is not None
+            ):
+                agent_outcomes["per_agent_fallback_count"] += 1
+                log_event(
+                    LOGGER,
+                    logging.INFO,
+                    "agent_run_circuit_open",
+                    "Provider circuit open from an earlier agent; skipping the LLM for this agent and using its deterministic fallback.",
+                    agent=agent_name,
+                    mode=mode,
+                    model=model_name,
+                    outage_category=outage_state["category"],
+                    **context,
+                )
+                return deterministic_fallback_runner()
+
             agent_retry_delay_seconds = 0.4
             started_at = time.perf_counter()
             last_exc = None
@@ -277,23 +342,29 @@ class ApplicationOrchestrator:
                 try:
                     result = runner()
                 except OpenAIUnavailableError as exc:
-                    # The provider itself is unreachable — not a content
-                    # problem with THIS agent. Retrying the agent or
-                    # running its per-agent deterministic while every
-                    # later agent will also fail the LLM is wasted work
-                    # and would mask a global outage as a routine
-                    # per-agent fallback. Fail fast: cascade to the
-                    # outer handler, which downgrades the whole run to
-                    # deterministic AND flags it so the user is told
-                    # honestly that OpenAI is down.
+                    # PROVIDER-level failure that survived SDK+app
+                    # retries. Trip the breaker (so the remaining
+                    # agents skip the LLM) and give THIS agent its
+                    # deterministic fallback. We do NOT retry it (the
+                    # provider is down/limited/misconfigured — another
+                    # attempt won't help and a 429 only gets worse) and
+                    # we do NOT tear down agents that already succeeded.
+                    category = getattr(exc, "category", "outage") or "outage"
+                    if not outage_state["tripped"]:
+                        outage_state["tripped"] = True
+                        outage_state["category"] = category
+                        outage_state["error"] = exc
                     log_event(
                         LOGGER,
-                        logging.WARNING,
-                        "agent_run_provider_unavailable",
-                        "AI provider unreachable during agent run; cascading to whole-pipeline deterministic with an outage notice.",
+                        logging.ERROR if category == "misconfigured" else logging.WARNING,
+                        "orchestrator_openai_misconfigured"
+                        if category == "misconfigured"
+                        else "agent_run_provider_unavailable",
+                        "AI provider failure during agent run; opening the circuit and using deterministic fallback for this and remaining agents.",
                         agent=agent_name,
                         mode=mode,
                         model=model_name,
+                        outage_category=category,
                         duration_ms=round(
                             (time.perf_counter() - started_at) * 1000, 2
                         ),
@@ -301,6 +372,14 @@ class ApplicationOrchestrator:
                         details=exc.details or "",
                         **context,
                     )
+                    if mode == "openai" and deterministic_fallback_runner is not None:
+                        if agent_outcomes["first_llm_error"] is None:
+                            agent_outcomes["first_llm_error"] = exc
+                        agent_outcomes["per_agent_fallback_count"] += 1
+                        return deterministic_fallback_runner()
+                    # No per-agent fallback available — let it cascade
+                    # to run()'s outer handler (whole-pipeline
+                    # deterministic), which still flags the outage.
                     raise
                 except AgentExecutionError as exc:
                     last_exc = exc
@@ -612,6 +691,27 @@ class ApplicationOrchestrator:
                     "Every assisted agent fell back to deterministic output."
                 )
 
+        # A provider-level failure (breaker tripped anywhere in the
+        # run) ALWAYS flags the result + rewrites the reason with the
+        # cause-accurate banner copy — even when some agents still
+        # succeeded on the LLM (reported_mode stays "openai" in that
+        # partial case; the banner tells the user some sections used a
+        # fallback and to re-run). `service_unavailable` from the
+        # caller (run()'s defensive cascade path) is OR-ed in.
+        final_service_unavailable = bool(
+            service_unavailable or outage_state["tripped"]
+        )
+        if outage_state["tripped"]:
+            outage_category = outage_state["category"] or "outage"
+            reported_fallback_reason = _OUTAGE_USER_MESSAGE.get(
+                outage_category, _OUTAGE_USER_MESSAGE["outage"]
+            )
+            outage_error = outage_state["error"]
+            if outage_error is not None:
+                reported_fallback_details = (
+                    getattr(outage_error, "details", "") or ""
+                )
+
         log_event(
             LOGGER,
             logging.INFO,
@@ -623,6 +723,8 @@ class ApplicationOrchestrator:
             approved=review_output.approved if review_output else False,
             llm_success_count=agent_outcomes["llm_success_count"],
             per_agent_fallback_count=agent_outcomes["per_agent_fallback_count"],
+            service_unavailable=final_service_unavailable,
+            outage_category=outage_state["category"],
         )
 
         ApplicationOrchestrator._emit_progress(
@@ -646,8 +748,9 @@ class ApplicationOrchestrator:
             attempted_assisted=attempted_assisted,
             fallback_reason=reported_fallback_reason,
             fallback_details=reported_fallback_details,
-            # Outage is decided by the caller (run()) — a content-only
-            # per-agent/whole-pipeline downgrade leaves this False; only
-            # an OpenAIUnavailableError sets it True.
-            service_unavailable=service_unavailable,
+            # True when the circuit breaker tripped (provider outage /
+            # rate-limit / misconfig) anywhere in the run, OR the
+            # caller's defensive cascade flagged it. A content-only
+            # per-agent downgrade leaves this False.
+            service_unavailable=final_service_unavailable,
         )

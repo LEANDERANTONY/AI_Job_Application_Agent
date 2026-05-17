@@ -43,23 +43,35 @@ class AgentExecutionError(AppError):
 
 
 class OpenAIUnavailableError(AgentExecutionError):
-    """A *transport / availability* failure talking to OpenAI.
+    """A *provider-level* failure talking to OpenAI that survived the
+    SDK's retries (2x) + our app-level retry (1x) — i.e. several
+    seconds of backoff already happened, so this is not a one-packet
+    blip. Carries a ``category`` so the orchestrator can fail
+    *intelligently* rather than treating every "no usable response"
+    the same:
 
-    Network error, timeout, 5xx, rate-limit after the SDK already
-    backed off, auth/quota rejection — i.e. we never got a usable
-    response at all. Distinct from a content failure because the
-    remediation is completely different: there's nothing wrong with
-    the request, the provider is just down, so retrying individual
-    agents is pointless. The orchestrator short-circuits the whole
-    run to deterministic output and surfaces an honest "our AI
-    provider is having a moment" notice to the user instead of
-    silently shipping a degraded result.
+      - ``"outage"``       — connection / timeout / 5xx. OpenAI is
+                             genuinely unreachable right now.
+      - ``"rate_limited"`` — 429 that outlived the SDK's retry-after.
+                             Hammering more agents makes it worse.
+      - ``"misconfigured"``— 401 / 403 / 404. NOT an outage — our key,
+                             model name, or permissions are wrong.
+                             Surface generically + alert the operator;
+                             do NOT publicly blame OpenAI for our bug.
+
+    A 400 / 422 (bad request — e.g. prompt too long) is deliberately
+    NOT this error: that's a per-request content problem, raised as a
+    plain ``AgentExecutionError`` so it stays isolated to the one
+    agent and the rest of the pipeline keeps using the LLM.
 
     Subclasses ``AgentExecutionError`` so every existing
     ``except AgentExecutionError`` site keeps catching it unchanged;
-    only the code that wants to distinguish an outage (the
-    orchestrator) needs the ``isinstance`` check.
+    only the orchestrator needs the ``isinstance`` + ``category``.
     """
+
+    def __init__(self, user_message, *, details=None, category="outage"):
+        super().__init__(user_message, details=details)
+        self.category = category
 
 
 class ExportError(AppError):
