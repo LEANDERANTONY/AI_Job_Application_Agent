@@ -63,11 +63,31 @@ Research snapshot (2026-05, verify before relying):
 | Kimi K2.5 | ~0.60 | ~2.50 | ~0.15 (75% off) | ~330 t/s, sub-1s TTFT (non-thinking) |
 | Kimi K2.6 | ~0.73–0.95 | ~3.49–4.00 | ~0.15 | — |
 
-Key seam fact: Kimi K2 exposes an **OpenAI-API-compatible** endpoint,
-so a secondary provider is a `base_url` + `api_key` + model-id swap
-through the existing `OpenAIService` constructor — no new client, no
-call-site changes. `OpenAIUnavailableError` + `_classify_openai_exception`
-+ the circuit breaker are precisely the failover seams.
+Seam fact — **corrected 2026-05-18** (the original draft below was
+optimistic): Kimi K2 is OpenAI-**Chat-Completions**-compatible, but
+`src/openai_service.py` is built entirely on OpenAI's proprietary
+**Responses API** (`responses.create`, `output_text`,
+`previous_response_id`, `max_output_tokens`, `reasoning.effort`,
+structured outputs via `text.format`) — 62 Responses-API references,
+**zero** `chat.completions` usage anywhere in `src/` or `backend/`.
+Moonshot / OpenRouter / Together / Fireworks implement Chat
+Completions, **not** the Responses API, so a `client=` with a Kimi
+`base_url` would call an endpoint Kimi doesn't serve. A secondary
+provider is therefore **not** a config swap — it needs a
+Chat-Completions adapter presenting the duck-typed `OpenAIService`
+surface the agents/parsers depend on (`is_available`,
+`run_json_prompt`, `run_structured_prompt`, `get_usage_snapshot`, +
+the budget/escalation/classification parity needed for a *fair*
+comparison). That adapter IS the real shape of Decision 1's
+implementation; the `client=` constructor seam +
+`OpenAIUnavailableError` + the circuit breaker remain the *failover*
+seams, but the provider integration itself is a new module, not a
+flag.
+
+> Original (optimistic) draft, kept for the record: "Kimi K2 exposes
+> an OpenAI-API-compatible endpoint, so a secondary provider is a
+> base_url + api_key + model-id swap through the existing
+> OpenAIService constructor — no new client, no call-site changes."
 
 ## Decision
 
@@ -136,7 +156,7 @@ pointing here.
 | Option | Complexity | Cost | Resilience | EU/PII |
 |---|---|---|---|---|
 | A. Status quo (graceful deterministic only) | None | $0 | Outage → deterministic-quality for the duration (already honest) | clean |
-| **B. Kimi K2 per-task failover** | Low (drop-in via OpenAIService + circuit breaker) | ~$0 idle, Kimi rates only during OpenAI outages (rare) | Outage → near-full quality | per-task knob; PII tasks stay OpenAI |
+| **B. Kimi K2 per-task failover** | **Med** (revised: needs a Chat-Completions adapter — the codebase is Responses-API-native; NOT a config swap) | ~$0 idle, Kimi rates only during OpenAI outages (rare) | Outage → near-full quality | per-task knob; PII tasks stay OpenAI |
 | C. Kimi K2 primary (some surfaces) | Med (re-tune + re-validate prompts; reverses fast-fail calls) | cheaper steady-state | high | broader PII exposure |
 | D. Self-host Kimi-like | High (GPU/ops/SRE) | $300–3000/mo or unusable CPU latency | new SPOF; quality regression | self-controlled but worse |
 
@@ -210,16 +230,23 @@ fast-fail product decisions.
        low-PII only (`assistant`/`product_help`, `jd_summary`);
        `profile`/`job`/`resume_generation`/`cover_letter` stay
        OpenAI-only on failover.
-3. [ ] If 1B accepted: add a `secondary_provider` config (base_url +
-       key + per-task model map) and a failover branch in the
-       `OpenAIUnavailableError` handling (one new call through the
-       existing `OpenAIService`); hermetic test for
-       failover-on-outage + PII-task-does-not-fail-over.
-4. [ ] Decision 2: run the `review` premium A/B; record the
-       grounding-delta; then raise `review`→high *or* drop the
-       upgrade *or* (policy permitting) point premium at Kimi.
-5. [ ] On acceptance: flip Status to Accepted, move to the right
-       index cluster, update the "Current state note", DEVLOG entry.
+3. [ ] **Pre-decision validation (operator-requested):** before any
+       commitment, run the existing quality suites (resume parser, JD
+       parser, analysis/review) Kimi-K2.6 vs gpt-5.4@medium under the
+       ≤ cost & ≤ latency constraint. **Blocked on:** (a) a Kimi key
+       + provider (eval uses synthetic repo fixtures, so jurisdiction
+       is irrelevant — OpenRouter gives easiest K2.6 access), and
+       (b) the Chat-Completions adapter (see corrected seam fact —
+       this is the unavoidable real work, ~a new service module, not
+       a flag).
+4. [ ] If validation + spend/outage justify 1B: the adapter from (3)
+       becomes the per-task `secondary_provider`; add the failover
+       branch in the `OpenAIUnavailableError` handling + hermetic
+       tests (failover-on-outage; PII-task-does-NOT-fail-over).
+5. [x] Decision 2: A/B run — **done** (`review_model_ab_runner.py`);
+       resolved to `review`→gpt-5.5@high, shipped (commit `7cbbf45`).
+6. [ ] On D1 acceptance: flip Status, update index cluster, "Current
+       state note", DEVLOG.
 
 ## References
 
