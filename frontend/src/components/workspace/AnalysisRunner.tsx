@@ -53,6 +53,13 @@ export type AnalysisRunnerProps = {
    *  state because both this component and the run-hook need to read
    *  it. */
   onPremiumChange: (next: boolean) => void;
+  /** Called when a Free-tier user interacts with the tier-locked
+   *  premium toggle. The parent surfaces the standard upgrade Notice
+   *  (the same `.b-notice-action` CTA the 429 tier-limit path uses)
+   *  instead of the toggle being a dead HTML-`disabled` control whose
+   *  only upgrade hint is a hover `title` — which never shows on
+   *  touch (the P1 gap HelpmateAI's 425a87d/11a18d8 closed). */
+  onPremiumLockedUpgrade: () => void;
 };
 
 // Pipeline stages shown in the redesigned layout.
@@ -118,6 +125,7 @@ export function AnalysisRunner({
   quota,
   premium,
   onPremiumChange,
+  onPremiumLockedUpgrade,
 }: AnalysisRunnerProps) {
   // Premium toggle gating logic.
   //   * Disabled when quota is null (anonymous / restoring / fetch
@@ -137,6 +145,17 @@ export function AnalysisRunner({
     premiumAvailable && premiumLimit > 0 && premiumRemaining <= 0;
   const premiumDisabled =
     !premiumAvailable || analysisLoading || premiumOutOfCredits;
+  // Split the "disabled" reasons. Tier-locked (Free) is NOT a hard
+  // HTML-disable: a disabled checkbox is dead on touch and its only
+  // upgrade hint is the hover `title`, which never shows on a phone —
+  // so a Free user tapping Premium got zero feedback and no upgrade
+  // path (the P1 gap HelpmateAI's 425a87d/11a18d8 closed). Keep it
+  // interactive when tier-locked so a tap surfaces the upgrade CTA;
+  // `premiumDisabled` still drives the LOCKED-LOOKING visual state.
+  // analysisLoading / out-of-credits stay real disables — transient
+  // or wait-for-reset, not an upgrade situation.
+  const tierLocked = !premiumAvailable;
+  const premiumInputDisabled = analysisLoading || premiumOutOfCredits;
   const premiumTooltip = !premiumAvailable
     ? "Upgrade to Pro for premium AI (GPT-5.5)"
     : premiumOutOfCredits
@@ -238,9 +257,20 @@ export function AnalysisRunner({
           >
             <input
               aria-label="Run with premium AI (GPT-5.5)"
+              aria-disabled={tierLocked || premiumInputDisabled}
               checked={premium && !premiumDisabled}
-              disabled={premiumDisabled}
-              onChange={(event) => onPremiumChange(event.target.checked)}
+              disabled={premiumInputDisabled}
+              onChange={(event) => {
+                if (tierLocked) {
+                  // Locked by plan, not a transient state: don't flip
+                  // premium on — surface the upgrade CTA instead. The
+                  // controlled `checked` stays false on re-render
+                  // (premiumDisabled is true while tier-locked).
+                  onPremiumLockedUpgrade();
+                  return;
+                }
+                onPremiumChange(event.target.checked);
+              }}
               type="checkbox"
             />
             <span className="b-premium-toggle-label">

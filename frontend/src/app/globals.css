@@ -7444,6 +7444,23 @@ code {
   border-color: rgba(90, 134, 255, 0.30);
   color: var(--accent-strong);
 }
+/* Touch has no hover and no arrow keys, so the data-active highlight
+   can never MOVE on a phone — selectedIndex only changes via
+   onMouseEnter / ArrowUp-Down (see CommandPalette.tsx). Give every row
+   the same highlight the instant it's pressed: the touch analog of the
+   desktop cursor/hover. Pure CSS so it fires on touchstart with no JS
+   round-trip; declared after [data-active] (equal specificity) so a
+   press always reads, and it mirrors the [data-active] treatment so
+   touch and keyboard selection look identical. */
+.b-cmd-item:active {
+  background: rgba(90, 134, 255, 0.10);
+  color: var(--fg);
+}
+.b-cmd-item:active .b-cmd-item-icon {
+  background: rgba(90, 134, 255, 0.16);
+  border-color: rgba(90, 134, 255, 0.30);
+  color: var(--accent-strong);
+}
 .b-cmd-item-main {
   flex: 1;
   min-width: 0;

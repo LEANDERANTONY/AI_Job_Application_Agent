@@ -2097,6 +2097,17 @@ export function WorkspaceShell() {
               currentWorkflowStage={currentWorkflowStage}
               onClearRole={clearWorkspaceRole}
               onPremiumChange={setPremium}
+              onPremiumLockedUpgrade={() =>
+                setWorkspaceNotice({
+                  level: "info",
+                  message:
+                    "Premium AI (GPT-5.5) is a Pro feature. Upgrade your plan to run premium tailoring.",
+                  action: {
+                    label: "Upgrade",
+                    href: workspaceQuota?.upgrade_url || "/#pricing",
+                  },
+                })
+              }
               onRunAnalysis={() => void handleRunAnalysis()}
               premium={premium}
               quota={workspaceQuota}
