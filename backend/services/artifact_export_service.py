@@ -33,7 +33,10 @@ _SUPPORTED_THEMES = {"classic_ats", "professional_neutral"}
 
 
 def _resolve_theme(theme_name: str | None):
-    return theme_name if theme_name in _SUPPORTED_THEMES else "classic_ats"
+    # Unknown/None normalises to the product-wide default theme
+    # (professional_neutral) — also the Free-tier entitlement theme,
+    # so a defaulted Free export never trips the export gate.
+    return theme_name if theme_name in _SUPPORTED_THEMES else "professional_neutral"
 
 
 # Back-compat alias — older callers may still import this name.
@@ -86,8 +89,8 @@ def export_workspace_artifact(
     workspace_snapshot: dict | None,
     artifact_kind: ArtifactKind,
     export_format: ExportFormat,
-    resume_theme: str = "classic_ats",
-    cover_letter_theme: str = "classic_ats",
+    resume_theme: str = "professional_neutral",
+    cover_letter_theme: str = "professional_neutral",
 ):
     theme_name = _resolve_theme(resume_theme)
     cover_theme_name = _resolve_theme(cover_letter_theme)
@@ -130,8 +133,8 @@ def preview_workspace_artifact(
     *,
     workspace_snapshot: dict | None,
     artifact_kind: Literal["tailored_resume", "cover_letter"],
-    resume_theme: str = "classic_ats",
-    cover_letter_theme: str = "classic_ats",
+    resume_theme: str = "professional_neutral",
+    cover_letter_theme: str = "professional_neutral",
 ):
     theme_name = _resolve_theme(resume_theme)
     cover_theme_name = _resolve_theme(cover_letter_theme)

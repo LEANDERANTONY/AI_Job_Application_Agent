@@ -29,9 +29,11 @@ export type ArtifactViewerArtifact = {
   summary: string;
 };
 
+// professional_neutral is the product-wide default + the Free-tier
+// theme — listed first. classic_ats is the Pro/Business alternate.
 const THEME_OPTIONS: { value: ArtifactTheme; label: string }[] = [
-  { value: "classic_ats", label: "Default" },
-  { value: "professional_neutral", label: "Neutral" },
+  { value: "professional_neutral", label: "Professional" },
+  { value: "classic_ats", label: "Classic ATS" },
 ];
 
 const THEME_HINT: Record<ArtifactTheme, string> = {

@@ -357,7 +357,7 @@ export function WorkspaceShell() {
   // string (e.g. "pdf" / "docx") so each button can show a per-button
   // "Preparing…" label without locking out the other button.
   const [resumeBuilderExportTheme, setResumeBuilderExportTheme] =
-    useState<ArtifactTheme>("classic_ats");
+    useState<ArtifactTheme>("professional_neutral");
   const [resumeBuilderExporting, setResumeBuilderExporting] = useState<
     WorkspaceArtifactExportFormat | null
   >(null);

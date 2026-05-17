@@ -1094,7 +1094,7 @@ const PRICING_TIERS: PricingTier[] = [
       "20 assistant chat turns / month",
       "50 job searches / month",
       "5 saved jobs",
-      "PDF export, ATS theme",
+      "PDF export, Professional theme",
     ],
   },
   {

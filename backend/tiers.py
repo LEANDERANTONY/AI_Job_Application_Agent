@@ -170,21 +170,26 @@ def retention_days_for_tier(tier: Tier) -> int | None:
 
 
 # ── Export entitlement (pricing-truth gate) ─────────────────────────
-# The pricing page promises Free "PDF export, ATS theme" and Pro /
-# Business "PDF + DOCX export, all themes". That differentiation is an
-# ENTITLEMENT, not a metered counter, so it lives here (tier policy)
-# and is enforced via the same QuotaExceededError 429 path as the
-# premium_applications gate (see
+# The pricing page promises Free "PDF export, Professional theme" and
+# Pro / Business "PDF + DOCX export, all themes". That differentiation
+# is an ENTITLEMENT, not a metered counter, so it lives here (tier
+# policy) and is enforced via the same QuotaExceededError 429 path as
+# the premium_applications gate (see
 # `backend.quota.enforce_export_entitlement` /
 # `_build_quota_exceeded_error`) -- the frontend then renders the
 # identical upgrade nudge instead of a bespoke error shape.
+#
+# `professional_neutral` is also the product-wide DEFAULT theme (every
+# request model defaults to it), so a Free user who never opens the
+# theme picker exports their allowed combination without tripping the
+# gate. `classic_ats` is the Pro/Business-only alternate.
 #
 # Keep these two constants in lockstep with the pricing copy in
 # `frontend/src/components/landing-page.tsx` (Free vs Pro/Business
 # feature bullets). Changing what Free gets is a pricing change, not a
 # refactor.
 FREE_EXPORT_FORMAT = "pdf"
-FREE_EXPORT_THEME = "classic_ats"
+FREE_EXPORT_THEME = "professional_neutral"
 
 
 def export_entitlement_block_reason(

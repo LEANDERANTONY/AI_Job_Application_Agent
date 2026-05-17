@@ -1,11 +1,11 @@
-# ADR-027: Tier-Gated Export Entitlement (Free = PDF + ATS theme)
+# ADR-027: Tier-Gated Export Entitlement (Free = PDF + Professional theme)
 
 - Status: Accepted
 - Date: 2026-05-17
 
 ## Context
 
-The landing pricing cards differentiate the tiers on export capability: Free is advertised as **"PDF export, ATS theme"** while Pro/Business advertise **"PDF + DOCX export, all themes"**. A pricing-claims audit (every bullet cross-referenced against `backend/tiers.py` + the gating code) found that differentiation was **not backed by any code**:
+The landing pricing cards differentiate the tiers on export capability: Free is advertised as **"PDF export, Professional theme"** while Pro/Business advertise **"PDF + DOCX export, all themes"**. A pricing-claims audit (every bullet cross-referenced against `backend/tiers.py` + the gating code) found that differentiation was **not backed by any code**:
 
 1. Every tier check in the codebase was on a metered counter (`tailored_applications`, `premium_applications`, `assistant_turns`, `saved_jobs`, …). **Nothing** gated `export_format` or `resume_theme`/`cover_letter_theme`.
 2. `POST /workspace/artifacts/export` (the main tailored-resume / cover-letter download) took **no auth dependency at all** — it operated purely on the `workspace_snapshot` in the request body, so there was no user identity to resolve a tier from even if a check had existed.
@@ -18,7 +18,7 @@ Enforce the export entitlement server-side as an **entitlement, not a metered co
 
 ### Policy lives in `backend/tiers.py` (single source of truth)
 
-`FREE_EXPORT_FORMAT = "pdf"` and `FREE_EXPORT_THEME = "classic_ats"`, plus `export_entitlement_block_reason(tier, *, export_format, themes) -> str | None`. Pro/Business return `None` (full entitlement). Free returns a short human label (`"DOCX export"` / `"Custom export themes"`) when the requested format/theme is outside the free allowance; format/theme comparison is whitespace- and case-insensitive (matching the request models' `_strip_theme` normalisation) and a blank/omitted value is never a violation (a caller that doesn't pass a theme must not be upsold). These two constants are kept in lockstep with the pricing copy — changing what Free gets is a pricing decision, recorded here, not a silent refactor.
+`FREE_EXPORT_FORMAT = "pdf"` and `FREE_EXPORT_THEME = "professional_neutral"` (also the product-wide DEFAULT theme — see the Update note below), plus `export_entitlement_block_reason(tier, *, export_format, themes) -> str | None`. Pro/Business return `None` (full entitlement). Free returns a short human label (`"DOCX export"` / `"Custom export themes"`) when the requested format/theme is outside the free allowance; format/theme comparison is whitespace- and case-insensitive (matching the request models' `_strip_theme` normalisation) and a blank/omitted value is never a violation (a caller that doesn't pass a theme must not be upsold). These two constants are kept in lockstep with the pricing copy — changing what Free gets is a pricing decision, recorded here, not a silent refactor.
 
 ### Enforcement reuses the `QuotaExceededError` 429 (not a bespoke error)
 
@@ -26,7 +26,7 @@ Enforce the export entitlement server-side as an **entitlement, not a metered co
 
 ### Both export routes gated; the main one gains auth
 
-`enforce_export_entitlement` is called in both `POST /workspace/resume-builder/export` (already authed) and `POST /workspace/artifacts/export` (the missing `get_optional_auth_tokens` dependency was added). Tier resolution is **best-effort and never hard-fails the allowed path**: a soft `_resolve_export_tier` helper resolves anon / expired / invalid sessions to `"free"` (the most restrictive tier) rather than 401-ing, so the Free-allowed `pdf` + `classic_ats` export keeps working for everyone — including anonymous callers — exactly as before. Only the DOCX / non-`classic_ats` request on a non-paid tier is blocked. The gate runs before any session hydrate / export work so a blocked request has no side effects.
+`enforce_export_entitlement` is called in both `POST /workspace/resume-builder/export` (already authed) and `POST /workspace/artifacts/export` (the missing `get_optional_auth_tokens` dependency was added). Tier resolution is **best-effort and never hard-fails the allowed path**: a soft `_resolve_export_tier` helper resolves anon / expired / invalid sessions to `"free"` (the most restrictive tier) rather than 401-ing, so the Free-allowed `pdf` + `professional_neutral` export keeps working for everyone — including anonymous callers. Only the DOCX / non-`professional_neutral` request on a non-paid tier is blocked. The gate runs before any session hydrate / export work so a blocked request has no side effects.
 
 ## Consequences
 
@@ -61,3 +61,34 @@ Enforce the export entitlement server-side as an **entitlement, not a metered co
 - `tests/backend/test_export_entitlement.py` — 14 hermetic policy + raiser tests
 - ADR-021 (atomic quota with refund-on-failure) and ADR-020 (tier resolution shim) — the quota/tier infrastructure this builds on
 - ADR-015 (DOCX-first artifact export with theme palette) — the export surface now being entitlement-gated
+
+## Update — 2026-05-17 (same day, pre-settle refinement)
+
+The initial draft set the Free theme to `classic_ats`. A same-day
+product call changed it: **Free's theme is `professional_neutral`**,
+and `professional_neutral` is now the **product-wide default theme**
+(every request model + the frontend theme state + the
+`artifact_export_service` normaliser default to it). `classic_ats`
+becomes the Pro/Business-only alternate.
+
+Why the default also moved: every theme field used to default to
+`classic_ats`. With Free restricted to `professional_neutral` but the
+default still `classic_ats`, a Free user who never opened the theme
+picker would have been blocked on their **own default export**.
+Making `professional_neutral` the global default closes that hole —
+the Free-allowed combination is exactly what an untouched export
+produces. Paid tiers can still switch to `classic_ats`.
+
+Consequence for tests: `tests/test_backend_workspace.py` export tests
+pre-date the gate and exercise export *mechanics* (DOCX round-trip,
+snapshot forwarding, multi-role rendering). An autouse fixture there
+resolves the export tier as a paid user so they keep testing
+mechanics rather than all 429-ing; the entitlement itself stays
+exclusively + exhaustively tested in `test_export_entitlement.py`
+(themes inverted accordingly).
+
+Governance note: the Decision text above was corrected in place
+(rather than spawning a superseding ADR) because this ADR was
+authored and refined within the same work session, before it had
+settled as a relied-upon historical record. This Update section is
+the audit trail of that refinement.

@@ -872,3 +872,57 @@ Local + unpushed. The schema + pricing/export-gate changes touch the workflow + 
 ### ADRs added
 
 - [ADR-027: Tier-gated export entitlement (Free = PDF + ATS theme)](docs/adr/ADR-027-tier-gated-export-entitlement.md)
+
+## Day 48: Post-deploy UX follow-ups — feedback-widget placement, FAB colour, Free theme = Professional
+
+Two user-caught items after the Day-47 batch went live.
+
+### Sentry feedback widget collision + muted assistant FAB (`27e4235`, pushed)
+
+On the Sentry-enabled prod build the auto-injected "Report an issue"
+actor button and the workspace assistant FAB both pinned bottom-right;
+Sentry's actor (much higher z-index) overlapped and blocked the
+assistant chat. Not reproducible locally (Sentry is a no-op without a
+DSN, so the widget never renders in dev — which is why the Day-47
+visual pass missed it). Fix: `--actor-inset: auto auto 16px 16px` on
+`:root` — per the installed `@sentry-internal/feedback` source the
+actor is positioned via `inset: var(--actor-inset)`; this cascades
+into the widget shadow DOM exactly like the existing `--actor-*` theme
+props, moving the trigger to the bottom-LEFT, opposite the FAB.
+Separately, the assistant FAB's blue read as muted vs the primary
+buttons — an always-on white cursor-highlight radial was washing it
+out; dropped the radial so `.rd-fab` renders the exact same
+`linear-gradient(--accent-strong → #114be9)` as `.rd-btn-primary`.
+
+### Free export theme = Professional; professional_neutral is now the global default
+
+Product call refining ADR-027: Free's allowed theme is
+`professional_neutral` (the cleaner black/white/Arial look), not
+`classic_ats`. To avoid a Free user being blocked on their own
+*default* export, `professional_neutral` is now the product-wide
+default theme — every request model (`workspace_models.py`), the
+`artifact_export_service` normaliser, and the frontend theme state
+(`useArtifactExport`, `WorkspaceShell`) default to it; `classic_ats`
+is the Pro/Business-only alternate. Pricing copy: Free bullet →
+"PDF export, Professional theme". Theme pickers (ArtifactViewer,
+ResumeIntake) reorder/relabel: Professional first, Classic ATS
+second. `tiers.FREE_EXPORT_THEME` flipped; ADR-027 corrected in place
++ a dated Update note (same-session refinement — see the ADR's
+governance note).
+
+Tests: `test_export_entitlement.py` themes inverted (14 green). The
+export-mechanics tests in `test_backend_workspace.py` pre-date the
+gate and were all 429-ing on DOCX / classic_ats — added a
+module-scoped autouse fixture resolving the export tier as a paid
+user so they keep testing mechanics (DOCX round-trip, snapshot
+forwarding); 10 export tests green. `test_exporters.py` unaffected
+(28 green — `src/exporters.py` internals deliberately untouched;
+`classic_ats` remains a valid, unchanged theme). Frontend tsc +
+eslint clean.
+
+### Deploy status
+
+Day-47 batch + the `27e4235` follow-up are already pushed (both
+products). This Free-theme/global-default change is committed
+locally; push decision deferred to the operator (re-deploys the
+backend gate + frontend defaults + pricing copy).

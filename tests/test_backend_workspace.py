@@ -1,11 +1,33 @@
 import base64
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import app
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _export_gate_as_paid_tier(monkeypatch):
+    """Resolve the export-entitlement tier as a paid user for every
+    test in this module.
+
+    The Free entitlement (PDF + professional_neutral only; DOCX and
+    classic_ats are Pro/Business) is exhaustively covered in
+    ``tests/backend/test_export_entitlement.py``. The export tests
+    HERE pre-date the gate and exercise export *mechanics* — DOCX
+    round-trip, snapshot/theme forwarding, multi-role rendering,
+    unknown-session 400s. Without this they'd all 429 on DOCX /
+    classic_ats and stop testing what they're for. ``_resolve_export_
+    tier`` is only reached from the two export routes, so this is a
+    no-op for every non-export test in the file.
+    """
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_export_tier",
+        lambda *args, **kwargs: "business",
+    )
 
 
 def _encode_text_file_payload(filename: str, text: str):

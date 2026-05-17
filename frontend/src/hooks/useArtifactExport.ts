@@ -95,9 +95,10 @@ export function useArtifactExport({
     string | null
   >(null);
   const [artifactPreviewLoading, setArtifactPreviewLoading] = useState(false);
-  const [resumeTheme, setResumeTheme] = useState<ArtifactTheme>("classic_ats");
+  const [resumeTheme, setResumeTheme] =
+    useState<ArtifactTheme>("professional_neutral");
   const [coverLetterTheme, setCoverLetterTheme] =
-    useState<ArtifactTheme>("classic_ats");
+    useState<ArtifactTheme>("professional_neutral");
 
   const currentArtifact = useMemo<ArtifactViewerArtifact | null>(() => {
     if (!analysisState) {

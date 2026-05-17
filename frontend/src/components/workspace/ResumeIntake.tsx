@@ -697,11 +697,11 @@ export function ResumeIntake({
                       >
                         {(
                           [
-                            { value: "classic_ats", label: "Classic ATS" },
                             {
                               value: "professional_neutral",
-                              label: "Professional Neutral",
+                              label: "Professional",
                             },
+                            { value: "classic_ats", label: "Classic ATS" },
                           ] as const
                         ).map((option) => (
                           <button

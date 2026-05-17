@@ -32,10 +32,14 @@ from src.errors import QuotaExceededError
 # ── policy: export_entitlement_block_reason ─────────────────────────
 
 
-def test_free_pdf_classic_ats_is_allowed():
+def test_free_pdf_professional_neutral_is_allowed():
+    # professional_neutral is the Free-tier theme (and the product
+    # default). PDF + professional_neutral must pass cleanly.
     assert (
         export_entitlement_block_reason(
-            "free", export_format="pdf", themes=("classic_ats", "classic_ats")
+            "free",
+            export_format="pdf",
+            themes=("professional_neutral", "professional_neutral"),
         )
         is None
     )
@@ -48,20 +52,21 @@ def test_free_docx_is_blocked_with_docx_label():
     )
 
 
-def test_free_non_ats_theme_is_blocked_with_theme_label():
+def test_free_non_default_theme_is_blocked_with_theme_label():
+    # classic_ats is the Pro/Business-only alternate — blocked for Free.
     assert (
         export_entitlement_block_reason(
-            "free", export_format="pdf", themes=("professional_neutral",)
+            "free", export_format="pdf", themes=("classic_ats",)
         )
         == "Custom export themes"
     )
 
 
 def test_free_format_violation_takes_precedence_over_theme():
-    # DOCX + a custom theme: the format label is the one we surface.
+    # DOCX + a non-default theme: the format label is the one we surface.
     assert (
         export_entitlement_block_reason(
-            "free", export_format="docx", themes=("professional_neutral",)
+            "free", export_format="docx", themes=("classic_ats",)
         )
         == "DOCX export"
     )
@@ -83,7 +88,7 @@ def test_free_comparison_is_case_and_whitespace_insensitive():
     # Mirrors the request models' _strip_theme normalisation.
     assert (
         export_entitlement_block_reason(
-            "free", export_format="  PDF ", themes=("  Classic_ATS  ",)
+            "free", export_format="  PDF ", themes=("  Professional_Neutral  ",)
         )
         is None
     )
@@ -100,19 +105,20 @@ def test_paid_tiers_have_full_entitlement(tier):
 
 
 def test_free_constants_match_pricing_copy():
-    # If these change, the Free pricing bullet ("PDF export, ATS
-    # theme") changed too -- a pricing decision, caught here.
+    # If these change, the Free pricing bullet ("PDF export,
+    # Professional theme") changed too -- a pricing decision, caught
+    # here. professional_neutral is also the product-wide default.
     assert FREE_EXPORT_FORMAT == "pdf"
-    assert FREE_EXPORT_THEME == "classic_ats"
+    assert FREE_EXPORT_THEME == "professional_neutral"
 
 
 # ── raiser: enforce_export_entitlement ──────────────────────────────
 
 
-def test_enforce_allows_free_pdf_classic_ats():
-    # No exception == allowed.
+def test_enforce_allows_free_pdf_professional_neutral():
+    # No exception == allowed (Free's PDF + professional_neutral).
     enforce_export_entitlement(
-        "free", export_format="pdf", themes=("classic_ats",)
+        "free", export_format="pdf", themes=("professional_neutral",)
     )
 
 
@@ -138,8 +144,9 @@ def test_enforce_blocks_free_docx_as_quota_error():
     assert "Pro+" in err.user_message
 
 
-def test_enforce_blocks_free_custom_theme():
+def test_enforce_blocks_free_non_default_theme():
+    # classic_ats is the Pro/Business-only alternate — Free is blocked.
     with pytest.raises(QuotaExceededError):
         enforce_export_entitlement(
-            "free", export_format="pdf", themes=("professional_neutral",)
+            "free", export_format="pdf", themes=("classic_ats",)
         )

@@ -92,8 +92,8 @@ class WorkspaceArtifactExportRequestModel(BaseModel):
     # export plan; markdown lives only as the in-app preview content
     # field, not as a download format.
     export_format: Literal["pdf", "docx"]
-    resume_theme: str = Field(default="classic_ats", max_length=80)
-    cover_letter_theme: str = Field(default="classic_ats", max_length=80)
+    resume_theme: str = Field(default="professional_neutral", max_length=80)
+    cover_letter_theme: str = Field(default="professional_neutral", max_length=80)
 
     @field_validator("resume_theme", "cover_letter_theme", mode="before")
     @classmethod
@@ -106,8 +106,8 @@ class WorkspaceArtifactPreviewRequestModel(BaseModel):
 
     workspace_snapshot: dict[str, Any]
     artifact_kind: Literal["tailored_resume", "cover_letter"]
-    resume_theme: str = Field(default="classic_ats", max_length=80)
-    cover_letter_theme: str = Field(default="classic_ats", max_length=80)
+    resume_theme: str = Field(default="professional_neutral", max_length=80)
+    cover_letter_theme: str = Field(default="professional_neutral", max_length=80)
 
     @field_validator("resume_theme", "cover_letter_theme", mode="before")
     @classmethod
@@ -248,7 +248,7 @@ class ResumeBuilderExportRequestModel(BaseModel):
 
     session_id: str = Field(min_length=1, max_length=120)
     export_format: Literal["pdf", "docx"]
-    theme: Literal["classic_ats", "professional_neutral"] = "classic_ats"
+    theme: Literal["classic_ats", "professional_neutral"] = "professional_neutral"
 
     @field_validator("session_id", mode="before")
     @classmethod
