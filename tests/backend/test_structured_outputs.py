@@ -7,8 +7,11 @@ Three layers of coverage:
     ``additionalProperties: false``, fills ``required`` on every
     object).
   * ``run_structured_prompt`` round-trips a Pydantic model through a
-    mocked OpenAI client — returns the validated instance, raises a
-    clean ``AgentExecutionError`` on schema mismatch.
+    mocked OpenAI client — returns the validated instance, DROPS
+    unknown keys (``_StrictBase`` is ``extra="ignore"``; the
+    server-side strict ``response_format`` is the real fail-closed
+    guard), and still raises a clean ``AgentExecutionError`` on
+    genuinely-malformed output (wrong field type).
   * Each migrated agent (Tailoring, Review, ResumeGeneration,
     CoverLetter) uses ``run_structured_prompt`` not
     ``run_json_prompt``, returns the expected dataclass shape, and
@@ -22,7 +25,7 @@ from types import SimpleNamespace
 from typing import Optional
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from src.errors import AgentExecutionError
 from src.openai_service import (
@@ -45,6 +48,7 @@ from src.schemas_llm_outputs import (
     ResumeGenerationOutput,
     ReviewOutput,
     TailoringOutput,
+    _StrictBase,
 )
 
 
@@ -282,17 +286,65 @@ def test_run_structured_prompt_raises_on_invalid_json():
     assert "invalid JSON" in exc_info.value.user_message
 
 
-def test_run_structured_prompt_raises_on_schema_mismatch():
-    """When the model emits JSON that doesn't match the schema (extra
-    field with ``extra='forbid'``), the wrapper must raise rather than
-    silently returning a partially-populated instance."""
+def test_run_structured_prompt_ignores_unknown_keys():
+    """A benign extra key the model volunteers must NOT nuke an
+    otherwise-valid agent output.
+
+    Intentional contract change (was
+    ``test_run_structured_prompt_raises_on_schema_mismatch``):
+    ``_StrictBase`` is now ``extra="ignore"``. The fail-closed guard
+    moved to where it actually lives — the OpenAI strict
+    ``response_format`` (asserted in
+    ``test_run_structured_prompt_sends_json_schema_response_format``,
+    which checks ``strict is True`` + ``additionalProperties: false``).
+    The redundant client-side re-validation must degrade gracefully:
+    drop the unknown key, return the validated instance, so the
+    orchestrator does NOT drop this agent to its deterministic
+    fallback over one stray field."""
     payload_json = json.dumps(
         {
             "professional_summary": "Valid summary.",
-            "rewritten_bullets": [],
+            "rewritten_bullets": ["b1"],
+            "highlighted_skills": ["Python"],
+            "cover_letter_themes": ["ownership"],
+            "this_field_should_not_exist": True,
+        }
+    )
+    client = _FakeClient([_build_response(payload_json)])
+    service = OpenAIService(client=client)
+
+    result = service.run_structured_prompt(
+        "system",
+        "user",
+        response_model=TailoringOutput,
+        task_name="tailoring",
+    )
+
+    assert isinstance(result, TailoringOutput)
+    assert result.professional_summary == "Valid summary."
+    assert result.rewritten_bullets == ["b1"]
+    # The unknown key is dropped, not attached to the instance.
+    assert not hasattr(result, "this_field_should_not_exist")
+    assert "this_field_should_not_exist" not in result.model_dump()
+
+
+def test_run_structured_prompt_raises_on_malformed_output():
+    """The over-permissiveness guard: ``extra="ignore"`` must NOT
+    weaken required-field / TYPE enforcement.
+
+    (Job Agent's ``_StrictBase`` subclasses all carry field defaults,
+    so an *omitted* field is filled by its default rather than raising
+    — the meaningful "still genuinely-malformed" signal here is a
+    wrong-typed field, not a missing one.) A non-list where the schema
+    wants ``list[str]`` must still fail ``model_validate`` and surface
+    as the same clean ``AgentExecutionError`` so the agent still falls
+    back on genuinely-broken output."""
+    payload_json = json.dumps(
+        {
+            "professional_summary": "Valid summary.",
+            "rewritten_bullets": 123,  # schema wants list[str]
             "highlighted_skills": [],
             "cover_letter_themes": [],
-            "this_field_should_not_exist": True,
         }
     )
     client = _FakeClient([_build_response(payload_json)])
@@ -306,6 +358,42 @@ def test_run_structured_prompt_raises_on_schema_mismatch():
             task_name="tailoring",
         )
     assert "schema" in exc_info.value.user_message.lower()
+
+
+def test_llm_output_base_ignores_extra_keys_but_enforces_types():
+    """Model-level contract for the shared ``_StrictBase`` config.
+
+    Tighter + faster than going through the service: asserts the
+    actual ``ConfigDict`` change and that the relax is scoped to
+    *unknown keys only* (types/required still enforced)."""
+    # The config change itself — the thing a future "re-tighten to be
+    # safe" refactor would silently revert.
+    assert _StrictBase.model_config.get("extra") == "ignore"
+
+    parsed = TailoringOutput.model_validate(
+        {
+            "professional_summary": "ok",
+            "rewritten_bullets": ["b1"],
+            "highlighted_skills": ["Python"],
+            "cover_letter_themes": ["theme"],
+            "rogue_key": {"nested": "ignored"},
+        }
+    )
+    assert parsed.professional_summary == "ok"
+    assert "rogue_key" not in parsed.model_dump()
+
+    # Unknown keys are dropped, but a wrong TYPE on a real field is
+    # still a hard ValidationError — the relax did not become "accept
+    # anything".
+    with pytest.raises(ValidationError):
+        TailoringOutput.model_validate(
+            {
+                "professional_summary": "ok",
+                "rewritten_bullets": 123,
+                "highlighted_skills": [],
+                "cover_letter_themes": [],
+            }
+        )
 
 
 def test_run_structured_prompt_raises_when_openai_unavailable():

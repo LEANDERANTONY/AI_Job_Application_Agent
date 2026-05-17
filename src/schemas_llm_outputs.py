@@ -47,12 +47,35 @@ from pydantic import BaseModel, ConfigDict, Field
 class _StrictBase(BaseModel):
     """Common config for every LLM output model.
 
-    ``extra='forbid'`` makes Pydantic reject any field the LLM tries to
-    sneak in beyond the contract — useful both as a defensive net and
-    as a signal that the prompt contract drifted from the schema.
+    ``extra="ignore"`` (was ``"forbid"``) — defence-in-depth, NOT the
+    first-line guard.
+
+    The real fail-closed guard is OpenAI structured-outputs strict
+    mode: ``OpenAIService.run_structured_prompt`` sends the schema
+    built by ``_build_response_format_schema`` →
+    ``_enforce_strict_object_constraints``, which force-sets
+    ``additionalProperties: false`` on every object node and ships it
+    with ``strict=True`` — INDEPENDENTLY of this ``ConfigDict``. A
+    compliant model therefore cannot emit an unknown key at all; this
+    setting does not relax that server-side schema.
+
+    ``extra`` only governs the redundant client-side
+    ``response_model.model_validate(...)`` re-check after the response
+    returns. Under ``"forbid"`` that re-check turned ANY stray key the
+    model volunteered into a ``ValidationError`` →
+    ``AgentExecutionError`` ("did not match the expected schema"),
+    which the orchestrator routes to that agent's deterministic
+    fallback (ADR-018). That edge only fires when strict mode is NOT
+    honoured (a non-strict model, a truncated / degraded response) —
+    and when it does, one benign extra field should not downgrade an
+    otherwise-valid agent to deterministic. ``"ignore"`` drops unknown
+    keys while STILL enforcing required fields, types, and ``Literal``
+    constraints, so genuinely-malformed output (wrong type, bad enum)
+    is still caught and still falls back — the behaviour we want. Only
+    the brittle "unknown key ⇒ reject" edge is removed.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
 
 # ---------------------------------------------------------------------
