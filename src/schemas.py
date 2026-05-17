@@ -267,6 +267,12 @@ class AgentWorkflowResult:
     attempted_assisted: bool = False
     fallback_reason: str = ""
     fallback_details: str = ""
+    # True only when the run downgraded to deterministic because the
+    # AI provider itself was unreachable (OpenAIUnavailableError) —
+    # NOT for content degradation or per-agent fallbacks. Drives the
+    # honest "OpenAI is having a moment" notice in the UI so a
+    # provider outage is never silently shipped as a normal result.
+    service_unavailable: bool = False
 
 
 @dataclass

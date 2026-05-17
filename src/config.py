@@ -158,6 +158,23 @@ OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
 }
 
 
+# Hard ceiling the output-budget escalation can grow a single request
+# to. A task starts at its routed base budget above; if the model
+# truncates (status=incomplete, reason=max_output_tokens) the request
+# is re-issued with a progressively larger max_output_tokens until the
+# response is complete OR this ceiling is hit. The point is that a
+# content-rich résumé / JD / tailored analysis should NEVER fall back
+# to the deterministic path just because it needed more output room —
+# only a genuine provider outage should. 16000 is comfortable headroom
+# for every JSON payload we emit (the largest realistic one is a few
+# thousand tokens) and well within the gpt-5 / gpt-4.1-class output
+# limit. max_output_tokens is a ceiling, not a reservation, so a high
+# value is free for ordinary requests. Env-overridable for tuning.
+OPENAI_MAX_OUTPUT_TOKENS_CEILING = _load_int_env(
+    "OPENAI_MAX_OUTPUT_TOKENS_CEILING", 16000
+)
+
+
 DAILY_QUOTA_CACHE_TTL_SECONDS = _load_int_env("DAILY_QUOTA_CACHE_TTL_SECONDS", 15)
 APP_BASE_URL = os.getenv("APP_BASE_URL", "").strip()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()

@@ -1,5 +1,5 @@
 from src.agents.orchestrator import ApplicationOrchestrator
-from src.errors import AgentExecutionError
+from src.errors import AgentExecutionError, OpenAIUnavailableError
 from src.schemas import ResumeDocument
 from src.services.job_service import build_job_description_from_text
 from src.services.profile_service import build_candidate_profile_from_resume
@@ -120,6 +120,52 @@ class FailingOpenAIService:
     @staticmethod
     def run_structured_prompt(system_prompt, user_prompt, *, response_model, **kwargs):
         raise AgentExecutionError("boom")
+
+
+class OutageOpenAIService:
+    """Every agent call fails with a genuine provider outage."""
+
+    model = "outage-model"
+
+    @staticmethod
+    def is_available():
+        return True
+
+    @staticmethod
+    def run_json_prompt(system_prompt, user_prompt, expected_keys=None, **kwargs):
+        raise OpenAIUnavailableError("The AI provider was unreachable.")
+
+    @staticmethod
+    def run_structured_prompt(system_prompt, user_prompt, *, response_model, **kwargs):
+        raise OpenAIUnavailableError("The AI provider was unreachable.")
+
+
+def test_orchestrator_flags_openai_outage_and_surfaces_it():
+    """A genuine provider outage must downgrade to deterministic AND
+    set service_unavailable + a user-facing 'OpenAI is having a
+    moment' reason — never silently ship a degraded result."""
+    orchestrator = ApplicationOrchestrator(openai_service=OutageOpenAIService())
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    assert result.mode == "deterministic_fallback"
+    assert result.model == "fallback"
+    assert result.service_unavailable is True
+    assert "OpenAI" in result.fallback_reason
+    # It still produces a usable (deterministic) application.
+    assert result.tailoring.professional_summary
+
+
+def test_orchestrator_content_failure_is_not_flagged_as_outage():
+    """A content AgentExecutionError still falls back, but is NOT an
+    outage — service_unavailable stays False so we don't wrongly
+    blame OpenAI for our own content degradation."""
+    orchestrator = ApplicationOrchestrator(openai_service=FailingOpenAIService())
+
+    result = orchestrator.run(_build_candidate_profile(), _build_job_description())
+
+    assert result.mode == "deterministic_fallback"
+    assert result.service_unavailable is False
 
 
 class FakeCorrectionOpenAIService(FakeOpenAIService):

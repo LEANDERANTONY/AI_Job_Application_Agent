@@ -408,6 +408,12 @@ export type WorkspaceWorkflow = {
   assisted_available: boolean;
   review_approved: boolean;
   fallback_reason: string;
+  /** True only when the run downgraded to deterministic because the
+   *  AI provider (OpenAI) was unreachable — NOT for content
+   *  degradation. Drives the honest outage banner. Optional so
+   *  responses predating the field (and the saved-workspace restore
+   *  path) safely read as "not an outage". */
+  service_unavailable?: boolean;
 };
 
 export type WorkspaceArtifacts = {

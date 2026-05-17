@@ -391,6 +391,13 @@ def run_workspace_analysis(
                 "assisted_available": bool(openai_service and openai_service.is_available()),
                 "review_approved": bool(review.approved) if review else False,
                 "fallback_reason": fallback_reason,
+                # True only when the run downgraded because OpenAI itself
+                # was unreachable (not content degradation). Drives the
+                # honest "AI provider is having a moment" banner so an
+                # outage is never silently shipped as a normal result.
+                "service_unavailable": bool(
+                    getattr(agent_result, "service_unavailable", False)
+                ),
             },
             "imported_job_posting": imported_job_posting,
         }

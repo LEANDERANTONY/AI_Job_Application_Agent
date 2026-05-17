@@ -2,7 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.errors import AgentExecutionError
+from pydantic import BaseModel
+
+from src.errors import AgentExecutionError, OpenAIUnavailableError
 from src.openai_service import OpenAIService
 
 
@@ -324,3 +326,94 @@ def test_openai_service_preserves_user_prompt_when_it_already_mentions_json():
 
     assert payload["approved"] is True
     assert client.responses.calls[0]["input"] == "Return json with the approved field."
+
+
+def test_openai_service_escalates_output_budget_across_multiple_steps():
+    """Resilience: the budget no longer stops at a single 6000-capped
+    bump. It keeps doubling until the response is complete, so a
+    content-rich payload never falls back to deterministic just
+    because it needed more output room."""
+    client = FakeClient(
+        [
+            _build_response(
+                "",
+                response_id="inc_1",
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+                include_message=False,
+            ),
+            _build_response(
+                "",
+                response_id="inc_2",
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+                include_message=False,
+            ),
+            _build_response(
+                "",
+                response_id="inc_3",
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+                include_message=False,
+            ),
+            _build_response('{"approved": true}', response_id="resp_done"),
+        ]
+    )
+    service = OpenAIService(client=client)
+
+    payload = service.run_json_prompt(
+        "system", "user", expected_keys=["approved"], max_completion_tokens=100
+    )
+
+    assert payload["approved"] is True
+    # Initial @100, then escalating re-issues until complete.
+    budgets = [call["max_output_tokens"] for call in client.responses.calls]
+    assert budgets == [100, 500, 1000, 2000]
+
+
+def test_openai_service_classifies_transport_failure_as_openai_unavailable():
+    """A hard transport failure is an OUTAGE, not a content failure:
+    it must raise OpenAIUnavailableError so the orchestrator surfaces
+    an honest notice instead of silently degrading. Still a subclass
+    of AgentExecutionError so every existing handler keeps working."""
+    client = FakeClient([RuntimeError("connection reset by peer")])
+    service = OpenAIService(client=client)
+
+    with pytest.raises(OpenAIUnavailableError) as error:
+        service.run_json_prompt("system", "user", expected_keys=["approved"])
+
+    assert isinstance(error.value, AgentExecutionError)
+
+
+class _ApprovalModel(BaseModel):
+    approved: bool
+
+
+def test_run_structured_prompt_escalates_on_truncated_partial_json():
+    """Parity fix: structured-output agents (tailoring, review) used
+    to hard-fail on a truncated partial JSON. They must now escalate
+    the budget and re-parse, same as run_json_prompt."""
+    client = FakeClient(
+        [
+            _build_response(
+                '{"approved": ',
+                response_id="struct_partial",
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+                include_message=True,
+            ),
+            _build_response('{"approved": true}', response_id="struct_done"),
+        ]
+    )
+    service = OpenAIService(client=client)
+
+    validated = service.run_structured_prompt(
+        "system",
+        "user",
+        response_model=_ApprovalModel,
+        max_completion_tokens=100,
+    )
+
+    assert validated.approved is True
+    assert len(client.responses.calls) == 2
+    assert client.responses.calls[1]["max_output_tokens"] == 500

@@ -29,7 +29,37 @@ class AuthRequiredError(AppError):
 
 
 class AgentExecutionError(AppError):
-    """Reserved for future supervised-agent execution failures."""
+    """A *content* failure in an LLM-backed step.
+
+    Raised when the model responded but the response is unusable for a
+    reason retrying-bigger won't fix: malformed JSON on a *complete*
+    response, schema drift, or required fields still missing after the
+    output budget escalated all the way to the ceiling. Callers treat
+    this as "this particular step degraded" and fall back per-step.
+
+    NOT for provider availability problems — see
+    ``OpenAIUnavailableError`` for that.
+    """
+
+
+class OpenAIUnavailableError(AgentExecutionError):
+    """A *transport / availability* failure talking to OpenAI.
+
+    Network error, timeout, 5xx, rate-limit after the SDK already
+    backed off, auth/quota rejection — i.e. we never got a usable
+    response at all. Distinct from a content failure because the
+    remediation is completely different: there's nothing wrong with
+    the request, the provider is just down, so retrying individual
+    agents is pointless. The orchestrator short-circuits the whole
+    run to deterministic output and surfaces an honest "our AI
+    provider is having a moment" notice to the user instead of
+    silently shipping a degraded result.
+
+    Subclasses ``AgentExecutionError`` so every existing
+    ``except AgentExecutionError`` site keeps catching it unchanged;
+    only the code that wants to distinguish an outage (the
+    orchestrator) needs the ``isinstance`` check.
+    """
 
 
 class ExportError(AppError):

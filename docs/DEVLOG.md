@@ -1152,3 +1152,83 @@ Day-50 (`f400659`) is live in prod. This Day-51 fix set is committed
 locally; push decision deferred to the operator (backend re-deploy —
 `src/` + `backend/` touched, so the VPS backend rebuilds; no frontend
 or DB change).
+
+---
+
+## Day 52: Resilient pipeline — escalating output budget + honest outage surfacing
+
+Follow-up to the Day-51 audit. Goal (operator's words): "make the
+whole pipeline resilient so it mostly avoids deterministic fallbacks
+except a genuine OpenAI outage — and surface that to the user, blame
+OpenAI :)". Truncation should never silently degrade a result; only a
+real provider outage should, and the user should be told.
+
+### Escalating output budget (was: one capped bump)
+
+`_retry_with_higher_output_budget` was a SINGLE bump capped at 6000 —
+so any payload whose JSON exceeded ~6000 tokens still truncated →
+silent deterministic fallback. Rebuilt as an internal escalation
+loop: keep doubling `max_output_tokens` (`min(max(n*2, n+400),
+ceiling)`) until the response is no longer truncated or the ceiling
+is hit. New `OPENAI_MAX_OUTPUT_TOKENS_CEILING` (default **16000**,
+env-overridable) — generous headroom for every JSON we emit;
+`max_output_tokens` is a ceiling not a reservation so it's free for
+ordinary requests. The first escalation step is unchanged
+(100 → 500), so the existing budget-retry tests stay green; it just
+no longer *stops* there.
+
+### `run_structured_prompt` parity
+
+The two most important agents (tailoring, review) use the structured
+path, which only retried on a *fully empty* incomplete response and
+hard-failed on a *truncated partial JSON*. Added the same
+partial-JSON escalation `run_json_prompt` has — the structured agents
+are now as truncation-resilient as the rest, not the least.
+
+### Outage vs content: a real distinction
+
+New `OpenAIUnavailableError(AgentExecutionError)`. Every transport /
+availability failure (initial call, escalation re-issue, structured
+call, text stream) now raises it instead of a generic
+`AgentExecutionError`. Subclass, so every existing
+`except AgentExecutionError` keeps catching it — only the orchestrator
+needs the `isinstance` check. Content failures (malformed JSON on a
+*complete* response, schema drift, fields still missing at the
+ceiling) stay `AgentExecutionError`.
+
+### Orchestrator: fail fast + flag the outage
+
+`run_agent_step` catches `OpenAIUnavailableError` *before*
+`AgentExecutionError` and re-raises immediately — no 0.4s retry, no
+per-agent deterministic (pointless when the provider is down for
+every agent; it would also mask the outage as a routine per-agent
+fallback). It cascades to `run()`, which sets
+`AgentWorkflowResult.service_unavailable=True` and a friendly
+`fallback_reason` ("Our AI provider (OpenAI) is having a moment …").
+Content failures keep the existing per-agent deterministic isolation
+— but with escalation they're now genuinely rare. Net: truncation no
+longer causes fallbacks; only a real outage does, and it's flagged.
+
+### Surfaced to the user
+
+`service_unavailable` flows `workspace_service` → `workflow` response
+→ `WorkspaceWorkflow` type → an honest amber banner in `AnalysisRunner`
+(reuses the existing `b-notice-warning` style). The saved-workspace
+restore path hard-codes it `False` — an outage is a point-in-time
+signal, a reloaded run must not re-assert "OpenAI is down".
+
+Tests: `test_openai_service.py` +3 (multi-step escalation
+[100→500→1000→2000]; transport → `OpenAIUnavailableError` ⊂
+`AgentExecutionError`; structured-prompt truncated-JSON now
+escalates). `test_orchestrator.py` +2 (outage → deterministic +
+`service_unavailable` + "OpenAI" reason; content failure → fallback
+but NOT flagged). 27 targeted green; broader 212 green (the lone
+failure is the pre-existing environmental `test_workspace_retention`
+sweep — reproduced identically on clean HEAD with changes stashed).
+Frontend tsc + eslint clean.
+
+### Deploy status
+
+Day-51 (`ee90373`) is committed locally and still unpushed. This
+Day-52 set is also committed locally; both await the operator's push
+decision (backend re-deploy + a frontend rebuild for the banner).

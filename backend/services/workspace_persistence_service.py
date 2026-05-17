@@ -284,6 +284,11 @@ def load_saved_workspace_snapshot(*, access_token: str, refresh_token: str):
             "fallback_reason": str(
                 getattr(saved_snapshot.agent_result, "fallback_reason", "") or ""
             ),
+            # Outage is a point-in-time signal — a reloaded saved
+            # workspace must NOT re-assert "OpenAI is down" (it may be
+            # back). Always False on the restore path; the key is kept
+            # so the response shape matches the live analysis payload.
+            "service_unavailable": False,
         },
         "imported_job_posting": _serialize(saved_snapshot.imported_job_posting),
     }

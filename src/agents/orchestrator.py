@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Callable, Optional
 
-from src.errors import AgentExecutionError
+from src.errors import AgentExecutionError, OpenAIUnavailableError
 from src.logging_utils import get_logger, log_event
 from src.openai_service import OpenAIService
 from src.schemas import (
@@ -77,6 +77,7 @@ class ApplicationOrchestrator:
         attempted_assisted = False
         fallback_reason = ""
         fallback_details = ""
+        service_unavailable = False
 
         if self._openai_service.is_available():
             attempted_assisted = True
@@ -100,8 +101,22 @@ class ApplicationOrchestrator:
                     model_overrides=self._model_overrides,
                 )
             except AgentExecutionError as exc:
-                fallback_reason = exc.user_message
+                # OpenAIUnavailableError is a subclass, so it's caught
+                # here too — but it means the PROVIDER was down, not
+                # that our content degraded. Flag it so the result
+                # carries an honest outage signal and the user sees a
+                # "try again shortly" notice instead of silently
+                # receiving a deterministic-quality application.
+                service_unavailable = isinstance(exc, OpenAIUnavailableError)
                 fallback_details = exc.details or ""
+                if service_unavailable:
+                    fallback_reason = (
+                        "Our AI provider (OpenAI) is having a moment, so we "
+                        "built a baseline version of your application. Re-run "
+                        "in a few minutes for the full AI-tailored result."
+                    )
+                else:
+                    fallback_reason = exc.user_message
                 log_event(
                     LOGGER,
                     logging.WARNING,
@@ -109,6 +124,7 @@ class ApplicationOrchestrator:
                     "OpenAI orchestration failed; falling back to deterministic mode.",
                     model=policy_label,
                     max_revision_passes=self._max_revision_passes,
+                    service_unavailable=service_unavailable,
                     fallback_reason=fallback_reason,
                     fallback_details=fallback_details,
                 )
@@ -134,6 +150,7 @@ class ApplicationOrchestrator:
             attempted_assisted=attempted_assisted,
             fallback_reason=fallback_reason,
             fallback_details=fallback_details,
+            service_unavailable=service_unavailable,
             progress_callback=progress_callback,
             model_overrides=self._model_overrides,
         )
@@ -157,6 +174,7 @@ class ApplicationOrchestrator:
         attempted_assisted=False,
         fallback_reason="",
         fallback_details="",
+        service_unavailable=False,
         progress_callback: Optional[ProgressCallback] = None,
         model_overrides: Optional[dict] = None,
     ):
@@ -258,6 +276,32 @@ class ApplicationOrchestrator:
                 attempt_started_at = time.perf_counter()
                 try:
                     result = runner()
+                except OpenAIUnavailableError as exc:
+                    # The provider itself is unreachable — not a content
+                    # problem with THIS agent. Retrying the agent or
+                    # running its per-agent deterministic while every
+                    # later agent will also fail the LLM is wasted work
+                    # and would mask a global outage as a routine
+                    # per-agent fallback. Fail fast: cascade to the
+                    # outer handler, which downgrades the whole run to
+                    # deterministic AND flags it so the user is told
+                    # honestly that OpenAI is down.
+                    log_event(
+                        LOGGER,
+                        logging.WARNING,
+                        "agent_run_provider_unavailable",
+                        "AI provider unreachable during agent run; cascading to whole-pipeline deterministic with an outage notice.",
+                        agent=agent_name,
+                        mode=mode,
+                        model=model_name,
+                        duration_ms=round(
+                            (time.perf_counter() - started_at) * 1000, 2
+                        ),
+                        error_type=type(exc).__name__,
+                        details=exc.details or "",
+                        **context,
+                    )
+                    raise
                 except AgentExecutionError as exc:
                     last_exc = exc
                     if attempt_index == 0 and mode == "openai":
@@ -602,4 +646,8 @@ class ApplicationOrchestrator:
             attempted_assisted=attempted_assisted,
             fallback_reason=reported_fallback_reason,
             fallback_details=reported_fallback_details,
+            # Outage is decided by the caller (run()) — a content-only
+            # per-agent/whole-pipeline downgrade leaves this False; only
+            # an OpenAIUnavailableError sets it True.
+            service_unavailable=service_unavailable,
         )

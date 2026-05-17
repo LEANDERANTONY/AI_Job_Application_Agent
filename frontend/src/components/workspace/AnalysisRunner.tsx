@@ -308,6 +308,13 @@ export function AnalysisRunner({
         </div>
       ) : null}
 
+      {analysisState?.workflow?.service_unavailable ? (
+        <div className="b-notice b-notice-warning">
+          {analysisState.workflow.fallback_reason ||
+            "Our AI provider (OpenAI) is having a moment, so we built a baseline version of your application. Re-run in a few minutes for the full AI-tailored result."}
+        </div>
+      ) : null}
+
       <div className="b-pipeline">
         {stages.map((stage) => (
           <div

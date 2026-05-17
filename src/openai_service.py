@@ -7,13 +7,14 @@ from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
 from src.config import (
+    OPENAI_MAX_OUTPUT_TOKENS_CEILING,
     OPENAI_MODEL_DEFAULT,
     describe_openai_model_policy,
     get_openai_model_for_task,
     get_openai_reasoning_effort_for_task,
     load_openai_key,
 )
-from src.errors import AgentExecutionError
+from src.errors import AgentExecutionError, OpenAIUnavailableError
 from src.logging_utils import get_logger, log_event
 
 
@@ -501,8 +502,12 @@ class OpenAIService:
                 error_type=type(exc).__name__,
                 details=str(exc),
             )
-            raise AgentExecutionError(
-                "The AI workflow request failed.",
+            # Couldn't get a usable response at all → provider
+            # availability problem, not a content problem. Distinct
+            # error type so the orchestrator surfaces an honest outage
+            # notice instead of silently shipping degraded output.
+            raise OpenAIUnavailableError(
+                "The AI provider was unreachable.",
                 details=str(exc),
             ) from exc
 
@@ -758,8 +763,8 @@ class OpenAIService:
                 error_type=type(exc).__name__,
                 details=str(exc),
             )
-            raise AgentExecutionError(
-                "The AI workflow request failed.",
+            raise OpenAIUnavailableError(
+                "The AI provider was unreachable.",
                 details=str(exc),
             ) from exc
 
@@ -779,13 +784,36 @@ class OpenAIService:
             raw_payload = json.loads(content)
         except json.JSONDecodeError as exc:
             # Structured outputs is supposed to guarantee parseable JSON,
-            # but a truncation can still split a partial token. Re-raise
-            # as the same AgentExecutionError shape ``run_json_prompt``
-            # uses so callers don't need to learn a new error type.
-            raise AgentExecutionError(
-                "The AI workflow returned an invalid JSON response.",
-                details=content,
-            ) from exc
+            # but a truncation can still split a partial token. This
+            # used to hard-fail straight to AgentExecutionError —
+            # meaning the two MOST important agents (tailoring, review,
+            # which use this structured path) were the LEAST resilient
+            # to truncation. Bring them to parity with run_json_prompt:
+            # if the response was truncated by the output budget,
+            # escalate the budget (loops to the ceiling) and re-parse.
+            if allow_output_budget_retry and self._should_retry_partial_json_response(response):
+                response, request_payload = self._retry_with_higher_output_budget(
+                    response=response,
+                    request_payload=request_payload,
+                    resolved_model=resolved_model,
+                    task_name=task_name,
+                    reasoning_effort=reasoning_effort,
+                    started_at=started_at,
+                    retry_reason="structured_truncated_partial_json",
+                )
+                content = self._extract_output_text(response)
+                try:
+                    raw_payload = json.loads(content)
+                except json.JSONDecodeError as retry_exc:
+                    raise AgentExecutionError(
+                        "The AI workflow returned an invalid JSON response.",
+                        details=content,
+                    ) from retry_exc
+            else:
+                raise AgentExecutionError(
+                    "The AI workflow returned an invalid JSON response.",
+                    details=content,
+                ) from exc
 
         try:
             validated = response_model.model_validate(raw_payload)
@@ -1010,8 +1038,8 @@ class OpenAIService:
                 error_type=type(exc).__name__,
                 details=str(exc),
             )
-            raise AgentExecutionError(
-                "The AI workflow request failed.",
+            raise OpenAIUnavailableError(
+                "The AI provider was unreachable.",
                 details=str(exc),
             ) from exc
 
@@ -1085,57 +1113,99 @@ class OpenAIService:
         started_at,
         retry_reason,
     ):
+        # Escalate the output budget across MULTIPLE steps (doubling
+        # each time) until the response is no longer truncated by
+        # max_output_tokens OR we hit the configured ceiling. The old
+        # behaviour was a SINGLE bump capped at 6000, which meant a
+        # content-rich résumé / JD / tailored analysis whose JSON
+        # exceeded ~6000 tokens still truncated → silent deterministic
+        # fallback. Looping to OPENAI_MAX_OUTPUT_TOKENS_CEILING removes
+        # truncation as a fallback cause: only a genuine provider
+        # outage (raised below as OpenAIUnavailableError) should ever
+        # downgrade a run now.
         current_max_output_tokens = int(request_payload.get("max_output_tokens", 0) or 0)
-        retry_max_output_tokens = min(
-            max(current_max_output_tokens * 2, current_max_output_tokens + 400),
-            6000,
-        )
-        if retry_max_output_tokens <= current_max_output_tokens:
-            return response, request_payload
+        # Never shrink: if a task's base budget already exceeds the
+        # ceiling, the loop simply no-ops (next <= current → break).
+        ceiling = max(int(OPENAI_MAX_OUTPUT_TOKENS_CEILING or 0), current_max_output_tokens)
+        # Safety stop independent of the ceiling: doubling reaches 16000
+        # from any realistic base (≥100) inside ~8 steps; 8 bounds the
+        # pathological "model keeps returning incomplete" case.
+        max_escalations = 8
 
-        retry_payload = dict(request_payload)
-        retry_payload["max_output_tokens"] = retry_max_output_tokens
-        log_event(
-            LOGGER,
-            logging.INFO,
-            "openai_request_retry_with_higher_output_budget",
-            "Retrying OpenAI request with a higher output token budget after an incomplete response.",
-            model=resolved_model,
-            task_name=task_name,
-            reasoning_effort=reasoning_effort,
-            previous_max_output_tokens=current_max_output_tokens,
-            retry_max_output_tokens=retry_max_output_tokens,
-            retry_reason=retry_reason,
-        )
-        # Route the budget-retry call through the same app-retry
-        # helper as the initial call. If we under-allocated tokens AND
-        # the retry attempt happens during a transient outage, we
-        # still get one extra shot before giving up on the whole run.
-        try:
-            response = self._create_response_with_app_retry(
-                retry_payload,
-                task_name=task_name,
-                resolved_model=resolved_model,
-                started_at=started_at,
+        working_response = response
+        working_payload = request_payload
+        escalations = 0
+        while escalations < max_escalations:
+            previous_budget = int(working_payload.get("max_output_tokens", 0) or 0)
+            next_budget = min(
+                max(previous_budget * 2, previous_budget + 400),
+                ceiling,
             )
-        except Exception as retry_exc:
+            if next_budget <= previous_budget:
+                # Already at the ceiling and STILL truncated. Return the
+                # last response; the caller's parse/missing-key check
+                # raises AgentExecutionError (a content failure — the
+                # payload genuinely doesn't fit even at the ceiling,
+                # which for our payloads should be effectively
+                # impossible).
+                break
+
+            escalations += 1
+            retry_payload = dict(working_payload)
+            retry_payload["max_output_tokens"] = next_budget
             log_event(
                 LOGGER,
-                logging.ERROR,
-                "openai_request_failed",
-                "OpenAI JSON prompt retry failed after incomplete response (budget-retry path, after SDK + app retries).",
+                logging.INFO,
+                "openai_request_retry_with_higher_output_budget",
+                "Re-issuing OpenAI request with a higher output token budget after a truncated response.",
                 model=resolved_model,
                 task_name=task_name,
-                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
-                error_type=type(retry_exc).__name__,
-                details=str(retry_exc),
+                reasoning_effort=reasoning_effort,
+                previous_max_output_tokens=previous_budget,
+                retry_max_output_tokens=next_budget,
+                ceiling=ceiling,
+                escalation_attempt=escalations,
                 retry_reason=retry_reason,
             )
-            raise AgentExecutionError(
-                "The AI workflow request failed.",
-                details=str(retry_exc),
-            ) from retry_exc
-        return response, retry_payload
+            # Route each escalation through the same app-retry helper as
+            # the initial call so a transient blip during escalation
+            # still gets the SDK + app retry. A hard failure here is a
+            # provider-availability problem, NOT a content problem —
+            # raise the outage-specific error so the orchestrator can
+            # surface it honestly instead of silently degrading.
+            try:
+                working_response = self._create_response_with_app_retry(
+                    retry_payload,
+                    task_name=task_name,
+                    resolved_model=resolved_model,
+                    started_at=started_at,
+                )
+            except Exception as retry_exc:
+                log_event(
+                    LOGGER,
+                    logging.ERROR,
+                    "openai_request_failed",
+                    "OpenAI request failed during output-budget escalation (after SDK + app retries).",
+                    model=resolved_model,
+                    task_name=task_name,
+                    duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                    error_type=type(retry_exc).__name__,
+                    details=str(retry_exc),
+                    retry_reason=retry_reason,
+                    escalation_attempt=escalations,
+                )
+                raise OpenAIUnavailableError(
+                    "The AI provider was unreachable.",
+                    details=str(retry_exc),
+                ) from retry_exc
+
+            working_payload = retry_payload
+            # Stop as soon as the response is no longer truncated by the
+            # output budget (status != incomplete/max_output_tokens).
+            if not self._should_retry_partial_json_response(working_response):
+                break
+
+        return working_response, working_payload
 
     def _record_usage_event(self, payload: dict):
         if self._usage_event_recorder is None:
