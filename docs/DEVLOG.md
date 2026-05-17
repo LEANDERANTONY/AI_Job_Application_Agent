@@ -1006,3 +1006,54 @@ backward-compatible with the not-yet-pushed backend). Backend +
 frontend + docs are committed locally; push decision deferred to the
 operator (re-deploys the backend offset plumbing + frontend
 "Load more").
+
+---
+
+## Day 50: Job-search filter UX — auto-apply on change + 20/page initial
+
+Immediate user feedback on the Day-49 pagination: (1) changing job
+type / posted-within / sort did nothing until you clicked Search
+again — "usually on sites the filter/sort applies as you click";
+(2) a 50-row initial wall is too much, 20 + "Load more" reads better.
+Both are frontend-only refinements of `WorkspaceShell` (no backend or
+RPC change — Day-49's `581bee5` is live in prod and untouched here).
+
+### Initial page 50 → 20
+
+`SEARCH_PAGE_SIZE = 20` module const drives the fresh-search
+`page_size`; "Load more" still pulls one `SEARCH_PAGE_SIZE` window per
+click (it spreads the echoed `searchResults.query`, which now carries
+20). Backend cap (`LEAST(p_limit, 50)`) unchanged — 20 is well under.
+
+### Auto-apply filters / sort / posted-within
+
+`handleSearch` was refactored into a shared `runSearch(query,
+location)` core (offset 0, REPLACE). The form submit passes the live
+box value; a new debounced effect re-runs the **executed** query
+(`searchResults.query`, not the half-typed box) with the live filter
+state whenever `sourceFilters | workModes | employmentTypes | sortBy |
+postedWithinDays` changes — but only once a search is already on
+screen (nothing to filter before the first search). `400 ms` debounce
+(`FILTER_APPLY_DEBOUNCE_MS`) collapses a burst of multi-select chip
+toggles into one request. The search box + location still require an
+explicit Search submit (they're intentionally NOT effect deps), so
+typing doesn't fire searches mid-keystroke.
+
+### Out-of-order safety
+
+Auto-fired searches make stale responses possible (a slow live-path
+sort landing after a newer filtered one). Added a monotonic
+`searchSeqRef`: `runSearch` bumps it and only applies a response /
+owns the busy flag while its token is current; "Load more" *captures*
+the token without bumping, so a filter change mid-load supersedes the
+stale page instead of appending old-filter rows onto the new set.
+
+Frontend tsc + eslint clean. No test delta (pure frontend
+interaction; backend contract unchanged from Day 49).
+
+### Deploy status
+
+Day-49 (`581bee5`) is live in prod (pushed + deployed). This Day-50
+refinement is committed locally; push decision deferred to the
+operator (frontend-only re-deploy — `deploy.yml` `paths-ignore`
+covers docs/md, so only the Vercel frontend rebuilds).

@@ -127,6 +127,18 @@ const STEP_LABELS: Record<
   analysis: { number: "04", label: "Analysis", shortLabel: "Analysis" },
 };
 
+// Initial result-page size. Job boards lead with a short page and let
+// the user pull more rather than dumping a 50-row wall — "Load more"
+// (handleLoadMore) requests another SEARCH_PAGE_SIZE window each click.
+// Backend hard-caps a page at 50, so this stays well under the cap.
+const SEARCH_PAGE_SIZE = 20;
+
+// Debounce for the auto-apply-on-filter-change effect. A multi-select
+// chip toggle fires one state update per click; without a debounce,
+// picking three employment types = three searches. 400 ms batches a
+// burst of toggles into a single request while still feeling instant.
+const FILTER_APPLY_DEBOUNCE_MS = 400;
+
 const STEP_ORDER: WorkspaceMainTab[] = ["resume", "jobs", "jd", "analysis"];
 
 function noticeClassName(level: NonNullable<Notice>["level"]) {
@@ -322,6 +334,13 @@ export function WorkspaceShell() {
     null,
   );
   const [searchNotice, setSearchNotice] = useState<Notice>(null);
+  // Monotonic search token. Filter/sort changes auto-fire searches, so
+  // a slow live-path response could land AFTER a newer filtered one and
+  // clobber it. Every fresh search (runSearch) bumps this; a response
+  // only applies if its token is still current. "Load more" captures
+  // the token without bumping — a filter change mid-load supersedes the
+  // stale page so we don't append old-filter rows onto a new result set.
+  const searchSeqRef = useRef(0);
 
   const [jobUrl, setJobUrl] = useState("");
   const [importing, setImporting] = useState(false);
@@ -754,7 +773,75 @@ export function WorkspaceShell() {
   const assistantCanSubmit =
     !assistantSending && Boolean(assistantQuestion.trim());
 
-  // ── Handlers (unchanged) ────────────────────────────────────────
+  // ── Handlers ────────────────────────────────────────────────────
+
+  // Core search runner — offset 0, REPLACE results. Shared by the
+  // explicit Search submit and the auto-apply-on-filter-change effect.
+  // Filters/sort are read from live state; query + location are passed
+  // in so the effect can re-run the *executed* query (not whatever is
+  // half-typed in the box) while the form handler passes the box value.
+  async function runSearch(queryText: string, locationText: string) {
+    const trimmedQuery = queryText.trim();
+    if (!trimmedQuery) {
+      return;
+    }
+
+    const seq = ++searchSeqRef.current;
+    setSearching(true);
+
+    try {
+      const response = await searchJobs({
+        query: trimmedQuery,
+        location: locationText.trim(),
+        // Empty source_filters = "any provider" — let the cache RPC
+        // search across everything we've indexed. The user's explicit
+        // picks (if any) narrow it to that set.
+        source_filters: sourceFilters,
+        // remote_only kept as a derived signal for back-compat with the
+        // cache RPC's existing flag — it composes additively with the
+        // dropdown's `remote` pick (either route returns the same rows).
+        remote_only: workModes.length === 1 && workModes[0] === "remote",
+        posted_within_days: postedWithinDays ? Number(postedWithinDays) : null,
+        // Short initial page; "Load more" (handleLoadMore) pulls the
+        // next SEARCH_PAGE_SIZE window and appends instead of replacing.
+        page_size: SEARCH_PAGE_SIZE,
+        offset: 0,
+        work_modes: workModes,
+        employment_types: employmentTypes,
+        sort_by: sortBy,
+      });
+      // A newer search superseded this one mid-flight — drop the stale
+      // response so it can't clobber fresher results.
+      if (searchSeqRef.current !== seq) {
+        return;
+      }
+      setSearchResults(response);
+      setSearchNotice({
+        level: response.results.length ? "success" : "info",
+        message: response.results.length
+          ? `Found ${response.results.length} matching jobs for the current search.`
+          : "No roles matched this search yet.",
+      });
+    } catch (error) {
+      if (searchSeqRef.current !== seq) {
+        return;
+      }
+      setSearchNotice({
+        level: "warning",
+        message: humanizeApiError(
+          error,
+          "Something went wrong while searching for roles.",
+        ),
+      });
+    } finally {
+      // Only the latest search owns the busy flag — a superseded one
+      // clearing it would hide the spinner while the live one runs.
+      if (searchSeqRef.current === seq) {
+        setSearching(false);
+      }
+    }
+  }
+
   async function handleSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMainTab("jobs");
@@ -767,55 +854,32 @@ export function WorkspaceShell() {
       return;
     }
 
-    setSearching(true);
     setSearchNotice({
       level: "info",
       message: "Searching live job sources...",
     });
-
-    try {
-      const response = await searchJobs({
-        query: searchQuery.trim(),
-        location: searchLocation.trim(),
-        // Empty source_filters = "any provider" — let the cache RPC
-        // search across everything we've indexed. The user's explicit
-        // picks (if any) narrow it to that set.
-        source_filters: sourceFilters,
-        // remote_only kept as a derived signal for back-compat with the
-        // cache RPC's existing flag — it composes additively with the
-        // dropdown's `remote` pick (either route returns the same rows).
-        remote_only: workModes.length === 1 && workModes[0] === "remote",
-        posted_within_days: postedWithinDays ? Number(postedWithinDays) : null,
-        // Was hardcoded 12 (the "every query returns exactly 12" cause —
-        // it was never an RPC/corpus cap). Backend allows up to 50.
-        page_size: 50,
-        // Fresh search always starts at the first page. "Load more"
-        // (handleLoadMore) re-issues this same query with a bumped
-        // offset and appends instead of replacing.
-        offset: 0,
-        work_modes: workModes,
-        employment_types: employmentTypes,
-        sort_by: sortBy,
-      });
-      setSearchResults(response);
-      setSearchNotice({
-        level: response.results.length ? "success" : "info",
-        message: response.results.length
-          ? `Found ${response.results.length} matching jobs for the current search.`
-          : "No roles matched this search yet.",
-      });
-    } catch (error) {
-      setSearchNotice({
-        level: "warning",
-        message: humanizeApiError(
-          error,
-          "Something went wrong while searching for roles.",
-        ),
-      });
-    } finally {
-      setSearching(false);
-    }
+    await runSearch(searchQuery, searchLocation);
   }
+
+  // Auto-apply filters / sort / posted-within — the job-board pattern
+  // where changing a dropdown re-runs the search instead of needing a
+  // second Search click. Only fires once a search is already on screen
+  // (nothing to filter before the first search); re-runs the EXECUTED
+  // query (searchResults.query) with the new filter state, debounced so
+  // a burst of multi-select toggles collapses into one request.
+  useEffect(() => {
+    if (!searchResults) {
+      return;
+    }
+    const executedQuery = searchResults.query.query;
+    const executedLocation = searchResults.query.location ?? "";
+    const handle = window.setTimeout(() => {
+      setSearchNotice({ level: "info", message: "Updating results…" });
+      void runSearch(executedQuery, executedLocation);
+    }, FILTER_APPLY_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed ONLY on the filter/sort inputs. Depending on searchResults would loop (runSearch sets it) and depending on runSearch would re-fire every render; the executed query is read fresh from the searchResults closure at fire time, which is correct since a filter change shouldn't change which query is active.
+  }, [sourceFilters, workModes, employmentTypes, sortBy, postedWithinDays]);
 
   // "Load more" — paginate the *current* result set. Reuses the query
   // the backend echoed back (searchResults.query) rather than the live
@@ -835,12 +899,21 @@ export function WorkspaceShell() {
     }
 
     const nextOffset = searchResults.results.length;
+    // Capture (don't bump) the current search token: this page belongs
+    // to the search that's on screen now. If a filter/sort change fires
+    // runSearch while this is in flight, that bumps the token and the
+    // guard below drops this page — appending old-filter rows onto the
+    // new filtered set would be wrong.
+    const seq = searchSeqRef.current;
     setLoadingMore(true);
     try {
       const response = await searchJobs({
         ...searchResults.query,
         offset: nextOffset,
       });
+      if (searchSeqRef.current !== seq) {
+        return;
+      }
       setSearchResults((prev) => {
         if (!prev) {
           return response;
@@ -871,13 +944,17 @@ export function WorkspaceShell() {
           : "No more roles to load for this search.",
       });
     } catch (error) {
-      setSearchNotice({
-        level: "warning",
-        message: humanizeApiError(
-          error,
-          "Something went wrong while loading more roles.",
-        ),
-      });
+      // Don't surface a stale "load more failed" if a newer filtered
+      // search already took over.
+      if (searchSeqRef.current === seq) {
+        setSearchNotice({
+          level: "warning",
+          message: humanizeApiError(
+            error,
+            "Something went wrong while loading more roles.",
+          ),
+        });
+      }
     } finally {
       setLoadingMore(false);
     }
