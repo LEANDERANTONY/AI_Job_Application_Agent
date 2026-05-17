@@ -44,6 +44,7 @@ import {
   streamWorkspaceAssistantAnswer,
   updateResumeBuilderDraft,
   uploadJobDescriptionFile,
+  saveWorkspaceSnapshot,
   uploadResumeFile,
 } from "@/lib/api";
 import type {
@@ -781,7 +782,9 @@ export function WorkspaceShell() {
         // dropdown's `remote` pick (either route returns the same rows).
         remote_only: workModes.length === 1 && workModes[0] === "remote",
         posted_within_days: postedWithinDays ? Number(postedWithinDays) : null,
-        page_size: 12,
+        // Was hardcoded 12 (the "every query returns exactly 12" cause —
+        // it was never an RPC/corpus cap). Backend allows up to 50.
+        page_size: 50,
         work_modes: workModes,
         employment_types: employmentTypes,
         sort_by: sortBy,
@@ -962,6 +965,25 @@ export function WorkspaceShell() {
   function applySavedWorkspaceSnapshot(response: LoadSavedWorkspaceResponse) {
     const snapshot = response.workspace_snapshot;
     if (!snapshot) return;
+
+    // Résumé-only snapshot: a parsed résumé persisted BEFORE any
+    // analysis ran (see the résumé-autosave effect). A real analysis
+    // snapshot always carries a job_description with raw_text; a
+    // résumé-only one has job_description:{}. Restore JUST the résumé
+    // and bail — calling setAnalysisState(snapshot) here would light
+    // up an empty/broken "analysis" view, and snapshot.job_description
+    // has no raw_text to read.
+    const jd = snapshot.job_description as { raw_text?: string } | undefined;
+    if (!jd || !jd.raw_text) {
+      setResumeState({
+        resume_document: snapshot.resume_document,
+        candidate_profile: snapshot.candidate_profile,
+      });
+      setSelectedResumeFile(null);
+      setResumeIntakeMode("upload");
+      setMainTab("resume");
+      return;
+    }
 
     setResumeState({
       resume_document: snapshot.resume_document,
@@ -1621,6 +1643,63 @@ export function WorkspaceShell() {
         "Cleared the active role context. Load another role or paste a new JD.",
     });
   }
+
+  // Persist a parsed résumé as soon as it exists — even before any
+  // analysis runs — so a tab reload / "Reload saved workspace"
+  // restores it (parity with the resume-builder, which already
+  // autosaves every turn). Deliberately calls saveWorkspaceSnapshot
+  // DIRECTLY, NOT persistLatestWorkspace: the latter sets
+  // workspaceSaveMeta, which would gate-block the post-analysis
+  // autosave effect below. This effect never touches workspaceSaveMeta,
+  // so the analysis path is wholly unaffected; the single-row upsert
+  // means a later analysis save cleanly supersedes this provisional
+  // row. Ref-guarded by résumé identity → fires once per distinct
+  // parsed résumé, never on every render.
+  const resumeAutoSavedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      authStatus !== "signed_in" ||
+      !authSession?.features.saved_workspace_enabled ||
+      analysisState ||
+      !resumeState?.candidate_profile
+    ) {
+      return;
+    }
+    const identity = `${resumeState.candidate_profile.full_name || ""}|${
+      resumeState.resume_document?.filetype || ""
+    }`;
+    if (resumeAutoSavedRef.current === identity) return;
+    resumeAutoSavedRef.current = identity;
+    // Minimal snapshot: real résumé sections + the other
+    // _validate_workspace_snapshot-required keys as {} (empty dicts
+    // pass its isinstance(dict) check). Cast because this is an
+    // intentionally-partial WorkspaceAnalysisResponse; the backend
+    // accepts any snapshot dict and only validates the 5 keys.
+    const snapshot = {
+      resume_document: resumeState.resume_document,
+      candidate_profile: resumeState.candidate_profile,
+      job_description: {},
+      jd_summary_view: {},
+      fit_analysis: {},
+      tailored_draft: {},
+      agent_result: null,
+      artifacts: {},
+      workflow: {},
+    } as unknown as WorkspaceAnalysisResponse;
+    void saveWorkspaceSnapshot(snapshot).catch(() => {
+      // Best-effort: a failed provisional save must not disrupt the
+      // workspace (the résumé is still in client state, and running
+      // the analysis will persist the full snapshot anyway). Clear
+      // the guard so a later change can retry.
+      resumeAutoSavedRef.current = null;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per distinct parsed résumé while signed-in with no analysis yet; the deps below fully describe that fire condition.
+  }, [
+    resumeState,
+    analysisState,
+    authStatus,
+    authSession?.features.saved_workspace_enabled,
+  ]);
 
   useEffect(() => {
     if (
