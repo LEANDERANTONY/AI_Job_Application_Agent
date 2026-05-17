@@ -926,3 +926,83 @@ Day-47 batch + the `27e4235` follow-up are already pushed (both
 products). This Free-theme/global-default change is committed
 locally; push decision deferred to the operator (re-deploys the
 backend gate + frontend defaults + pricing copy).
+
+---
+
+## Day 49: Job-search pagination ("Load more") + RPC offset migration
+
+User report: "for whatever job I search only like 12 jobs are being
+listed — do we have a cap?" Root cause was **not** an RPC/corpus cap:
+`WorkspaceShell` hardcoded `page_size: 12` on the search call (the
+"every query returns exactly 12" tell). The corpus is ~14.7k active
+jobs across 4 sources; the `search_cached_jobs_ranked` RPC hard-caps
+a page at `LEAST(p_limit, 50)`. Decision (operator): bump the page to
+50 **and** add Greenhouse-style "Load more" pagination rather than
+numbered pages.
+
+### RPC: `p_offset` parameter (applied to prod) + tracked SQL
+
+`search_cached_jobs_ranked` gained `p_offset integer DEFAULT 0` and
+an `OFFSET GREATEST(0, COALESCE(p_offset, 0))` after the existing
+`LIMIT`. Applied to prod as migrations
+`search_cached_jobs_ranked_add_p_offset` then
+`search_cached_jobs_ranked_restore_service_role_only` — the DROP+
+CREATE re-introduced Postgres's implicit EXECUTE-to-PUBLIC, so a
+corrective REVOKE-from-PUBLIC/anon/authenticated + GRANT-to-
+service_role restored the ADR-021 posture (caught in post-migration
+verification: grants must read `service_role:EXECUTE` only). The RPC
+predated the `docs/sql` tracking convention (a governance gap); it's
+now the tracked source of truth at
+`docs/sql/supabase-cached-jobs-search.sql`, with a row added to the
+`docs/README.md` schema-migrations table. `DEFAULT 0` keeps a
+named-arg call against an older revision working, so the backend can
+ship before/after the migration safely.
+
+### Backend: offset threaded, `has_more` computed both paths
+
+`JobSearchQuery.offset` + `JobSearchResult.has_more` (new optional
+fields, safe defaults — every constructor is keyword, verified no
+positional breakage). `cached_jobs_store.search()` takes `offset` and
+forwards it as `p_offset` (clamped `max(0, …)`). `JobSearchService`:
+the cache path sets `has_more = len(page) == page_size` (the RPC has
+no cheap COUNT — "full page back" is the pragmatic signal; the next
+fetch returning 0 is what finally clears the CTA); the live fan-out
+path has the full deduped set in memory so it paginates exactly —
+slice `[offset, offset+page_size)`, `has_more = len(deduped) >
+offset+page_size`. `JobSearchRequestModel` gained `offset`
+(`ge=0, le=100000` sanity bound) + `to_domain`; `JobSearchResponseModel`
+gained `has_more` + `from_domain`.
+
+### Frontend: append-not-replace + "Load more" CTA
+
+`api-types.ts`: `JobSearchRequest.offset?`, `JobSearchResponse.has_more?`.
+`WorkspaceShell` fresh search sends `page_size: 50, offset: 0` and
+replaces; new `handleLoadMore` reuses the **echoed**
+`searchResults.query` (not live form state — so editing the search box
+after a search can't make the next page paginate a different query),
+requests `offset = current results length`, and **appends** (deduped
+by `job.id`, defensive against corpus shifts between requests).
+Distinct `loadingMore` state so the grid stays visible and only the
+button shows a busy state; `total_results` is recomputed to the
+running on-screen count (the backend value is per-page). `JobSearch`
+renders a soft-variant "Load more roles" button under the grid, gated
+on `searchResults.has_more`.
+
+Tests: `test_job_search_service.py` +7 (live first-page/offset-window/
+past-end + cached offset-threading/full-final-page); `test_cached_jobs_store.py`
++1 (offset → p_offset, clamp) and the contract test's exact-args dict
+updated to include `p_offset: 0`. Hermetic blast-radius green
+(test_backend_app + test_job_search_service + test_cached_jobs_store
+= 35; broader cached/job/models/snapshot slice = 40). Frontend tsc +
+eslint clean. (The full offline suite can't complete here — pre-
+existing network-integration tests hang without secrets/network; that
+predates and is unrelated to this diff.)
+
+### Deploy status
+
+RPC migration is **already live in prod Supabase** (DB migrations
+apply independently of the code push; the `DEFAULT 0` param is
+backward-compatible with the not-yet-pushed backend). Backend +
+frontend + docs are committed locally; push decision deferred to the
+operator (re-deploys the backend offset plumbing + frontend
+"Load more").

@@ -314,6 +314,10 @@ export function WorkspaceShell() {
   const [sortBy, setSortBy] = useState<JobSortBy>("relevance");
   const [postedWithinDays, setPostedWithinDays] = useState("");
   const [searching, setSearching] = useState(false);
+  // Distinct from `searching`: a "Load more" fetch keeps the existing
+  // results on screen and appends, so the main Search button must NOT
+  // show its busy state and the grid must NOT collapse to a spinner.
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchResults, setSearchResults] = useState<JobSearchResponse | null>(
     null,
   );
@@ -785,6 +789,10 @@ export function WorkspaceShell() {
         // Was hardcoded 12 (the "every query returns exactly 12" cause —
         // it was never an RPC/corpus cap). Backend allows up to 50.
         page_size: 50,
+        // Fresh search always starts at the first page. "Load more"
+        // (handleLoadMore) re-issues this same query with a bumped
+        // offset and appends instead of replacing.
+        offset: 0,
         work_modes: workModes,
         employment_types: employmentTypes,
         sort_by: sortBy,
@@ -806,6 +814,72 @@ export function WorkspaceShell() {
       });
     } finally {
       setSearching(false);
+    }
+  }
+
+  // "Load more" — paginate the *current* result set. Reuses the query
+  // the backend echoed back (searchResults.query) rather than the live
+  // form state, so editing the search box after a search doesn't make
+  // the next page paginate a different query. Offset = how many rows
+  // we already hold; the backend windows [offset, offset+page_size).
+  // Results are appended (deduped by id, defensive against corpus
+  // shifts between requests) instead of replacing.
+  async function handleLoadMore() {
+    if (
+      !searchResults ||
+      !searchResults.has_more ||
+      loadingMore ||
+      searching
+    ) {
+      return;
+    }
+
+    const nextOffset = searchResults.results.length;
+    setLoadingMore(true);
+    try {
+      const response = await searchJobs({
+        ...searchResults.query,
+        offset: nextOffset,
+      });
+      setSearchResults((prev) => {
+        if (!prev) {
+          return response;
+        }
+        const seen = new Set(prev.results.map((job) => job.id));
+        const appended = response.results.filter(
+          (job) => !seen.has(job.id),
+        );
+        const mergedResults = [...prev.results, ...appended];
+        return {
+          ...response,
+          // Preserve the original echoed query (its offset is 0; the
+          // freshest page's query carries the bumped offset which we
+          // don't want surfaced as the "current search").
+          query: prev.query,
+          results: mergedResults,
+          // Page total_results is per-page on the backend; show the
+          // running count of what's actually on screen instead.
+          total_results: mergedResults.length,
+        };
+      });
+      setSearchNotice({
+        level: "success",
+        message: response.results.length
+          ? `Loaded ${response.results.length} more — showing ${
+              nextOffset + response.results.length
+            }.`
+          : "No more roles to load for this search.",
+      });
+    } catch (error) {
+      setSearchNotice({
+        level: "warning",
+        message: humanizeApiError(
+          error,
+          "Something went wrong while loading more roles.",
+        ),
+      });
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -2107,9 +2181,11 @@ export function WorkspaceShell() {
             importing={importing}
             jobUrl={jobUrl}
             latestSavedJobAt={latestSavedJobAt}
+            loadingMore={loadingMore}
             onEmploymentTypesChange={setEmploymentTypes}
             onImportSubmit={handleResolveJob}
             onJobUrlChange={setJobUrl}
+            onLoadMore={() => void handleLoadMore()}
             onLoadSavedJob={handleLoadSavedJob}
             onPostedWithinDaysChange={setPostedWithinDays}
             onRemoveSavedJob={(job) => void handleRemoveSavedJob(job)}

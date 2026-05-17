@@ -102,6 +102,7 @@ class JobSearchService:
             remote_only=bool(query.remote_only),
             posted_within_days=query.posted_within_days,
             page_size=max(1, min(int(query.page_size or 20), 50)),
+            offset=max(0, int(query.offset or 0)),
         )
 
         store = self._get_cache_store()
@@ -121,6 +122,7 @@ class JobSearchService:
                 remote_only=normalized_query.remote_only,
                 posted_within_days=normalized_query.posted_within_days,
                 limit=normalized_query.page_size,
+                offset=normalized_query.offset,
             )
         except Exception as exc:  # noqa: BLE001 — cache outage shouldn't kill search
             # Fall through to the live path. The cache is a perf
@@ -130,10 +132,15 @@ class JobSearchService:
             return result
 
         postings = [_row_to_job_posting(row) for row in rows]
+        # A full page back → there is (probably) at least one more page.
+        # The RPC has no cheap COUNT(*), so "page came back full" is the
+        # pragmatic has_more signal that powers the frontend "Load more".
+        has_more = len(postings) == normalized_query.page_size
         return JobSearchResult(
             query=normalized_query,
             results=postings,
             total_results=len(postings),
+            has_more=has_more,
             source_status={"cache": "ok", "backend": "ready"},
         )
 
@@ -145,6 +152,7 @@ class JobSearchService:
             remote_only=bool(query.remote_only),
             posted_within_days=query.posted_within_days,
             page_size=max(1, min(int(query.page_size or 20), 50)),
+            offset=max(0, int(query.offset or 0)),
         )
         requested_sources = {
             str(item).strip().lower()
@@ -171,11 +179,18 @@ class JobSearchService:
                 continue
             seen_keys.add(key)
             deduped_results.append(posting)
-        results = deduped_results[: normalized_query.page_size]
+        # The live fan-out has the full deduped set in memory, so it can
+        # paginate exactly: slice [offset, offset+page_size) and report
+        # has_more from whether anything survives past the window.
+        offset = normalized_query.offset
+        page_size = normalized_query.page_size
+        results = deduped_results[offset : offset + page_size]
+        has_more = len(deduped_results) > offset + page_size
         return JobSearchResult(
             query=normalized_query,
             results=results,
             total_results=len(results),
+            has_more=has_more,
             source_status=source_status,
         )
 

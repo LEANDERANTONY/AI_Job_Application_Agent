@@ -182,3 +182,151 @@ def test_job_search_service_dedupes_same_url_across_sources():
 
     assert len(result.results) == 1
     assert result.results[0].source == "lever"
+
+
+class _BulkSource(JobSourceAdapter):
+    """Emits `count` deterministically-ordered postings (newest first by
+    construction) so offset windows are stable across pages."""
+
+    source_name = "greenhouse"
+
+    def __init__(self, count: int):
+        self._count = count
+
+    def can_resolve_url(self, url: str) -> bool:
+        return False
+
+    def search(self, query):
+        from src.schemas import JobPosting, JobSourceSearchResponse
+
+        return JobSourceSearchResponse(
+            source=self.source_name,
+            status="ok",
+            results=[
+                JobPosting(
+                    id=f"job-{i:03d}",
+                    source=self.source_name,
+                    title=f"Engineer {i:03d}",
+                    company=f"Company {i:03d}",
+                    url=f"https://example.com/jobs/{i}",
+                    # Strictly-decreasing day → newest is i=0, so the
+                    # post-sort order equals insertion order.
+                    posted_at=f"2026-03-{(self._count - i):02d}T09:00:00+00:00",
+                )
+                for i in range(self._count)
+            ],
+        )
+
+    def resolve_url(self, url: str):
+        raise AssertionError("resolve should not run")
+
+
+def test_live_search_first_page_signals_has_more_when_corpus_exceeds_page():
+    service = JobSearchService(sources=[_BulkSource(25)])
+
+    result = service.search(JobSearchQuery(query="engineer", page_size=10, offset=0))
+
+    assert len(result.results) == 10
+    assert [p.id for p in result.results] == [f"job-{i:03d}" for i in range(10)]
+    assert result.has_more is True
+
+
+def test_live_search_offset_windows_and_clears_has_more_on_last_page():
+    service = JobSearchService(sources=[_BulkSource(25)])
+
+    page2 = service.search(JobSearchQuery(query="engineer", page_size=10, offset=10))
+    assert [p.id for p in page2.results] == [f"job-{i:03d}" for i in range(10, 20)]
+    assert page2.has_more is True
+
+    page3 = service.search(JobSearchQuery(query="engineer", page_size=10, offset=20))
+    assert [p.id for p in page3.results] == [f"job-{i:03d}" for i in range(20, 25)]
+    # 25 rows, window [20, 30) — nothing past it, so no "Load more".
+    assert page3.has_more is False
+
+
+def test_live_search_offset_past_end_returns_empty_and_no_more():
+    service = JobSearchService(sources=[_BulkSource(5)])
+
+    result = service.search(JobSearchQuery(query="engineer", page_size=10, offset=50))
+
+    assert result.results == []
+    assert result.has_more is False
+
+
+class _FakeCacheStore:
+    """Minimal CachedJobsStore stand-in: configured, and slices its
+    canned rows by the offset/limit the service passes — exactly what
+    the real search_cached_jobs_ranked RPC does server-side."""
+
+    def __init__(self, row_count: int):
+        self._rows = [
+            {
+                "job_id": f"c{i:03d}",
+                "source": "greenhouse",
+                "title": f"Cached {i:03d}",
+                "company": "Acme",
+                "url": f"https://cache.example.com/{i}",
+                "posted_at": f"2026-03-{((i % 27) + 1):02d}T09:00:00+00:00",
+            }
+            for i in range(row_count)
+        ]
+        self.calls: list[dict] = []
+
+    def is_configured(self) -> bool:
+        return True
+
+    def search(
+        self,
+        *,
+        query,
+        location,
+        sources,
+        remote_only,
+        posted_within_days,
+        limit,
+        offset,
+    ):
+        self.calls.append({"limit": limit, "offset": offset})
+        return self._rows[offset : offset + limit]
+
+
+def test_cached_search_threads_offset_and_sets_has_more():
+    store = _FakeCacheStore(row_count=25)
+    service = JobSearchService(sources=[], cache_store=store)
+
+    page1 = service.search_cached(
+        JobSearchQuery(query="engineer", page_size=10, offset=0)
+    )
+    assert len(page1.results) == 10
+    assert page1.results[0].id == "c000"
+    assert page1.has_more is True
+    assert page1.source_status["cache"] == "ok"
+
+    last = service.search_cached(
+        JobSearchQuery(query="engineer", page_size=10, offset=20)
+    )
+    assert [p.id for p in last.results] == [f"c{i:03d}" for i in range(20, 25)]
+    # Partial final page (5 < page_size) → no more pages.
+    assert last.has_more is False
+
+    # The offset must reach the store unmodified (it's the RPC's
+    # p_offset); page_size is the RPC limit.
+    assert store.calls == [
+        {"limit": 10, "offset": 0},
+        {"limit": 10, "offset": 20},
+    ]
+
+
+def test_cached_search_full_final_page_still_reports_has_more():
+    # Exactly page_size rows back → has_more stays True (the backend
+    # has no cheap COUNT; "full page" is the pragmatic signal and the
+    # next fetch returning 0 is what finally clears the CTA).
+    store = _FakeCacheStore(row_count=10)
+    service = JobSearchService(sources=[], cache_store=store)
+
+    result = service.search_cached(
+        JobSearchQuery(query="engineer", page_size=10, offset=0)
+    )
+
+    assert len(result.results) == 10
+    assert result.has_more is True

@@ -209,6 +209,13 @@ export type JobSearchProps = {
   // Results
   searchNotice: JobSearchNotice | null;
   searchResults: JobSearchResponse | null;
+  /** True while a "Load more" page fetch is in flight. Distinct from
+   *  `searching` so the grid stays visible (we're appending, not
+   *  replacing) and only the Load-more button shows a busy state. */
+  loadingMore: boolean;
+  /** Fetch + append the next page. Parent gates this on
+   *  `searchResults.has_more`; the button is only rendered then. */
+  onLoadMore: () => void;
   savedJobIds: Set<string>;
   savedJobActionId: string | null;
   activeJob: JobPosting | null;
@@ -371,6 +378,8 @@ export function JobSearch({
   onImportSubmit,
   searchNotice,
   searchResults,
+  loadingMore,
+  onLoadMore,
   savedJobIds,
   savedJobActionId,
   activeJob,
@@ -623,30 +632,44 @@ export function JobSearch({
       ) : null}
 
       {results.length ? (
-        <div className="b-job-grid">
-          {results.map((job, index) => {
-            const isActive = activeJob?.id === job.id;
-            const isSaved = savedJobIds.has(job.id);
-            const isPending = savedJobActionId === job.id;
-            return (
-              <JobCard
-                isActive={isActive}
-                isPending={isPending}
-                isSaved={isSaved}
-                job={job}
-                key={job.id}
-                onPrimary={() => onReviewRole(job)}
-                onSaveClick={
-                  authSignedIn && !isSaved ? () => onSaveJob(job) : undefined
-                }
-                primaryLabel={isActive ? "Loaded" : "Review role"}
-                showRemoveButton={false}
-                showSaveButton={authSignedIn}
-                topMatch={index === 0 && results.length >= 2}
-              />
-            );
-          })}
-        </div>
+        <>
+          <div className="b-job-grid">
+            {results.map((job, index) => {
+              const isActive = activeJob?.id === job.id;
+              const isSaved = savedJobIds.has(job.id);
+              const isPending = savedJobActionId === job.id;
+              return (
+                <JobCard
+                  isActive={isActive}
+                  isPending={isPending}
+                  isSaved={isSaved}
+                  job={job}
+                  key={job.id}
+                  onPrimary={() => onReviewRole(job)}
+                  onSaveClick={
+                    authSignedIn && !isSaved ? () => onSaveJob(job) : undefined
+                  }
+                  primaryLabel={isActive ? "Loaded" : "Review role"}
+                  showRemoveButton={false}
+                  showSaveButton={authSignedIn}
+                  topMatch={index === 0 && results.length >= 2}
+                />
+              );
+            })}
+          </div>
+          {searchResults?.has_more ? (
+            <div className="b-load-more-row">
+              <button
+                className="rd-btn rd-btn-soft rd-btn-sm"
+                disabled={loadingMore}
+                onClick={onLoadMore}
+                type="button"
+              >
+                {loadingMore ? "Loading…" : "Load more roles"}
+              </button>
+            </div>
+          ) : null}
+        </>
       ) : searchResults ? (
         <div className="b-saved-empty">
           No roles matched this search. Try different keywords.

@@ -108,6 +108,10 @@ class JobSearchQuery:
     # a query, recency otherwise. Other values: 'newest', 'oldest',
     # 'company_az'. Anything unknown gets coerced back to 'relevance'.
     sort_by: str = "relevance"
+    # Pagination offset for "Load more" (0 = first page). Threaded
+    # into the search_cached_jobs_ranked RPC's p_offset; the live
+    # fan-out path applies it as a post-dedupe slice.
+    offset: int = 0
 
 
 @dataclass
@@ -131,6 +135,9 @@ class JobSearchResult:
     query: JobSearchQuery
     results: List[JobPosting] = field(default_factory=list)
     total_results: int = 0
+    # True when this page came back full (== page_size) → there is
+    # (probably) at least one more page. Powers the "Load more" CTA.
+    has_more: bool = False
     source_status: dict[str, str] = field(default_factory=dict)
 
 

@@ -10,6 +10,10 @@ class JobSearchRequestModel(BaseModel):
     remote_only: bool = False
     posted_within_days: int | None = Field(default=None, ge=1, le=30)
     page_size: int = Field(default=20, ge=1, le=50)
+    # Pagination offset for "Load more" (0 = first page). Upper bound
+    # is a sanity guard against absurd offsets; the RPC just returns
+    # an empty page past the end (~14.7k-row corpus).
+    offset: int = Field(default=0, ge=0, le=100000)
     # New filter dropdowns. work_modes is multi-select among
     # ('remote', 'hybrid', 'onsite'). employment_types is multi-
     # select among ('fulltime', 'parttime', 'contract', 'internship',
@@ -72,6 +76,7 @@ class JobSearchRequestModel(BaseModel):
             work_modes=self.work_modes,
             employment_types=self.employment_types,
             sort_by=self.sort_by,
+            offset=self.offset,
         )
 
 
@@ -102,6 +107,9 @@ class JobSearchResponseModel(BaseModel):
     query: JobSearchRequestModel
     results: list[JobPostingModel] = Field(default_factory=list)
     total_results: int = 0
+    # True when this page came back full → there is (probably) at least
+    # one more page. Drives the frontend "Load more" button.
+    has_more: bool = False
     source_status: dict[str, str] = Field(default_factory=dict)
 
     @classmethod
@@ -110,6 +118,7 @@ class JobSearchResponseModel(BaseModel):
             query=JobSearchRequestModel.model_validate(result.query.__dict__),
             results=[JobPostingModel.from_domain(item) for item in result.results],
             total_results=result.total_results,
+            has_more=result.has_more,
             source_status=dict(result.source_status),
         )
 

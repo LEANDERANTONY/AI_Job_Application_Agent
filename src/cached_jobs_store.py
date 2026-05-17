@@ -305,6 +305,7 @@ class CachedJobsStore:
         work_modes: list[str] | None = None,
         employment_types: list[str] | None = None,
         sort_by: str = "relevance",
+        offset: int = 0,
     ) -> list[dict]:
         """Relevance-ranked Postgres full-text search against cached_jobs.
 
@@ -374,6 +375,10 @@ class CachedJobsStore:
             "p_work_modes": normalized_work_modes,
             "p_employment_types": normalized_employment_types,
             "p_sort_by": sort_normalized,
+            # Pagination window start. The RPC defaults p_offset to 0,
+            # so this is also safe against an older function revision
+            # (named-arg call simply uses the default if absent).
+            "p_offset": max(0, int(offset or 0)),
         }
         try:
             response = client.rpc("search_cached_jobs_ranked", rpc_args).execute()

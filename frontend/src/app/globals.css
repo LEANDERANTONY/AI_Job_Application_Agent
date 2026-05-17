@@ -6515,6 +6515,16 @@ code {
   gap: 10px;
 }
 @media (max-width: 880px) { .b-job-grid { grid-template-columns: 1fr; } }
+
+/* "Load more" pagination row — sits under the grid, centered. Soft
+   button variant so it reads as secondary to the primary Search. */
+.b-load-more-row {
+  display: flex;
+  justify-content: center;
+  padding-top: 14px;
+}
+.b-shell .b-load-more-row .rd-btn { min-width: 180px; }
+
 .b-job-card {
   padding: 16px;
   background: rgba(0, 0, 0, 0.40);

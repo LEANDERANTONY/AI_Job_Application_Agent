@@ -42,6 +42,11 @@ export type JobSearchRequest = {
   remote_only?: boolean;
   posted_within_days?: number | null;
   page_size?: number;
+  /** Pagination window start for "Load more" (0 / omitted = first
+   *  page). Threaded into the search_cached_jobs_ranked RPC's
+   *  p_offset; the live fan-out path applies it as a post-dedupe
+   *  slice. Server clamps to [0, 100000]. */
+  offset?: number;
   /** Multi-select dropdown. Empty / omitted = no filter applied. */
   work_modes?: WorkMode[];
   /** Multi-select dropdown. Empty / omitted = no filter applied. */
@@ -78,6 +83,11 @@ export type JobSearchResponse = {
   query: JobSearchRequest;
   results: JobPosting[];
   total_results: number;
+  /** True when this page came back full (results.length === page_size)
+   *  → there is (probably) at least one more page. Drives the
+   *  "Load more" CTA. Optional so responses predating the field
+   *  (and the live-path fallback) degrade to "no more pages". */
+  has_more?: boolean;
   source_status: Record<string, string>;
 };
 

@@ -313,7 +313,10 @@ def test_search_calls_rpc_with_normalized_args(monkeypatch):
     assert rpc.fn == "search_cached_jobs_ranked"
     # Defaults for the dropdown args are None / 'relevance' so a caller
     # that doesn't pass them gets the legacy behaviour. The RPC treats
-    # None as "no filter" for the array params.
+    # None as "no filter" for the array params. p_offset defaults to 0
+    # (first page) and is always sent — it matches the RPC's
+    # `p_offset integer DEFAULT 0`, so a named-arg call against an
+    # older function revision still works (uses the default).
     assert rpc.args == {
         "p_query": "machine learning",
         "p_location": "San Francisco",
@@ -324,6 +327,7 @@ def test_search_calls_rpc_with_normalized_args(monkeypatch):
         "p_work_modes": None,
         "p_employment_types": None,
         "p_sort_by": "relevance",
+        "p_offset": 0,
     }
 
 
@@ -347,6 +351,29 @@ def test_search_passes_empty_query_to_rpc_for_browse_mode(monkeypatch):
     assert rpc.args["p_work_modes"] is None
     assert rpc.args["p_employment_types"] is None
     assert rpc.args["p_sort_by"] == "relevance"
+
+
+def test_search_forwards_offset_as_p_offset_clamped_non_negative(monkeypatch):
+    """The pagination window start reaches the RPC as p_offset. A
+    negative/None offset clamps to 0 so a bad caller can't make the
+    RPC raise on `OFFSET -1`."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[
+            SimpleNamespace(data=[]),
+            SimpleNamespace(data=[]),
+        ],
+    )
+    store = _make_store(client)
+
+    store.search(query="engineer", limit=50, offset=100)
+    assert client.rpc_calls[0].args["p_offset"] == 100
+
+    store.search(query="engineer", limit=50, offset=-5)
+    assert client.rpc_calls[1].args["p_offset"] == 0
 
 
 def test_search_normalizes_dropdown_filters_and_sort(monkeypatch):
