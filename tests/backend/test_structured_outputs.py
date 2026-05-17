@@ -396,8 +396,21 @@ def test_llm_output_base_ignores_extra_keys_but_enforces_types():
         )
 
 
-def test_run_structured_prompt_raises_when_openai_unavailable():
+def test_run_structured_prompt_raises_when_openai_unavailable(monkeypatch):
+    # Hermetic isolation. The default ``api_key=None`` path resolves
+    # the key via ``src.config.load_openai_key`` which reads the
+    # ``OPENAI_API_KEY`` env var OR an ``openai_key.txt`` fallback
+    # file. With a real key in the developer's local ``.env`` (or that
+    # file present) the constructor would build a usable client and
+    # this test would NOT raise — a pre-existing env-dependent flake,
+    # unrelated to the schema config. Neutralize the resolver so this
+    # asserts the genuine "no credentials configured" behaviour
+    # regardless of the local environment.
+    monkeypatch.setattr(
+        "src.openai_service.load_openai_key", lambda required=False: None
+    )
     service = OpenAIService(client=None, api_key=None)
+    assert service.is_available() is False
     with pytest.raises(AgentExecutionError):
         service.run_structured_prompt(
             "system",
