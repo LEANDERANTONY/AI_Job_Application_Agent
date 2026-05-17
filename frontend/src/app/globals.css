@@ -44,10 +44,31 @@
    still opens bottom-right. Same host-scoping rule applies; pin it
    bottom-left so the form opens from the same corner as the trigger.
    Verified in the live shadow DOM (`--dialog-inset` resolved to
-   "auto 0 0 auto" on the host before this). */
+   "auto 0 0 auto" on the host before this).
+
+   ALIGNMENT WITH THE ASSISTANT FAB: the actor button (.widget__actor)
+   carries a fixed `margin: 16px` of its own (measured live), so its
+   effective gap from the viewport edge = `--actor-inset` value + 16.
+   The assistant FAB (.b-shell .rd-fab) sits `bottom/right: 24px`
+   desktop, `18px` at `@media (max-width: 540px)`. To make the two
+   read as one aligned pair (bottom edges level, symmetric corner
+   distance — mirror of FAB-right ↔ actor-left), set the inset to
+   `FAB-offset − 16` and mirror the FAB's responsive breakpoint:
+     desktop  24 − 16 → 8px
+     ≤540px   18 − 16 → 2px
+   On a wide desktop the misalignment is invisible (corners far
+   apart); on a phone the two are close enough to look like a botched
+   pair, which is what this fixes. Depends on Sentry's actor
+   `margin:16px` (pinned to the installed @sentry version; !important
+   keeps our value winning over Sentry's :host default). */
 #sentry-feedback {
-  --actor-inset: auto auto 16px 16px !important;
+  --actor-inset: auto auto 8px 8px !important;
   --dialog-inset: auto auto 16px 16px !important;
+}
+@media (max-width: 540px) {
+  #sentry-feedback {
+    --actor-inset: auto auto 2px 2px !important;
+  }
 }
 
 * {
