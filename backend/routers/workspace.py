@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import StreamingResponse
 
 from backend.observability import capture_event
+from backend.quota import enforce_export_entitlement
 from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
 from backend.request_auth import get_optional_auth_tokens
+from backend.tiers import resolve_user_tier
 from backend.services.auth_session_service import (
     build_openai_service_for_context,
     resolve_authenticated_context,
@@ -94,6 +96,29 @@ def _raise_http_error(error: AppError):
     if isinstance(error, QuotaExceededError):
         raise error
     raise HTTPException(status_code=400, detail=error.user_message)
+
+
+def _resolve_export_tier(access_token: str, refresh_token: str):
+    """Best-effort tier for an export request.
+
+    Export of the Free-allowed PDF + classic_ats combination must keep
+    working for everyone (incl. anonymous / expired sessions), so this
+    NEVER raises on missing/invalid auth -- it resolves to the most
+    restrictive tier ("free") instead. Only the DOCX / custom-theme
+    entitlement is gated, by ``enforce_export_entitlement``; a Free or
+    anonymous caller requesting the allowed combination is unaffected.
+    """
+    if not (access_token and refresh_token):
+        return "free"
+    try:
+        auth_context = resolve_authenticated_context(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+    except AppError:
+        return "free"
+    app_user = getattr(auth_context, "app_user", None)
+    return resolve_user_tier(app_user)
 
 
 def _resolve_openai_service(access_token: str, refresh_token: str):
@@ -482,6 +507,16 @@ def export_resume_builder_route(
     `export_resume_builder_artifact()` helper.
     """
     access_token, refresh_token = auth_tokens
+    # Pricing-truth gate: Free is "PDF export, ATS theme". DOCX / a
+    # non-classic_ats theme is a Pro+ entitlement -> canonical 429.
+    # Checked before any session hydrate so a blocked request has no
+    # side effects (and QuotaExceededError bypasses the ValueError
+    # catch below straight to the global 429 handler).
+    enforce_export_entitlement(
+        _resolve_export_tier(access_token or "", refresh_token or ""),
+        export_format=payload.export_format,
+        themes=(payload.theme,),
+    )
     try:
         hydrate_resume_builder_session_if_needed(
             access_token=access_token or "",
@@ -902,7 +937,23 @@ def remove_saved_job_route(job_id: str, auth_tokens=Depends(get_optional_auth_to
 
 @router.post("/artifacts/export")
 @limiter.limit(LIMIT_PARSE)
-def export_workspace_artifact_route(request: Request, payload: WorkspaceArtifactExportRequestModel):
+def export_workspace_artifact_route(
+    request: Request,
+    payload: WorkspaceArtifactExportRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    access_token, refresh_token = auth_tokens
+    # Pricing-truth gate (P0): this route previously took no auth at
+    # all, so the Free "PDF export, ATS theme" vs Pro "PDF + DOCX,
+    # all themes" pricing split was unenforced. Resolve the tier
+    # (best-effort; anon/expired -> "free") and block the DOCX /
+    # non-classic_ats entitlement with the canonical 429 upgrade
+    # nudge. PDF + classic_ats is unchanged for every tier incl. anon.
+    enforce_export_entitlement(
+        _resolve_export_tier(access_token or "", refresh_token or ""),
+        export_format=payload.export_format,
+        themes=(payload.resume_theme, payload.cover_letter_theme),
+    )
     try:
         return export_workspace_artifact(
             workspace_snapshot=payload.workspace_snapshot,

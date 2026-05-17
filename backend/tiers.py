@@ -169,6 +169,56 @@ def retention_days_for_tier(tier: Tier) -> int | None:
     return _RETENTION_DAYS_BY_TIER[tier]
 
 
+# ── Export entitlement (pricing-truth gate) ─────────────────────────
+# The pricing page promises Free "PDF export, ATS theme" and Pro /
+# Business "PDF + DOCX export, all themes". That differentiation is an
+# ENTITLEMENT, not a metered counter, so it lives here (tier policy)
+# and is enforced via the same QuotaExceededError 429 path as the
+# premium_applications gate (see
+# `backend.quota.enforce_export_entitlement` /
+# `_build_quota_exceeded_error`) -- the frontend then renders the
+# identical upgrade nudge instead of a bespoke error shape.
+#
+# Keep these two constants in lockstep with the pricing copy in
+# `frontend/src/components/landing-page.tsx` (Free vs Pro/Business
+# feature bullets). Changing what Free gets is a pricing change, not a
+# refactor.
+FREE_EXPORT_FORMAT = "pdf"
+FREE_EXPORT_THEME = "classic_ats"
+
+
+def export_entitlement_block_reason(
+    tier: Tier,
+    *,
+    export_format: str | None = None,
+    themes: tuple[str, ...] | list[str] = (),
+) -> str | None:
+    """Return a short human label for the locked feature if `tier` may
+    NOT export with the requested format/theme, else ``None``.
+
+    Pro and Business have the full entitlement (always ``None``). Free
+    -- and anonymous, which `resolve_user_tier` already collapses to
+    "free" -- is limited to ``FREE_EXPORT_FORMAT`` +
+    ``FREE_EXPORT_THEME``; anything else returns the label the upgrade
+    nudge should name ("DOCX export" / "Custom export themes").
+
+    Theme/format comparison is whitespace- and case-insensitive to
+    match the request models' ``_strip_theme`` normalisation. An
+    empty/blank value is treated as the default (allowed), never a
+    violation -- a caller omitting a theme must not be upsold.
+    """
+    if tier != "free":
+        return None
+    fmt = (export_format or "").strip().lower()
+    if fmt and fmt != FREE_EXPORT_FORMAT:
+        return "DOCX export"
+    for theme in themes:
+        normalized = (theme or "").strip().lower()
+        if normalized and normalized != FREE_EXPORT_THEME:
+            return "Custom export themes"
+    return None
+
+
 def resolve_user_tier(app_user: AppUserRecord | None) -> Tier:
     """Resolve the active subscription tier for an authenticated user.
 

@@ -1109,7 +1109,7 @@ const PRICING_TIERS: PricingTier[] = [
     features: [
       "20 tailored applications / month",
       "5 premium applications with GPT-5.5",
-      "Unlimited job searches + saved jobs",
+      "Unlimited job searches, 1,000 saved jobs",
       "150 assistant chat turns / month",
       "PDF + DOCX export, all themes",
       "30-day workspace history",
@@ -1133,7 +1133,7 @@ const PRICING_TIERS: PricingTier[] = [
       "80 tailored applications / seat",
       "25 premium applications with GPT-5.5",
       "500 assistant chat turns / seat",
-      "SSO, admin dashboard, shared shortlists",
+      "SSO & admin controls on request",
       "Unlimited history, no retention TTL",
       "Priority email support",
     ],

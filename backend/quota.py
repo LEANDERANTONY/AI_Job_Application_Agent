@@ -47,7 +47,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from backend.tiers import TIER_CAPS, UNLIMITED, Tier
+from backend.tiers import (
+    TIER_CAPS,
+    UNLIMITED,
+    Tier,
+    export_entitlement_block_reason,
+)
 from src.config import (
     SUPABASE_SERVICE_ROLE_KEY,
     SUPABASE_URL,
@@ -149,6 +154,44 @@ def _build_quota_exceeded_error(
         current=current,
         cap=cap,
         reset_period=period_key,
+        tier=tier,
+    )
+
+
+def enforce_export_entitlement(
+    tier: Tier,
+    *,
+    export_format: str | None = None,
+    themes: tuple[str, ...] | list[str] = (),
+) -> None:
+    """Raise ``QuotaExceededError`` if `tier` may not export with the
+    requested format/theme; no-op otherwise.
+
+    The PDF/DOCX + theme split is an ENTITLEMENT, not a metered
+    counter, so -- exactly like the ``premium_applications`` "Pro+
+    feature" rejection in `_build_quota_exceeded_error` -- it reuses
+    the canonical 429 path so the frontend renders the uniform upgrade
+    nudge instead of a bespoke error shape. No-op for Pro/Business and
+    for Free's allowed ``pdf`` + ``classic_ats`` combination.
+
+    ``counter="premium_export"`` is a display-routing hint only (it is
+    deliberately NOT a ``TIER_CAPS`` counter -- there is no count to
+    track); ``reset_period="lifetime"`` keeps the frontend from
+    rendering a wrong "resets on the 1st" line, mirroring how the
+    premium-application entitlement rejection is shaped.
+    """
+    reason = export_entitlement_block_reason(
+        tier, export_format=export_format, themes=themes
+    )
+    if reason is None:
+        return
+    raise QuotaExceededError(
+        f"{reason} is a Pro+ feature. Upgrade to unlock DOCX downloads "
+        "and additional export themes.",
+        counter="premium_export",
+        current=0,
+        cap=0,
+        reset_period="lifetime",
         tier=tier,
     )
 
