@@ -15,11 +15,20 @@
 //   * Consent-gated (requires the user to accept the banner):
 //       - Session Replay (records DOM mutations + user input)
 //
-// At boot we read localStorage["jobagent-cookie-consent"] inline
-// (importing the helper would pull React into a config module). If
-// it's "accepted" we ship Replay; otherwise we skip it. When the
-// user later accepts via the banner, the dispatched event hot-adds
-// Replay without a page reload.
+// At boot we read the parent-domain consent cookie inline (importing
+// the helper would pull React into a config module). If it's
+// "accepted" we ship Replay; otherwise we skip it. When the user
+// later accepts via the banner, the dispatched event hot-adds Replay
+// without a page reload.
+//
+// IMPORTANT: cookie-consent.tsx persists consent in a first-party
+// cookie scoped to `.job-application-copilot.xyz` (NOT localStorage —
+// the marketing apex and the app subdomain are different origins).
+// This reader must mirror its ``readConsentCookie`` (cookie first,
+// then a one-time legacy-localStorage fallback). Reading only
+// localStorage here would silently withhold Replay from every user
+// who consented after the cookie switch, because nothing writes that
+// localStorage key anymore.
 
 import * as Sentry from "@sentry/nextjs";
 
@@ -27,9 +36,27 @@ const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
 function readConsent(): "pending" | "accepted" | "declined" {
   if (typeof window === "undefined") return "pending";
+  // Source of truth: the parent-domain cookie written by
+  // cookie-consent.tsx. Keep this parse in sync with its
+  // readConsentCookie().
   try {
-    const raw = window.localStorage.getItem("jobagent-cookie-consent");
-    if (raw === "accepted" || raw === "declined") return raw;
+    const prefix = "jobagent-cookie-consent=";
+    const row = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith(prefix));
+    if (row) {
+      const raw = decodeURIComponent(row.slice(prefix.length));
+      if (raw === "accepted" || raw === "declined") return raw;
+    }
+  } catch {
+    /* document.cookie unavailable — fall through to legacy read */
+  }
+  // One-time migration fallback: users who consented BEFORE the
+  // cookie switch only have the value in localStorage on the origin
+  // they accepted on. Honor it so Replay isn't silently withheld.
+  try {
+    const legacy = window.localStorage.getItem("jobagent-cookie-consent");
+    if (legacy === "accepted" || legacy === "declined") return legacy;
   } catch {
     /* incognito / Safari ITP — treat as pending */
   }
