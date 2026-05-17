@@ -836,3 +836,39 @@ Merged + deployed. Backend container restarted on the VPS; Vercel auto-rebuilt t
 
 - [ADR-024: Observability stack — Sentry + PostHog with consent-gated analytics](docs/adr/ADR-024-observability-stack-sentry-and-posthog.md)
 - [ADR-025: EU cookie consent banner + GDPR-aligned analytics gating](docs/adr/ADR-025-eu-cookie-consent-banner-and-gdpr-analytics-gating.md)
+
+## Day 47: Cross-Surface Hardening — Consent Cookie, Schema Posture, Pricing-Truth Export Gate, Workspace UX
+
+A consolidated correctness pass over the Day-42→46 surface (tiering, schema-strict, observability/consent, prompt registry) plus a pricing-claims audit. Five commit clusters; nothing pushed yet (held behind an explicit deploy decision).
+
+### Consent cookie now spans the apex + `app.` subdomain (`e9a3288`)
+
+The cookie banner persisted consent in `localStorage`, which is origin-scoped — a user who accepted on the marketing apex was re-prompted on `app.job-application-copilot.xyz`. Switched the store to a first-party cookie scoped to `.job-application-copilot.xyz` (host-only on localhost / `*.vercel.app`), with a one-time legacy-`localStorage` migration read and `BroadcastChannel` cross-tab sync. Also fixed `instrumentation-client.ts`, which still read the now-never-written `localStorage` key at boot — left as-is it would have silently withheld Sentry Session Replay from every post-migration consenter (the boot read + the hot-add listener both went through the stale path). It now mirrors the cookie reader (cookie-first, legacy fallback, no React import). Public API unchanged; `tsc` + `eslint` clean.
+
+### `_StrictBase` schema posture: `extra="forbid"` → `extra="ignore"` (`ef2994f`)
+
+The shared LLM-output base rejected any benign extra key the model volunteered, turning the redundant client-side `model_validate` into an `AgentExecutionError` that routes to that agent's deterministic fallback (ADR-018). Honest scoping (verified against `src/openai_service.py`): the real fail-closed guard is OpenAI structured-outputs strict mode (`_build_response_format_schema` → `_enforce_strict_object_constraints` force-sets `additionalProperties:false` with `strict=True`, independent of this `ConfigDict`). `extra="ignore"` only relaxes the redundant re-validation; required-field / type / `Literal` enforcement is unchanged, so genuinely-malformed output (wrong type) still falls back. Scope held to the LLM-output base ONLY — `backend/auth_models.py`, `models.py`, `workspace_models.py` keep `extra="forbid"` (HTTP-boundary models where strict rejection is correct). Stale extra-key test updated (not reverted) + an over-permissiveness (wrong-type) guard + a model-level config-contract test added.
+
+### Pricing-claims audit → tier-gated export entitlement + two copy fixes (`b82e772`)
+
+Every landing pricing bullet was cross-referenced against `backend/tiers.py` + the gating code. All numeric caps were correctly wired; three claims were not: (1) Pro "Unlimited … saved jobs" — `saved_jobs` Pro is wired to 1000, not unlimited → reworded to "Unlimited job searches, 1,000 saved jobs"; (2) Free "PDF export, ATS theme" vs Pro "PDF + DOCX, all themes" — **no tier gate existed** on export format/theme and `/workspace/artifacts/export` had no auth at all → wired the gate so the copy is true (**ADR-027**); (3) Business "SSO, admin dashboard, shared shortlists" — zero wiring → reworded to "SSO & admin controls on request". 14 hermetic tests for the export-entitlement policy + raiser.
+
+### Workspace UX: command-palette `:active` + locked-Premium upgrade CTA (`2211b10`)
+
+A UX-parity audit of 12 workspace surfaces; 10 were already sound, 2 fixed: (a) the command palette set `data-active` only via `onMouseEnter`/Arrow keys, so a tapped row on touch got no press feedback — added `.b-cmd-item:active` mirroring the `[data-active]` treatment; (b) the Free-tier Premium toggle was HTML-`disabled` so its only upgrade hint was a hover `title` (dead on touch) — it now stays interactive when tier-locked and a tap surfaces the same `Notice` + `.b-notice-action` upgrade CTA the 429 path uses (`workspaceQuota.upgrade_url`), while `analysisLoading` / out-of-credits remain real disables.
+
+### Test isolation: hermetic openai-unavailable test (`8e368c8`)
+
+`test_run_structured_prompt_raises_when_openai_unavailable` asserted the no-credentials path but resolved the key via env / `openai_key.txt`, so it failed on any machine with a real key configured (pre-existing flake, unrelated to the schema change — verified by stashing). Now monkeypatches `load_openai_key → None` for a deterministic result regardless of local environment.
+
+### Regression-safety re-verification (Days 42-46)
+
+Re-audited the danger class "an LLM/IO gate that hard-fails the pipeline on drift": tier-aware model routing (defensive, free→standard / premium→gpt-5.5, everyone Free pre-cutover), atomic quota ordering (gate-before-work + best-effort refund), Lemon Squeezy webhook (HMAC `compare_digest`, unknown→200, env-gated), observability (no-op on empty DSN, pytest-skip, additive telemetry), per-agent fallback isolation (ADR-018 — a single agent's failure degrades only that agent), and the prompt registry — confirmed the registry tests assert **genuine full-string byte-identity** against the pre-migration concat (no golden-hash guard needed; `==` is stricter). All confirmed graceful-degrade; no regression from the Days 42-46 work.
+
+### Deploy status
+
+Local + unpushed. The schema + pricing/export-gate changes touch the workflow + entitlement surface, so the batch is held behind an explicit deploy decision rather than auto-shipping.
+
+### ADRs added
+
+- [ADR-027: Tier-gated export entitlement (Free = PDF + ATS theme)](docs/adr/ADR-027-tier-gated-export-entitlement.md)

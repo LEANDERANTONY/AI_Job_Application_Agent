@@ -39,7 +39,7 @@ This is no longer a Streamlit runtime. The old Streamlit shell and related deplo
 8. The orchestrator runs `tailoring`, `review`, `resume_generation`, and `cover_letter`. The earlier `fit` and `strategy` stages were removed from the live workflow; the deterministic fit-scoring service in `src/services/fit_service.py` is still available as a building block for `tailoring` but is no longer a visible workflow stage.
 9. Builders assemble the tailored resume and cover letter.
 10. The workspace assistant answers grounded questions from the current workspace state.
-11. Export helpers produce DOCX and PDF files for the current document; both formats share the same theme palette (`classic_ats`, `professional_neutral`).
+11. Export helpers produce DOCX and PDF files for the current document; both formats share the same theme palette (`classic_ats`, `professional_neutral`). Format + theme are an entitlement gate: Free is limited to PDF + `classic_ats`, Pro/Business unlock DOCX + all themes, enforced server-side on both export routes via the shared 429 upgrade path (see [ADR-027](adr/ADR-027-tier-gated-export-entitlement.md)).
 12. For authenticated users, the latest workspace snapshot and saved jobs are persisted in Supabase.
 
 ## Main Modules

@@ -31,6 +31,7 @@ The accepted set is grouped into four thematic clusters to make the current prod
 - [ADR-021: Atomic quota with refund-on-failure](ADR-021-atomic-quota-with-refund-on-failure.md)
 - [ADR-022: Tier-aware model selection via constructor injection](ADR-022-tier-aware-model-selection-via-constructor-injection.md)
 - [ADR-023: Lemon Squeezy as Merchant of Record for v1](ADR-023-lemon-squeezy-merchant-of-record-for-v1.md)
+- [ADR-027: Tier-gated export entitlement (Free = PDF + ATS theme)](ADR-027-tier-gated-export-entitlement.md)
 
 ### Observability + compliance
 
@@ -51,7 +52,7 @@ The accepted set is grouped into four thematic clusters to make the current prod
 
 ## Current state note
 
-As of 2026-05-16, the shipped product is a Next.js workspace deployed on Vercel backed by a FastAPI container on a Frankfurt VPS, with a Supabase EU project for Auth + persistence + the cached-jobs index. The agentic workflow runs Tailoring → Review → ResumeGen → CoverLetter on every analysis, with per-agent retry + fallback isolation. Tier enforcement is live across eight counters (Free / Pro / Business) with the Lemon Squeezy payment scaffold env-gated behind a "Coming soon" frontend fallback until the dashboard's final variant IDs land. The observability stack (Sentry `jobagent-backend` + `jobagent-frontend` + a shared PostHog free-tier project tagged with `product: "jobagent"`) is wired with a custom EU cookie consent banner gating PostHog + Sentry Session Replay behind explicit user opt-in. `backend/nightly_eval.py` exists and is tested but is **not** on the production cron at pre-revenue stage — re-enabling is a single crontab edit when revenue justifies the recurring LLM spend.
+As of 2026-05-17, the shipped product is a Next.js workspace deployed on Vercel backed by a FastAPI container on a Frankfurt VPS, with a Supabase EU project for Auth + persistence + the cached-jobs index. The agentic workflow runs Tailoring → Review → ResumeGen → CoverLetter on every analysis, with per-agent retry + fallback isolation. Tier enforcement is live across eight counters (Free / Pro / Business) with the Lemon Squeezy payment scaffold env-gated behind a "Coming soon" frontend fallback until the dashboard's final variant IDs land; export format/theme is additionally an entitlement gate (Free = PDF + `classic_ats`; Pro/Business unlock DOCX + all themes) enforced server-side via the same 429 upgrade path (ADR-027). The observability stack (Sentry `jobagent-backend` + `jobagent-frontend` + a shared PostHog free-tier project tagged with `product: "jobagent"`) is wired with a custom EU cookie consent banner gating PostHog + Sentry Session Replay behind explicit user opt-in; consent persists in a parent-domain cookie so it is honoured across the marketing apex and the `app.` subdomain. `backend/nightly_eval.py` exists and is tested but is **not** on the production cron at pre-revenue stage — re-enabling is a single crontab edit when revenue justifies the recurring LLM spend.
 
 ## Adding a new ADR
 
