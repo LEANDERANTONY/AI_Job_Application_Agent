@@ -4962,6 +4962,12 @@ code {
   letter-spacing: -0.005em;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform .12s;
   white-space: nowrap;
+  /* Set here (not via `.b-shell button`) so .rd-btn used as a <label>
+     for a hidden file input (resume "Choose file", JD "Upload file")
+     also gets the hand cursor. `.rd-btn:disabled`/[aria-disabled]
+     below is later + more specific so it still wins with
+     not-allowed. */
+  cursor: pointer;
 }
 .b-shell .rd-btn:disabled,
 .b-shell .rd-btn[aria-disabled="true"] {
@@ -5057,6 +5063,10 @@ code {
   padding: 10px 14px;
   color: var(--fg);
   outline: none;
+  /* Native <select> defaults to the arrow cursor in most browsers;
+     these are interactive (Job Search "Posted within" / "Sort", etc.)
+     so use the hand. */
+  cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease;
 }
 .b-shell .rd-input:focus,
