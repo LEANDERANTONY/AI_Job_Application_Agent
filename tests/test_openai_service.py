@@ -488,3 +488,33 @@ def test_rate_limit_is_classified_outage_error_with_category():
         service.run_json_prompt("system", "user", expected_keys=["approved"])
 
     assert error.value.category == "rate_limited"
+
+
+def test_reasoning_effort_override_wins_over_task_routing():
+    """ADR-028 D2: an explicit reasoning_effort overrides the
+    task-routed default; omitting it keeps the routed value so
+    standard/free callers are unaffected. `review` routes to
+    "medium"; premium passes "high"."""
+    client = FakeClient(
+        [
+            _build_response('{"approved": true}', response_id="r_routed"),
+            _build_response('{"approved": true}', response_id="r_override"),
+        ]
+    )
+    service = OpenAIService(client=client)
+
+    # No override → routed default for `review` ("medium").
+    service.run_json_prompt(
+        "system", "user", expected_keys=["approved"], task_name="review"
+    )
+    assert client.responses.calls[0]["reasoning"] == {"effort": "medium"}
+
+    # Explicit override wins.
+    service.run_json_prompt(
+        "system",
+        "user",
+        expected_keys=["approved"],
+        task_name="review",
+        reasoning_effort="high",
+    )
+    assert client.responses.calls[1]["reasoning"] == {"effort": "high"}

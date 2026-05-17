@@ -136,7 +136,72 @@ def build_workflow_model_overrides(
     }
 
 
+# Premium REASONING-effort overrides (ADR-028 Decision 2). Distinct
+# from the model override above: a premium run already upgrades these
+# tasks' MODEL to gpt-5.5, but the A/B (tests/quality/
+# review_model_ab_runner.py) showed gpt-5.5 @ "medium" is ≤ free
+# gpt-5.4 @ "medium" on `review` grounding — gpt-5.5's value is
+# entirely in HIGH reasoning, which the model-only override never
+# invoked. So premium additionally lifts `review` to "high".
+#
+# Deliberately ONLY `review`: the A/B validated review specifically
+# (the grounding gatekeeper). `resume_generation` / `cover_letter`
+# were NOT measured, so they keep their routed reasoning until their
+# own eval justifies a change. Standard / free runs are untouched —
+# this only fires on premium + an eligible tier, exactly like the
+# model override.
+_PREMIUM_REASONING_OVERRIDES: dict[str, str] = {"review": "high"}
+
+
+def select_workflow_reasoning(
+    *,
+    task: str,
+    tier: Tier,
+    premium: bool,
+) -> Optional[str]:
+    """Premium reasoning-effort override for a task, or None.
+
+    Same gating as ``select_workflow_model`` (premium + eligible tier;
+    the /workspace/analyze gate is the source of truth for charging).
+    Returns the effort string (e.g. ``"high"``) only for tasks in
+    ``_PREMIUM_REASONING_OVERRIDES``; None means "use the standard
+    ``OPENAI_REASONING_ROUTING[task]`` lookup" so non-premium and
+    unlisted tasks behave exactly as before.
+    """
+    if not premium:
+        return None
+    if tier not in _PREMIUM_ELIGIBLE_TIERS:
+        return None
+    return _PREMIUM_REASONING_OVERRIDES.get(task)
+
+
+def build_workflow_reasoning_overrides(
+    *,
+    tier: Tier,
+    premium: bool,
+) -> dict[str, Optional[str]]:
+    """Pre-compute the reasoning-effort override per workflow task,
+    parallel to ``build_workflow_model_overrides``. Only ``review``
+    is ever non-None today (see ``_PREMIUM_REASONING_OVERRIDES``)."""
+    return {
+        "tailoring": select_workflow_reasoning(
+            task="tailoring", tier=tier, premium=premium
+        ),
+        "review": select_workflow_reasoning(
+            task="review", tier=tier, premium=premium
+        ),
+        "resume_generation": select_workflow_reasoning(
+            task="resume_generation", tier=tier, premium=premium
+        ),
+        "cover_letter": select_workflow_reasoning(
+            task="cover_letter", tier=tier, premium=premium
+        ),
+    }
+
+
 __all__ = [
     "build_workflow_model_overrides",
+    "build_workflow_reasoning_overrides",
     "select_workflow_model",
+    "select_workflow_reasoning",
 ]

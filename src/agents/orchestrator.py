@@ -44,6 +44,7 @@ class ApplicationOrchestrator:
         max_revision_passes=1,
         *,
         model_overrides: Optional[dict] = None,
+        reasoning_overrides: Optional[dict] = None,
     ):
         self._openai_service = openai_service or OpenAIService()
         self._allow_fallback = allow_fallback
@@ -58,6 +59,13 @@ class ApplicationOrchestrator:
         # before calling .run(). Defaults to {} so existing callers
         # (tests, eval scripts) work unchanged.
         self._model_overrides = dict(model_overrides or {})
+        # Parallel to _model_overrides but for reasoning effort
+        # (ADR-028 D2). Only "review" is ever non-None today: premium
+        # lifts review to "high" because gpt-5.5 only beats free
+        # gpt-5.4 at high reasoning. Same source
+        # (`build_workflow_reasoning_overrides`); {} keeps existing
+        # callers / tests unchanged.
+        self._reasoning_overrides = dict(reasoning_overrides or {})
 
     def run(
         self,
@@ -108,6 +116,7 @@ class ApplicationOrchestrator:
                     attempted_assisted=True,
                     progress_callback=progress_callback,
                     model_overrides=self._model_overrides,
+                    reasoning_overrides=self._reasoning_overrides,
                 )
             except AgentExecutionError as exc:
                 # Defensive residual. The normal provider-failure path
@@ -165,6 +174,7 @@ class ApplicationOrchestrator:
             service_unavailable=service_unavailable,
             progress_callback=progress_callback,
             model_overrides=self._model_overrides,
+            reasoning_overrides=self._reasoning_overrides,
         )
 
     @staticmethod
@@ -189,13 +199,17 @@ class ApplicationOrchestrator:
         service_unavailable=False,
         progress_callback: Optional[ProgressCallback] = None,
         model_overrides: Optional[dict] = None,
+        reasoning_overrides: Optional[dict] = None,
     ):
         # `model_overrides` is keyed by agent task name and carries an
         # explicit model string (e.g. "gpt-5.5") or None when the
         # standard task-routed model should win. Missing keys are
         # treated as None — the agents themselves default to the
         # task_name lookup when `model_override` is None.
+        # `reasoning_overrides` is the exact parallel for reasoning
+        # effort (ADR-028 D2); only "review" is non-None today.
         overrides = model_overrides or {}
+        r_overrides = reasoning_overrides or {}
         tailoring_agent = TailoringAgent(
             openai_service,
             model_override=overrides.get("tailoring"),
@@ -203,6 +217,7 @@ class ApplicationOrchestrator:
         review_agent = ReviewAgent(
             openai_service,
             model_override=overrides.get("review"),
+            reasoning_override=r_overrides.get("review"),
         )
         cover_letter_agent = CoverLetterAgent(
             openai_service,

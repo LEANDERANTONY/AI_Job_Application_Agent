@@ -32,6 +32,7 @@ The accepted set is grouped into four thematic clusters to make the current prod
 - [ADR-022: Tier-aware model selection via constructor injection](ADR-022-tier-aware-model-selection-via-constructor-injection.md)
 - [ADR-023: Lemon Squeezy as Merchant of Record for v1](ADR-023-lemon-squeezy-merchant-of-record-for-v1.md)
 - [ADR-027: Tier-gated export entitlement (Free = PDF + ATS theme)](ADR-027-tier-gated-export-entitlement.md)
+- [ADR-028: LLM provider failover (Kimi K2) + premium reasoning tier](ADR-028-llm-provider-failover-and-premium-reasoning-tier.md) — **Decision 2 accepted & shipped** (premium lifts `review` to gpt-5.5@high; refines ADR-022). **Decision 1** (Kimi K2 failover) remains Proposed, gated on operator spend/outage data + an EU/PII per-task policy
 
 ### Observability + compliance
 
@@ -41,6 +42,7 @@ The accepted set is grouped into four thematic clusters to make the current prod
 ### Maintenance + operational posture
 
 - [ADR-026: Manual-only `nightly_eval` at pre-revenue stage](ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md)
+
 
 ## Superseded
 

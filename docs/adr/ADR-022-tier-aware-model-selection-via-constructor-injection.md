@@ -1,6 +1,11 @@
 # ADR-022: Tier-Aware Model Selection via Constructor Injection
 
-- Status: Accepted
+- Status: Accepted (refined by [ADR-028](ADR-028-llm-provider-failover-and-premium-reasoning-tier.md)
+  Decision 2, 2026-05-18: premium also lifts `review` reasoning effort
+  to "high" — an A/B showed the premium *model* upgrade alone
+  (gpt-5.5@medium) is ≤ free gpt-5.4@medium on review grounding. The
+  constructor-injection pattern below is reused verbatim for the
+  reasoning override; this Decision section is unchanged.)
 - Date: 2026-05-15
 
 ## Context

@@ -34,7 +34,9 @@ from __future__ import annotations
 
 from backend.model_routing import (
     build_workflow_model_overrides,
+    build_workflow_reasoning_overrides,
     select_workflow_model,
+    select_workflow_reasoning,
 )
 
 
@@ -187,9 +189,16 @@ class _ModelRecordingOpenAIService:
         task_name=None,
         model=None,
         metadata=None,
+        reasoning_effort=None,
         **_,
     ):
-        self.calls.append({"task_name": task_name, "model": model})
+        self.calls.append(
+            {
+                "task_name": task_name,
+                "model": model,
+                "reasoning_effort": reasoning_effort,
+            }
+        )
         return _canned_response_for(task_name)
 
 
@@ -319,3 +328,88 @@ def test_orchestrator_does_not_upgrade_pro_basic():
 
     for call in recorder.calls:
         assert call["model"] is None, call
+
+
+# ─── ADR-028 D2: premium reasoning-effort override ──────────────────────
+
+
+def test_select_workflow_reasoning_only_lifts_review_on_premium():
+    # Non-premium: never an override, any tier.
+    for tier in ("free", "pro", "business"):
+        for task in ("tailoring", "review", "resume_generation", "cover_letter"):
+            assert select_workflow_reasoning(
+                task=task, tier=tier, premium=False
+            ) is None
+    # Free + premium=True is defensively None (the gate rejects it).
+    assert select_workflow_reasoning(task="review", tier="free", premium=True) is None
+    # Pro/Business + premium: ONLY review lifts to "high".
+    for tier in ("pro", "business"):
+        assert (
+            select_workflow_reasoning(task="review", tier=tier, premium=True)
+            == "high"
+        )
+        for task in ("tailoring", "resume_generation", "cover_letter"):
+            assert select_workflow_reasoning(
+                task=task, tier=tier, premium=True
+            ) is None
+
+
+def test_build_workflow_reasoning_overrides_shape():
+    basic = build_workflow_reasoning_overrides(tier="pro", premium=False)
+    assert set(basic) == {"tailoring", "review", "resume_generation", "cover_letter"}
+    assert all(v is None for v in basic.values())
+
+    premium = build_workflow_reasoning_overrides(tier="pro", premium=True)
+    assert premium["review"] == "high"
+    assert premium["tailoring"] is None
+    assert premium["resume_generation"] is None
+    assert premium["cover_letter"] is None
+
+
+def test_orchestrator_threads_premium_reasoning_to_review_only():
+    """Pro + premium=True: the orchestrator passes reasoning_effort
+    "high" for review and None (routed default) for the others —
+    the on-the-wire proof that ADR-028 D2 actually delivers."""
+    from src.agents.orchestrator import ApplicationOrchestrator
+
+    recorder = _ModelRecordingOpenAIService()
+    candidate, job = _build_inputs()
+
+    ApplicationOrchestrator(
+        openai_service=recorder,
+        model_overrides=build_workflow_model_overrides(tier="pro", premium=True),
+        reasoning_overrides=build_workflow_reasoning_overrides(
+            tier="pro", premium=True
+        ),
+    ).run(candidate, job)
+
+    by_task: dict[str, list[object]] = {}
+    for call in recorder.calls:
+        by_task.setdefault(call["task_name"], []).append(call["reasoning_effort"])
+
+    assert by_task.get("review"), "review should have been called"
+    for effort in by_task["review"]:
+        assert effort == "high", f"review reasoning got {effort!r}"
+    for task in ("tailoring", "resume_generation", "cover_letter"):
+        for effort in by_task.get(task, []):
+            assert effort is None, f"{task} reasoning got {effort!r}"
+
+
+def test_orchestrator_does_not_upgrade_reasoning_pro_basic():
+    """Pro + premium=False: every call passes reasoning_effort=None
+    so standard routing wins — no silent reasoning upgrade for free."""
+    from src.agents.orchestrator import ApplicationOrchestrator
+
+    recorder = _ModelRecordingOpenAIService()
+    candidate, job = _build_inputs()
+
+    ApplicationOrchestrator(
+        openai_service=recorder,
+        model_overrides=build_workflow_model_overrides(tier="pro", premium=False),
+        reasoning_overrides=build_workflow_reasoning_overrides(
+            tier="pro", premium=False
+        ),
+    ).run(candidate, job)
+
+    for call in recorder.calls:
+        assert call["reasoning_effort"] is None, call

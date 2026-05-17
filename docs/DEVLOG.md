@@ -1324,3 +1324,66 @@ Day-51 (`ee90373`) is committed locally and still unpushed. The
 Day-52 set + both refinements are also committed locally; all await
 the operator's push decision (backend re-deploy + a frontend rebuild
 for the résumé-step + analysis banners).
+
+---
+
+## Day 53: Premium reasoning tier — ADR-028 D2 validated by A/B, review → gpt-5.5@high
+
+Formalised the LLM-provider / premium-model questions into
+**ADR-028** (Decision 1 = Kimi K2 failover, Proposed/gated on
+operator spend+outage data + an EU/PII per-task policy; Decision 2 =
+premium reasoning tier). Then *validated Decision 2 with data* before
+touching the paid product.
+
+### The finding (3-arm A/B, `tests/quality/review_model_ab_runner.py`)
+
+ReviewAgent over the 6-scenario harness (3 clean = over-correction
+guard, 3 adversarial = planted-fabrication detection + correction),
+18 LLM calls:
+
+| arm | adv detection | adv correction | clean no-false-reject |
+|---|---|---|---|
+| gpt-5.4 @ medium (free) | 1.0 | 0.958 | 1.0 |
+| gpt-5.5 @ medium (premium today) | 1.0 | **0.911** | 1.0 |
+| gpt-5.5 @ **high** | 1.0 | **1.0** | 1.0 |
+
+Detection is **perfect at the free model** — gpt-5.5 buys zero
+grounding-catch. The shipped premium config (`gpt-5.5@medium`) is
+**≤ free gpt-5.4@medium** (a slight correction regression) — i.e.
+premium was paying 2× for a tie-to-regression. gpt-5.5's value is
+**entirely in high reasoning** (the only perfect arm), the exact
+slice ADR-022's model-only override never invoked.
+
+### The change
+
+Reasoning effort is now premium-aware **only for `review`**, exactly
+mirroring ADR-022's model-override plumbing:
+`OpenAIService._resolve_reasoning_effort` takes an explicit override
+(wins over task routing; `None`/`""` → routed default) exposed as a
+`reasoning_effort` kwarg on `run_json_prompt` / `run_structured_prompt`;
+`backend/model_routing.build_workflow_reasoning_overrides` (gated
+identically to the model helper — premium + Pro/Business) maps only
+`review → "high"`; threaded `workspace_service` →
+`ApplicationOrchestrator(reasoning_overrides=)` → `_run_pipeline` →
+`ReviewAgent(reasoning_override=)`. `resume_generation` /
+`cover_letter` deliberately untouched (not measured — no evidence to
+act on). **Standard / free runs are byte-for-byte unaffected**
+(override `None` → routed `medium`). ADR-022 keeps a status note;
+ADR-028 D2 flips to Accepted+shipped.
+
+Tests: +5 (`select_workflow_reasoning` / `build_workflow_reasoning_overrides`
+shape; orchestrator threads `high` to review only on premium, `None`
+on basic; `OpenAIService` override beats task routing). 47 targeted
+green; broad 234 green (lone failure = the pre-existing environmental
+`test_workspace_retention` sweep, repeatedly reproduced on clean
+HEAD, untouched by this diff). The A/B runner is committed as a
+durable reusable tool (`tests/quality/*_runner.py` convention).
+
+### Deploy status
+
+Days 51–52 + the two refinements + the CI fixes (`ee90373` …
+`c225643`) are **live in prod** (pushed; CI #116/#117 green). This
+Day-53 set is committed locally; push decision deferred to the
+operator (backend re-deploy — `src/` + `backend/` touched; no
+frontend or DB change; premium reasoning only affects opt-in
+credit-burning premium runs).

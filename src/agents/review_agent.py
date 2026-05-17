@@ -15,13 +15,20 @@ from .common import coerce_bool, coerce_string, coerce_string_list, unique_strin
 
 
 class ReviewAgent:
-    def __init__(self, openai_service=None, *, model_override=None):
+    def __init__(
+        self, openai_service=None, *, model_override=None, reasoning_override=None
+    ):
         self._openai_service = openai_service
         # See TailoringAgent for the rationale. When premium=True and
         # the user's tier supports it (Pro / Business), the
         # orchestrator passes gpt-5.5 here; otherwise None and the
         # default `OPENAI_MODEL_ROUTING["review"]` (gpt-5.4) wins.
         self._model_override = model_override
+        # ADR-028 Decision 2: a premium run upgrades review's MODEL to
+        # gpt-5.5 (above) AND its reasoning effort to "high" — the A/B
+        # showed gpt-5.5 only beats free gpt-5.4 at high reasoning.
+        # None on standard/free runs → routed default ("medium").
+        self._reasoning_override = reasoning_override
 
     def run(
         self,
@@ -53,6 +60,7 @@ class ReviewAgent:
                     max_completion_tokens=get_openai_max_completion_tokens_for_task("review"),
                     task_name="review",
                     model=self._model_override,
+                    reasoning_effort=self._reasoning_override,
                     metadata=prompt.get("metadata"),
                 )
             else:
@@ -63,6 +71,7 @@ class ReviewAgent:
                     max_completion_tokens=get_openai_max_completion_tokens_for_task("review"),
                     task_name="review",
                     model=self._model_override,
+                    reasoning_effort=self._reasoning_override,
                     metadata=prompt.get("metadata"),
                 )
                 structured = ReviewOutput.model_validate(payload)

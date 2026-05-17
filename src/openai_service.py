@@ -411,7 +411,14 @@ class OpenAIService:
             return model
         return get_openai_model_for_task(task_name, fallback=self.default_model)
 
-    def _resolve_reasoning_effort(self, task_name=None):
+    def _resolve_reasoning_effort(self, task_name=None, reasoning_override=None):
+        # An explicit per-call override (e.g. premium routing wanting
+        # `review` at "high" — see ADR-028 Decision 2) wins over the
+        # task-name-routed default. None / "" falls back to routing so
+        # standard/free callers are unaffected.
+        override = str(reasoning_override or "").strip().lower()
+        if override:
+            return override
         return get_openai_reasoning_effort_for_task(task_name)
 
     def _create_response_with_app_retry(
@@ -503,6 +510,7 @@ class OpenAIService:
         metadata=None,
         allow_output_budget_retry=True,
         previous_response_id=None,
+        reasoning_effort=None,
     ):
         if not self.is_available():
             raise AgentExecutionError(
@@ -511,7 +519,9 @@ class OpenAIService:
 
         self._enforce_budget()
         resolved_model = self._resolve_model(task_name=task_name, model=model)
-        reasoning_effort = self._resolve_reasoning_effort(task_name=task_name)
+        reasoning_effort = self._resolve_reasoning_effort(
+            task_name=task_name, reasoning_override=reasoning_effort
+        )
         request_metadata = {
             key: str(value)
             for key, value in dict(metadata or {}).items()
@@ -728,6 +738,7 @@ class OpenAIService:
         metadata=None,
         allow_output_budget_retry=True,
         previous_response_id=None,
+        reasoning_effort=None,
     ) -> _TModel:
         """Run a structured-output prompt bound to a Pydantic model.
 
@@ -760,7 +771,9 @@ class OpenAIService:
 
         self._enforce_budget()
         resolved_model = self._resolve_model(task_name=task_name, model=model)
-        reasoning_effort = self._resolve_reasoning_effort(task_name=task_name)
+        reasoning_effort = self._resolve_reasoning_effort(
+            task_name=task_name, reasoning_override=reasoning_effort
+        )
         request_metadata = {
             key: str(value)
             for key, value in dict(metadata or {}).items()

@@ -31,7 +31,10 @@ from src.services.profile_service import (
 )
 from src.services.tailoring_service import build_tailored_resume_draft
 from backend import quota
-from backend.model_routing import build_workflow_model_overrides
+from backend.model_routing import (
+    build_workflow_model_overrides,
+    build_workflow_reasoning_overrides,
+)
 from backend.services.auth_session_service import (
     build_openai_service_for_context,
     resolve_authenticated_context,
@@ -358,9 +361,18 @@ def run_workspace_analysis(
                 tier=tier,
                 premium=bool(premium),
             )
+            # ADR-028 D2: premium also lifts `review` reasoning to
+            # "high" (the only config where gpt-5.5 beats free
+            # gpt-5.4). Same (tier, premium) inputs as the model
+            # override; non-premium → all-None → unchanged behaviour.
+            reasoning_overrides = build_workflow_reasoning_overrides(
+                tier=tier,
+                premium=bool(premium),
+            )
             agent_result = ApplicationOrchestrator(
                 openai_service=openai_service,
                 model_overrides=model_overrides,
+                reasoning_overrides=reasoning_overrides,
             ).run(
                 candidate_profile,
                 job_description,
