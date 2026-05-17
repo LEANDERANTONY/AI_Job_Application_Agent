@@ -164,6 +164,24 @@ def _classify_detail(call: ast.Call, ancestors: list[ast.AST], raise_node: ast.R
     return "review"
 
 
+def _enclosing_scope(ancestors: list[ast.AST]) -> str:
+    """Dotted qualname of the enclosing class/def chain, e.g.
+    ``MyClass.my_route`` or ``record_workspace_feedback_route``.
+
+    This is the STABLE allowlist key (with path + the detail
+    expression). Unlike a line number it doesn't drift when unrelated
+    code is added above the site; it only changes when the function is
+    renamed or moved — which is exactly when the human-reviewed
+    allowance *should* be re-confirmed.
+    """
+    parts = [
+        a.name
+        for a in ancestors
+        if isinstance(a, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    ]
+    return ".".join(parts)
+
+
 def _walk_with_ancestors(tree: ast.AST):
     """Yield (node, ancestors) pairs for every node in the tree."""
     stack: list[tuple[ast.AST, list[ast.AST]]] = [(tree, [])]
@@ -197,7 +215,11 @@ def _audit_python_file(path: Path) -> list[dict]:
         findings.append(
             {
                 "path": str(path.relative_to(REPO_ROOT)),
+                # `line` stays for the human-readable report only — it
+                # is NOT part of the allowlist key (that's the source
+                # of the recurring drift this audit had).
                 "line": node.lineno,
+                "scope": _enclosing_scope(ancestors),
                 "verdict": verdict,
                 "detail_src": ast.unparse(_detail_kwarg(call)) if _detail_kwarg(call) else "<missing>",
             }
@@ -207,27 +229,36 @@ def _audit_python_file(path: Path) -> list[dict]:
 
 # Curated allowlist of HTTPException sites that intentionally pass a
 # raw str(...) or non-literal detail because the surrounding service
-# raises with a hand-written user-facing string. Each entry is
-# (relative_path, line_number).
+# raises with a hand-written user-facing string.
+#
+# Each entry is (relative_path, enclosing_scope, detail_expression) —
+# deliberately NOT line-keyed. The old (path, line) key drifted every
+# time unrelated code was added above the site (617 → 629 → 639 → 650
+# → 651 → 686) and broke CI on changes that had nothing to do with the
+# reviewed allowance. This key only stops matching when the function
+# is renamed/moved or the detail expression itself changes — exactly
+# the cases where a human SHOULD re-confirm the allowance.
 #
 # Note: path uses os.sep, matching what `Path.relative_to(REPO_ROOT)`
 # returns on the current platform. On Windows that's backslash.
 import os as _os_for_paths
 
-_BACKEND_ALLOWLIST: set[tuple[str, int]] = {
-    # backend/routers/workspace.py — InvalidFeedbackError is raised in
-    # backend/services/feedback_service.py with three hand-written
-    # user-safe messages ("Unsupported feedback surface: ...",
+_BACKEND_ALLOWLIST: set[tuple[str, str, str]] = {
+    # backend/routers/workspace.py :: record_workspace_feedback_route —
+    # raises HTTPException(detail=str(error)) from an
+    # `except InvalidFeedbackError` clause. InvalidFeedbackError is a
+    # ValueError subclass (not in _FRIENDLY_ERROR_CLASSES by name, so
+    # the audit can't statically prove it's safe → flagged). It IS
+    # safe: feedback_service raises it with three hand-written
+    # user-facing strings ("Unsupported feedback surface: ...",
     # "Rating must be 'up' or 'down', got ...", "user_id is required
-    # to record feedback."). Surfacing them directly helps the client
-    # debug a bad payload; there's no internal state in the string.
-    # Line drifts each time the feedback / transcribe route grows a
-    # new auth-handling branch above this InvalidFeedbackError site.
-    # 617 → 629 → 639 → 650 → 651 → 686. Update when CI flags a new
-    # line number. Latest drift: the b82e772 export-entitlement commit
-    # added auth/gate branches above the feedback route, pushing the
-    # InvalidFeedbackError `str(error)` site from 651 to 686.
-    (_os_for_paths.path.join("backend", "routers", "workspace.py"), 686),
+    # to record feedback.") — no internal state leaks; surfacing them
+    # helps the client debug a bad payload.
+    (
+        _os_for_paths.path.join("backend", "routers", "workspace.py"),
+        "record_workspace_feedback_route",
+        "str(error)",
+    ),
 }
 
 
@@ -239,19 +270,23 @@ def test_backend_http_exceptions_use_friendly_detail():
     unexpected = [
         finding
         for finding in findings
-        if (finding["path"], finding["line"]) not in _BACKEND_ALLOWLIST
+        if (finding["path"], finding["scope"], finding["detail_src"])
+        not in _BACKEND_ALLOWLIST
     ]
 
     if unexpected:
         report = "\n".join(
-            f"  {f['path']}:{f['line']} [{f['verdict']}] detail={f['detail_src']}"
+            f"  {f['path']}:{f['line']} [{f['verdict']}] "
+            f"scope={f['scope'] or '<module>'} detail={f['detail_src']}\n"
+            f"      allowlist key: ({f['path']!r}, {f['scope']!r}, {f['detail_src']!r})"
             for f in unexpected
         )
         pytest.fail(
             "HTTPException sites with potentially leaky `detail` arguments. "
             "Use a string literal, `error.user_message`, or wrap in an "
-            "`except AppError` clause. Allowlist a site only after manual "
-            "review:\n" + report
+            "`except AppError` clause. If genuinely safe, add the printed "
+            "(path, scope, detail) tuple to _BACKEND_ALLOWLIST after manual "
+            "review (it is line-independent, so it won't drift):\n" + report
         )
 
 
