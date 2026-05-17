@@ -21,6 +21,16 @@
   --actor-color: #ffffff;
   --actor-hover-background: #4171ff;
   --actor-border: 1px solid rgba(170, 195, 255, 0.30);
+  /* Pin the trigger to the BOTTOM-LEFT (Sentry's default is
+     bottom-right, `inset: var(--actor-inset)` in @sentry-internal/
+     feedback). The workspace assistant FAB owns bottom-right; without
+     this the auto-injected widget overlapped/blocked it (Sentry's
+     actor carries a far higher z-index). `inset` is top/right/bottom/
+     left → bottom-left with a 16px gutter mirroring Sentry's ~1rem
+     default spacing. Cascades into the shadow DOM exactly like the
+     --actor-* theme props above. (No effect locally — Sentry is a
+     no-op without a DSN — manifests on the Sentry-enabled build.) */
+  --actor-inset: auto auto 16px 16px;
 }
 
 * {
@@ -7055,12 +7065,13 @@ code {
   height: 54px;
   border-radius: 999px;
   border: 1px solid rgba(140, 175, 255, 0.45);
-  /* Layered gradient with a CURSOR-FOLLOWING highlight (--rd-fab-x/y
-     CSS vars updated on mousemove). Defaults to a fixed upper-left
-     position when the cursor isn't over the button. */
-  background:
-    radial-gradient(circle at var(--rd-fab-x, 30%) var(--rd-fab-y, 25%), rgba(255, 255, 255, 0.30), transparent 55%),
-    linear-gradient(180deg, var(--accent-strong) 0%, #114be9 100%);
+  /* Same crisp electric-blue gradient as .rd-btn-primary so the FAB
+     reads as a peer of the app's other primary buttons. (Previously a
+     white radial-highlight layer sat on top — even at rest it washed
+     ~55% of the button to rgba(255,255,255,0.30), muting the blue;
+     dropped for color parity. The --rd-fab-x/y mousemove vars are now
+     unused — harmless, left in place.) */
+  background: linear-gradient(180deg, var(--accent-strong) 0%, #114be9 100%);
   color: white;
   display: grid;
   place-items: center;
