@@ -36,9 +36,18 @@
    like the colour --actor-* props above (those work from :root only
    because Sentry sets no host default for them). `inset` is
    top/right/bottom/left → bottom-left, 16px gutter; it then cascades
-   to the actor button in the shadow DOM via var(--actor-inset). */
+   to the actor button in the shadow DOM via var(--actor-inset).
+
+   `--dialog-inset` is the SEPARATE property that positions the
+   feedback form popup (Sentry default `auto 0 0 auto` at :host too) —
+   without overriding it the trigger sits bottom-left but the form
+   still opens bottom-right. Same host-scoping rule applies; pin it
+   bottom-left so the form opens from the same corner as the trigger.
+   Verified in the live shadow DOM (`--dialog-inset` resolved to
+   "auto 0 0 auto" on the host before this). */
 #sentry-feedback {
   --actor-inset: auto auto 16px 16px !important;
+  --dialog-inset: auto auto 16px 16px !important;
 }
 
 * {
