@@ -13,6 +13,7 @@ from src.schemas import (
     JobDescription,
     JobRequirements,
     ProfileAgentOutput,
+    ProjectEntry,
     ResumeGenerationAgentOutput,
     ReviewAgentOutput,
     ReviewPassResult,
@@ -306,6 +307,16 @@ def _build_candidate_profile(payload: dict):
         experience=[_build_work_experience(item) for item in payload.get("experience", []) or []],
         education=[_build_education_entry(item) for item in payload.get("education", []) or []],
         certifications=[str(item) for item in payload.get("certifications", []) or []],
+        # projects + publications were added to CandidateProfile in
+        # 9fed3a6 (Projects/Publications resume sections) but this
+        # rehydrator was never updated to round-trip them. The export
+        # path runs every snapshot through here
+        # (artifact_export_service._hydrate_snapshot), so without these
+        # two lines every exported resume silently loses its Projects
+        # and Publications sections even though the parser extracted
+        # them. Keep these in lockstep with the CandidateProfile schema.
+        projects=[_build_project_entry(item) for item in payload.get("projects", []) or []],
+        publications=[str(item) for item in payload.get("publications", []) or [] if str(item).strip()],
         source_signals=[str(item) for item in payload.get("source_signals", []) or []],
     )
 
@@ -330,6 +341,21 @@ def _build_education_entry(payload: dict):
         field_of_study=str(payload.get("field_of_study", "") or ""),
         start=str(payload.get("start", "") or ""),
         end=str(payload.get("end", "") or ""),
+    )
+
+
+def _build_project_entry(payload: dict):
+    payload = _as_dict(payload)
+    return ProjectEntry(
+        name=str(payload.get("name", "") or ""),
+        description=str(payload.get("description", "") or ""),
+        bullets=[str(item) for item in payload.get("bullets", []) or [] if str(item).strip()],
+        technologies=[
+            str(item) for item in payload.get("technologies", []) or [] if str(item).strip()
+        ],
+        start=str(payload.get("start", "") or ""),
+        end=str(payload.get("end", "") or ""),
+        link=str(payload.get("link", "") or ""),
     )
 
 

@@ -1880,6 +1880,13 @@ def _run_llm_turn(
         temperature=None,
         max_completion_tokens=get_openai_max_completion_tokens_for_task("resume_builder"),
         task_name="resume_builder",
+        # Deliberate fast-fail, consistent with the assistant: this is
+        # an interactive turn with a graceful regex fallback (see the
+        # `resume_builder_llm_fallback` except path). The heavier
+        # structuring pass that emits the big JSON is a SEPARATE call
+        # already budgeted generously (resume_builder_structuring=4000),
+        # so the conversational turn doesn't carry the parser-style
+        # silent-corruption risk. Revisit only as a product decision.
         allow_output_budget_retry=False,
     )
 

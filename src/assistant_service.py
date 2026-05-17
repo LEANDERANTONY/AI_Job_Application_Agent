@@ -66,6 +66,14 @@ class AssistantService:
                         task_name
                     ),
                     task_name=task_name,
+                    # Deliberate fast-fail: the assistant is an
+                    # interactive surface with a graceful
+                    # _fallback_unified reply, so it trades a retry's
+                    # latency for an instant (if simpler) answer. NOT
+                    # the silent-deliverable-corruption case the resume
+                    # / JD parsers had. See test_assistant_uses_fast_
+                    # fail_request_shape; revisit only as a product
+                    # decision (esp. product_help's tight 700 budget).
                     allow_output_budget_retry=False,
                 )
                 return self._build_response(payload, max_sources=4)

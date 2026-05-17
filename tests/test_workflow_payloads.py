@@ -103,3 +103,78 @@ def test_preview_workspace_artifact_tolerates_malformed_nested_items():
 
     assert response["status"] == "ready"
     assert "<html" in response["html"].lower()
+
+
+def test_build_saved_workflow_snapshot_round_trips_projects_and_publications():
+    """Regression: projects + publications were added to
+    CandidateProfile (9fed3a6) but _build_candidate_profile never
+    round-tripped them. Every export hydrates the snapshot through
+    here (artifact_export_service._hydrate_snapshot), so the lossy
+    rehydrator silently stripped both sections from exported resumes
+    even when the parser extracted them."""
+    payload = _malformed_workspace_snapshot()
+    payload["candidate_profile"]["projects"] = [
+        {
+            "name": "Grounded RAG Q&A System",
+            "description": "Production RAG pipeline.",
+            "bullets": ["Hybrid retrieval + reranking", "RAGAS-evaluated"],
+            "technologies": ["Python", "FastAPI"],
+            "start": "2024",
+            "end": "2025",
+            "link": "github.com/LEANDERANTONY/HelpmateAI_RAG_QA_System",
+        },
+        # A bare-string entry must not blow up the rehydrator.
+        "unexpected-project-entry",
+    ]
+    payload["candidate_profile"]["publications"] = [
+        "Antony, L. A. et al. — Solar Energy, Elsevier (2020).",
+        "",  # blanks are dropped
+    ]
+
+    snapshot = build_saved_workflow_snapshot_from_data(payload)
+
+    assert snapshot is not None
+    projects = snapshot.candidate_profile.projects
+    assert len(projects) == 2
+    assert projects[0].name == "Grounded RAG Q&A System"
+    assert projects[0].bullets == ["Hybrid retrieval + reranking", "RAGAS-evaluated"]
+    assert projects[0].technologies == ["Python", "FastAPI"]
+    assert projects[0].link == "github.com/LEANDERANTONY/HelpmateAI_RAG_QA_System"
+    # Malformed bare-string entry rehydrates to an empty ProjectEntry
+    # rather than crashing.
+    assert projects[1].name == ""
+    assert snapshot.candidate_profile.publications == [
+        "Antony, L. A. et al. — Solar Energy, Elsevier (2020)."
+    ]
+
+
+def test_preview_workspace_artifact_renders_projects_and_publications():
+    """End-to-end guard: the rehydrated projects/publications actually
+    reach the rendered artifact (the user-visible symptom was an
+    exported resume with no Projects section)."""
+    payload = _malformed_workspace_snapshot()
+    payload["candidate_profile"]["projects"] = [
+        {
+            "name": "AI Job Application Agent",
+            "description": "",
+            "bullets": ["Multi-step agentic system", "Supabase + OpenAI"],
+            "technologies": ["Python"],
+            "start": "",
+            "end": "",
+            "link": "github.com/LEANDERANTONY/AI_Job_Application_Agent",
+        }
+    ]
+    payload["candidate_profile"]["publications"] = [
+        "Antony, L. A. et al. — Solar Energy, Elsevier (2020)."
+    ]
+
+    response = preview_workspace_artifact(
+        workspace_snapshot=payload,
+        artifact_kind="tailored_resume",
+        resume_theme="classic_ats",
+    )
+
+    assert response["status"] == "ready"
+    html = response["html"]
+    assert "AI Job Application Agent" in html
+    assert "Solar Energy, Elsevier (2020)" in html

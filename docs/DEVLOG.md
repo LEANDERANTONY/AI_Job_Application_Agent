@@ -1057,3 +1057,98 @@ Day-49 (`581bee5`) is live in prod (pushed + deployed). This Day-50
 refinement is committed locally; push decision deferred to the
 operator (frontend-only re-deploy — `deploy.yml` `paths-ignore`
 covers docs/md, so only the Vercel frontend rebuilds).
+
+---
+
+## Day 51: Exported résumé lost Projects + Publications — two compounding root causes + an LLM-budget audit
+
+User uploaded a content-rich résumé (`.docx`: 6 projects, 2 roles,
+categorised skills, a publication) and the exported tailored PDF had
+**no Projects/Publications section**, a garbled Experience block, and
+project GitHub URLs leaking into the contact line. "It was good
+before — now it regressed." Diagnosed two independent bugs that
+compounded.
+
+### Root cause 1 — lossy snapshot rehydration drops projects/publications (the regression)
+
+The parser is fine (proved: it extracts all 6 projects + the
+publication + clean contacts). The drop is on the **export path**:
+`backend/services/artifact_export_service._hydrate_snapshot` runs the
+frontend-sent snapshot through `workflow_payloads._build_candidate_profile`
+on *every* export. That rehydrator builds a `CandidateProfile` field
+by field — and was **never updated to copy `projects` or
+`publications`** when those fields were added to the schema in
+`9fed3a6` ("Add Projects + Publications resume sections"). So every
+export silently reconstructed the profile with empty
+projects/publications → `_build_project_entries` / `_build_publication_entries`
+returned `[]` → no sections in the PDF, even when the parse was
+perfect. The frontend sends `analysisState` verbatim (TS types are
+erased at runtime, so the JSON *does* carry the data) — the loss is
+entirely server-side in the rehydrator. Fix: round-trip `projects`
+(new `_build_project_entry` helper → `ProjectEntry`) + `publications`,
+tolerant of malformed/ bare-string entries. Kept in lockstep with the
+`CandidateProfile` schema by comment + tests.
+
+### Root cause 2 — resume LLM parser truncated → garbage deterministic fallback
+
+`ResumeLLMParserService.parse` ran at `max_completion_tokens=2600`
+with `allow_output_budget_retry=False`. A rich résumé's JSON snapshot
+exceeds 2600 → the model's output truncates mid-string → JSON parse
+fails → `build_candidate_profile_from_resume_auto` silently falls back
+to the low-fidelity **deterministic** parser (garbled project names,
+project URLs in the contact line, mangled experience). Measured: the
+LLM parse failed **~2 of 3 times** on the user's résumé. That is the
+garbled-content half of the report, and the "regressed" feeling — a
+leaner résumé fit under 2600; a richer one doesn't. Fix:
+`max_completion_tokens 2600 → 6000` (it's a ceiling, not a
+reservation — zero cost for ordinary résumés) and
+`allow_output_budget_retry=True` (the established auto-bump-to-6000
+safety net, used by every agent call already). Post-fix: 3/3 clean
+LLM parses, 6 projects, clean contacts.
+
+### Sibling audit — JD parser had the identical bug
+
+Swept every `run_json_prompt` / `run_structured_prompt` caller.
+Findings:
+
+- **JD parser** (`jd_llm_parser_service`): `max_completion_tokens=2200`,
+  `allow_output_budget_retry=False`, with the *same*
+  silent-deterministic-fallback architecture
+  (`build_job_description_from_text_auto`). A long JD (full
+  responsibilities + a 40-skill list + must/nice-to-haves) truncates
+  and the degraded JD then cascades into fit analysis, tailoring, and
+  the cover letter. **Fixed identically** (2200 → 4000 + retry True;
+  verified 4/4 clean on the largest sample JD, full 40-skill extract).
+- **All workflow agents** (tailoring / review / cover_letter /
+  resume_generation) and `resume_builder_structuring` already use the
+  default `allow_output_budget_retry=True` — safe, no change.
+- **Assistant Q&A + resume-builder conversational turn**: also
+  `retry=False`, but these are *interactive* surfaces with a
+  *graceful* fallback (`_fallback_unified` / `resume_builder_llm_fallback`),
+  and the assistant's no-retry is explicitly pinned by
+  `test_assistant_uses_fast_fail_request_shape`. That's a deliberate
+  latency-vs-degradation product choice, **not** the
+  silent-deliverable-corruption class. Left as-is; added comments
+  documenting *why* it's intentional so the next reader doesn't
+  "fix" it. Flagged for a product call (esp. `product_help`'s tight
+  700-token budget).
+
+### Tests
+
+`test_workflow_payloads.py`: +2 (projects/publications round-trip
+through `build_saved_workflow_snapshot_from_data`, incl. malformed
+entries; end-to-end `preview_workspace_artifact` renders both
+sections). `test_resume_llm_parser_service.py` +1 and new
+`test_jd_llm_parser_service.py` +1 (parser asks for a generous budget
+AND keeps the retry net — fails if anyone re-tightens it). Targeted
+slice 73 green; broader workflow/parser/export slice 205 green (the 2
+`resume_builder_export_*` failures are pre-existing + environmental —
+reproduced on clean HEAD with changes stashed, they need a live
+backend).
+
+### Deploy status
+
+Day-50 (`f400659`) is live in prod. This Day-51 fix set is committed
+locally; push decision deferred to the operator (backend re-deploy —
+`src/` + `backend/` touched, so the VPS backend rebuilds; no frontend
+or DB change).

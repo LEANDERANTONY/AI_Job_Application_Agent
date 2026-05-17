@@ -114,8 +114,17 @@ class JobDescriptionLLMParserService:
     def parse(
         self,
         jd_text: str,
+        # Same failure class the resume parser hit: a long, detailed
+        # job description (full responsibilities + a 40-item hard-skill
+        # list + must/nice-to-haves) overruns a tight cap, the JSON
+        # truncates mid-string, and build_job_description_from_text_auto
+        # silently falls back to the lower-fidelity deterministic JD
+        # parser. That degraded JD then feeds fit analysis, tailoring,
+        # and the cover letter — so the truncation cascades through the
+        # whole workflow. max_output_tokens is a ceiling, not a
+        # reservation: raising it is free for ordinary JDs.
         *,
-        max_completion_tokens: int = 2200,
+        max_completion_tokens: int = 4000,
     ) -> dict[str, Any]:
         if not jd_text or not str(jd_text).strip():
             raise ValueError("Job description text must not be empty.")
@@ -130,7 +139,11 @@ class JobDescriptionLLMParserService:
             task_name="job",
             max_completion_tokens=max_completion_tokens,
             metadata={"parser_mode": "experimental_job_snapshot"},
-            allow_output_budget_retry=False,
+            # Safety net for the long-tail JD that still overruns the
+            # generous base above: auto-retry once at a higher budget
+            # rather than silently degrading to the deterministic
+            # parser. Rarely fires given the base bump.
+            allow_output_budget_retry=True,
         )
         return {
             "title": _coerce_string(payload.get("title")),

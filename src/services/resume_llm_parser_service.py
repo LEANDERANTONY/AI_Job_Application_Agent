@@ -137,8 +137,17 @@ class ResumeLLMParserService:
     def parse(
         self,
         resume_document: ResumeDocument,
+        # Content-rich resumes (multiple projects with bullets +
+        # categorized skills + publications) produce a large JSON
+        # snapshot. The old 2600 cap truncated that mid-string on such
+        # resumes ~2 of 3 times — the JSON then failed to parse and the
+        # caller fell back to the low-fidelity deterministic parser
+        # (garbled project names, project URLs leaking into the contact
+        # line, mangled experience). max_output_tokens is a ceiling,
+        # not a reservation, so raising it costs nothing for ordinary
+        # resumes and only lets the rich ones complete.
         *,
-        max_completion_tokens: int = 2600,
+        max_completion_tokens: int = 6000,
     ) -> dict[str, Any]:
         if not isinstance(resume_document, ResumeDocument):
             raise TypeError("resume_document must be a ResumeDocument instance.")
@@ -156,7 +165,11 @@ class ResumeLLMParserService:
                 "parser_mode": "experimental_resume_snapshot",
                 "filetype": resume_document.filetype,
             },
-            allow_output_budget_retry=False,
+            # Safety net for the long-tail resume that still overruns
+            # 6000: auto-retry once at the higher budget rather than
+            # silently degrading to the deterministic parser. The
+            # generous base above means this rarely fires.
+            allow_output_budget_retry=True,
         )
         return {
             "full_name": _coerce_string(payload.get("full_name")),
