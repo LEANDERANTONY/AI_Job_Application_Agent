@@ -106,12 +106,18 @@ def _scenario_resume_builder_message_unknown_session():
 
 
 def _scenario_resume_builder_export_unknown_session():
+    # Must use the free-entitled combo (pdf + professional_neutral):
+    # the route enforces the export entitlement BEFORE hydrating the
+    # session (ADR-027 — a blocked request has no side effects), so
+    # docx / classic_ats from an anon (free) caller now correctly
+    # returns the canonical 429 entitlement response, never reaching
+    # the unknown-session 400 path this scenario exists to verify.
     response = client.post(
         "/api/workspace/resume-builder/export",
         json={
             "session_id": "wrong-id",
-            "export_format": "docx",
-            "theme": "classic_ats",
+            "export_format": "pdf",
+            "theme": "professional_neutral",
         },
     )
     assert response.status_code == 400
@@ -254,12 +260,15 @@ def _scenario_resume_builder_export_returns_400_with_real_message():
     user-typed string (not a leaked exception). Even when the lint
     catches the same shape statically, the runtime sees what the
     actual response body looks like."""
+    # Free-entitled combo so the request clears the export-entitlement
+    # gate (ADR-027, enforced pre-hydrate) and actually reaches the
+    # unknown-session 400 path whose message shape this asserts.
     response = client.post(
         "/api/workspace/resume-builder/export",
         json={
             "session_id": "definitely-not-real",
-            "export_format": "docx",
-            "theme": "classic_ats",
+            "export_format": "pdf",
+            "theme": "professional_neutral",
         },
     )
     assert response.status_code == 400
