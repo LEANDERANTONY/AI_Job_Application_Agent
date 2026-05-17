@@ -141,7 +141,17 @@ OPENAI_MAX_COMPLETION_TOKENS_ROUTING = {
         "OPENAI_MAX_COMPLETION_TOKENS_ASSISTANT",
         _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
     ),
-    "assistant_product_help": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PRODUCT_HELP", 700),
+    # Matches the `assistant` / `assistant_application_qa` siblings
+    # (1400). product_help routes to a gpt-5-class reasoning model, so
+    # max_output_tokens caps reasoning + visible output COMBINED — the
+    # old 700 left only ~300-550 tokens for the answer JSON
+    # (answer + sources + follow-ups) after "low"-effort reasoning,
+    # truncating thorough help answers into invalid JSON and silently
+    # falling back to the canned reply. It's a ceiling, not a
+    # reservation, so short answers (most of them) cost the same; only
+    # the long ones get room to finish. Fast-fail (no budget retry)
+    # stays — this fixes the cause, not the interactive behaviour.
+    "assistant_product_help": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_PRODUCT_HELP", 1400),
     "assistant_application_qa": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_APPLICATION_QA", 1400),
     "resume_builder": _load_int_env("OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER", 1200),
     # Structuring pass — converts free-form experience_notes /

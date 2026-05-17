@@ -1,4 +1,25 @@
-from src.config import resolve_job_backend_base_url
+from src.config import (
+    get_openai_max_completion_tokens_for_task,
+    resolve_job_backend_base_url,
+)
+
+
+def test_product_help_budget_matches_its_assistant_siblings():
+    """Regression: product_help routes to a gpt-5-class reasoning
+    model, so max_output_tokens caps reasoning + output combined. The
+    old 700 truncated thorough help answers into the canned fallback.
+    It must stay at parity with the assistant / application_qa
+    siblings so a future re-tighten fails here."""
+    product_help = get_openai_max_completion_tokens_for_task(
+        "assistant_product_help"
+    )
+    assistant = get_openai_max_completion_tokens_for_task("assistant")
+    application_qa = get_openai_max_completion_tokens_for_task(
+        "assistant_application_qa"
+    )
+
+    assert product_help >= 1400
+    assert product_help == assistant == application_qa
 
 
 def test_resolve_job_backend_base_url_prefers_explicit_base_url():
