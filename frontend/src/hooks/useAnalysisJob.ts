@@ -21,6 +21,7 @@ import {
 } from "react";
 
 import {
+  cancelWorkspaceAnalysisJob,
   getWorkspaceAnalysisJob,
   startWorkspaceAnalysisJob,
   TierLimitExceededError,
@@ -131,6 +132,15 @@ export type UseAnalysisJobReturn = {
   >;
   currentWorkflowStage: WorkflowStage | null;
   runAnalysis: () => Promise<void>;
+  /** Request cooperative cancellation of the current run. No-op when
+   *  nothing is running. The run unwinds at the next agent boundary;
+   *  `analysisCancelling` stays true until the terminal poll lands. */
+  cancelAnalysis: () => Promise<void>;
+  /** True from the moment Stop is pressed until the run actually ends
+   *  (cancelled / completed / failed). Drives the "Stopping…" button
+   *  state so the UI is honest that cancel is cooperative, not
+   *  instant. */
+  analysisCancelling: boolean;
   /** Used by `clearWorkspaceRole`. Resets job-state-only (the parent
    *  owns and resets `analysisState`). */
   resetAnalysis: () => void;
@@ -154,6 +164,12 @@ export function useAnalysisJob({
     useState<WorkflowRunMode | null>(null);
   const [analysisJobState, setAnalysisJobState] =
     useState<WorkspaceAnalysisJobStatusResponse | null>(null);
+  // Sticky from Stop-pressed until the run terminates. NOT reset when
+  // the cancel POST resolves — the worker is still unwinding the
+  // current agent server-side, so the button must keep saying
+  // "Stopping…" until a terminal poll (cancelled/completed/failed)
+  // clears it.
+  const [analysisCancelling, setAnalysisCancelling] = useState(false);
 
   // Stabilize parent-supplied callbacks so the polling effect doesn't
   // tear down on every parent re-render. Without this, the 1200ms
@@ -216,7 +232,8 @@ export function useAnalysisJob({
       analysisRunMode !== "agentic" ||
       !analysisJobState?.job_id ||
       analysisJobState.status === "completed" ||
-      analysisJobState.status === "failed"
+      analysisJobState.status === "failed" ||
+      analysisJobState.status === "cancelled"
     ) {
       return;
     }
@@ -244,6 +261,7 @@ export function useAnalysisJob({
           setAnalysisStateRef.current(nextJobState.result);
           setAnalysisLoading(false);
           setAnalysisRunMode(null);
+          setAnalysisCancelling(false);
           const message = await onCompletedRef.current(nextJobState.result);
           // Notice is gated on real unmount, not on the polling
           // effect's self-induced cancellation.
@@ -267,9 +285,30 @@ export function useAnalysisJob({
           });
           setAnalysisLoading(false);
           setAnalysisRunMode(null);
+          setAnalysisCancelling(false);
           // Refetch quota on failure too — the backend's refund-on-
           // failure path SHOULD have rolled the credit back, but
           // we re-sync to be sure the indicator reflects truth.
+          onRunFinishedRef.current?.();
+          return;
+        }
+
+        if (nextJobState.status === "cancelled") {
+          // User-initiated stop. Not an error → info, not warning. The
+          // backend already refunded the application credit on the way
+          // out (run_workspace_analysis' BaseException handler), so
+          // refetch quota to reflect the restored counter. No result
+          // to publish; `analysisState` (if any prior run) is left
+          // untouched by the parent.
+          setNoticeRef.current({
+            level: "info",
+            message:
+              nextJobState.stage_detail ||
+              "Run stopped. No credit was used — start a new run anytime.",
+          });
+          setAnalysisLoading(false);
+          setAnalysisRunMode(null);
+          setAnalysisCancelling(false);
           onRunFinishedRef.current?.();
           return;
         }
@@ -284,6 +323,7 @@ export function useAnalysisJob({
           });
           setAnalysisLoading(false);
           setAnalysisRunMode(null);
+          setAnalysisCancelling(false);
         }
       }
     }, 1200);
@@ -320,6 +360,7 @@ export function useAnalysisJob({
       return;
     }
 
+    setAnalysisCancelling(false);
     setAnalysisRunMode("agentic");
     setAnalysisJobState({
       job_id: "",
@@ -399,8 +440,46 @@ export function useAnalysisJob({
     }
   }
 
+  async function cancelAnalysis() {
+    const jobId = analysisJobState?.job_id;
+    // Nothing to stop: not running, no real backend job yet (the
+    // queued placeholder carries job_id ""), or a stop is already in
+    // flight (idempotent — a double-click must not double-POST).
+    if (!analysisLoading || !jobId || analysisCancelling) {
+      return;
+    }
+    setAnalysisCancelling(true);
+    try {
+      const nextJobState = await cancelWorkspaceAnalysisJob(jobId);
+      // Usually still "running": the worker only observes the flag at
+      // its next stage boundary. Publish it so the polling effect
+      // keeps tracking until the terminal "cancelled" arrives —
+      // deliberately do NOT flip analysisLoading off here (the run is
+      // still unwinding server-side, and the credit refund happens on
+      // that same unwind path).
+      setAnalysisJobState(nextJobState);
+      setNoticeRef.current({
+        level: "info",
+        message: "Stopping the run — it'll wrap up after the current step.",
+      });
+    } catch (error) {
+      // Couldn't cancel (already finished / pruned / network). Clear
+      // the sticky flag so the button doesn't get stuck on
+      // "Stopping…"; polling continues to resolve the real outcome.
+      setAnalysisCancelling(false);
+      setNoticeRef.current({
+        level: "warning",
+        message: humanizeApiError(
+          error,
+          "Couldn't stop the run — it may have already finished.",
+        ),
+      });
+    }
+  }
+
   function resetAnalysis() {
     setAnalysisJobState(null);
+    setAnalysisCancelling(false);
   }
 
   return {
@@ -409,6 +488,8 @@ export function useAnalysisJob({
     setAnalysisJobState,
     currentWorkflowStage,
     runAnalysis,
+    cancelAnalysis,
+    analysisCancelling,
     resetAnalysis,
   };
 }

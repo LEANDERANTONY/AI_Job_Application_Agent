@@ -58,6 +58,7 @@ from backend.services.workspace_service import (
 from backend.services.workspace_run_jobs import (
     JOB_RETRY_AFTER_SECONDS,
     WorkspaceRunJobCapacityError,
+    cancel_workspace_analysis_job,
     get_workspace_analysis_job,
     start_workspace_analysis_job,
 )
@@ -769,6 +770,31 @@ def get_workspace_analysis_job_route(job_id: str):
                 "This workflow run is no longer available — the server may "
                 "have restarted while it was running. Please run the workflow "
                 "again."
+            ),
+        )
+    return payload
+
+
+@router.post(
+    "/analyze-jobs/{job_id}/cancel",
+    response_model=WorkspaceAnalyzeJobStatusResponseModel,
+)
+def cancel_workspace_analysis_job_route(job_id: str):
+    # Cooperative cancel: sets the flag and returns immediately. The
+    # job typically comes back still "running" (the worker observes
+    # the flag at its next stage boundary); the frontend keeps polling
+    # GET /analyze-jobs/{job_id} until it sees the terminal
+    # "cancelled". Idempotent for already-terminal jobs. Same
+    # job_id-scoped access model as the status route (the id is an
+    # unguessable uuid4 hex; no extra auth surface added).
+    payload = cancel_workspace_analysis_job(job_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "This workflow run is no longer available — it may have "
+                "already finished, or the server restarted. There's "
+                "nothing to stop; run the workflow again if needed."
             ),
         )
     return payload

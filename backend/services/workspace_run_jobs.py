@@ -27,6 +27,31 @@ class WorkspaceRunJobCapacityError(RuntimeError):
     """Raised when `_RUN_SEMAPHORE` is exhausted at request time."""
 
 
+class WorkspaceRunJobCancelled(Exception):
+    """Cooperative-cancellation signal for an in-flight analysis job.
+
+    Deliberately a plain `Exception` (NOT an `AppError` / not an
+    `AgentExecutionError`): it must travel UNCHANGED through every
+    handler between the stage-boundary progress callback and
+    `_run_job`'s terminal handler —
+      * the orchestrator's per-agent `except AgentExecutionError` /
+        `except OpenAIUnavailableError` (no match → not swallowed),
+      * `ApplicationOrchestrator.run`'s `except AgentExecutionError`
+        (no match → not turned into a deterministic fallback),
+      * `run_workspace_analysis`'s `except BaseException` (matches →
+        refunds the consumed quota credit, then re-raises — so a
+        cancelled run never costs the user an application credit).
+    `_run_job` catches it explicitly and marks the job `cancelled`
+    (a normal user action, not a failure).
+    """
+
+
+# Terminal statuses: a job here is done moving and a cancel request is
+# a no-op (idempotent — a double-click or a cancel that races
+# completion must not error).
+_TERMINAL_JOB_STATUSES = frozenset({"completed", "failed", "cancelled"})
+
+
 @dataclass
 class WorkspaceRunJob:
     job_id: str
@@ -36,6 +61,13 @@ class WorkspaceRunJob:
     progress_percent: int = 3
     result: dict[str, Any] | None = None
     error_message: str | None = None
+    # Set by `cancel_workspace_analysis_job`; observed by the worker at
+    # the next stage boundary (begin_stage → progress callback →
+    # `_update_job_progress`). Cooperative because a Python thread
+    # blocked inside an OpenAI call cannot be force-killed safely, so
+    # cancellation takes effect at the next agent boundary (≤ one
+    # agent / ≤ the per-call timeout), never mid-LLM-call.
+    cancel_requested: bool = False
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
@@ -65,15 +97,30 @@ def _serialize_job(job: WorkspaceRunJob) -> dict[str, Any]:
 
 
 def _update_job_progress(job_id: str, title: str, detail: str, value: int) -> None:
+    # This runs on every pipeline stage boundary (the orchestrator's
+    # `begin_stage` → `_emit_progress` → this callback), which makes it
+    # the natural cooperative-cancellation checkpoint: if a cancel was
+    # requested while the previous agent was working, we abandon the
+    # progress write and raise so the run unwinds at the boundary
+    # instead of advancing into the next (possibly premium) LLM call.
+    cancelled = False
     with _LOCK:
         job = _JOBS.get(job_id)
         if job is None:
             return
-        job.status = "running"
-        job.stage_title = title
-        job.stage_detail = detail
-        job.progress_percent = max(0, min(100, int(value)))
-        job.updated_at = time.time()
+        if job.cancel_requested:
+            cancelled = True
+        else:
+            job.status = "running"
+            job.stage_title = title
+            job.stage_detail = detail
+            job.progress_percent = max(0, min(100, int(value)))
+            job.updated_at = time.time()
+    if cancelled:
+        # Raise OUTSIDE the lock — the unwinding stack (orchestrator →
+        # run_workspace_analysis' refund → _run_job) must never contend
+        # on _LOCK while this propagates.
+        raise WorkspaceRunJobCancelled(job_id)
 
 
 def _run_job(
@@ -116,6 +163,31 @@ def _run_job(
                 job.progress_percent = 100
                 job.stage_title = "Workflow crew"
                 job.stage_detail = "All agents are done. Your tailored documents are ready to review."
+                job.updated_at = time.time()
+        except WorkspaceRunJobCancelled:
+            # A normal user action, not a failure — log at INFO and end
+            # the job in a distinct terminal state (NOT "failed", so the
+            # UI doesn't show an error banner). The quota credit was
+            # already refunded by run_workspace_analysis' BaseException
+            # handler on the way up, so the copy can promise that.
+            log_event(
+                LOGGER,
+                20,
+                "workspace_run_job_cancelled",
+                "The background workspace analysis job was cancelled by the user before completion.",
+                job_id=job_id,
+            )
+            with _LOCK:
+                job = _JOBS.get(job_id)
+                if job is None:
+                    return
+                job.status = "cancelled"
+                job.stage_title = "Run stopped"
+                job.stage_detail = (
+                    "You stopped this run before it finished. No credit "
+                    "was used — start a new run whenever you're ready."
+                )
+                job.error_message = None
                 job.updated_at = time.time()
         except AppError as error:
             message = error.user_message
@@ -210,4 +282,34 @@ def get_workspace_analysis_job(job_id: str) -> dict[str, Any] | None:
         job = _JOBS.get(job_id)
         if job is None:
             return None
+        return _serialize_job(job)
+
+
+def cancel_workspace_analysis_job(job_id: str) -> dict[str, Any] | None:
+    """Request cooperative cancellation of an in-flight analysis job.
+
+    Returns the serialized job, or ``None`` when ``job_id`` is unknown
+    (pruned past TTL, wrong id, or the single-worker process restarted
+    and lost the in-memory registry — the caller maps this to a 404).
+
+    Idempotent by design: cancelling an already-terminal job
+    (completed / failed / cancelled) just returns its current state. A
+    double-click, or a Stop that races the run finishing, must never
+    error.
+
+    This only *sets the flag*. The worker thread is blocked inside the
+    synchronous pipeline (often mid-OpenAI-call) and a Python thread
+    can't be force-killed safely, so the request returns immediately
+    with the job still ``running``; the worker observes the flag at its
+    next stage boundary and flips the job to ``cancelled`` within
+    ≤ one agent. The frontend keeps polling until that terminal state.
+    """
+    with _LOCK:
+        _prune_jobs()
+        job = _JOBS.get(job_id)
+        if job is None:
+            return None
+        if job.status not in _TERMINAL_JOB_STATUSES:
+            job.cancel_requested = True
+            job.updated_at = time.time()
         return _serialize_job(job)

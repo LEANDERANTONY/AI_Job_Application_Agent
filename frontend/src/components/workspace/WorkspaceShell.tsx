@@ -497,6 +497,8 @@ export function WorkspaceShell() {
     setAnalysisJobState: _setAnalysisJobState,
     currentWorkflowStage,
     runAnalysis: handleRunAnalysis,
+    cancelAnalysis: handleCancelAnalysis,
+    analysisCancelling,
     resetAnalysis,
   } = useAnalysisJob({
     resumeText,
@@ -2337,7 +2339,9 @@ export function WorkspaceShell() {
               analysisJobState={analysisJobState}
               analysisLoading={analysisLoading}
               analysisState={analysisState}
+              analysisCancelling={analysisCancelling}
               currentWorkflowStage={currentWorkflowStage}
+              onCancelAnalysis={() => void handleCancelAnalysis()}
               onClearRole={clearWorkspaceRole}
               onPremiumChange={setPremium}
               onPremiumLockedUpgrade={() =>

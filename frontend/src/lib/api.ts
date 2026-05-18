@@ -405,6 +405,20 @@ export async function getWorkspaceAnalysisJob(jobId: string) {
   });
 }
 
+/** Request cooperative cancellation of an in-flight analysis run.
+ *  Returns the job state (usually still "running" — the backend
+ *  worker observes the cancel flag at its next stage boundary, so the
+ *  caller keeps polling until the terminal "cancelled" lands). 404
+ *  when the job is already gone/finished. */
+export async function cancelWorkspaceAnalysisJob(jobId: string) {
+  return request<WorkspaceAnalysisJobStatusResponse>(
+    `/workspace/analyze-jobs/${jobId}/cancel`,
+    {
+      method: "POST",
+    },
+  );
+}
+
 /** Fetch the read-only quota snapshot for the workspace UI.
  *  Drives the Premium toggle's enabled/disabled state and per-counter
  *  indicators. The hook owning the toggle calls this on mount and

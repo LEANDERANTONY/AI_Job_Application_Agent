@@ -37,6 +37,14 @@ export type AnalysisRunnerProps = {
   analysisIsStale: boolean;
   currentWorkflowStage: WorkflowStage | null;
   onRunAnalysis: () => void;
+  /** Request cooperative cancellation of the in-flight run. Only
+   *  meaningful while `analysisLoading` is true. */
+  onCancelAnalysis: () => void;
+  /** True from Stop-pressed until the run actually ends. Drives the
+   *  Stop button's "Stopping…" + disabled state — cancel is
+   *  cooperative (effective at the next agent boundary), not instant,
+   *  and the UI must not pretend otherwise. */
+  analysisCancelling: boolean;
   onClearRole: () => void;
   /** True when both a resume + JD are present. */
   ready: boolean;
@@ -120,6 +128,8 @@ export function AnalysisRunner({
   analysisIsStale,
   currentWorkflowStage,
   onRunAnalysis,
+  onCancelAnalysis,
+  analysisCancelling,
   onClearRole,
   ready,
   quota,
@@ -169,6 +179,13 @@ export function AnalysisRunner({
   // and a value. We mark stages BEFORE the live one as done, the live
   // one as active w/ the live percent, and stages AFTER as next.
   // After analysis completes, every stage ticks to done.
+  //
+  // Precedence: `analysisLoading` is checked BEFORE `analysisState`.
+  // On a re-run the parent keeps the previous completed
+  // `analysisState` mounted (it's only swapped when the NEW result
+  // lands), so checking it first would freeze every stage at
+  // done/100% for the whole re-run — the live pipeline would never
+  // re-animate. Loading must win so the cards replay the run.
   const liveIndex = liveStageTitle
     ? PIPELINE_STAGES.findIndex((stage) => stage.key === liveStageTitle)
     : -1;
@@ -178,10 +195,7 @@ export function AnalysisRunner({
     let value = 0;
     let detail = "";
 
-    if (analysisState) {
-      state = "done";
-      value = 100;
-    } else if (analysisLoading) {
+    if (analysisLoading) {
       if (liveIndex >= 0) {
         if (index < liveIndex) {
           state = "done";
@@ -196,6 +210,9 @@ export function AnalysisRunner({
         value = livePercent ?? 25;
         detail = "Coordinating agents";
       }
+    } else if (analysisState) {
+      state = "done";
+      value = 100;
     }
     return { ...stage, state, value, detail };
   });
@@ -206,14 +223,14 @@ export function AnalysisRunner({
         <div>
           <div className="b-region-title">Workflow run</div>
           <div className="b-region-sub">
-            {analysisState
-              ? `${analysisState.workflow.mode} · ${
-                  analysisState.workflow.review_approved
-                    ? "review approved"
-                    : "review pending"
-                }`
-              : analysisLoading
-                ? "Generating tailored documents…"
+            {analysisLoading
+              ? "Generating tailored documents…"
+              : analysisState
+                ? `${analysisState.workflow.mode} · ${
+                    analysisState.workflow.review_approved
+                      ? "review approved"
+                      : "review pending"
+                  }`
                 : ready
                   ? "Ready to run — both inputs are loaded."
                   : "Need a parsed resume + JD to run."}
@@ -226,17 +243,17 @@ export function AnalysisRunner({
         <div className="b-run-bar-info">
           <span
             className={
-              analysisState
-                ? "rd-pip rd-pip-live"
-                : analysisLoading
-                  ? "rd-pip rd-pip-ready"
+              analysisLoading
+                ? "rd-pip rd-pip-ready"
+                : analysisState
+                  ? "rd-pip rd-pip-live"
                   : "rd-pip"
             }
           >
-            {analysisState
-              ? "Outputs ready"
-              : analysisLoading
-                ? "Running…"
+            {analysisLoading
+              ? "Running…"
+              : analysisState
+                ? "Outputs ready"
                 : ready
                   ? "Idle"
                   : "Inputs needed"}
@@ -290,25 +307,45 @@ export function AnalysisRunner({
           >
             <PlayIcon /> {analysisLoading ? "Running…" : analysisState ? "Re-run" : "Run analysis"}
           </button>
-          <button
-            className="rd-btn rd-btn-danger rd-btn-sm"
-            disabled={analysisLoading}
-            onClick={onClearRole}
-            type="button"
-          >
-            Clear role
-          </button>
+          {analysisLoading ? (
+            // Stop is only meaningful mid-run. Disabled until the
+            // backend job has an id (the queued placeholder carries
+            // job_id "") and while a stop is already unwinding. Cancel
+            // is cooperative — it lands at the next agent boundary, so
+            // the label says "Stopping…" rather than implying instant.
+            <button
+              className="rd-btn rd-btn-danger rd-btn-sm"
+              disabled={analysisCancelling || !analysisJobState?.job_id}
+              onClick={onCancelAnalysis}
+              title="Stop this run. It wraps up after the current step; no application credit is used."
+              type="button"
+            >
+              {analysisCancelling ? "Stopping…" : "Stop run"}
+            </button>
+          ) : (
+            <button
+              className="rd-btn rd-btn-danger rd-btn-sm"
+              disabled={analysisLoading}
+              onClick={onClearRole}
+              type="button"
+            >
+              Clear role
+            </button>
+          )}
         </div>
       </div>
 
-      {analysisIsStale ? (
+      {analysisIsStale && !analysisLoading ? (
         <div className="b-notice b-notice-warning">
           The inputs changed after the last run. Re-run the workflow to refresh
           your documents.
         </div>
       ) : null}
 
-      {analysisState?.workflow?.service_unavailable ? (
+      {/* Result-derived notices reflect the PREVIOUS run. Suppress
+          while a re-run is in flight so a stale "OpenAI had a moment"
+          banner doesn't contradict the live "Running…" pipeline. */}
+      {analysisState?.workflow?.service_unavailable && !analysisLoading ? (
         <div className="b-notice b-notice-warning">
           {analysisState.workflow.fallback_reason ||
             "Our AI provider (OpenAI) is having a moment, so we built a baseline version of your application. Re-run in a few minutes for the full AI-tailored result."}
@@ -361,7 +398,7 @@ export function AnalysisRunner({
           line. Hidden on desktop via CSS. The pipeline cards
           themselves are also hidden on mobile in the idle / all-done
           states (see globals.css mobile pass). */}
-      {analysisState ? (
+      {analysisState && !analysisLoading ? (
         <div className="b-pipeline-summary" role="status">
           <span aria-hidden="true" className="b-pipeline-summary-pip">
             ✓

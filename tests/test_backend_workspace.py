@@ -2342,6 +2342,54 @@ def test_workspace_analyze_job_status_returns_actionable_404_when_job_missing(mo
     assert "run the workflow again" in detail.lower()
 
 
+def test_workspace_analyze_job_cancel_route_returns_job_state(monkeypatch):
+    """POST .../cancel returns the (serialized) job. It usually comes
+    back still 'running' — the worker observes the flag at its next
+    stage boundary — so the frontend keeps polling until 'cancelled'."""
+    captured = {}
+
+    def _cancel(job_id):
+        captured["job_id"] = job_id
+        return {
+            "job_id": job_id,
+            "status": "running",
+            "stage_title": "Forge agent",
+            "stage_detail": "Stopping after the current step.",
+            "progress_percent": 41,
+            "result": None,
+            "error_message": None,
+        }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace.cancel_workspace_analysis_job",
+        _cancel,
+    )
+
+    response = client.post("/api/workspace/analyze-jobs/job-xyz/cancel")
+
+    assert response.status_code == 200
+    assert captured["job_id"] == "job-xyz"
+    payload = response.json()
+    assert payload["job_id"] == "job-xyz"
+    assert payload["status"] == "running"
+
+
+def test_workspace_analyze_job_cancel_route_404_when_missing(monkeypatch):
+    """An already-finished / pruned / wrong job id returns an
+    actionable 404 the polling hook can surface verbatim."""
+    monkeypatch.setattr(
+        "backend.routers.workspace.cancel_workspace_analysis_job",
+        lambda job_id: None,
+    )
+
+    response = client.post("/api/workspace/analyze-jobs/gone/cancel")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "no longer available" in detail.lower()
+    assert "nothing to stop" in detail.lower()
+
+
 def test_workspace_analyze_prefers_imported_job_title_when_parser_cannot_extract_it():
     response = client.post(
         "/api/workspace/analyze",
