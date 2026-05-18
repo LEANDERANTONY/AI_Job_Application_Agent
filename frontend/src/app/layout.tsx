@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DM_Sans, Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
+import { DM_Sans, Geist_Mono, Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { CookieConsentBanner } from "@/components/cookie-consent";
 import { PostHogProvider } from "@/components/posthog-provider";
@@ -13,15 +13,18 @@ const dmSans = DM_Sans({
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
+  // 600 (SemiBold) is required: globals.css uses `font-weight: 600`
+  // in 60+ rules — every `.b-shell` heading, region title, button and
+  // chip via --font-display. Omitting it made the browser substitute
+  // the 700 Bold face for all of them, so workspace headings/labels
+  // rendered heavier than intended (the "weird font" report). Matches
+  // HelpmateAI's load exactly.
+  weight: ["400", "500", "600", "700"],
 });
 
-// Workspace-scoped typography (Direction B redesign). Consumed by
-// `.b-shell` only — see globals.css.
-const geist = Geist({
-  variable: "--font-geist",
-  subsets: ["latin"],
-});
+// Workspace mono (Direction B redesign). The only Geist face the
+// workspace consumes — `.b-shell --font-mono` in globals.css. (The
+// Geist *sans* face was loaded but never referenced; dropped.)
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
@@ -48,7 +51,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${dmSans.variable} ${spaceGrotesk.variable} ${geist.variable} ${geistMono.variable}`}
+      className={`${dmSans.variable} ${spaceGrotesk.variable} ${geistMono.variable}`}
       suppressHydrationWarning
     >
       <body>
