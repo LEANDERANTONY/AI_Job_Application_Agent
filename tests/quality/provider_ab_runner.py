@@ -211,6 +211,9 @@ def main() -> None:
                     help="alias: --suite parser --limit 3 (cheap sanity + fidelity)")
     ap.add_argument("--preflight", action="store_true",
                     help="1 tiny call/candidate to validate slug+key before the run")
+    ap.add_argument("--preflight-only", action="store_true",
+                    help="just validate every slug/key (~$0.001 total) and exit; "
+                    "no suites — use when credits are tight")
     ap.add_argument("--json", default="")
     args = ap.parse_args()
 

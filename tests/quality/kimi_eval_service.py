@@ -54,8 +54,14 @@ from src.errors import AgentExecutionError
 
 _DEFAULT_BASE_URL = os.getenv("KIMI_BASE_URL", "https://openrouter.ai/api/v1").strip()
 _DEFAULT_MODEL = os.getenv("KIMI_MODEL", "moonshotai/kimi-k2.6").strip()
-# Generous so truncation doesn't confound the model-quality signal;
-# we still COUNT any finish_reason=="length" as a fidelity miss.
+# Safety CEILING (not a floor): callers pass real per-task budgets
+# (parsers/agents from config; preflight passes ~20). We clamp to
+# this ceiling so a runaway never over-spends, but never inflate a
+# small request up to it — OpenRouter reserves max_tokens*price of
+# credit upfront, so flooring tiny calls at 8000 caused spurious 402s
+# on pricier models / low balances. Truncation is still COUNTED via
+# finish_reason=="length"; the eval controls truncation by the
+# callers' already-generous per-task budgets.
 _EVAL_MAX_TOKENS = int(os.getenv("KIMI_EVAL_MAX_TOKENS", "8000"))
 
 
@@ -167,7 +173,8 @@ class KimiEvalService:
                         reasoning_effort=None) -> dict:
         task = task_name or "unknown"
         content = self._chat(system_prompt, user_prompt, task_name=task,
-                             max_tokens=max(max_completion_tokens, _EVAL_MAX_TOKENS))
+                             max_tokens=min(max_completion_tokens or _EVAL_MAX_TOKENS,
+                                             _EVAL_MAX_TOKENS))
         try:
             payload = json.loads(content)
         except json.JSONDecodeError as exc:
@@ -194,7 +201,8 @@ class KimiEvalService:
                               previous_response_id=None, reasoning_effort=None):
         task = task_name or "unknown"
         content = self._chat(system_prompt, user_prompt, task_name=task,
-                             max_tokens=max(max_completion_tokens, _EVAL_MAX_TOKENS))
+                             max_tokens=min(max_completion_tokens or _EVAL_MAX_TOKENS,
+                                             _EVAL_MAX_TOKENS))
         try:
             raw = json.loads(content)
         except json.JSONDecodeError as exc:
