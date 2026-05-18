@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import warnings
+from dataclasses import dataclass
 from io import BytesIO
 
 from markdown_it import MarkdownIt
@@ -52,6 +53,215 @@ def _configure_weasyprint_windows_runtime():
 
 def export_text_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
     return report.plain_text.encode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# ThemeSpec — single source of truth for theming (ADR-015 follow-up).
+#
+# Historically there were THREE hand-synced palette maps
+# (`_RESUME_THEME_PALETTES`, `_COVER_LETTER_THEME_PALETTES`,
+# `_DOCX_THEME_PALETTES`). ADR-015's follow-up note called for collapsing
+# them into one typed spec before a third theme lands so a theme can't
+# drift across the PDF resume / PDF cover letter / DOCX renderers — a
+# user picking a theme MUST get the same look in every artifact + format.
+#
+# One `ThemeSpec` per theme now derives all three palettes. Adding a
+# theme = one entry in `_THEME_SPECS`. The three module-level maps below
+# are kept (derived from the registry) so the resolvers + any external
+# reference stay byte-for-byte identical — this refactor is provably
+# output-neutral for the existing themes.
+#
+# `layout` is reserved for the gated non-ATS two-column presentation
+# theme (Phase 3); only the *resume* renderer will branch on it — a
+# cover letter is prose and always renders single-column.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ThemeSpec:
+    key: str
+    label: str
+    # Canonical colors ('#'-prefixed; the DOCX adapter strips '#'
+    # and upper-cases for OOXML).
+    ink: str
+    muted: str
+    accent: str
+    line: str
+    paper: str
+    surface: str
+    # Resume uses this for BOTH the `accent_soft` blockquote wash and
+    # the inline-`code` background (they were always equal).
+    accent_soft: str
+    # Cover-letter <strong> color (independent of `ink`: classic_ats
+    # darkens it; neutral collapses it to ink).
+    cover_strong_color: str
+    # Type — CSS font *stacks* for the PDF surfaces.
+    body_font_family: str
+    h1_font_family: str
+    prose_font_family: str
+    prose_line_height: str
+    # DOCX needs single OOXML family names (no stack / no quotes).
+    docx_body_font: str
+    docx_heading_font: str
+    docx_prose_font: str
+    # Header underline rule width, shared by resume + cover letter.
+    header_border_px: int
+    # Reserved (Phase 3). "single_column" | "two_column". Only the
+    # resume renderer branches on this.
+    layout: str = "single_column"
+
+    @staticmethod
+    def _ooxml(color: str) -> str:
+        # "#8f6845" -> "8F6845"; only valid for hex colors. All theme
+        # color fields that reach DOCX are hex (rgba never does).
+        return color.lstrip("#").upper()
+
+    def resume_palette(self) -> dict:
+        return {
+            "ink": self.ink,
+            "muted": self.muted,
+            "accent": self.accent,
+            "accent_soft": self.accent_soft,
+            "line": self.line,
+            "paper": self.paper,
+            "surface": self.surface,
+            "body_font_family": self.body_font_family,
+            "h1_font_family": self.h1_font_family,
+            "prose_font_family": self.prose_font_family,
+            "prose_line_height": self.prose_line_height,
+            "header_border_width": f"{self.header_border_px}px",
+            "code_bg": self.accent_soft,
+        }
+
+    def cover_letter_palette(self) -> dict:
+        return {
+            "ink": self.ink,
+            "muted": self.muted,
+            "accent": self.accent,
+            "line": self.line,
+            "paper": self.paper,
+            "surface": self.surface,
+            "strong_color": self.cover_strong_color,
+            "header_border_width": f"{self.header_border_px}px",
+            # The letter is all prose, so it follows the theme's PROSE
+            # font (not body). For classic_ats / professional_neutral
+            # prose IS Georgia → byte-identical to the old hardcoded
+            # value (zero regression). For sans themes (modern_blue)
+            # the letter now matches its résumé instead of clashing as
+            # a lone serif document — the "matched set" guarantee.
+            "body_font_family": self.prose_font_family,
+        }
+
+    def docx_palette(self) -> dict:
+        return {
+            "ink": self._ooxml(self.ink),
+            "muted": self._ooxml(self.muted),
+            "accent": self._ooxml(self.accent),
+            "line": self._ooxml(self.line),
+            "body_font": self.docx_body_font,
+            "heading_font": self.docx_heading_font,
+            "prose_font": self.docx_prose_font,
+        }
+
+
+# The registry. EXISTING two themes reproduce the pre-refactor literal
+# maps byte-for-byte (verified via golden snapshots). NEW themes are
+# added here only — the three derived maps + every renderer pick them
+# up automatically, so resume + cover letter + DOCX can never drift.
+_THEME_SPECS: dict[str, "ThemeSpec"] = {
+    "classic_ats": ThemeSpec(
+        key="classic_ats",
+        label="Classic ATS",
+        ink="#221912",
+        muted="#6b5648",
+        accent="#8f6845",
+        line="#d7c2af",
+        paper="#fffdf9",
+        surface="#fffdfa",
+        accent_soft="rgba(143, 104, 69, 0.10)",
+        cover_strong_color="#17100b",
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family='Georgia, "Times New Roman", serif',
+        prose_font_family='Georgia, "Times New Roman", serif',
+        prose_line_height="1.55",
+        docx_body_font="Arial",
+        docx_heading_font="Georgia",
+        docx_prose_font="Georgia",
+        header_border_px=3,
+        layout="single_column",
+    ),
+    "professional_neutral": ThemeSpec(
+        key="professional_neutral",
+        label="Professional",
+        ink="#0a0a0a",
+        muted="#555555",
+        accent="#0a0a0a",
+        line="#bfbfbf",
+        paper="#ffffff",
+        surface="#ffffff",
+        accent_soft="rgba(0, 0, 0, 0.04)",
+        cover_strong_color="#0a0a0a",
+        body_font_family='Georgia, "Times New Roman", serif',
+        h1_font_family='Georgia, "Times New Roman", serif',
+        prose_font_family='Georgia, "Times New Roman", serif',
+        prose_line_height="1.55",
+        docx_body_font="Georgia",
+        docx_heading_font="Georgia",
+        docx_prose_font="Georgia",
+        header_border_px=2,
+        layout="single_column",
+    ),
+    # NEW (Phase 2a) — modern all-sans + one deep professional blue.
+    # Single-column → fully ATS-safe. Differs from the two originals
+    # by being sans THROUGHOUT (classic_ats = serif headings/prose;
+    # professional_neutral = all-serif) with a cool slate ink + blue
+    # accent. Accent #1A56DB clears ~5.9:1 on white (safe for any
+    # text). Fonts stay web-safe sans so WeasyPrint renders it
+    # identically on the Linux render host (no missing-font fallback).
+    # Audience: tech / product / data / ops.
+    "modern_blue": ThemeSpec(
+        key="modern_blue",
+        label="Modern Blue",
+        ink="#16202e",
+        muted="#5a6b7b",
+        accent="#1a56db",
+        line="#dfe5ec",
+        # Faint COOL off-white (operator-picked): the classic_ats
+        # "designed, not stark" trick in a cool key so the paper sits
+        # right under the blue accent. ~9 units off white max →
+        # print/photocopy-safe, and ATS-irrelevant (paint, not text).
+        paper="#f6f8fd",
+        surface="#f8fafe",
+        accent_soft="rgba(26, 86, 219, 0.07)",
+        cover_strong_color="#16202e",
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.55",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=2,
+        layout="single_column",
+    ),
+}
+
+
+def resolve_theme(theme: str | None) -> "ThemeSpec":
+    """Theme name -> ThemeSpec. Unknown / blank -> classic_ats, the
+    same fallback the three legacy resolvers used."""
+    return _THEME_SPECS.get(
+        str(theme or "").strip(), _THEME_SPECS["classic_ats"]
+    )
+
+
+# Public: the canonical set of renderable theme keys. The backend
+# export gates (artifact_export_service / resume_builder_service)
+# import THIS instead of hand-maintaining their own theme sets —
+# adding a ThemeSpec to the registry is the single edit a new theme
+# needs server-side (entitlement is separate, by-exclusion in
+# backend.tiers). ADR-015 follow-up: no theme set may drift.
+SUPPORTED_THEMES: frozenset[str] = frozenset(_THEME_SPECS)
 
 
 def export_pdf_bytes(report: CoverLetterArtifact | TailoredResumeArtifact) -> bytes:
@@ -141,32 +351,11 @@ def _split_cover_letter_title(title: str) -> tuple[str, str]:
     return normalized_title, ""
 
 
+# Derived from `_THEME_SPECS` (ADR-015 follow-up). Do NOT hand-edit —
+# add a ThemeSpec to the registry instead so resume + cover letter +
+# DOCX stay byte-for-byte in sync.
 _COVER_LETTER_THEME_PALETTES = {
-    # Default — warm cream paper + brown accents, matched to the resume
-    # classic theme so the two read as a single set of stationery.
-    "classic_ats": {
-        "ink": "#221912",
-        "muted": "#6b5648",
-        "accent": "#8f6845",
-        "line": "#d7c2af",
-        "paper": "#fffdf9",
-        "surface": "#fffdfa",
-        "strong_color": "#17100b",
-        "header_border_width": "3px",
-    },
-    # Conservative B&W — pure black ink on white paper. Body stays
-    # Georgia (serif still feels right for letter prose) but every
-    # accent collapses to grayscale.
-    "professional_neutral": {
-        "ink": "#0a0a0a",
-        "muted": "#555555",
-        "accent": "#0a0a0a",
-        "line": "#bfbfbf",
-        "paper": "#ffffff",
-        "surface": "#ffffff",
-        "strong_color": "#0a0a0a",
-        "header_border_width": "2px",
-    },
+    key: spec.cover_letter_palette() for key, spec in _THEME_SPECS.items()
 }
 
 
@@ -208,7 +397,7 @@ def _build_cover_letter_html(text, title="Cover Letter", theme="classic_ats"):
 
         body {{
             margin: 0;
-            font-family: Georgia, "Times New Roman", serif;
+            font-family: {body_font_family};
             color: var(--ink);
             background: var(--paper);
             line-height: 1.72;
@@ -642,44 +831,10 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
     return header_html + "\n".join(ordered_blocks)
 
 
+# Derived from `_THEME_SPECS` (ADR-015 follow-up). Do NOT hand-edit —
+# add a ThemeSpec to the registry instead.
 _RESUME_THEME_PALETTES = {
-    # Default — warm cream paper + brown accents. Editorial pairing:
-    # Arial body for scannability + Georgia for the prose-y bits
-    # (summary, bullets) to harmonise with the cover letter.
-    "classic_ats": {
-        "ink": "#221912",
-        "muted": "#6b5648",
-        "accent": "#8f6845",
-        "accent_soft": "rgba(143, 104, 69, 0.10)",
-        "line": "#d7c2af",
-        "paper": "#fffdf9",
-        "surface": "#fffdfa",
-        "body_font_family": "Arial, Helvetica, sans-serif",
-        "h1_font_family": 'Georgia, "Times New Roman", serif',
-        "prose_font_family": 'Georgia, "Times New Roman", serif',
-        "prose_line_height": "1.55",
-        "header_border_width": "3px",
-        "code_bg": "rgba(143, 104, 69, 0.10)",
-    },
-    # Conservative B&W — pure ATS-template look. Body uses Georgia so
-    # the resume reads as the same family as the cover letter (which
-    # is also Georgia in both themes); Arial felt cold and template-y
-    # at the small sizes this layout uses.
-    "professional_neutral": {
-        "ink": "#0a0a0a",
-        "muted": "#555555",
-        "accent": "#0a0a0a",
-        "accent_soft": "rgba(0, 0, 0, 0.04)",
-        "line": "#bfbfbf",
-        "paper": "#ffffff",
-        "surface": "#ffffff",
-        "body_font_family": 'Georgia, "Times New Roman", serif',
-        "h1_font_family": 'Georgia, "Times New Roman", serif',
-        "prose_font_family": 'Georgia, "Times New Roman", serif',
-        "prose_line_height": "1.55",
-        "header_border_width": "2px",
-        "code_bg": "rgba(0, 0, 0, 0.04)",
-    },
+    key: spec.resume_palette() for key, spec in _THEME_SPECS.items()
 }
 
 
@@ -1169,35 +1324,13 @@ def generate_pdf(text, title="Tailored Resume", theme=None, document_kind="cover
 # ---------------------------------------------------------------------------
 
 
-# Per-theme DOCX palettes — kept structurally parallel with
-# `_RESUME_THEME_PALETTES` in this file but using OOXML-safe hex
-# strings (no '#' prefix) and only the keys the DOCX renderer reads.
-#
-# - classic_ats: warm-cream paper / brown accents. Arial body for
-#   scannability, Georgia for the prose summary + headings.
-# - professional_neutral: pure black / gray / white. Georgia
-#   throughout because Arial felt cold + template-y at the small body
-#   sizes a conservative resume uses, and the cover letter is also
-#   Georgia in both themes.
+# Per-theme DOCX palettes — OOXML-safe hex (no '#' prefix), derived
+# from `_THEME_SPECS` (ADR-015 follow-up) so they can't drift from the
+# PDF resume/cover-letter palettes. `ThemeSpec.docx_palette()` strips
+# '#' + upper-cases the canonical hex and carries the single OOXML
+# font family names. Do NOT hand-edit — add a ThemeSpec instead.
 _DOCX_THEME_PALETTES: dict[str, dict[str, str]] = {
-    "classic_ats": {
-        "ink": "221912",  # body text
-        "muted": "6B5648",  # meta lines (organization, dates)
-        "accent": "8F6845",  # section headings + header underline
-        "line": "D7C2AF",  # softer underline tone
-        "body_font": "Arial",
-        "heading_font": "Georgia",
-        "prose_font": "Georgia",
-    },
-    "professional_neutral": {
-        "ink": "0A0A0A",
-        "muted": "555555",
-        "accent": "0A0A0A",  # accent collapses to ink — no warm tone
-        "line": "BFBFBF",
-        "body_font": "Georgia",
-        "heading_font": "Georgia",
-        "prose_font": "Georgia",
-    },
+    key: spec.docx_palette() for key, spec in _THEME_SPECS.items()
 }
 
 

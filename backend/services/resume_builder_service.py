@@ -13,7 +13,7 @@ from backend.services.auth_session_service import resolve_authenticated_context
 from backend.tiers import resolve_user_tier
 from src.config import get_openai_max_completion_tokens_for_task
 from src.errors import AgentExecutionError
-from src.exporters import export_docx_bytes, export_pdf_bytes
+from src.exporters import SUPPORTED_THEMES, export_docx_bytes, export_pdf_bytes
 from src.logging_utils import get_logger, log_event
 from src.prompts import build_resume_builder_prompt, build_resume_builder_structuring_prompt
 from src.resume_builder import build_tailored_resume_artifact
@@ -2198,7 +2198,9 @@ def export_resume_builder_artifact(
         raise ValueError("Choose a supported export format.")
 
     normalized_theme = str(theme or "").strip()
-    if normalized_theme not in {"classic_ats", "professional_neutral"}:
+    # SUPPORTED_THEMES is the exporter's ThemeSpec registry (single
+    # source of truth) — new themes work here with no edit.
+    if normalized_theme not in SUPPORTED_THEMES:
         normalized_theme = "classic_ats"
 
     artifact = _synthesize_resume_builder_artifact(

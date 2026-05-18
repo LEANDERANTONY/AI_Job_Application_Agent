@@ -612,7 +612,7 @@ def main():
 
     fixtures: list[dict] = []
 
-    for theme in ["classic_ats", "professional_neutral"]:
+    for theme in ["classic_ats", "professional_neutral", "modern_blue"]:
         for builder in [
             _basic_resume,
             _special_chars_resume,

@@ -1387,3 +1387,64 @@ Day-53 set is committed locally; push decision deferred to the
 operator (backend re-deploy — `src/` + `backend/` touched; no
 frontend or DB change; premium reasoning only affects opt-in
 credit-burning premium runs).
+
+## Day 54: Theme expansion — ThemeSpec single-source + `modern_blue` (Phase 1 + 2a)
+
+Operator asked to widen the résumé/cover-letter theme offering. Ran a
+design-research phase first (no code): surveyed ATS-parse evidence +
+typography conventions + a battle-tested accent palette, produced an
+archetype catalogue + approved build-list, all parked in `report.md`.
+Then built **easiest-first, one theme at a time, eyeballing real
+WeasyPrint output before wiring** — sample PDFs rendered from
+deterministic fixtures, so **zero LLM/API cost** for theme QA.
+
+### Phase 1 — `ThemeSpec` refactor (ADR-029; realises ADR-015's follow-up)
+
+`src/exporters.py` had **three hand-synced palette maps**; two **more**
+hardcoded theme sets lived in the backend services (an unknown theme
+silently normalised to a default → a missed edit renders the *wrong*
+theme with no error). Collapsed all of it to one frozen `ThemeSpec`
+registry that derives résumé + cover-letter + DOCX palettes; the
+backend gates now import a public `SUPPORTED_THEMES` from it. Adding a
+theme = **one registry entry**. Proven output-neutral for the two
+existing themes: resolver dicts byte-identical for every theme +
+fallback, and the 12-fixture renderer-fidelity runner byte-identical.
+
+Also fixed a latent coupling the operator caught: the cover-letter
+renderer **hardcoded Georgia serif** for every theme. It now follows
+the theme's *prose* font — `classic_ats` / `professional_neutral` have
+Georgia as their prose font so this is **byte-identical** for them
+(verified empirically), while a sans theme finally gets a sans letter
+that matches its own résumé (the "matched set" is now true at the font
+level, not just colour).
+
+### Phase 2a — `modern_blue`
+
+First new theme: single-column (**fully ATS-safe**), all-sans, deep
+professional blue accent `#1a56db` (~5.9:1 on white), faint **cool**
+off-white paper `#f6f8fd`/`#f8fafe` — the `classic_ats` "designed,
+not stark" trick in a cool key (a paint layer; ATS reads the text
+layer, so background tint is parse-irrelevant — `classic_ats` itself
+is the proof). Operator picked the faint tint over crisp white / a
+stronger tint after a 3-way sample comparison.
+
+Wiring touch-set, now minimal post-refactor: `ThemeSpec` entry +
+`ArtifactTheme` union + `ArtifactViewer` picker/hint + one
+`workspace_models` Literal. **Zero `tiers.py` change** — entitlement is
+by-exclusion (Free = `professional_neutral` only; any other theme is
+Pro/Business via the existing 429 path, ADR-027), so ATS-safe themes
+gate themselves.
+
+87 backend tests green (exporters / export-entitlement / resume-builder
+/ workflow-payloads / tier-aware); renderer-fidelity runner now
+exercises `modern_blue` and is green; frontend `tsc` + `eslint` clean.
+
+Governance: **ADR-029** added; ADR-015 Follow-Up annotated done; ADR
+index + current-state note updated. `creative_warm`, `architect_mono`,
+and the gated non-ATS `presentation_twocol` (a new `layout` branch,
+reserved in `ThemeSpec` now) follow the same loop in later phases.
+
+Phase 1 + 2a committed locally; push decision deferred to the operator
+(touches `src/` + `backend/` + `frontend/` — backend re-deploy + a
+Vercel deploy; the new theme is opt-in and the two existing themes are
+proven byte-identical).

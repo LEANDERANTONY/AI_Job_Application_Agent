@@ -6,6 +6,7 @@ from typing import Literal
 from src.cover_letter_builder import build_cover_letter_artifact
 from src.errors import InputValidationError
 from src.exporters import (
+    SUPPORTED_THEMES,
     build_cover_letter_preview_html,
     build_resume_preview_html,
     export_docx_bytes,
@@ -29,7 +30,9 @@ def _encode_bytes(payload: bytes):
     return base64.b64encode(payload).decode("ascii")
 
 
-_SUPPORTED_THEMES = {"classic_ats", "professional_neutral"}
+# Derived from the exporter's ThemeSpec registry (single source of
+# truth — ADR-015 follow-up). A new theme needs ZERO change here.
+_SUPPORTED_THEMES = SUPPORTED_THEMES
 
 
 def _resolve_theme(theme_name: str | None):

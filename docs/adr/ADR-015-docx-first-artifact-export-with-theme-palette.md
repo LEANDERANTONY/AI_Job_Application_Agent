@@ -66,4 +66,4 @@ Rejected. Two formats × two artifacts × two themes = four renderers. A shared 
 
 - Supersedes [ADR-006](ADR-006-playwright-first-pdf-export.md) and the implicit Markdown export contract.
 - Track DOCX rendering issues in the public bug tracker so we can prioritize Word vs Google Docs vs LibreOffice fidelity work.
-- If a third theme lands, extract the palette resolver into a typed `ThemeSpec` so themes don't drift across renderers.
+- If a third theme lands, extract the palette resolver into a typed `ThemeSpec` so themes don't drift across renderers. → **Done in [ADR-029](ADR-029-themespec-single-source-and-color-theme-expansion.md)** (2026-05-19): one `ThemeSpec` registry derives all three palettes + the backend gate set; existing two themes proven byte-identical.

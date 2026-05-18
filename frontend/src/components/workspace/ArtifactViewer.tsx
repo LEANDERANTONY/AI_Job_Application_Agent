@@ -30,10 +30,14 @@ export type ArtifactViewerArtifact = {
 };
 
 // professional_neutral is the product-wide default + the Free-tier
-// theme — listed first. classic_ats is the Pro/Business alternate.
+// theme — listed first. classic_ats and modern_blue are the
+// Pro/Business alternates (any non-professional_neutral theme is
+// gated by export_entitlement_block_reason — entitlement by
+// exclusion, no per-theme list to maintain server-side).
 const THEME_OPTIONS: { value: ArtifactTheme; label: string }[] = [
   { value: "professional_neutral", label: "Professional" },
   { value: "classic_ats", label: "Classic ATS" },
+  { value: "modern_blue", label: "Modern Blue" },
 ];
 
 const THEME_HINT: Record<ArtifactTheme, string> = {
@@ -41,6 +45,8 @@ const THEME_HINT: Record<ArtifactTheme, string> = {
     "Warm cream paper, brown accents — distinctive, design-forward. Good for startups, design-eng, modern tech.",
   professional_neutral:
     "Pure black on white, no color. Conservative; safer for Big Tech recruiting at scale, banks, defense, or B&W printing.",
+  modern_blue:
+    "All-sans, deep blue accents on a faint cool paper. Contemporary but single-column and ATS-safe — tech, product, data, ops.",
 };
 
 const TAB_LABELS: Record<ArtifactTab, string> = {

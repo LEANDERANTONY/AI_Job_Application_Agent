@@ -657,7 +657,10 @@ export type WorkspaceArtifactExportFormat = "pdf" | "docx";
  *  treatment for the resume vs the cover letter (e.g. classic_ats for
  *  the resume on a startup application but professional_neutral for the
  *  cover letter on a bank application). */
-export type ArtifactTheme = "classic_ats" | "professional_neutral";
+export type ArtifactTheme =
+  | "classic_ats"
+  | "professional_neutral"
+  | "modern_blue";
 
 export type WorkspaceArtifactExportRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;
