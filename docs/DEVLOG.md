@@ -1444,7 +1444,35 @@ index + current-state note updated. `creative_warm`, `architect_mono`,
 and the gated non-ATS `presentation_twocol` (a new `layout` branch,
 reserved in `ThemeSpec` now) follow the same loop in later phases.
 
-Phase 1 + 2a committed locally; push decision deferred to the operator
-(touches `src/` + `backend/` + `frontend/` — backend re-deploy + a
-Vercel deploy; the new theme is opt-in and the two existing themes are
-proven byte-identical).
+Phase 1 + 2a committed locally (`365321d`); push decision deferred to
+the operator (touches `src/` + `backend/` + `frontend/` — backend
+re-deploy + a Vercel deploy; the new theme is opt-in and the two
+existing themes are proven byte-identical).
+
+### Phase 2b — `creative_warm` + a `header_rule_color` two-tone field
+
+Second new theme: modern-editorial — serif NAME (Georgia, h1 only) for
+gravitas, clean sans everywhere else (scannable + ATS-safe), emerald
+`#00a388` accent, faint near-neutral warm paper. Single-column → fully
+ATS-safe; auto Pro/Business via the same by-exclusion gate.
+
+Operator-requested refinement that generalised cleanly: the header
+divider (résumé name underline + cover-letter greeting break) was
+hardwired to `var(--accent)`. Added a `ThemeSpec.header_rule_color`
+field **defaulting to the literal token `var(--accent)`** so every
+pre-existing theme renders the rule byte-for-byte as before (re-proven:
+`classic_ats` / `professional_neutral` / `modern_blue` dividers still
+`solid var(--accent)`; 42 exporter/entitlement tests + fidelity runner
+green). `creative_warm` overrides it to a deeper `#0b7c5e` so the
+structural divider reads as a deliberate anchor while section headers
+keep the brighter `#00a388` — a two-tone the field now makes any
+future theme able to opt into without touching the shared template.
+
+Wiring identical-minimal: `ThemeSpec` entry + `ArtifactTheme` union +
+`ArtifactViewer` picker/hint + one `workspace_models` Literal +
+fidelity-runner loop coverage. Still ADR-029 (same series; no new ADR —
+ADR-029 already scoped `creative_warm` as a same-loop follow-on).
+
+Phase 1 + 2a + 2b held local as one stack; push decision still the
+operator's. `architect_mono` and the gated `presentation_twocol`
+remain.

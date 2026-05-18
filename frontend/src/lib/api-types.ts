@@ -660,7 +660,8 @@ export type WorkspaceArtifactExportFormat = "pdf" | "docx";
 export type ArtifactTheme =
   | "classic_ats"
   | "professional_neutral"
-  | "modern_blue";
+  | "modern_blue"
+  | "creative_warm";
 
 export type WorkspaceArtifactExportRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;

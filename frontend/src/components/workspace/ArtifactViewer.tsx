@@ -38,6 +38,7 @@ const THEME_OPTIONS: { value: ArtifactTheme; label: string }[] = [
   { value: "professional_neutral", label: "Professional" },
   { value: "classic_ats", label: "Classic ATS" },
   { value: "modern_blue", label: "Modern Blue" },
+  { value: "creative_warm", label: "Creative Warm" },
 ];
 
 const THEME_HINT: Record<ArtifactTheme, string> = {
@@ -47,6 +48,8 @@ const THEME_HINT: Record<ArtifactTheme, string> = {
     "Pure black on white, no color. Conservative; safer for Big Tech recruiting at scale, banks, defense, or B&W printing.",
   modern_blue:
     "All-sans, deep blue accents on a faint cool paper. Contemporary but single-column and ATS-safe — tech, product, data, ops.",
+  creative_warm:
+    "Serif name + clean sans body, emerald accents on a warm paper. Modern-editorial; single-column and ATS-safe — marketing, comms, design-adjacent.",
 };
 
 const TAB_LABELS: Record<ArtifactTab, string> = {

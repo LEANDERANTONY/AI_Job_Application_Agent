@@ -106,6 +106,14 @@ class ThemeSpec:
     docx_prose_font: str
     # Header underline rule width, shared by resume + cover letter.
     header_border_px: int
+    # Color of the header divider rule (resume name underline + cover
+    # letter greeting break). Defaults to the literal CSS token
+    # `var(--accent)` so EVERY pre-existing theme renders the rule
+    # exactly as before (byte-identical — the divider was always the
+    # accent). A theme can override it to a separate hex (e.g.
+    # creative_warm deepens just this structural line while keeping
+    # the brighter accent on section headers).
+    header_rule_color: str = "var(--accent)"
     # Reserved (Phase 3). "single_column" | "two_column". Only the
     # resume renderer branches on this.
     layout: str = "single_column"
@@ -130,6 +138,7 @@ class ThemeSpec:
             "prose_font_family": self.prose_font_family,
             "prose_line_height": self.prose_line_height,
             "header_border_width": f"{self.header_border_px}px",
+            "header_rule_color": self.header_rule_color,
             "code_bg": self.accent_soft,
         }
 
@@ -143,6 +152,7 @@ class ThemeSpec:
             "surface": self.surface,
             "strong_color": self.cover_strong_color,
             "header_border_width": f"{self.header_border_px}px",
+            "header_rule_color": self.header_rule_color,
             # The letter is all prose, so it follows the theme's PROSE
             # font (not body). For classic_ats / professional_neutral
             # prose IS Georgia → byte-identical to the old hardcoded
@@ -240,6 +250,40 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         prose_line_height="1.55",
         docx_body_font="Arial",
         docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=2,
+        layout="single_column",
+    ),
+    # NEW (Phase 2b) — modern editorial. Serif NAME (Georgia, h1 only)
+    # for gravitas; everything else clean sans (scannable + ATS-safe);
+    # emerald accent for creative energy without leaving professional.
+    # Distinct from classic_ats (brown + serif prose, heavy cream) and
+    # from modern_blue (cool blue, all-sans). Faint near-neutral warm
+    # paper. Emerald #00a388 is the proven Awesome-CV accent; it only
+    # colors headings/rules/labels (body stays ink) so contrast is
+    # fine. Single-column → ATS-safe. Audience: marketing / comms /
+    # design-adjacent that still needs to pass ATS.
+    "creative_warm": ThemeSpec(
+        key="creative_warm",
+        label="Creative Warm",
+        ink="#232524",
+        muted="#5f6b63",
+        accent="#00a388",
+        line="#d8e2dc",
+        paper="#fcfcf6",
+        surface="#fdfdf8",
+        accent_soft="rgba(0, 163, 136, 0.08)",
+        cover_strong_color="#232524",
+        # Deeper, greener than the #00a388 section accent so the
+        # name/body divider reads as a deliberate anchor line rather
+        # than the same bright emerald (operator request).
+        header_rule_color="#0b7c5e",
+        h1_font_family='Georgia, "Times New Roman", serif',
+        body_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.55",
+        docx_body_font="Arial",
+        docx_heading_font="Georgia",
         docx_prose_font="Arial",
         header_border_px=2,
         layout="single_column",
@@ -431,7 +475,7 @@ def _build_cover_letter_html(text, title="Cover Letter", theme="classic_ats"):
 
         .cover-letter-greeting-break {{
             width: auto;
-            border-top: {header_border_width} solid var(--accent);
+            border-top: {header_border_width} solid {header_rule_color};
             margin: 8px -16mm 14px;
         }}
 
@@ -901,7 +945,7 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         code {{ background: {code_bg}; border: 1px solid var(--line); border-radius: 4px; padding: 0.08rem 0.28rem; }}
         hr {{ border: 0; border-top: 1px solid var(--line); margin: 14px 0; }}
         blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: var(--muted); }}
-        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: {header_border_width} solid var(--accent); }}
+        .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: {header_border_width} solid {header_rule_color}; }}
         .resume-classic-role {{ font-size: 10.2pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; }}
         .resume-contact-inline {{ color: var(--muted); font-size: 9.6pt; line-height: 1.55; max-width: 88%; }}
         .resume-skill-inline {{ color: var(--ink); font-size: 9.8pt; line-height: 1.7; }}
