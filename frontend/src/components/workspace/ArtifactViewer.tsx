@@ -39,6 +39,8 @@ const THEME_OPTIONS: { value: ArtifactTheme; label: string }[] = [
   { value: "classic_ats", label: "Classic ATS" },
   { value: "modern_blue", label: "Modern Blue" },
   { value: "creative_warm", label: "Creative Warm" },
+  { value: "architect_mono", label: "Architect Mono" },
+  { value: "presentation_twocol", label: "Presentation (2-col)" },
 ];
 
 const THEME_HINT: Record<ArtifactTheme, string> = {
@@ -50,6 +52,10 @@ const THEME_HINT: Record<ArtifactTheme, string> = {
     "All-sans, deep blue accents on a faint cool paper. Contemporary but single-column and ATS-safe — tech, product, data, ops.",
   creative_warm:
     "Serif name + clean sans body, emerald accents on a warm paper. Modern-editorial; single-column and ATS-safe — marketing, comms, design-adjacent.",
+  architect_mono:
+    "Near-monochrome, geometric sans, a single hairline rule, generous whitespace. Confident minimal; single-column and ATS-safe — architecture, design, senior engineering.",
+  presentation_twocol:
+    "Two-column portfolio layout (tinted sidebar). ⚠ NOT for ATS — most applicant tracking systems mis-parse columns. Use a single-column theme when submitting through a job portal; use this for human review, networking, or your own site. PDF only — DOCX exports single-column.",
 };
 
 const TAB_LABELS: Record<ArtifactTab, string> = {

@@ -661,7 +661,9 @@ export type ArtifactTheme =
   | "classic_ats"
   | "professional_neutral"
   | "modern_blue"
-  | "creative_warm";
+  | "creative_warm"
+  | "architect_mono"
+  | "presentation_twocol";
 
 export type WorkspaceArtifactExportRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;

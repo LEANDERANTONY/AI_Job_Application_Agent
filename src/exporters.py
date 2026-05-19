@@ -288,6 +288,71 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         header_border_px=2,
         layout="single_column",
     ),
+    # NEW (Phase 2c) — architectural minimal. Near-monochrome: deep
+    # cool near-black ink AND accent (no colour — the "design" is
+    # typographic), one HAIRLINE rule (header_border_px=1), geometric
+    # sans, airier prose line-height for generous whitespace. Crisp
+    # pure white on purpose (deliberate contrast to modern_blue's
+    # tint — minimalism reads as stark, not "designed paper").
+    # Single-column → ATS-safe. Audience: architecture / design /
+    # senior-eng "confident minimal". Distinct from professional_neutral
+    # (which is the same monochrome idea but SERIF Georgia; this is
+    # SANS + hairline + airy).
+    "architect_mono": ThemeSpec(
+        key="architect_mono",
+        label="Architect Mono",
+        ink="#1a1f29",
+        muted="#6b7280",
+        accent="#131a28",
+        line="#e4e7ec",
+        paper="#ffffff",
+        surface="#ffffff",
+        accent_soft="rgba(19, 26, 40, 0.05)",
+        cover_strong_color="#131a28",
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.6",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=1,
+        layout="single_column",
+    ),
+    # NEW (Phase 3) — the gated, NON-ATS, two-column "presentation"
+    # theme. Deedy-style asymmetric: wide main (summary / experience /
+    # projects / publications) + a tinted sidebar (skills / education /
+    # certifications). One page, portfolio/networking copy — NOT for
+    # ATS submissions (multi-column is the #1 documented parse-failure
+    # cause; the picker hint warns explicitly). Pro/Business by the
+    # existing by-exclusion gate + opt-in + warning IS the v1 safety
+    # model (a dedicated entitlement is deferred). DOM is authored
+    # header→main→sidebar so the PDF text layer still extracts as a
+    # coherent linear read (the realistic tolerance ceiling — report.md
+    # Phase-0 R2). PDF-first: DOCX has no layout field so a
+    # presentation_twocol DOCX renders single-column in this palette
+    # (documented; DOCX two-column deferred per ADR-015/029).
+    "presentation_twocol": ThemeSpec(
+        key="presentation_twocol",
+        label="Presentation (2-col)",
+        ink="#1f2733",
+        muted="#6a7480",
+        accent="#2f4b7c",
+        line="#dde3ea",
+        paper="#ffffff",
+        surface="#ffffff",
+        accent_soft="rgba(47, 75, 124, 0.06)",
+        cover_strong_color="#1f2733",
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.5",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=2,
+        layout="two_column",
+    ),
 }
 
 
@@ -875,6 +940,197 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
     return header_html + "\n".join(ordered_blocks)
 
 
+# Two-column ("presentation") section split. Wide MAIN = the substance
+# a reader works through; tinted SIDEBAR = scannable reference.
+_TWOCOL_MAIN_SECTIONS = ("summary", "experience", "projects", "publications")
+_TWOCOL_SIDEBAR_SECTIONS = ("skills", "education", "certifications")
+
+
+def _build_structured_resume_body_twocol(artifact: TailoredResumeArtifact) -> str:
+    """Deedy-style asymmetric two-column body. The section HTML is the
+    EXACT classic builders (content + fidelity identical) — only the
+    shell differs. DOM order is header → main → sidebar so the PDF
+    text layer extracts as a coherent linear read despite the visual
+    columns (the realistic tolerance ceiling for a deliberately
+    non-ATS presentation theme — ADR-029 / report.md Phase-0 R2)."""
+    name = html.escape(artifact.header.full_name or artifact.title or "Candidate")
+    contact_values = []
+    if artifact.header.location:
+        contact_values.append(artifact.header.location)
+    contact_values.extend(
+        item for item in artifact.header.contact_lines if str(item or "").strip()
+    )
+    contact_html = _build_resume_contact_inline_html(contact_values)
+
+    def _sec(title, inner):
+        return (
+            '<section class="resume-tc-section"><h2>{0}</h2>{1}</section>'.format(
+                title, inner
+            )
+        )
+
+    experience_entries = list(artifact.experience_entries or [])
+    project_entries = list(artifact.project_entries or [])
+    publication_entries = [
+        i for i in (artifact.publication_entries or []) if str(i or "").strip()
+    ]
+    certifications = [i for i in artifact.certifications if str(i or "").strip()]
+
+    section_blocks = {
+        "summary": _sec(
+            "Summary",
+            '<p class="resume-summary">{0}</p>'.format(
+                html.escape(
+                    artifact.professional_summary
+                    or "No professional summary generated."
+                )
+            ),
+        ),
+        "skills": _sec(
+            "Core Skills",
+            _build_resume_skills_inline_html(
+                artifact.highlighted_skills,
+                skill_categories=getattr(artifact, "skill_categories", None) or None,
+            ),
+        ),
+        "experience": _sec(
+            "Experience", _build_resume_experience_html(experience_entries)
+        )
+        if experience_entries
+        else "",
+        "projects": _sec("Projects", _build_resume_projects_html(project_entries))
+        if project_entries
+        else "",
+        "education": _sec(
+            "Education", _build_resume_education_html(artifact.education_entries)
+        ),
+        "publications": _sec(
+            "Publications",
+            _build_resume_section_list(
+                publication_entries, "", class_name="resume-plain-list"
+            ),
+        )
+        if publication_entries
+        else "",
+        "certifications": _sec(
+            "Certifications",
+            _build_resume_section_list(
+                certifications, "", class_name="resume-plain-list"
+            ),
+        )
+        if certifications
+        else "",
+    }
+
+    order = (
+        list(artifact.section_order)
+        if artifact.section_order
+        else list(_DEFAULT_RESUME_SECTION_ORDER)
+    )
+    seen: set[str] = set()
+    full_order: list[str] = []
+    for section_name in list(order) + list(_DEFAULT_RESUME_SECTION_ORDER):
+        if section_name in seen:
+            continue
+        seen.add(section_name)
+        full_order.append(section_name)
+
+    main_html = "\n".join(
+        section_blocks[s]
+        for s in full_order
+        if s in _TWOCOL_MAIN_SECTIONS and section_blocks.get(s)
+    )
+    side_html = "\n".join(
+        section_blocks[s]
+        for s in full_order
+        if s in _TWOCOL_SIDEBAR_SECTIONS and section_blocks.get(s)
+    )
+
+    header_html = (
+        '<header class="resume-tc-header"><h1>{name}</h1>{contact}</header>'.format(
+            name=name, contact=contact_html
+        )
+    )
+    # DOM order: header → main → sidebar (text-extraction coherence).
+    return (
+        '{header}'
+        '<div class="resume-tc-grid">'
+        '<div class="resume-tc-main">{main}</div>'
+        '<aside class="resume-tc-side">{side}</aside>'
+        '</div>'
+    ).format(header=header_html, main=main_html, side=side_html)
+
+
+def _build_resume_html_twocol(
+    artifact: TailoredResumeArtifact, title: str, palette: dict
+) -> str:
+    """Self-contained two-column template. Shares the SAME ThemeSpec
+    palette vars (single-sourced) — only the layout shell + the
+    column-safe h2 (no negative-margin full-bleed trick) differ from
+    the single-column template."""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>{title}</title>
+    <style>
+        @page {{ size: A4; margin: 0; }}
+        * {{ box-sizing: border-box; }}
+        html, body {{ margin: 0; padding: 0; }}
+        :root {{
+            --ink: {ink};
+            --muted: {muted};
+            --accent: {accent};
+            --accent-soft: {accent_soft};
+            --line: {line};
+            --paper: {paper};
+            --surface: {surface};
+        }}
+        body {{ font-family: {body_font_family}; color: var(--ink); background: var(--paper); font-size: 10.25pt; line-height: 1.48; }}
+        .resume-tc-shell {{ min-height: 297mm; background: var(--surface); padding: 14mm 14mm 12mm; }}
+        .resume-tc-header {{ border-bottom: {header_border_width} solid {header_rule_color}; padding-bottom: 8px; margin-bottom: 13px; }}
+        .resume-tc-header h1 {{ font-family: {h1_font_family}; font-size: 21pt; font-weight: 700; margin: 0 0 3px; letter-spacing: -0.01em; color: var(--ink); }}
+        .resume-contact-inline {{ color: var(--muted); font-size: 9.4pt; line-height: 1.5; margin: 0; }}
+        .resume-tc-grid {{ display: flex; gap: 16px; align-items: flex-start; }}
+        .resume-tc-main {{ flex: 1.95; min-width: 0; }}
+        .resume-tc-side {{ flex: 1; min-width: 0; background: var(--accent-soft); border-left: 1px solid var(--line); border-radius: 4px; padding: 4px 12px 10px; }}
+        .resume-tc-section {{ margin: 0 0 13px; }}
+        .resume-tc-main .resume-tc-section:first-child, .resume-tc-side .resume-tc-section:first-child {{ margin-top: 2px; }}
+        h2 {{ font-size: 9.5pt; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.15em; color: var(--accent); padding-bottom: 3px; border-bottom: 1px solid var(--line); }}
+        h3 {{ font-size: 10pt; margin: 8px 0 3px; color: var(--accent); }}
+        p {{ margin: 0 0 5px; }}
+        ul {{ margin: 0 0 7px 1rem; padding: 0; }}
+        li {{ margin: 0 0 3px; }}
+        strong {{ color: var(--ink); }}
+        em {{ color: var(--muted); }}
+        code {{ background: {code_bg}; border: 1px solid var(--line); border-radius: 4px; padding: 0.08rem 0.28rem; }}
+        .resume-summary, .resume-bullet-list li {{ font-family: {prose_font_family}; line-height: {prose_line_height}; }}
+        .resume-role-row {{ display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }}
+        .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 3px; }}
+        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.2pt; }}
+        .resume-bullet-list, .resume-contact-list, .resume-plain-list {{ margin: 0; padding-left: 1rem; }}
+        .resume-skill-inline, .resume-skill-category {{ color: var(--ink); font-size: 9.4pt; line-height: 1.65; margin: 0 0 2px; }}
+        .resume-skill-category strong {{ color: var(--accent); font-weight: 700; }}
+        .resume-experience-card + .resume-experience-card,
+        .resume-project-card + .resume-project-card {{ margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }}
+        .resume-education-card + .resume-education-card {{ margin-top: 8px; }}
+        .resume-experience-card, .resume-education-card, .resume-project-card {{ page-break-inside: avoid; break-inside: avoid; }}
+        h2, h3 {{ page-break-after: avoid; break-after: avoid; }}
+        .resume-empty {{ color: var(--muted); font-style: italic; }}
+    </style>
+</head>
+<body>
+    <main class="resume-tc-shell">{body}</main>
+</body>
+</html>
+""".format(
+        title=html.escape(title or "Tailored Resume"),
+        body=_build_structured_resume_body_twocol(artifact),
+        **palette,
+    )
+
+
 # Derived from `_THEME_SPECS` (ADR-015 follow-up). Do NOT hand-edit —
 # add a ThemeSpec to the registry instead.
 _RESUME_THEME_PALETTES = {
@@ -889,6 +1145,14 @@ def _resolve_resume_palette(theme: str | None) -> dict:
 
 
 def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artifact: TailoredResumeArtifact | None = None):
+    # Layout branch FIRST so the single-column path below is provably
+    # untouched (byte-identical for every single_column theme — the
+    # branch only fires for a two_column ThemeSpec WITH a structured
+    # artifact; markdown-only callers always take the classic path).
+    _spec = resolve_theme(theme)
+    if artifact is not None and _spec.layout == "two_column":
+        return _build_resume_html_twocol(artifact, title, _spec.resume_palette())
+
     body_html = _MARKDOWN.render(text or "")
     if artifact is not None:
         body_html = _build_structured_resume_body_classic(artifact)

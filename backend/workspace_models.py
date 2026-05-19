@@ -249,7 +249,12 @@ class ResumeBuilderExportRequestModel(BaseModel):
     session_id: str = Field(min_length=1, max_length=120)
     export_format: Literal["pdf", "docx"]
     theme: Literal[
-        "classic_ats", "professional_neutral", "modern_blue", "creative_warm"
+        "classic_ats",
+        "professional_neutral",
+        "modern_blue",
+        "creative_warm",
+        "architect_mono",
+        "presentation_twocol",
     ] = "professional_neutral"
 
     @field_validator("session_id", mode="before")

@@ -128,3 +128,38 @@ build-sample-approve-wire loop.
   `tests/backend/test_export_entitlement.py`,
   `tests/quality/renderer_fidelity_runner.py` (now exercises
   `modern_blue`).
+
+## Update — 2026-05-19 (Phase 2b/2c/3 shipped; not a Decision change)
+
+The series this ADR scoped has completed; recording the deltas so the
+original Decision/Consequences stay intact as written:
+
+- **`creative_warm`** (Phase 2b) + a `ThemeSpec.header_rule_color`
+  field **defaulting to the literal `var(--accent)`** → every prior
+  theme's divider is byte-identical; only an opting theme deepens it.
+- **`architect_mono`** (Phase 2c) — single-column near-monochrome;
+  no renderer change (palette/font/`header_border_px=1`/airier
+  `prose_line_height`).
+- **`presentation_twocol`** (Phase 3) — the `layout` discriminator is
+  now LIVE (the Consequences "Neutral" note that it was deferred no
+  longer holds). `_build_resume_html` branches on `spec.layout` as an
+  **early return before the single-column path**, so all five
+  single-column themes' code path is provably untouched
+  (byte-identical; the 6-theme fidelity runner confirms). Decisions
+  taken for it, within this ADR's frame:
+  - DOM authored header→main→sidebar so the PDF text layer extracts
+    as a coherent linear read (Phase-0 R2 tolerance ceiling).
+  - **v1 non-ATS safety = warning + Pro/Business by-exclusion +
+    opt-in + non-default**, NOT a bespoke entitlement. A dedicated
+    `presentation`/`custom` entitlement is **deferred** (the
+    by-exclusion gate already makes it Pro-only; a louder gate is a
+    later refinement, recorded here so its absence is deliberate).
+  - **PDF-first:** the DOCX renderer has no `layout` input, so a
+    `presentation_twocol` DOCX renders single-column in this palette
+    (acceptable, documented in the picker hint; DOCX two-column stays
+    deferred per ADR-015/this ADR).
+  - Cover letters never branch on `layout` (prose → always
+    single-column), as designed.
+- Backend supported-theme set still single-sourced via
+  `SUPPORTED_THEMES`; the fidelity runner now exercises all six
+  themes incl. the two-column.

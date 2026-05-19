@@ -1476,3 +1476,46 @@ ADR-029 already scoped `creative_warm` as a same-loop follow-on).
 Phase 1 + 2a + 2b held local as one stack; push decision still the
 operator's. `architect_mono` and the gated `presentation_twocol`
 remain.
+
+### Phase 2c — `architect_mono` + Phase 3 — `presentation_twocol`
+
+`architect_mono`: single-column near-monochrome (deep cool ink AND
+accent — the "design" is typographic, not colour), one HAIRLINE rule
+(`header_border_px=1`), geometric sans, airier `prose_line_height`
+1.6, crisp pure white on purpose (deliberate stark contrast to
+`modern_blue`'s tint). No renderer change — pure ThemeSpec entry.
+ATS-safe; Pro by-exclusion.
+
+`presentation_twocol` — the `ThemeSpec.layout` discriminator is now
+LIVE. `_build_resume_html` branches on `spec.layout` as an **early
+return BEFORE the single-column path**, so all five single-column
+themes' code path is character-for-character untouched (byte-identical
+— the now-6-theme fidelity runner confirms every content string still
+round-trips, incl. the two-column). New `_build_structured_resume_body_twocol`
+reuses the EXACT classic section builders (content identical; only the
+shell differs) and authors the DOM header→main→sidebar so the PDF
+text layer extracts as a coherent linear read despite the visual
+columns (Phase-0 R2 — the realistic non-ATS tolerance ceiling). Deedy-
+style asymmetric: wide main (summary/experience/projects/publications)
++ tinted sidebar (skills/education/certifications).
+
+Deliberate v1 scoping (recorded in ADR-029 Update): non-ATS safety =
+in-picker ⚠ warning + Pro/Business by-exclusion + opt-in + non-default
+(a bespoke entitlement is **deferred**, not forgotten); **PDF-first** —
+the DOCX renderer has no `layout` input so a `presentation_twocol`
+DOCX renders single-column in-palette (documented in the hint; DOCX
+two-column stays deferred per ADR-015/029); cover letters never branch
+on layout (prose → always single-column), as designed.
+
+Wiring (both): `ThemeSpec` entries + `ArtifactTheme` union +
+`ArtifactViewer` picker/hint (the two-col hint carries the explicit
+non-ATS warning) + `workspace_models` Literal + fidelity-runner loop
+(now all 6 themes). Verification: fidelity runner OVERALL PASS across
+6 themes incl. two-column; 60 backend tests (exporters /
+export-entitlement / resume-builder / workflow-payloads /
+error-message allowlist) green; frontend tsc + eslint clean. Still
+ADR-029 (it scoped the series + reserved `layout`; an Update note
+records the Phase 2b/2c/3 deltas without touching the Decision).
+
+The full theme series (Phase 1→3) is now built; entire stack held
+local — push decision the operator's.
