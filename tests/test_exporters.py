@@ -4,7 +4,9 @@ from unittest.mock import patch
 from src.errors import ExportError
 
 from src.exporters import (
+    _build_resume_contact_inline_html,
     _build_resume_html,
+    _looks_like_contact_link,
     build_cover_letter_preview_html,
     export_docx_bytes,
     export_pdf_bytes,
@@ -128,7 +130,16 @@ def test_build_resume_html_renders_classic_ats_as_single_column_blue_layout():
     assert "resume-classic-section" in html_output
     assert "resume-classic-sidebar" not in html_output
     assert "resume-modern-contact" not in html_output
-    assert '<p class="resume-classic-role">' not in html_output
+    # Mode-aware headline: this artifact sets target_role="AI Engineer",
+    # so the (formerly dormant) role line now renders — between the
+    # name and the contact block. (When target_role is "" it is omitted
+    # entirely; see test_resume_headline_*.) NOTE: assert on the
+    # ELEMENT tag, not the bare class token — `.resume-classic-role`
+    # also appears in the <style> block.
+    assert '<p class="resume-classic-role">AI Engineer</p>' in html_output
+    assert html_output.index("<h1>") < html_output.index(
+        '<p class="resume-classic-role">'
+    ) < html_output.index('<p class="resume-contact-inline')
     assert "Chennai, India" in html_output
     assert "leander@example.com" in html_output
 
@@ -908,4 +919,125 @@ def test_export_docx_bytes_cover_letter_respects_theme():
     assert "0A0A0A" in neutral_colors  # neutral ink
     # Warm-brown classic ink must not leak into the neutral cover letter.
     assert "221912" not in neutral_colors
+
+
+def _headline_artifact(target_role, theme="classic_ats"):
+    return TailoredResumeArtifact(
+        title="Resume",
+        filename_stem="r",
+        summary="s",
+        markdown="# Resume",
+        plain_text="Resume",
+        theme=theme,
+        header=ResumeHeader(
+            full_name="Leander Antony",
+            location="Chennai, India",
+            contact_lines=["leander@example.com"],
+        ),
+        target_role=target_role,
+        professional_summary="Builds grounded AI products.",
+        highlighted_skills=["Python"],
+        education_entries=[],
+        certifications=[],
+    )
+
+
+def test_resume_headline_renders_target_role_between_name_and_contact():
+    # JD-tailored path: target_role set → role line shows, ordered
+    # name → role → contact, in BOTH the classic and two-column header.
+    for theme, role_cls in (
+        ("classic_ats", "resume-classic-role"),
+        ("presentation_twocol", "resume-tc-role"),
+    ):
+        art = _headline_artifact("AI Engineer - FDE", theme=theme)
+        out = _build_resume_html(art.markdown, theme=theme, artifact=art)
+        role_el = '<p class="{0}">'.format(role_cls)
+        # Assert on the ELEMENT tag, not the bare class — the class
+        # also appears in the <style> block.
+        assert role_el + "AI Engineer - FDE</p>" in out
+        assert out.index("<h1>") < out.index(role_el) < out.index(
+            '<p class="resume-contact-inline'
+        )
+
+
+def test_resume_headline_omitted_when_no_target_role():
+    # No-JD / resume-builder path: target_role "" → NO role line at all
+    # (name-only header is standard; never fabricated), in both layouts.
+    for theme, role_cls in (
+        ("classic_ats", "resume-classic-role"),
+        ("presentation_twocol", "resume-tc-role"),
+    ):
+        art = _headline_artifact("", theme=theme)
+        out = _build_resume_html(art.markdown, theme=theme, artifact=art)
+        # The ELEMENT must be absent (the .{cls} {{}} CSS rule in the
+        # <style> block legitimately remains — assert on the tag).
+        assert '<p class="{0}">'.format(role_cls) not in out
+        assert "Leander Antony" in out and "leander@example.com" in out
+
+
+def _contact_rows(html_str):
+    import re
+
+    return [
+        (cls, re.findall(r'<span class="rc-item">([^<]+)</span>', body))
+        for cls, body in re.findall(
+            r'<p class="([^"]+)">(.*?)</p>', html_str, flags=re.DOTALL
+        )
+    ]
+
+
+def test_looks_like_contact_link_classifies_details_vs_links():
+    # Emails and plain details are NOT links even though they contain a
+    # dot/domain; a URL that merely contains '@' (medium.com/@handle)
+    # still IS a link (the bug this guards).
+    assert _looks_like_contact_link("antony.leander@gmail.com") is False
+    assert _looks_like_contact_link("Chennai, India") is False
+    assert _looks_like_contact_link("+91 8610317213") is False
+    assert _looks_like_contact_link("github.com/LEANDERANTONY") is True
+    assert _looks_like_contact_link("linkedin.com/in/x") is True
+    assert _looks_like_contact_link("leander-portfolio.framer.website") is True
+    assert _looks_like_contact_link("https://x.io/a") is True
+    assert _looks_like_contact_link("medium.com/@leander") is True
+
+
+def test_contact_block_packs_into_at_most_two_lines_without_splitting_urls():
+    details = ["Chennai, India", "+91 8610317213", "antony.leander@gmail.com"]
+
+    # 0-1 links → ONE line (no links row).
+    one = _contact_rows(_build_resume_contact_inline_html(details + ["github.com/x"]))
+    assert len(one) == 1
+    assert "github.com/x" in one[0][1]
+
+    # 2 links → details on line 1, BOTH links together on line 2
+    # (no lone short link stranded on its own line).
+    two = _contact_rows(
+        _build_resume_contact_inline_html(
+            details + ["github.com/x", "leander.framer.website"]
+        )
+    )
+    assert len(two) == 2
+    assert two[0][1] == details
+    assert "resume-contact-links" in two[1][0]
+    assert two[1][1] == ["github.com/x", "leander.framer.website"]
+
+    # 3 links → details + first link on line 1, the other two on line 2.
+    three = _contact_rows(
+        _build_resume_contact_inline_html(
+            details + ["github.com/x", "linkedin.com/in/x", "p.dev"]
+        )
+    )
+    assert len(three) == 2
+    assert three[0][1] == details + ["github.com/x"]
+    assert three[1][1] == ["linkedin.com/in/x", "p.dev"]
+
+    # URL-never-splits guarantee: every value is wrapped in an
+    # individually nowrap rc-item span (the CSS keeps it whole).
+    for _cls, items in three:
+        for value in items:
+            assert (
+                '<span class="rc-item">{0}</span>'.format(value)
+                in _build_resume_contact_inline_html(
+                    details + ["github.com/x", "linkedin.com/in/x", "p.dev"]
+                )
+            )
 

@@ -7058,37 +7058,51 @@ code {
   color: var(--fg-3);
   margin: 0 0 6px;
 }
-.b-artifact-style-toggle {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
+/* Theme picker = a native <select> (scales to any theme count,
+   maximally accessible, OS keyboard/mobile behaviour for free). The
+   segmented-toggle that lived here read fine at 2 themes but cramped /
+   clipped at 6 (flex:1 across one 100% row, no wrap). Wrapper draws a
+   caret since `appearance:none` removes the native one. */
+.b-artifact-style-select-wrap {
+  position: relative;
   width: 100%;
 }
-.b-artifact-style-option {
-  flex: 1;
-  background: transparent;
-  border: 0;
-  padding: 6px 10px;
+.b-artifact-style-select-wrap::after {
+  content: "▾";
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--fg-3);
+  font-size: 11px;
+  pointer-events: none;
+}
+.b-artifact-style-select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 7px 26px 7px 10px;
+  background: var(--bg-input);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  /* No text-transform: the labels ("Professional", "Classic ATS")
-     are already correctly cased in THEME_OPTIONS. Uppercasing them
-     made the picker read as shouty all-caps mono. */
-  color: var(--fg-3);
-  border-radius: 6px;
   cursor: pointer;
-  transition: all 120ms ease;
+  transition: border-color 120ms ease;
 }
-.b-artifact-style-option:hover { color: var(--fg-2); }
-.b-artifact-style-option[data-active="true"] {
-  background: rgba(48, 100, 255, 0.10);
+.b-artifact-style-select:hover {
+  border-color: var(--border-strong);
+}
+.b-artifact-style-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.b-artifact-style-select option {
+  background: var(--bg-card);
   color: var(--fg);
-  box-shadow: inset 0 0 0 1px rgba(90, 134, 255, 0.25);
 }
 .b-artifact-style-hint {
   margin: 8px 0 0;

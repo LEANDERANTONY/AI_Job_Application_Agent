@@ -114,6 +114,14 @@ class ThemeSpec:
     # creative_warm deepens just this structural line while keeping
     # the brighter accent on section headers).
     header_rule_color: str = "var(--accent)"
+    # Opt-in header BAND background (ADR-029 v2 / report.md designer
+    # expansion). "" → today's plain rule-only header (the resume
+    # header markup is byte-IDENTICAL for any theme that doesn't set
+    # this — the 3 ATS-simple themes stay unchanged). Non-empty → a
+    # full-bleed coloured masthead behind name/role/contact. fg is the
+    # on-band text colour (set it when the band is dark).
+    header_band_bg: str = ""
+    header_band_fg: str = ""
     # Reserved (Phase 3). "single_column" | "two_column". Only the
     # resume renderer branches on this.
     layout: str = "single_column"
@@ -139,6 +147,10 @@ class ThemeSpec:
             "prose_line_height": self.prose_line_height,
             "header_border_width": f"{self.header_border_px}px",
             "header_rule_color": self.header_rule_color,
+            # Safe CSS defaults so the (class-gated, never-matched for
+            # non-opting themes) band rules are always valid.
+            "header_band_bg": self.header_band_bg or "transparent",
+            "header_band_fg": self.header_band_fg or "inherit",
             "code_bg": self.accent_soft,
         }
 
@@ -274,6 +286,11 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         surface="#fdfdf8",
         accent_soft="rgba(0, 163, 136, 0.08)",
         cover_strong_color="#232524",
+        # Designed header: soft warm "sand" band (deeper than the
+        # #fcfcf6 paper) with dark ink text — elegant/editorial, warm,
+        # not loud. Operator chose this over the emerald-band variant.
+        header_band_bg="#efe7d8",
+        header_band_fg="#232524",
         # Deeper, greener than the #00a388 section accent so the
         # name/body divider reads as a deliberate anchor line rather
         # than the same bright emerald (operator request).
@@ -309,6 +326,11 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         surface="#ffffff",
         accent_soft="rgba(19, 26, 40, 0.05)",
         cover_strong_color="#131a28",
+        # Designed header: a confident solid INK masthead with white
+        # text — an architectural/minimal statement (vs. the plain
+        # rule the ATS-simple themes keep). Operator will tweak.
+        header_band_bg="#131a28",
+        header_band_fg="#ffffff",
         body_font_family="Arial, Helvetica, sans-serif",
         h1_font_family="Arial, Helvetica, sans-serif",
         prose_font_family="Arial, Helvetica, sans-serif",
@@ -743,11 +765,64 @@ def _build_resume_education_html(education_entries):
     return "".join(blocks)
 
 
+def _looks_like_contact_link(value: str) -> bool:
+    """A contact value is a *link* (github/linkedin/portfolio/site) vs a
+    plain detail (location / phone / email). Emails are details, not
+    links, even though they contain a domain."""
+    v = str(value or "").strip()
+    if not v:
+        return False
+    if v.lower().startswith(("http://", "https://", "www.")):
+        return True
+    # A real email is local@domain.tld with NO scheme and NO slash → a
+    # contact DETAIL, not a link. This is deliberately strict so a URL
+    # that merely contains '@' (e.g. medium.com/@handle) is still
+    # treated as a link.
+    if re.match(r"^[^@\s/]+@[^@\s/]+\.[^@\s/]+$", v):
+        return False
+    head = v.split("/", 1)[0]  # domain part before any path
+    return " " not in head and bool(
+        re.match(r"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", head)
+    )
+
+
 def _build_resume_contact_inline_html(contact_lines):
-    values = [html.escape(str(item or "").strip()) for item in contact_lines if str(item or "").strip()]
-    if not values:
+    raw = [str(item or "").strip() for item in contact_lines if str(item or "").strip()]
+    if not raw:
         return ""
-    return '<p class="resume-contact-inline">{items}</p>'.format(items=" | ".join(values))
+    details = [v for v in raw if not _looks_like_contact_link(v)]
+    links = [v for v in raw if _looks_like_contact_link(v)]
+    n = len(links)
+    # Count-aware packing: AT MOST two lines, a URL never splits
+    # mid-string (each item is white-space:nowrap), and neither line is
+    # left lopsided —
+    #   0-1 links : everything on one line with the details
+    #   2 links   : details on line 1; BOTH links share line 2 (no lone
+    #               short link stranded on its own line)
+    #   3+ links  : details + first link on line 1; the rest on line 2
+    #               (e.g. github on line 1; linkedin + portfolio on 2)
+    if n <= 1:
+        line1_links, line2_links = links, []
+    elif n == 2:
+        line1_links, line2_links = [], links
+    else:
+        line1_links, line2_links = links[:1], links[1:]
+    line1 = details + line1_links
+    line2 = line2_links
+    if not line1:  # pathological (no details + the n==2 case): never emit an empty first line
+        line1, line2 = line2, []
+
+    def _row(items, links_row=False):
+        if not items:
+            return ""
+        cells = " | ".join(
+            '<span class="rc-item">{0}</span>'.format(html.escape(i))
+            for i in items
+        )
+        cls = "resume-contact-inline resume-contact-links" if links_row else "resume-contact-inline"
+        return '<p class="{0}">{1}</p>'.format(cls, cells)
+
+    return _row(line1) + _row(line2, links_row=True)
 
 
 def _build_resume_skills_inline_html(skills, skill_categories=None):
@@ -796,7 +871,9 @@ _DEFAULT_RESUME_SECTION_ORDER = (
 )
 
 
-def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
+def _build_structured_resume_body_classic(
+    artifact: TailoredResumeArtifact, header_banded: bool = False
+):
     # Summary, Core Skills, Education always render even when sparse —
     # Summary because the workflow always generates one (placeholder
     # surfaces a failure), Skills and Education because both are
@@ -930,12 +1007,37 @@ def _build_structured_resume_body_classic(artifact: TailoredResumeArtifact):
         if block:
             ordered_blocks.append(block)
 
+    # Mode-aware headline line. JD-tailored runs set
+    # `artifact.target_role` (= the JD title) → render it as the
+    # role line. The no-JD / resume-builder path leaves it "" →
+    # the line is OMITTED entirely (a name-only header is standard;
+    # we never fabricate a headline). Byte-identical to the prior
+    # output whenever target_role is empty. Reuses the dormant
+    # `.resume-classic-role` style already in the template.
+    headline = html.escape(str(getattr(artifact, "target_role", "") or "").strip())
+    # When empty, role_block is "" and the line below collapses to
+    # exactly the original `        {contact_block}` — byte-identical
+    # to pre-feature output for the no-JD / fixture path.
+    role_block = (
+        '<p class="resume-classic-role">{0}</p>\n        '.format(headline)
+        if headline
+        else ""
+    )
+    # Non-banded themes get the EXACT original markup
+    # (`class="resume-classic-header"`) — byte-identical, so the 3
+    # ATS-simple themes + every non-opting theme are unchanged.
+    band_cls = " resume-classic-header--band" if header_banded else ""
     header_html = """
-    <section class="resume-classic-header">
+    <section class="resume-classic-header{band_cls}">
         <h1>{name}</h1>
-        {contact_block}
+        {role_block}{contact_block}
     </section>
-    """.format(name=name, contact_block=contact_html)
+    """.format(
+        band_cls=band_cls,
+        name=name,
+        role_block=role_block,
+        contact_block=contact_html,
+    )
 
     return header_html + "\n".join(ordered_blocks)
 
@@ -1046,9 +1148,15 @@ def _build_structured_resume_body_twocol(artifact: TailoredResumeArtifact) -> st
         if s in _TWOCOL_SIDEBAR_SECTIONS and section_blocks.get(s)
     )
 
+    # Same mode-aware headline as the classic builder (omit when no
+    # target_role → byte-identical to prior two-column output).
+    headline = html.escape(str(getattr(artifact, "target_role", "") or "").strip())
+    role_block = (
+        '<p class="resume-tc-role">{0}</p>'.format(headline) if headline else ""
+    )
     header_html = (
-        '<header class="resume-tc-header"><h1>{name}</h1>{contact}</header>'.format(
-            name=name, contact=contact_html
+        '<header class="resume-tc-header"><h1>{name}</h1>{role}{contact}</header>'.format(
+            name=name, role=role_block, contact=contact_html
         )
     )
     # DOM order: header → main → sidebar (text-extraction coherence).
@@ -1091,7 +1199,10 @@ def _build_resume_html_twocol(
         .resume-tc-shell {{ min-height: 297mm; background: var(--surface); padding: 14mm 14mm 12mm; }}
         .resume-tc-header {{ border-bottom: {header_border_width} solid {header_rule_color}; padding-bottom: 8px; margin-bottom: 13px; }}
         .resume-tc-header h1 {{ font-family: {h1_font_family}; font-size: 21pt; font-weight: 700; margin: 0 0 3px; letter-spacing: -0.01em; color: var(--ink); }}
+        .resume-tc-role {{ font-size: 10pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin: 0 0 5px; }}
         .resume-contact-inline {{ color: var(--muted); font-size: 9.4pt; line-height: 1.5; margin: 0; }}
+        .rc-item {{ white-space: nowrap; }}
+        .resume-contact-links {{ margin-top: 2px; }}
         .resume-tc-grid {{ display: flex; gap: 16px; align-items: flex-start; }}
         .resume-tc-main {{ flex: 1.95; min-width: 0; }}
         .resume-tc-side {{ flex: 1; min-width: 0; background: var(--accent-soft); border-left: 1px solid var(--line); border-radius: 4px; padding: 4px 12px 10px; }}
@@ -1155,7 +1266,9 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
 
     body_html = _MARKDOWN.render(text or "")
     if artifact is not None:
-        body_html = _build_structured_resume_body_classic(artifact)
+        body_html = _build_structured_resume_body_classic(
+            artifact, header_banded=bool(_spec.header_band_bg)
+        )
     safe_title = html.escape(title or "Tailored Resume")
     palette = _resolve_resume_palette(theme)
 
@@ -1210,8 +1323,24 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         hr {{ border: 0; border-top: 1px solid var(--line); margin: 14px 0; }}
         blockquote {{ margin: 0 0 10px; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: var(--muted); }}
         .resume-classic-header {{ position: relative; z-index: 1; padding: 0 15mm 10px; margin: 0 -15mm; border-bottom: {header_border_width} solid {header_rule_color}; }}
+        /* Opt-in header band. Only applied when the body builder adds
+           the --band class (themes that set ThemeSpec.header_band_bg);
+           inert for every other theme. Full-bleed via the existing
+           negative side-margins. */
+        /* `margin-top: -13mm` cancels the shell's 13mm top padding so
+           the band bleeds to the very top edge of the page (no white
+           strip above it); the matching 13mm top padding keeps the
+           name where it visually sat before. -15mm sides keep the
+           existing full-width bleed. */
+        .resume-classic-header--band {{ background: {header_band_bg}; margin: -13mm -15mm 0; padding: 13mm 15mm 12px; }}
+        .resume-classic-header--band h1 {{ color: {header_band_fg}; }}
+        .resume-classic-header--band .resume-classic-role,
+        .resume-classic-header--band .resume-contact-inline,
+        .resume-classic-header--band .resume-contact-inline .rc-item {{ color: {header_band_fg}; }}
         .resume-classic-role {{ font-size: 10.2pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 4px; }}
         .resume-contact-inline {{ color: var(--muted); font-size: 9.6pt; line-height: 1.55; max-width: 88%; }}
+        .rc-item {{ white-space: nowrap; }}
+        .resume-contact-links {{ margin-top: 2px; }}
         .resume-skill-inline {{ color: var(--ink); font-size: 9.8pt; line-height: 1.7; }}
         .resume-skill-category {{ color: var(--ink); font-size: 9.8pt; line-height: 1.7; margin: 0 0 2px; }}
         .resume-skill-category strong {{ color: var(--accent); font-weight: 700; }}
@@ -1229,7 +1358,7 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         .resume-experience-card + .resume-experience-card::before,
         .resume-project-card + .resume-project-card::before {{ content: ""; position: absolute; top: 0; left: 12px; right: 12px; border-top: 1px solid var(--line); }}
         .resume-education-card + .resume-education-card {{ margin-top: 10px; }}
-        @media all and (max-width: 720px) {{ .resume-classic-header {{ padding: 0 15mm 10px; margin: 0 -15mm; }} .resume-contact-inline {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
+        @media all and (max-width: 720px) {{ .resume-classic-header {{ padding: 0 15mm 10px; margin: 0 -15mm; }} .resume-classic-header--band {{ margin: -13mm -15mm 0; padding: 13mm 15mm 12px; }} .resume-contact-inline {{ max-width: 100%; }} .resume-role-row {{ display: block; }} .resume-role-dates {{ margin-top: 6px; }} }}
     </style>
 </head>
 <body>

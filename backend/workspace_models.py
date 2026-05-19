@@ -254,7 +254,9 @@ class ResumeBuilderExportRequestModel(BaseModel):
         "modern_blue",
         "creative_warm",
         "architect_mono",
-        "presentation_twocol",
+        # presentation_twocol intentionally excluded — the two-column
+        # engine exists but the theme is held from the user surface
+        # pending its designer-grade rework (report.md v2 plan).
     ] = "professional_neutral"
 
     @field_validator("session_id", mode="before")

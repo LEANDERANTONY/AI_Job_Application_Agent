@@ -40,7 +40,8 @@ const THEME_OPTIONS: { value: ArtifactTheme; label: string }[] = [
   { value: "modern_blue", label: "Modern Blue" },
   { value: "creative_warm", label: "Creative Warm" },
   { value: "architect_mono", label: "Architect Mono" },
-  { value: "presentation_twocol", label: "Presentation (2-col)" },
+  // presentation_twocol intentionally omitted — held pending the
+  // designer-grade two-column rework (report.md v2 plan).
 ];
 
 const THEME_HINT: Record<ArtifactTheme, string> = {
@@ -54,8 +55,6 @@ const THEME_HINT: Record<ArtifactTheme, string> = {
     "Serif name + clean sans body, emerald accents on a warm paper. Modern-editorial; single-column and ATS-safe — marketing, comms, design-adjacent.",
   architect_mono:
     "Near-monochrome, geometric sans, a single hairline rule, generous whitespace. Confident minimal; single-column and ATS-safe — architecture, design, senior engineering.",
-  presentation_twocol:
-    "Two-column portfolio layout (tinted sidebar). ⚠ NOT for ATS — most applicant tracking systems mis-parse columns. Use a single-column theme when submitting through a job portal; use this for human review, networking, or your own site. PDF only — DOCX exports single-column.",
 };
 
 const TAB_LABELS: Record<ArtifactTab, string> = {
@@ -190,20 +189,21 @@ export function ArtifactViewer({
               professional_neutral cover letter. The preview iframe and
               the PDF download both pick up the change. */}
           <div className="b-artifact-style-eyebrow">Style</div>
-          <div className="b-artifact-style-toggle" role="radiogroup">
-            {THEME_OPTIONS.map((option) => (
-              <button
-                aria-checked={activeTheme === option.value}
-                className="b-artifact-style-option"
-                data-active={activeTheme === option.value}
-                key={option.value}
-                onClick={() => onThemeChange(option.value)}
-                role="radio"
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
+          <div className="b-artifact-style-select-wrap">
+            <select
+              aria-label="Document theme"
+              className="b-artifact-style-select"
+              onChange={(event) =>
+                onThemeChange(event.target.value as ArtifactTheme)
+              }
+              value={activeTheme}
+            >
+              {THEME_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
           <p className="b-artifact-style-hint">{THEME_HINT[activeTheme]}</p>
           <hr className="rd-hairline" />

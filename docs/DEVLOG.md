@@ -1519,3 +1519,57 @@ records the Phase 2b/2c/3 deltas without touching the Decision).
 
 The full theme series (Phase 1→3) is now built; entire stack held
 local — push decision the operator's.
+
+## Day 55: Résumé/theme presentation polish — ship the single-column set; hold two-column
+
+First production ship of the new themes + a batch of presentation
+polish, after operator review of real output against 10 reference
+templates.
+
+- **Contact line — count-aware two-line packing.** A long portfolio
+  URL was splitting mid-string in the header. New
+  `_looks_like_contact_link` (emails stay details; `medium.com/@x`-
+  style URLs correctly classify as links — a real bug found+fixed) +
+  `_build_resume_contact_inline_html`: 0–1 links one line; 2 links =
+  details line + both links line; 3+ = details+first link / rest;
+  every item `white-space:nowrap` so a URL never splits. +2 hermetic
+  tests.
+- **Mode-aware headline line.** Renders `artifact.target_role` (the
+  JD-tailored role) between name and contact; OMITS byte-cleanly when
+  empty (no-JD/resume-builder path) — never fabricated, never forced.
+  No schema change (field already existed). +2 tests, 1 structural
+  test updated (it had guarded the dormant `.resume-classic-role`
+  staying dormant — the feature deliberately activates it).
+- **Theme picker → accessible native `<select>` dropdown.** The
+  segmented toggle was data-driven (all 6 already worked) but its
+  flex:1-across-one-row CSS cramped/clipped at 6. Replaced with a
+  styled select (scales to any count, OS keyboard/mobile a11y for
+  free); dead toggle CSS removed.
+- **Opt-in header-band ThemeSpec capability** (`header_band_bg`/`fg`,
+  default "" → today's plain rule header, byte-identical for any
+  non-opting theme). `architect_mono` → solid ink masthead (white
+  text); `creative_warm` → soft warm "sand" band (dark text,
+  operator-chosen over an emerald variant). Band bleeds full to the
+  page top (negates the shell's 13mm top padding) + sides, like the
+  reference templates. The 3 ATS-simple themes
+  (`professional_neutral`/`classic_ats`/`modern_blue`) opt out and are
+  **provably unchanged** (no `--band` class; band CSS gated + inert).
+- **Two-column held back.** Operator judged `presentation_twocol`
+  not designer-grade yet (gap analysis vs the 10 references parked in
+  report.md "Designer-grade theme expansion v2"). The two-column
+  **engine stays in the renderer, dormant and still test-covered**
+  (fidelity loop + `test_resume_headline_*` exercise it), but the
+  theme is **removed from the user surface** — `ArtifactTheme` union,
+  `THEME_OPTIONS`/`THEME_HINT`, and the `workspace_models` Literal —
+  so it is not offered until its rework ships. Engine-vs-surface split
+  recorded so it isn't mistaken for deleted work.
+
+Net shipped: **5 single-column themes** (the 2 originals + the 3 new
+designed ones) + the polish. Verification: **121 backend tests**
+(exporters / resume-builder / workflow-payloads / error-message
+allowlist / export-entitlement / backend-workspace) + the
+renderer-fidelity runner (all 6 incl. the dormant two-column engine) +
+frontend tsc + eslint — all green. Still the ADR-029 series (Update
+note covers the deltas; no Decision change). Operator approved the
+push: `src/` + `backend/` + `frontend/` → backend re-deploy + Vercel;
+the prior held stack (`365321d`/`e16048e`/`d2c4e82`) ships with it.

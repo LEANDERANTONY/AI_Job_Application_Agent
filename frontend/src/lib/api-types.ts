@@ -662,8 +662,12 @@ export type ArtifactTheme =
   | "professional_neutral"
   | "modern_blue"
   | "creative_warm"
-  | "architect_mono"
-  | "presentation_twocol";
+  | "architect_mono";
+// NOTE: `presentation_twocol` (the two-column engine) exists in the
+// renderer but is intentionally NOT offered yet — held from the user
+// surface pending the designer-grade rework (report.md "Designer-grade
+// theme expansion v2"). Re-add here + THEME_OPTIONS + the backend
+// Literal when it ships.
 
 export type WorkspaceArtifactExportRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;
