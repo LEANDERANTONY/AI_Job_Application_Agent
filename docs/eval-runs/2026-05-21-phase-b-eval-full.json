@@ -1,0 +1,1571 @@
+{
+  "candidates": {
+    "openai-via-or": "openai/gpt-5.4",
+    "sonnet-4.5": "anthropic/claude-sonnet-4.5",
+    "deepseek": "deepseek/deepseek-v4-pro"
+  },
+  "suites": [
+    "parser",
+    "jd",
+    "analysis"
+  ],
+  "limit": null,
+  "results": {
+    "openai-via-or": {
+      "slug": "openai/gpt-5.4",
+      "suites": {
+        "parser": {
+          "rows": [
+            {
+              "fixture": "01-student-projects",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 15.48,
+                "prompt_tokens": 850,
+                "completion_tokens": 905,
+                "total_tokens": 1755,
+                "cost_usd": 0.0112
+              }
+            },
+            {
+              "fixture": "02-midcareer-tech",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 9.44,
+                "prompt_tokens": 889,
+                "completion_tokens": 886,
+                "total_tokens": 1775,
+                "cost_usd": 0.0111
+              }
+            },
+            {
+              "fixture": "03-academic-cv",
+              "overall": 0.94,
+              "metrics": {
+                "elapsed_seconds": 10.39,
+                "prompt_tokens": 897,
+                "completion_tokens": 962,
+                "total_tokens": 1859,
+                "cost_usd": 0.0119
+              }
+            },
+            {
+              "fixture": "04-bootcamp-grad",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 10.07,
+                "prompt_tokens": 852,
+                "completion_tokens": 1021,
+                "total_tokens": 1873,
+                "cost_usd": 0.0123
+              }
+            },
+            {
+              "fixture": "05-career-switcher",
+              "overall": 0.952,
+              "metrics": {
+                "elapsed_seconds": 11.42,
+                "prompt_tokens": 968,
+                "completion_tokens": 1196,
+                "total_tokens": 2164,
+                "cost_usd": 0.0144
+              }
+            },
+            {
+              "fixture": "06-minimal",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 3.95,
+                "prompt_tokens": 456,
+                "completion_tokens": 328,
+                "total_tokens": 784,
+                "cost_usd": 0.0044
+              }
+            },
+            {
+              "fixture": "07-allcaps-traditional",
+              "overall": 0.857,
+              "metrics": {
+                "elapsed_seconds": 7.57,
+                "prompt_tokens": 783,
+                "completion_tokens": 729,
+                "total_tokens": 1512,
+                "cost_usd": 0.0092
+              }
+            },
+            {
+              "fixture": "08-pdf-extracted-messy",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 6.62,
+                "prompt_tokens": 680,
+                "completion_tokens": 654,
+                "total_tokens": 1334,
+                "cost_usd": 0.0082
+              }
+            },
+            {
+              "fixture": "09-international-name",
+              "overall": 0.929,
+              "metrics": {
+                "elapsed_seconds": 8.49,
+                "prompt_tokens": 794,
+                "completion_tokens": 752,
+                "total_tokens": 1546,
+                "cost_usd": 0.0095
+              }
+            },
+            {
+              "fixture": "10-early-career-internships",
+              "overall": 0.857,
+              "metrics": {
+                "elapsed_seconds": 9.48,
+                "prompt_tokens": 848,
+                "completion_tokens": 939,
+                "total_tokens": 1787,
+                "cost_usd": 0.0115
+              }
+            },
+            {
+              "fixture": "11-senior-detailed",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 11.65,
+                "prompt_tokens": 1155,
+                "completion_tokens": 1168,
+                "total_tokens": 2323,
+                "cost_usd": 0.0146
+              }
+            },
+            {
+              "fixture": "12-government-military",
+              "overall": 0.971,
+              "metrics": {
+                "elapsed_seconds": 8.85,
+                "prompt_tokens": 900,
+                "completion_tokens": 876,
+                "total_tokens": 1776,
+                "cost_usd": 0.011
+              }
+            },
+            {
+              "fixture": "13-healthcare-rn",
+              "overall": 0.971,
+              "metrics": {
+                "elapsed_seconds": 8.98,
+                "prompt_tokens": 883,
+                "completion_tokens": 897,
+                "total_tokens": 1780,
+                "cost_usd": 0.0112
+              }
+            },
+            {
+              "fixture": "14-finance-mba",
+              "overall": 0.956,
+              "metrics": {
+                "elapsed_seconds": 9.82,
+                "prompt_tokens": 959,
+                "completion_tokens": 992,
+                "total_tokens": 1951,
+                "cost_usd": 0.0123
+              }
+            },
+            {
+              "fixture": "15-creative-designer",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 12.67,
+                "prompt_tokens": 1027,
+                "completion_tokens": 1105,
+                "total_tokens": 2132,
+                "cost_usd": 0.0136
+              }
+            }
+          ],
+          "totals": {
+            "fixtures": 15,
+            "scored": 15,
+            "avg_overall": 0.962,
+            "min_overall": 0.857,
+            "total_seconds": 144.98,
+            "total_tokens": 26351,
+            "total_cost_usd": 0.1664
+          }
+        },
+        "jd": {
+          "rows": [
+            {
+              "fixture": "01-narvar-senior-ai-engineer",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 6.64,
+                "prompt_tokens": 1865,
+                "completion_tokens": 610,
+                "total_tokens": 2475,
+                "cost_usd": 0.0108
+              }
+            },
+            {
+              "fixture": "02-wayve-embedded-cpp",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 6.4,
+                "prompt_tokens": 1726,
+                "completion_tokens": 596,
+                "total_tokens": 2322,
+                "cost_usd": 0.0103
+              }
+            },
+            {
+              "fixture": "03-datadog-ai-research-paris",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 7.62,
+                "prompt_tokens": 2109,
+                "completion_tokens": 639,
+                "total_tokens": 2748,
+                "cost_usd": 0.0117
+              }
+            },
+            {
+              "fixture": "04-moloco-data-scientist",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 4.5,
+                "prompt_tokens": 1915,
+                "completion_tokens": 374,
+                "total_tokens": 2289,
+                "cost_usd": 0.0085
+              }
+            },
+            {
+              "fixture": "05-figma-enterprise-ae",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 3.73,
+                "prompt_tokens": 1811,
+                "completion_tokens": 291,
+                "total_tokens": 2102,
+                "cost_usd": 0.0074
+              }
+            },
+            {
+              "fixture": "06-glean-ai-outcomes-manager",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 7.13,
+                "prompt_tokens": 1903,
+                "completion_tokens": 486,
+                "total_tokens": 2389,
+                "cost_usd": 0.0096
+              }
+            },
+            {
+              "fixture": "07-placer-big-data-engineer",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 4.65,
+                "prompt_tokens": 1598,
+                "completion_tokens": 428,
+                "total_tokens": 2026,
+                "cost_usd": 0.0083
+              }
+            },
+            {
+              "fixture": "08-synthetic-clean",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 3.0,
+                "prompt_tokens": 859,
+                "completion_tokens": 249,
+                "total_tokens": 1108,
+                "cost_usd": 0.0046
+              }
+            },
+            {
+              "fixture": "09-synthetic-preamble-title",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 6.53,
+                "prompt_tokens": 912,
+                "completion_tokens": 337,
+                "total_tokens": 1249,
+                "cost_usd": 0.0056
+              }
+            },
+            {
+              "fixture": "10-synthetic-niche-skills",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 3.83,
+                "prompt_tokens": 981,
+                "completion_tokens": 351,
+                "total_tokens": 1332,
+                "cost_usd": 0.006
+              }
+            },
+            {
+              "fixture": "11-synthetic-allcaps-traditional",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 3.48,
+                "prompt_tokens": 903,
+                "completion_tokens": 266,
+                "total_tokens": 1169,
+                "cost_usd": 0.0049
+              }
+            },
+            {
+              "fixture": "12-synthetic-bullet-heavy",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 6.01,
+                "prompt_tokens": 912,
+                "completion_tokens": 301,
+                "total_tokens": 1213,
+                "cost_usd": 0.0053
+              }
+            },
+            {
+              "fixture": "13-synthetic-international",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 3.75,
+                "prompt_tokens": 936,
+                "completion_tokens": 300,
+                "total_tokens": 1236,
+                "cost_usd": 0.0053
+              }
+            },
+            {
+              "fixture": "14-synthetic-narrative-prose",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 3.39,
+                "prompt_tokens": 988,
+                "completion_tokens": 234,
+                "total_tokens": 1222,
+                "cost_usd": 0.0048
+              }
+            },
+            {
+              "fixture": "15-synthetic-minimal",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 1.82,
+                "prompt_tokens": 659,
+                "completion_tokens": 102,
+                "total_tokens": 761,
+                "cost_usd": 0.0027
+              }
+            }
+          ],
+          "totals": {
+            "fixtures": 15,
+            "scored": 15,
+            "avg_overall": 0.985,
+            "min_overall": 0.955,
+            "total_seconds": 72.58,
+            "total_tokens": 25641,
+            "total_cost_usd": 0.1058
+          }
+        },
+        "analysis": {
+          "rows": [
+            {
+              "fixture": "clean_strong_fit",
+              "mode": "clean",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 20.55,
+                "prompt_tokens": 1725,
+                "completion_tokens": 574,
+                "total_tokens": 2299,
+                "cost_usd": 0.0101
+              }
+            },
+            {
+              "fixture": "clean_career_switcher",
+              "mode": "clean",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 18.74,
+                "prompt_tokens": 1578,
+                "completion_tokens": 557,
+                "total_tokens": 2135,
+                "cost_usd": 0.0095
+              }
+            },
+            {
+              "fixture": "clean_rn",
+              "mode": "clean",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 16.78,
+                "prompt_tokens": 1657,
+                "completion_tokens": 466,
+                "total_tokens": 2123,
+                "cost_usd": 0.0088
+              }
+            },
+            {
+              "fixture": "adv_skill_fabrication",
+              "mode": "adversarial",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 7.07,
+                "prompt_tokens": 1638,
+                "completion_tokens": 486,
+                "total_tokens": 2124,
+                "cost_usd": 0.009
+              }
+            },
+            {
+              "fixture": "adv_embellishment",
+              "mode": "adversarial",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 8.13,
+                "prompt_tokens": 1520,
+                "completion_tokens": 503,
+                "total_tokens": 2023,
+                "cost_usd": 0.0088
+              }
+            },
+            {
+              "fixture": "adv_wrong_industry",
+              "mode": "adversarial",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 9.46,
+                "prompt_tokens": 1605,
+                "completion_tokens": 600,
+                "total_tokens": 2205,
+                "cost_usd": 0.01
+              }
+            }
+          ],
+          "totals": {
+            "fixtures": 6,
+            "scored": 6,
+            "avg_overall": 1.0,
+            "min_overall": 1.0,
+            "total_seconds": 80.73,
+            "total_tokens": 12909,
+            "total_cost_usd": 0.0562
+          }
+        }
+      },
+      "fidelity": {
+        "profile": {
+          "calls": 15,
+          "valid_json": 15,
+          "schema_ok": 15,
+          "truncated": 0,
+          "content_failures": 0,
+          "usable_rate": 1.0
+        },
+        "job": {
+          "calls": 15,
+          "valid_json": 15,
+          "schema_ok": 15,
+          "truncated": 0,
+          "content_failures": 0,
+          "usable_rate": 1.0
+        },
+        "review": {
+          "calls": 6,
+          "valid_json": 6,
+          "schema_ok": 6,
+          "truncated": 0,
+          "content_failures": 0,
+          "usable_rate": 1.0
+        }
+      },
+      "usage_snapshot": {
+        "request_count": 36,
+        "prompt_tokens": 42741,
+        "completion_tokens": 22160,
+        "total_tokens": 64901
+      }
+    },
+    "sonnet-4.5": {
+      "slug": "anthropic/claude-sonnet-4.5",
+      "suites": {
+        "parser": {
+          "rows": [
+            {
+              "fixture": "01-student-projects",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 11.95,
+                "prompt_tokens": 983,
+                "completion_tokens": 1228,
+                "total_tokens": 2211,
+                "cost_usd": 0.0214
+              }
+            },
+            {
+              "fixture": "02-midcareer-tech",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 11.38,
+                "prompt_tokens": 998,
+                "completion_tokens": 1118,
+                "total_tokens": 2116,
+                "cost_usd": 0.0198
+              }
+            },
+            {
+              "fixture": "03-academic-cv",
+              "overall": 0.971,
+              "metrics": {
+                "elapsed_seconds": 12.88,
+                "prompt_tokens": 1001,
+                "completion_tokens": 1109,
+                "total_tokens": 2110,
+                "cost_usd": 0.0196
+              }
+            },
+            {
+              "fixture": "04-bootcamp-grad",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 11.05,
+                "prompt_tokens": 945,
+                "completion_tokens": 1206,
+                "total_tokens": 2151,
+                "cost_usd": 0.0209
+              }
+            },
+            {
+              "fixture": "05-career-switcher",
+              "overall": 0.952,
+              "metrics": {
+                "elapsed_seconds": 13.65,
+                "prompt_tokens": 1122,
+                "completion_tokens": 1453,
+                "total_tokens": 2575,
+                "cost_usd": 0.0252
+              }
+            },
+            {
+              "fixture": "06-minimal",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 6.68,
+                "prompt_tokens": 497,
+                "completion_tokens": 406,
+                "total_tokens": 903,
+                "cost_usd": 0.0076
+              }
+            },
+            {
+              "fixture": "07-allcaps-traditional",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 9.14,
+                "prompt_tokens": 899,
+                "completion_tokens": 823,
+                "total_tokens": 1722,
+                "cost_usd": 0.015
+              }
+            },
+            {
+              "fixture": "08-pdf-extracted-messy",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 8.73,
+                "prompt_tokens": 753,
+                "completion_tokens": 787,
+                "total_tokens": 1540,
+                "cost_usd": 0.0141
+              }
+            },
+            {
+              "fixture": "09-international-name",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 9.76,
+                "prompt_tokens": 912,
+                "completion_tokens": 853,
+                "total_tokens": 1765,
+                "cost_usd": 0.0155
+              }
+            },
+            {
+              "fixture": "10-early-career-internships",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 11.82,
+                "prompt_tokens": 959,
+                "completion_tokens": 1097,
+                "total_tokens": 2056,
+                "cost_usd": 0.0193
+              }
+            },
+            {
+              "fixture": "11-senior-detailed",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 13.49,
+                "prompt_tokens": 1306,
+                "completion_tokens": 1438,
+                "total_tokens": 2744,
+                "cost_usd": 0.0255
+              }
+            },
+            {
+              "fixture": "12-government-military",
+              "overall": 0.971,
+              "metrics": {
+                "elapsed_seconds": 11.06,
+                "prompt_tokens": 1016,
+                "completion_tokens": 1059,
+                "total_tokens": 2075,
+                "cost_usd": 0.0189
+              }
+            },
+            {
+              "fixture": "13-healthcare-rn",
+              "overall": 0.971,
+              "metrics": {
+                "elapsed_seconds": 12.54,
+                "prompt_tokens": 1014,
+                "completion_tokens": 1103,
+                "total_tokens": 2117,
+                "cost_usd": 0.0196
+              }
+            },
+            {
+              "fixture": "14-finance-mba",
+              "overall": 0.971,
+              "metrics": {
+                "elapsed_seconds": 13.28,
+                "prompt_tokens": 1105,
+                "completion_tokens": 1210,
+                "total_tokens": 2315,
+                "cost_usd": 0.0215
+              }
+            },
+            {
+              "fixture": "15-creative-designer",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 15.06,
+                "prompt_tokens": 1117,
+                "completion_tokens": 1271,
+                "total_tokens": 2388,
+                "cost_usd": 0.0224
+              }
+            }
+          ],
+          "totals": {
+            "fixtures": 15,
+            "scored": 15,
+            "avg_overall": 0.989,
+            "min_overall": 0.952,
+            "total_seconds": 172.48,
+            "total_tokens": 30788,
+            "total_cost_usd": 0.2863
+          }
+        },
+        "jd": {
+          "rows": [
+            {
+              "fixture": "01-narvar-senior-ai-engineer",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 7.45,
+                "prompt_tokens": 2075,
+                "completion_tokens": 697,
+                "total_tokens": 2772,
+                "cost_usd": 0.0167
+              }
+            },
+            {
+              "fixture": "02-wayve-embedded-cpp",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 7.71,
+                "prompt_tokens": 1973,
+                "completion_tokens": 660,
+                "total_tokens": 2633,
+                "cost_usd": 0.0158
+              }
+            },
+            {
+              "fixture": "03-datadog-ai-research-paris",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 6.58,
+                "prompt_tokens": 2347,
+                "completion_tokens": 579,
+                "total_tokens": 2926,
+                "cost_usd": 0.0157
+              }
+            },
+            {
+              "fixture": "04-moloco-data-scientist",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 5.59,
+                "prompt_tokens": 2138,
+                "completion_tokens": 374,
+                "total_tokens": 2512,
+                "cost_usd": 0.012
+              }
+            },
+            {
+              "fixture": "05-figma-enterprise-ae",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 4.3,
+                "prompt_tokens": 1996,
+                "completion_tokens": 295,
+                "total_tokens": 2291,
+                "cost_usd": 0.0104
+              }
+            },
+            {
+              "fixture": "06-glean-ai-outcomes-manager",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 5.71,
+                "prompt_tokens": 2143,
+                "completion_tokens": 515,
+                "total_tokens": 2658,
+                "cost_usd": 0.0142
+              }
+            },
+            {
+              "fixture": "07-placer-big-data-engineer",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 5.99,
+                "prompt_tokens": 1861,
+                "completion_tokens": 471,
+                "total_tokens": 2332,
+                "cost_usd": 0.0126
+              }
+            },
+            {
+              "fixture": "08-synthetic-clean",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 5.95,
+                "prompt_tokens": 985,
+                "completion_tokens": 276,
+                "total_tokens": 1261,
+                "cost_usd": 0.0071
+              }
+            },
+            {
+              "fixture": "09-synthetic-preamble-title",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 4.47,
+                "prompt_tokens": 1048,
+                "completion_tokens": 340,
+                "total_tokens": 1388,
+                "cost_usd": 0.0082
+              }
+            },
+            {
+              "fixture": "10-synthetic-niche-skills",
+              "overall": 0.909,
+              "metrics": {
+                "elapsed_seconds": 5.74,
+                "prompt_tokens": 1150,
+                "completion_tokens": 423,
+                "total_tokens": 1573,
+                "cost_usd": 0.0098
+              }
+            },
+            {
+              "fixture": "11-synthetic-allcaps-traditional",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 4.42,
+                "prompt_tokens": 1019,
+                "completion_tokens": 269,
+                "total_tokens": 1288,
+                "cost_usd": 0.0071
+              }
+            },
+            {
+              "fixture": "12-synthetic-bullet-heavy",
+              "overall": 0.909,
+              "metrics": {
+                "elapsed_seconds": 5.09,
+                "prompt_tokens": 1053,
+                "completion_tokens": 366,
+                "total_tokens": 1419,
+                "cost_usd": 0.0086
+              }
+            },
+            {
+              "fixture": "13-synthetic-international",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 5.2,
+                "prompt_tokens": 1093,
+                "completion_tokens": 381,
+                "total_tokens": 1474,
+                "cost_usd": 0.009
+              }
+            },
+            {
+              "fixture": "14-synthetic-narrative-prose",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 4.16,
+                "prompt_tokens": 1116,
+                "completion_tokens": 245,
+                "total_tokens": 1361,
+                "cost_usd": 0.007
+              }
+            },
+            {
+              "fixture": "15-synthetic-minimal",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 2.51,
+                "prompt_tokens": 750,
+                "completion_tokens": 125,
+                "total_tokens": 875,
+                "cost_usd": 0.0041
+              }
+            }
+          ],
+          "totals": {
+            "fixtures": 15,
+            "scored": 15,
+            "avg_overall": 0.976,
+            "min_overall": 0.909,
+            "total_seconds": 80.84,
+            "total_tokens": 28763,
+            "total_cost_usd": 0.1583
+          }
+        },
+        "analysis": {
+          "rows": [
+            {
+              "fixture": "clean_strong_fit",
+              "mode": "clean",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 20.36,
+                "prompt_tokens": 2086,
+                "completion_tokens": 613,
+                "total_tokens": 2699,
+                "cost_usd": 0.0155
+              }
+            },
+            {
+              "fixture": "clean_career_switcher",
+              "mode": "clean",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 20.88,
+                "prompt_tokens": 1917,
+                "completion_tokens": 647,
+                "total_tokens": 2564,
+                "cost_usd": 0.0155
+              }
+            },
+            {
+              "fixture": "clean_rn",
+              "mode": "clean",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 21.24,
+                "prompt_tokens": 1971,
+                "completion_tokens": 633,
+                "total_tokens": 2604,
+                "cost_usd": 0.0154
+              }
+            },
+            {
+              "fixture": "adv_skill_fabrication",
+              "mode": "adversarial",
+              "overall": 0.709,
+              "sections": {
+                "detection": 1.0,
+                "correction": 0.2,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 10.57,
+                "prompt_tokens": 1993,
+                "completion_tokens": 521,
+                "total_tokens": 2514,
+                "cost_usd": 0.0138
+              }
+            },
+            {
+              "fixture": "adv_embellishment",
+              "mode": "adversarial",
+              "overall": 0.782,
+              "sections": {
+                "detection": 1.0,
+                "correction": 0.4,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 15.5,
+                "prompt_tokens": 1837,
+                "completion_tokens": 586,
+                "total_tokens": 2423,
+                "cost_usd": 0.0143
+              }
+            },
+            {
+              "fixture": "adv_wrong_industry",
+              "mode": "adversarial",
+              "overall": 0.636,
+              "sections": {
+                "detection": 1.0,
+                "correction": 0.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 16.86,
+                "prompt_tokens": 1912,
+                "completion_tokens": 614,
+                "total_tokens": 2526,
+                "cost_usd": 0.0149
+              }
+            }
+          ],
+          "totals": {
+            "fixtures": 6,
+            "scored": 6,
+            "avg_overall": 0.854,
+            "min_overall": 0.636,
+            "total_seconds": 105.41,
+            "total_tokens": 15330,
+            "total_cost_usd": 0.0894
+          }
+        }
+      },
+      "fidelity": {
+        "profile": {
+          "calls": 15,
+          "valid_json": 15,
+          "schema_ok": 15,
+          "truncated": 0,
+          "content_failures": 0,
+          "usable_rate": 1.0
+        },
+        "job": {
+          "calls": 15,
+          "valid_json": 15,
+          "schema_ok": 15,
+          "truncated": 0,
+          "content_failures": 0,
+          "usable_rate": 1.0
+        },
+        "review": {
+          "calls": 6,
+          "valid_json": 6,
+          "schema_ok": 6,
+          "truncated": 0,
+          "content_failures": 0,
+          "usable_rate": 1.0
+        }
+      },
+      "usage_snapshot": {
+        "request_count": 36,
+        "prompt_tokens": 49090,
+        "completion_tokens": 25791,
+        "total_tokens": 74881
+      }
+    },
+    "deepseek": {
+      "slug": "deepseek/deepseek-v4-pro",
+      "suites": {
+        "parser": {
+          "rows": [
+            {
+              "fixture": "01-student-projects",
+              "overall": 0.976,
+              "metrics": {
+                "elapsed_seconds": 79.43,
+                "prompt_tokens": 859,
+                "completion_tokens": 2873,
+                "total_tokens": 3732,
+                "cost_usd": 0.0062
+              }
+            },
+            {
+              "fixture": "02-midcareer-tech",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 71.95,
+                "prompt_tokens": 900,
+                "completion_tokens": 2559,
+                "total_tokens": 3459,
+                "cost_usd": 0.0056
+              }
+            },
+            {
+              "fixture": "03-academic-cv",
+              "overall": 0.971,
+              "metrics": {
+                "elapsed_seconds": 131.21,
+                "prompt_tokens": 913,
+                "completion_tokens": 4097,
+                "total_tokens": 5010,
+                "cost_usd": 0.0087
+              }
+            },
+            {
+              "fixture": "04-bootcamp-grad",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 39.9,
+                "prompt_tokens": 902,
+                "completion_tokens": 843,
+                "total_tokens": 1745,
+                "cost_usd": 0.0021
+              }
+            },
+            {
+              "fixture": "05-career-switcher",
+              "overall": 0.952,
+              "metrics": {
+                "elapsed_seconds": 16.52,
+                "prompt_tokens": 976,
+                "completion_tokens": 1077,
+                "total_tokens": 2053,
+                "cost_usd": 0.0026
+              }
+            },
+            {
+              "fixture": "06-minimal",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 22.48,
+                "prompt_tokens": 452,
+                "completion_tokens": 857,
+                "total_tokens": 1309,
+                "cost_usd": 0.0019
+              }
+            },
+            {
+              "fixture": "07-allcaps-traditional",
+              "overall": 0.857,
+              "metrics": {
+                "elapsed_seconds": 19.75,
+                "prompt_tokens": 825,
+                "completion_tokens": 1684,
+                "total_tokens": 2509,
+                "cost_usd": 0.0038
+              }
+            },
+            {
+              "fixture": "08-pdf-extracted-messy",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 40.18,
+                "prompt_tokens": 682,
+                "completion_tokens": 1535,
+                "total_tokens": 2217,
+                "cost_usd": 0.0034
+              }
+            },
+            {
+              "fixture": "09-international-name",
+              "overall": 0.929,
+              "metrics": {
+                "elapsed_seconds": 74.56,
+                "prompt_tokens": 840,
+                "completion_tokens": 2201,
+                "total_tokens": 3041,
+                "cost_usd": 0.0048
+              }
+            },
+            {
+              "fixture": "10-early-career-internships",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 44.71,
+                "prompt_tokens": 871,
+                "completion_tokens": 2666,
+                "total_tokens": 3537,
+                "cost_usd": 0.0058
+              }
+            },
+            {
+              "fixture": "11-senior-detailed",
+              "overall": 0.981,
+              "metrics": {
+                "elapsed_seconds": 119.98,
+                "prompt_tokens": 1183,
+                "completion_tokens": 3930,
+                "total_tokens": 5113,
+                "cost_usd": 0.0085
+              }
+            },
+            {
+              "fixture": "12-government-military",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 18.99,
+                "prompt_tokens": 902,
+                "completion_tokens": 870,
+                "total_tokens": 1772,
+                "cost_usd": 0.0022
+              }
+            },
+            {
+              "fixture": "13-healthcare-rn",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 79.65,
+                "prompt_tokens": 884,
+                "completion_tokens": 2857,
+                "total_tokens": 3741,
+                "cost_usd": 0.0062
+              }
+            },
+            {
+              "fixture": "14-finance-mba",
+              "overall": 0.984,
+              "metrics": {
+                "elapsed_seconds": 64.74,
+                "prompt_tokens": 958,
+                "completion_tokens": 2498,
+                "total_tokens": 3456,
+                "cost_usd": 0.0055
+              }
+            },
+            {
+              "fixture": "15-creative-designer",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 119.09,
+                "prompt_tokens": 1039,
+                "completion_tokens": 4217,
+                "total_tokens": 5256,
+                "cost_usd": 0.009
+              }
+            }
+          ],
+          "totals": {
+            "fixtures": 15,
+            "scored": 15,
+            "avg_overall": 0.977,
+            "min_overall": 0.857,
+            "total_seconds": 943.13,
+            "total_tokens": 47950,
+            "total_cost_usd": 0.0763
+          }
+        },
+        "jd": {
+          "rows": [
+            {
+              "fixture": "01-narvar-senior-ai-engineer",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 79.38,
+                "prompt_tokens": 1906,
+                "completion_tokens": 3517,
+                "total_tokens": 5423,
+                "cost_usd": 0.008
+              }
+            },
+            {
+              "fixture": "02-wayve-embedded-cpp",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 105.24,
+                "prompt_tokens": 1768,
+                "completion_tokens": 3570,
+                "total_tokens": 5338,
+                "cost_usd": 0.008
+              }
+            },
+            {
+              "fixture": "03-datadog-ai-research-paris",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 105.59,
+                "prompt_tokens": 2147,
+                "completion_tokens": 3099,
+                "total_tokens": 5246,
+                "cost_usd": 0.0073
+              }
+            },
+            {
+              "fixture": "04-moloco-data-scientist",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 81.26,
+                "prompt_tokens": 1956,
+                "completion_tokens": 2430,
+                "total_tokens": 4386,
+                "cost_usd": 0.0058
+              }
+            },
+            {
+              "fixture": "05-figma-enterprise-ae",
+              "overall": 0.955,
+              "metrics": {
+                "elapsed_seconds": 26.72,
+                "prompt_tokens": 1830,
+                "completion_tokens": 1340,
+                "total_tokens": 3170,
+                "cost_usd": 0.0036
+              }
+            },
+            {
+              "fixture": "06-glean-ai-outcomes-manager",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 64.94,
+                "prompt_tokens": 1928,
+                "completion_tokens": 2555,
+                "total_tokens": 4483,
+                "cost_usd": 0.0061
+              }
+            },
+            {
+              "fixture": "07-placer-big-data-engineer",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 45.4,
+                "prompt_tokens": 1624,
+                "completion_tokens": 1903,
+                "total_tokens": 3527,
+                "cost_usd": 0.0046
+              }
+            },
+            {
+              "fixture": "08-synthetic-clean",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 29.2,
+                "prompt_tokens": 886,
+                "completion_tokens": 867,
+                "total_tokens": 1753,
+                "cost_usd": 0.0022
+              }
+            },
+            {
+              "fixture": "09-synthetic-preamble-title",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 60.5,
+                "prompt_tokens": 938,
+                "completion_tokens": 1869,
+                "total_tokens": 2807,
+                "cost_usd": 0.0042
+              }
+            },
+            {
+              "fixture": "10-synthetic-niche-skills",
+              "overall": 0.909,
+              "metrics": {
+                "elapsed_seconds": 63.7,
+                "prompt_tokens": 1016,
+                "completion_tokens": 1820,
+                "total_tokens": 2836,
+                "cost_usd": 0.0041
+              }
+            },
+            {
+              "fixture": "11-synthetic-allcaps-traditional",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 58.61,
+                "prompt_tokens": 919,
+                "completion_tokens": 1943,
+                "total_tokens": 2862,
+                "cost_usd": 0.0043
+              }
+            },
+            {
+              "fixture": "12-synthetic-bullet-heavy",
+              "overall": 0.909,
+              "metrics": {
+                "elapsed_seconds": 20.79,
+                "prompt_tokens": 925,
+                "completion_tokens": 1424,
+                "total_tokens": 2349,
+                "cost_usd": 0.0033
+              }
+            },
+            {
+              "fixture": "13-synthetic-international",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 45.68,
+                "prompt_tokens": 955,
+                "completion_tokens": 2436,
+                "total_tokens": 3391,
+                "cost_usd": 0.0053
+              }
+            },
+            {
+              "fixture": "14-synthetic-narrative-prose",
+              "overall": 0.909,
+              "metrics": {
+                "elapsed_seconds": 69.44,
+                "prompt_tokens": 1034,
+                "completion_tokens": 2237,
+                "total_tokens": 3271,
+                "cost_usd": 0.005
+              }
+            },
+            {
+              "fixture": "15-synthetic-minimal",
+              "overall": 1.0,
+              "metrics": {
+                "elapsed_seconds": 13.68,
+                "prompt_tokens": 666,
+                "completion_tokens": 497,
+                "total_tokens": 1163,
+                "cost_usd": 0.0013
+              }
+            }
+          ],
+          "totals": {
+            "fixtures": 15,
+            "scored": 15,
+            "avg_overall": 0.97,
+            "min_overall": 0.909,
+            "total_seconds": 870.16,
+            "total_tokens": 52005,
+            "total_cost_usd": 0.0731
+          }
+        },
+        "analysis": {
+          "rows": [
+            {
+              "fixture": "clean_strong_fit",
+              "overall": null,
+              "error": "AgentExecutionError: The AI workflow returned an invalid JSON response.",
+              "metrics": {
+                "elapsed_seconds": 63.89,
+                "prompt_tokens": 1813,
+                "completion_tokens": 4000,
+                "total_tokens": 5813,
+                "cost_usd": 0.0089
+              }
+            },
+            {
+              "fixture": "clean_career_switcher",
+              "mode": "clean",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 142.3,
+                "prompt_tokens": 1664,
+                "completion_tokens": 4377,
+                "total_tokens": 6041,
+                "cost_usd": 0.0096
+              }
+            },
+            {
+              "fixture": "clean_rn",
+              "mode": "clean",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 83.05,
+                "prompt_tokens": 1718,
+                "completion_tokens": 2211,
+                "total_tokens": 3929,
+                "cost_usd": 0.0053
+              }
+            },
+            {
+              "fixture": "adv_skill_fabrication",
+              "mode": "adversarial",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 93.22,
+                "prompt_tokens": 1722,
+                "completion_tokens": 2987,
+                "total_tokens": 4709,
+                "cost_usd": 0.0068
+              }
+            },
+            {
+              "fixture": "adv_embellishment",
+              "mode": "adversarial",
+              "overall": 0.939,
+              "sections": {
+                "detection": 1.0,
+                "correction": 0.833,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 10.94,
+                "prompt_tokens": 1579,
+                "completion_tokens": 690,
+                "total_tokens": 2269,
+                "cost_usd": 0.0022
+              }
+            },
+            {
+              "fixture": "adv_wrong_industry",
+              "mode": "adversarial",
+              "overall": 1.0,
+              "sections": {
+                "detection": 1.0,
+                "correction": 1.0,
+                "no_false_rejection": 1.0,
+                "approval_consistency": 1.0,
+                "format_compliance": 1.0
+              },
+              "metrics": {
+                "elapsed_seconds": 78.69,
+                "prompt_tokens": 1670,
+                "completion_tokens": 2608,
+                "total_tokens": 4278,
+                "cost_usd": 0.0061
+              }
+            }
+          ],
+          "totals": {
+            "fixtures": 6,
+            "scored": 5,
+            "avg_overall": 0.988,
+            "min_overall": 0.939,
+            "total_seconds": 472.1,
+            "total_tokens": 27039,
+            "total_cost_usd": 0.0389
+          }
+        }
+      },
+      "fidelity": {
+        "profile": {
+          "calls": 15,
+          "valid_json": 14,
+          "schema_ok": 14,
+          "truncated": 0,
+          "content_failures": 1,
+          "usable_rate": 0.933
+        },
+        "job": {
+          "calls": 15,
+          "valid_json": 15,
+          "schema_ok": 15,
+          "truncated": 0,
+          "content_failures": 0,
+          "usable_rate": 1.0
+        },
+        "review": {
+          "calls": 6,
+          "valid_json": 5,
+          "schema_ok": 5,
+          "truncated": 1,
+          "content_failures": 1,
+          "usable_rate": 0.833
+        }
+      },
+      "usage_snapshot": {
+        "request_count": 36,
+        "prompt_tokens": 43850,
+        "completion_tokens": 83144,
+        "total_tokens": 126994
+      }
+    }
+  },
+  "started_at": "2026-05-20T20:38:33.258895+00:00",
+  "elapsed_seconds": 2942.4,
+  "completed_at": "2026-05-20T21:27:35.687204+00:00"
+}

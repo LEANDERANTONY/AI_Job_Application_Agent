@@ -1,0 +1,186 @@
+== Phase B eval: 3 candidate(s) × 3 suite(s) ==
+   candidates: ['openai-via-or', 'sonnet-4.5', 'deepseek']
+   suites:     ['parser', 'jd', 'analysis']
+
+--- openai-via-or (openai/gpt-5.4) :: suite=parser ---
+  [01-student-projects] score=1.000  |  15.48s |   1755 tok | $0.0112
+  [02-midcareer-tech] score=1.000  |   9.44s |   1775 tok | $0.0111
+  [03-academic-cv] score=0.940  |  10.39s |   1859 tok | $0.0119
+  [04-bootcamp-grad] score=1.000  |  10.07s |   1873 tok | $0.0123
+  [05-career-switcher] score=0.952  |  11.42s |   2164 tok | $0.0144
+  [06-minimal] score=1.000  |   3.95s |    784 tok | $0.0044
+  [07-allcaps-traditional] score=0.857  |   7.57s |   1512 tok | $0.0092
+  [08-pdf-extracted-messy] score=1.000  |   6.62s |   1334 tok | $0.0082
+  [09-international-name] score=0.929  |   8.49s |   1546 tok | $0.0095
+  [10-early-career-internships] score=0.857  |   9.48s |   1787 tok | $0.0115
+  [11-senior-detailed] score=1.000  |  11.65s |   2323 tok | $0.0146
+  [12-government-military] score=0.971  |   8.85s |   1776 tok | $0.0110
+  [13-healthcare-rn] score=0.971  |   8.98s |   1780 tok | $0.0112
+  [14-finance-mba] score=0.956  |   9.82s |   1951 tok | $0.0123
+  [15-creative-designer] score=1.000  |  12.67s |   2132 tok | $0.0136
+  ===> openai-via-or :: parser done — avg=0.962 (15/15 scored), 144.98s, 26351 tok, $0.1664
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+--- openai-via-or (openai/gpt-5.4) :: suite=jd ---
+  [01-narvar-senior-ai-engineer] score=0.955  |   6.64s |   2475 tok | $0.0108
+  [02-wayve-embedded-cpp] score=0.955  |   6.40s |   2322 tok | $0.0103
+  [03-datadog-ai-research-paris] score=1.000  |   7.62s |   2748 tok | $0.0117
+  [04-moloco-data-scientist] score=0.955  |   4.50s |   2289 tok | $0.0085
+  [05-figma-enterprise-ae] score=0.955  |   3.73s |   2102 tok | $0.0074
+  [06-glean-ai-outcomes-manager] score=1.000  |   7.13s |   2389 tok | $0.0096
+  [07-placer-big-data-engineer] score=0.955  |   4.65s |   2026 tok | $0.0083
+  [08-synthetic-clean] score=1.000  |   3.00s |   1108 tok | $0.0046
+  [09-synthetic-preamble-title] score=1.000  |   6.53s |   1249 tok | $0.0056
+  [10-synthetic-niche-skills] score=1.000  |   3.83s |   1332 tok | $0.0060
+  [11-synthetic-allcaps-traditional] score=1.000  |   3.48s |   1169 tok | $0.0049
+  [12-synthetic-bullet-heavy] score=1.000  |   6.01s |   1213 tok | $0.0053
+  [13-synthetic-international] score=1.000  |   3.75s |   1236 tok | $0.0053
+  [14-synthetic-narrative-prose] score=1.000  |   3.39s |   1222 tok | $0.0048
+  [15-synthetic-minimal] score=1.000  |   1.82s |    761 tok | $0.0027
+  ===> openai-via-or :: jd done — avg=0.985 (15/15 scored), 72.58s, 25641 tok, $0.1058
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+--- openai-via-or (openai/gpt-5.4) :: suite=analysis ---
+  [clean_strong_fit] score=1.000  |  20.55s |   2299 tok | $0.0101
+  [clean_career_switcher] score=1.000  |  18.74s |   2135 tok | $0.0095
+  [clean_rn] score=1.000  |  16.78s |   2123 tok | $0.0088
+  [adv_skill_fabrication] score=1.000  |   7.07s |   2124 tok | $0.0090
+  [adv_embellishment] score=1.000  |   8.13s |   2023 tok | $0.0088
+  [adv_wrong_industry] score=1.000  |   9.46s |   2205 tok | $0.0100
+  ===> openai-via-or :: analysis done — avg=1.0 (6/6 scored), 80.73s, 12909 tok, $0.0562
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+--- sonnet-4.5 (anthropic/claude-sonnet-4.5) :: suite=parser ---
+  [01-student-projects] score=1.000  |  11.95s |   2211 tok | $0.0214
+  [02-midcareer-tech] score=1.000  |  11.38s |   2116 tok | $0.0198
+  [03-academic-cv] score=0.971  |  12.88s |   2110 tok | $0.0196
+  [04-bootcamp-grad] score=1.000  |  11.05s |   2151 tok | $0.0209
+  [05-career-switcher] score=0.952  |  13.65s |   2575 tok | $0.0252
+  [06-minimal] score=1.000  |   6.68s |    903 tok | $0.0076
+  [07-allcaps-traditional] score=1.000  |   9.14s |   1722 tok | $0.0150
+  [08-pdf-extracted-messy] score=1.000  |   8.73s |   1540 tok | $0.0141
+  [09-international-name] score=1.000  |   9.76s |   1765 tok | $0.0155
+  [10-early-career-internships] score=1.000  |  11.82s |   2056 tok | $0.0193
+  [11-senior-detailed] score=1.000  |  13.49s |   2744 tok | $0.0255
+  [12-government-military] score=0.971  |  11.06s |   2075 tok | $0.0189
+  [13-healthcare-rn] score=0.971  |  12.54s |   2117 tok | $0.0196
+  [14-finance-mba] score=0.971  |  13.28s |   2315 tok | $0.0215
+  [15-creative-designer] score=1.000  |  15.06s |   2388 tok | $0.0224
+  ===> sonnet-4.5 :: parser done — avg=0.989 (15/15 scored), 172.48s, 30788 tok, $0.2863
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+--- sonnet-4.5 (anthropic/claude-sonnet-4.5) :: suite=jd ---
+  [01-narvar-senior-ai-engineer] score=0.955  |   7.45s |   2772 tok | $0.0167
+  [02-wayve-embedded-cpp] score=0.955  |   7.71s |   2633 tok | $0.0158
+  [03-datadog-ai-research-paris] score=1.000  |   6.58s |   2926 tok | $0.0157
+  [04-moloco-data-scientist] score=0.955  |   5.59s |   2512 tok | $0.0120
+  [05-figma-enterprise-ae] score=0.955  |   4.30s |   2291 tok | $0.0104
+  [06-glean-ai-outcomes-manager] score=1.000  |   5.71s |   2658 tok | $0.0142
+  [07-placer-big-data-engineer] score=1.000  |   5.99s |   2332 tok | $0.0126
+  [08-synthetic-clean] score=1.000  |   5.95s |   1261 tok | $0.0071
+  [09-synthetic-preamble-title] score=1.000  |   4.47s |   1388 tok | $0.0082
+  [10-synthetic-niche-skills] score=0.909  |   5.74s |   1573 tok | $0.0098
+  [11-synthetic-allcaps-traditional] score=1.000  |   4.42s |   1288 tok | $0.0071
+  [12-synthetic-bullet-heavy] score=0.909  |   5.09s |   1419 tok | $0.0086
+  [13-synthetic-international] score=1.000  |   5.20s |   1474 tok | $0.0090
+  [14-synthetic-narrative-prose] score=1.000  |   4.16s |   1361 tok | $0.0070
+  [15-synthetic-minimal] score=1.000  |   2.51s |    875 tok | $0.0041
+  ===> sonnet-4.5 :: jd done — avg=0.976 (15/15 scored), 80.84s, 28763 tok, $0.1583
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+--- sonnet-4.5 (anthropic/claude-sonnet-4.5) :: suite=analysis ---
+  [clean_strong_fit] score=1.000  |  20.36s |   2699 tok | $0.0155
+  [clean_career_switcher] score=1.000  |  20.88s |   2564 tok | $0.0155
+  [clean_rn] score=1.000  |  21.24s |   2604 tok | $0.0154
+  [adv_skill_fabrication] score=0.709  |  10.57s |   2514 tok | $0.0138
+  [adv_embellishment] score=0.782  |  15.50s |   2423 tok | $0.0143
+  [adv_wrong_industry] score=0.636  |  16.86s |   2526 tok | $0.0149
+  ===> sonnet-4.5 :: analysis done — avg=0.854 (6/6 scored), 105.41s, 15330 tok, $0.0894
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+--- deepseek (deepseek/deepseek-v4-pro) :: suite=parser ---
+  [01-student-projects] score=0.976  |  79.43s |   3732 tok | $0.0062
+  [02-midcareer-tech] score=1.000  |  71.95s |   3459 tok | $0.0056
+  [03-academic-cv] score=0.971  | 131.21s |   5010 tok | $0.0087
+Resume auto parser fallback: LLM parsing failed. filetype=TXT source=ab error=The AI workflow returned an invalid JSON response.
+Traceback (most recent call last):
+  File "C:\Users\Leander Antony A\Documents\Projects\AI_Job_Application_Agent\tests\quality\kimi_eval_service.py", line 190, in run_json_prompt
+    payload = _parse_provider_json(content)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Leander Antony A\Documents\Projects\AI_Job_Application_Agent\tests\quality\openrouter_eval_service.py", line 114, in _parse_provider_json
+    raise ValueError("Empty response content.")
+ValueError: Empty response content.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Leander Antony A\Documents\Projects\AI_Job_Application_Agent\src\services\profile_service.py", line 2071, in build_candidate_profile_from_resume_auto
+    payload = llm_parser.parse(resume_document)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Leander Antony A\Documents\Projects\AI_Job_Application_Agent\src\services\resume_llm_parser_service.py", line 158, in parse
+    payload = self._openai_service.run_json_prompt(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Leander Antony A\Documents\Projects\AI_Job_Application_Agent\tests\quality\kimi_eval_service.py", line 193, in run_json_prompt
+    raise AgentExecutionError(
+src.errors.AgentExecutionError: The AI workflow returned an invalid JSON response.
+  [04-bootcamp-grad] score=1.000  |  39.90s |   1745 tok | $0.0021
+  [05-career-switcher] score=0.952  |  16.52s |   2053 tok | $0.0026
+  [06-minimal] score=1.000  |  22.48s |   1309 tok | $0.0019
+  [07-allcaps-traditional] score=0.857  |  19.75s |   2509 tok | $0.0038
+  [08-pdf-extracted-messy] score=1.000  |  40.18s |   2217 tok | $0.0034
+  [09-international-name] score=0.929  |  74.56s |   3041 tok | $0.0048
+  [10-early-career-internships] score=1.000  |  44.71s |   3537 tok | $0.0058
+  [11-senior-detailed] score=0.981  | 119.98s |   5113 tok | $0.0085
+  [12-government-military] score=1.000  |  18.99s |   1772 tok | $0.0022
+  [13-healthcare-rn] score=1.000  |  79.65s |   3741 tok | $0.0062
+  [14-finance-mba] score=0.984  |  64.74s |   3456 tok | $0.0055
+  [15-creative-designer] score=1.000  | 119.09s |   5256 tok | $0.0090
+  ===> deepseek :: parser done — avg=0.977 (15/15 scored), 943.13s, 47950 tok, $0.0763
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+--- deepseek (deepseek/deepseek-v4-pro) :: suite=jd ---
+  [01-narvar-senior-ai-engineer] score=0.955  |  79.38s |   5423 tok | $0.0080
+  [02-wayve-embedded-cpp] score=0.955  | 105.24s |   5338 tok | $0.0080
+  [03-datadog-ai-research-paris] score=1.000  | 105.59s |   5246 tok | $0.0073
+  [04-moloco-data-scientist] score=0.955  |  81.26s |   4386 tok | $0.0058
+  [05-figma-enterprise-ae] score=0.955  |  26.72s |   3170 tok | $0.0036
+  [06-glean-ai-outcomes-manager] score=1.000  |  64.94s |   4483 tok | $0.0061
+  [07-placer-big-data-engineer] score=1.000  |  45.40s |   3527 tok | $0.0046
+  [08-synthetic-clean] score=1.000  |  29.20s |   1753 tok | $0.0022
+  [09-synthetic-preamble-title] score=1.000  |  60.50s |   2807 tok | $0.0042
+  [10-synthetic-niche-skills] score=0.909  |  63.70s |   2836 tok | $0.0041
+  [11-synthetic-allcaps-traditional] score=1.000  |  58.61s |   2862 tok | $0.0043
+  [12-synthetic-bullet-heavy] score=0.909  |  20.79s |   2349 tok | $0.0033
+  [13-synthetic-international] score=1.000  |  45.68s |   3391 tok | $0.0053
+  [14-synthetic-narrative-prose] score=0.909  |  69.44s |   3271 tok | $0.0050
+  [15-synthetic-minimal] score=1.000  |  13.68s |   1163 tok | $0.0013
+  ===> deepseek :: jd done — avg=0.97 (15/15 scored), 870.16s, 52005 tok, $0.0731
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+--- deepseek (deepseek/deepseek-v4-pro) :: suite=analysis ---
+  [clean_strong_fit] score=—      |  63.89s |   5813 tok | $0.0089  ERROR: AgentExecutionError: The AI workflow returned an invalid JSON response.
+  [clean_career_switcher] score=1.000  | 142.30s |   6041 tok | $0.0096
+  [clean_rn] score=1.000  |  83.05s |   3929 tok | $0.0053
+  [adv_skill_fabrication] score=1.000  |  93.22s |   4709 tok | $0.0068
+  [adv_embellishment] score=0.939  |  10.94s |   2269 tok | $0.0022
+  [adv_wrong_industry] score=1.000  |  78.69s |   4278 tok | $0.0061
+  ===> deepseek :: analysis done — avg=0.988 (5/6 scored), 472.1s, 27039 tok, $0.0389
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+==========================================================================================
+=================== PHASE B SUMMARY — avg_overall by candidate × suite ===================
+==========================================================================================
+suite       openai-via-or     sonnet-4.5        deepseek          
+------------------------------------------------------------------
+parser      0.962  $0.166     0.989  $0.286     0.977  $0.076     
+jd          0.985  $0.106     0.976  $0.158     0.97   $0.073     
+analysis    1.0    $0.056     0.854  $0.089     0.988  $0.039     
+
+============= PROVIDER FIDELITY — worst-task usable_rate (gates ADR-028 D1) ==============
+  openai-via-or  worst=1.0   profile=1.0  job=1.0  review=1.0
+  sonnet-4.5     worst=1.0   profile=1.0  job=1.0  review=1.0
+  deepseek       worst=0.833   profile=0.933  job=1.0  review=0.833
+
+wrote JSON report -> C:/Users/LEANDE~1/AppData/Local/Temp/phase_b_full.json
+
+Total wall time: 2942.4s
