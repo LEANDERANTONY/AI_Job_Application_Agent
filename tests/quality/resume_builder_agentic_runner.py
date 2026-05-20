@@ -44,9 +44,11 @@ catch regressions on the next agent-prompt change.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import sys
+import time
 from typing import Any
 
 # Allow running directly via `python tests/quality/...`. The repo root
@@ -57,6 +59,18 @@ _REPO_ROOT = os.path.dirname(
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+# Slice 1H: bump the structuring-pass output budget BEFORE importing
+# src.config (which reads the env var at module-init time). Slice 1G
+# found the structuring LLM call (~11K-char prompt) often truncates
+# at the default 4000 — every truncation drops a field, the schema
+# validator rejects the malformed JSON, the regex fallback runs.
+# 6000 gives ~50% headroom for the worst-case full structuring
+# output (6 projects × 3 bullets + 3 education entries + 8 skill
+# buckets + 200-char summary ≈ 4500 tokens) plus retry headroom.
+os.environ.setdefault(
+    "OPENAI_MAX_COMPLETION_TOKENS_RESUME_BUILDER_STRUCTURING", "6000"
+)
+
 from backend.services import resume_builder_service
 from backend.services.resume_builder_service import (
     answer_resume_builder_message,
@@ -64,6 +78,7 @@ from backend.services.resume_builder_service import (
     start_resume_builder_session,
 )
 from src.openai_service import OpenAIService
+from tests.quality.provider_pricing import estimate_cost_usd, lookup_rate
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +320,224 @@ SCENARIOS: list[dict[str, Any]] = [
             "structured_payload_nonempty": "projects",
         },
     },
+    # ===================================================================
+    # Slice 1H additions — adversarial / conflicting / long-session
+    # scenarios that distinguish the top-4 candidates more sharply
+    # than the original 10. These aren't pass/fail-dominant — they're
+    # designed for the me-as-judge qualitative pass (which is why
+    # several have lenient expect blocks: the matchers catch the
+    # baseline; the conversational nuance is what we read).
+    # ===================================================================
+    {
+        "name": "triple_role_correction",
+        "description": (
+            "User corrects their target role three times in succession. "
+            "Stress-tests multi-turn memory + draft_updates discipline. "
+            "Final draft must hold the LAST-mentioned role, not earlier ones."
+        ),
+        "turns": [
+            "I'm Tara Vyas from Mumbai, tara@example.com.",
+            "I'm targeting data scientist roles.",
+            "Actually, scratch that — ML engineer roles.",
+            "On reflection, research engineer is the closer fit. Let's go with that.",
+        ],
+        "expect": {
+            "draft_field_contains": ("target_role", "research engineer"),
+        },
+    },
+    {
+        "name": "self_contradictory_info",
+        "description": (
+            "User makes contradictory claims about their experience "
+            "(5 years at a FAANG vs. recent grad). A smart agent "
+            "should EITHER flag the contradiction OR capture the latest. "
+            "Lenient matcher: just confirm the agent didn't crash + "
+            "produces a coherent reply."
+        ),
+        "turns": [
+            "I'm Marcus Lee, marcus@example.com, San Francisco.",
+            "I'm a Staff ML Engineer at Google with 8 years of experience leading large teams.",
+            "Actually I'm a recent CS grad just starting out; ignore what I said earlier.",
+            "Let's go with the recent-grad framing for the resume.",
+        ],
+        "expect": {
+            # Lenient: just confirm a coherent assistant reply on the
+            # final turn. The judging-pass reads what was actually said.
+            "assistant_says_any": (
+                3,
+                ["recent", "grad", "new grad", "early career", "entry", "got it"],
+            ),
+        },
+    },
+    {
+        "name": "off_topic_movie_question",
+        "description": (
+            "User asks an off-topic question mid-conversation "
+            "(\"what's a good movie?\"). Agent must decline politely "
+            "and steer back to resume-building. Tests the off-topic "
+            "rule in the prompt."
+        ),
+        "turns": [
+            "I'm Saanvi Joshi from Pune, saanvi@example.com.",
+            "Targeting product manager roles.",
+            "By the way, what's a good movie to watch tonight?",
+        ],
+        "expect": {
+            # Behavior-level redirect: agent should reference the
+            # resume / steering back. We INTENTIONALLY don't check for
+            # absence of the word "recommend" — a polite refusal like
+            # "I can't help with movie recommendations" contains it
+            # but is the right behavior. The judging pass reads the
+            # actual text for whether a specific movie was suggested.
+            "assistant_says_any": (
+                2,
+                ["resume", "stay on", "focus", "back to", "next", "can't help"],
+            ),
+        },
+    },
+    {
+        "name": "out_of_scope_capability_probe",
+        "description": (
+            "User asks the agent to do something outside its scope "
+            "(\"can you schedule an interview for me?\"). Agent must "
+            "refuse honestly per the honesty rule, not promise the "
+            "capability."
+        ),
+        "turns": [
+            "I'm Kenji Tanaka, kenji@example.com, Tokyo.",
+            "Targeting backend engineer roles.",
+            "Can you schedule an interview with Anthropic for me?",
+        ],
+        "expect": {
+            # Lenient: agent should acknowledge it can't do this. We
+            # check via a positive signal ("can't" / "unable" / "not
+            # able") rather than a forbidden phrase because models
+            # vary in how they refuse.
+            "assistant_says_any": (
+                2,
+                ["can't", "cannot", "unable", "not able", "won't", "outside"],
+            ),
+        },
+    },
+    {
+        "name": "failed_tool_graceful_fallback",
+        "description": (
+            "User pastes a 404'd / private github URL. The tool call "
+            "WILL succeed in firing but the fetch returns an error. "
+            "Agent must honestly tell the user the fetch failed AND "
+            "ask them to describe the project — NOT invent details."
+        ),
+        "turns": [
+            "I'm Olu Adeyemi, olu@example.com, Lagos.",
+            "Targeting AIML engineer roles.",
+            "Project: https://github.com/this-org-does-not-exist-anywhere/never-real-repo",
+        ],
+        "expect": {
+            "tool_called": "fetch_github_readme",
+            # Agent must invite the user to describe instead of
+            # fabricating. Lenient matcher — accept any "describe / "
+            # "details / share" framing.
+            "assistant_says_any": (
+                2,
+                [
+                    "describe",
+                    "details",
+                    "tell me",
+                    "share",
+                    "couldn't",
+                    "could not",
+                    "didn't work",
+                ],
+            ),
+        },
+    },
+    {
+        "name": "format_jumbled_dump",
+        "description": (
+            "User pastes role/experience info as a chaotic mix of "
+            "bullets, prose, dates, and a URL in one turn. Tests how "
+            "well the agent extracts structured fields from messy "
+            "free-form input. Lenient: confirm at least target_role "
+            "captured."
+        ),
+        "turns": [
+            "I'm Priya R. priya.r@example.com, Bengaluru.",
+            (
+                "Looking for: Senior ML Engineer roles.\n"
+                "Background:\n"
+                "- 4 yrs at AcmeCorp, May 2021-present, mostly LLM evals + RAG.\n"
+                "- Github: https://github.com/openai/openai-python (just for reference, "
+                "not mine; mine is private).\n"
+                "Pls capture all that — I'll add the private repo details later."
+            ),
+        ],
+        "expect": {
+            "draft_field_contains": ("target_role", "Senior ML Engineer"),
+            # The agent should at least acknowledge the request to
+            # come back to the private repo later.
+            "assistant_says_any": (
+                1,
+                ["later", "captured", "got it", "private", "noted"],
+            ),
+        },
+    },
+    {
+        "name": "long_session_memory_callback",
+        "description": (
+            "A 7-turn session: the user mentions a key fact in turn 2, "
+            "covers other topics for several turns, then asks on the "
+            "final turn whether everything is captured. Agent should "
+            "either confirm the earlier fact is in or proactively "
+            "resurface it."
+        ),
+        "turns": [
+            "I'm Aiyana Walker, aiyana@example.com, Boston.",
+            "I worked at Stripe 2020-2023 as a Senior Engineer focusing on payments fraud.",
+            "Targeting Staff Engineer roles in fintech.",
+            "Skills: Python, Go, Kafka, Snowflake, ML for fraud detection.",
+            "B.S. in CS from MIT, 2020.",
+            "A bit on impact: I built the model that cut chargeback rate by 18%.",
+            "Have we captured everything from my Stripe work?",
+        ],
+        "expect": {
+            # The agent should recall Stripe + the 18% impact AND
+            # confirm/list what's in. Lenient matcher catches several
+            # ways of phrasing the recall.
+            "assistant_says_any": (
+                6,
+                ["stripe", "18%", "fraud", "chargeback", "payments"],
+            ),
+        },
+    },
+    {
+        "name": "mixed_github_and_portfolio_urls",
+        "description": (
+            "User pastes a mix of github + non-github URLs in one "
+            "message. Agent should call fetch_github_readme on the "
+            "github URL but NOT on the portfolio one — and explicitly "
+            "ask the user to describe the non-github project."
+        ),
+        "turns": [
+            "I'm Devin Chen, devin@example.com, Seattle.",
+            "Targeting ML engineer roles.",
+            (
+                "Here are two projects:\n"
+                "1. https://github.com/openai/openai-python (open-source SDK)\n"
+                "2. https://devinchen.me/portfolio/health-ai (my personal portfolio "
+                "writeup of a healthcare ML project)"
+            ),
+        ],
+        "expect": {
+            "tool_called": "fetch_github_readme",
+            # Agent should mention asking for description of the
+            # non-github URL — either by name, by URL, or by inviting
+            # the user to describe it.
+            "assistant_says_any": (
+                2,
+                ["portfolio", "describe", "tell me about", "details", "second", "writeup"],
+            ),
+        },
+    },
 ]
 
 
@@ -322,6 +555,38 @@ def _gather_tool_events(session) -> list[dict]:
     ]
 
 
+def _usage_snapshot(service: Any) -> dict[str, int]:
+    """Return the service's cumulative usage as ``{prompt, completion, total}``.
+
+    Both OpenAIService and OpenRouterEvalService expose
+    ``get_usage_snapshot()`` returning a dict with at least
+    ``prompt_tokens``/``completion_tokens``/``total_tokens``.
+    """
+    try:
+        snap = service.get_usage_snapshot() or {}
+    except Exception:
+        snap = {}
+    return {
+        "prompt": int(snap.get("prompt_tokens", 0) or 0),
+        "completion": int(snap.get("completion_tokens", 0) or 0),
+        "total": int(snap.get("total_tokens", 0) or 0),
+    }
+
+
+def _resolve_model_slug_for_pricing(service: Any) -> str:
+    """Return a stable model slug for the pricing lookup.
+
+    OpenRouterEvalService -> ``self.default_model`` (e.g.
+    ``anthropic/claude-sonnet-4.5``).
+    OpenAIService -> ``"gpt-5.4"`` (the production routing default for
+    the resume-builder intake).
+    """
+    model = getattr(service, "default_model", None)
+    if isinstance(model, str) and model.strip():
+        return model.strip()
+    return "gpt-5.4"
+
+
 def run_scenario(scenario: dict[str, Any], openai_service: OpenAIService) -> dict[str, Any]:
     """Execute one scenario end-to-end and return a result block."""
     name = scenario["name"]
@@ -331,6 +596,15 @@ def run_scenario(scenario: dict[str, Any], openai_service: OpenAIService) -> dic
 
     session_state = start_resume_builder_session()
     session_id = session_state["session_id"]
+
+    # Slice 1H: capture latency + tokens + cost as first-class metrics.
+    # Latency is wall-clock around the user-message turns (including
+    # all internal tool-loop iterations + retries). Tokens come from
+    # the service's cumulative usage snapshot, diffed across the
+    # scenario. Cost = tokens × per-model pricing.
+    started_at = time.perf_counter()
+    usage_at_start = _usage_snapshot(openai_service)
+    pricing_slug = _resolve_model_slug_for_pricing(openai_service)
 
     assistant_replies: list[str] = []
     proactive_offers: list[str | None] = []
@@ -500,6 +774,19 @@ def run_scenario(scenario: dict[str, Any], openai_service: OpenAIService) -> dic
                 "Check the strict-mode schema produced by _build_response_format_schema."
             )
 
+    # Close out the metrics: scenario wall-clock, token usage delta,
+    # and cost. The cost calculation honors the service's actual
+    # default_model so a -mini override is priced correctly. A zero
+    # cost row signals an unknown pricing slug — runner emits a
+    # warning when this happens.
+    elapsed_s = time.perf_counter() - started_at
+    usage_at_end = _usage_snapshot(openai_service)
+    delta_prompt = max(0, usage_at_end["prompt"] - usage_at_start["prompt"])
+    delta_completion = max(
+        0, usage_at_end["completion"] - usage_at_start["completion"]
+    )
+    cost_usd = estimate_cost_usd(pricing_slug, delta_prompt, delta_completion)
+
     return {
         "name": name,
         "description": scenario["description"],
@@ -512,6 +799,18 @@ def run_scenario(scenario: dict[str, Any], openai_service: OpenAIService) -> dic
         "structured_projects_count": len(structured_projects),
         "structured_education_count": len(structured_education),
         "structured_skill_categories_count": len(structured_skill_categories),
+        # Slice 1H metrics — surface in the per-scenario summary line
+        # and the JSON report so the comparison script can rank by
+        # latency / cost / throughput in addition to pass-rate.
+        "metrics": {
+            "elapsed_seconds": round(elapsed_s, 3),
+            "prompt_tokens": delta_prompt,
+            "completion_tokens": delta_completion,
+            "total_tokens": delta_prompt + delta_completion,
+            "cost_usd": round(cost_usd, 4),
+            "tool_call_count": len(tool_events),
+            "pricing_slug": pricing_slug,
+        },
     }
 
 
@@ -527,6 +826,14 @@ def run_scenario(scenario: dict[str, Any], openai_service: OpenAIService) -> dic
 # slugs (gemini-3.1-pro / deepseek-v4 / qwen-3.5) we deliberately
 # correct here.
 _AGENTIC_CANDIDATES: dict[str, str] = {
+    # gpt-5.4 routed THROUGH OpenRouter — same proxy hop as every other
+    # OpenRouter candidate, so cross-provider latency comparisons are
+    # apples-to-apples (the `openai` baseline above uses the production
+    # Responses-API direct path, which is faster but unfair to compare
+    # head-to-head with OpenRouter-routed peers on latency). The
+    # delta between `openai` and `openai-via-or` quantifies OpenRouter
+    # proxy overhead by itself.
+    "openai-via-or": "openai/gpt-5.4",
     "sonnet-4.5": "anthropic/claude-sonnet-4.5",
     "gemini": "google/gemini-3.1-pro-preview",
     "kimi": "moonshotai/kimi-k2.6",
@@ -742,15 +1049,77 @@ def main() -> int:
                     "structured_projects_count": 0,
                     "structured_education_count": 0,
                     "structured_skill_categories_count": 0,
+                    "metrics": {
+                        "elapsed_seconds": 0,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                        "cost_usd": 0,
+                        "tool_call_count": 0,
+                        "pricing_slug": "(unknown)",
+                    },
                 }
             result["provider"] = provider_label
             results.append(result)
             status = "PASS" if result["passed"] else "FAIL"
-            print(f"   {status}", flush=True)
+            # Slice 1H heartbeat: one tabular metric line per scenario.
+            # latency | tokens | cost | tool-calls | status — exactly
+            # the columns a `tail -f` watcher needs to keep tabs on the
+            # run in real time.
+            m = result.get("metrics") or {}
+            print(
+                f"   {status} | {m.get('elapsed_seconds', 0):>6.2f}s"
+                f" | {m.get('total_tokens', 0):>6} tok"
+                f" | ${m.get('cost_usd', 0):>6.4f}"
+                f" | {m.get('tool_call_count', 0)} tools",
+                flush=True,
+            )
             if not result["passed"]:
                 for finding in result["findings"]:
-                    print(f"     - {finding}")
+                    print(f"     - {finding}", flush=True)
         per_candidate_results[candidate] = results
+
+        # Slice 1H: incremental checkpoint after EVERY candidate
+        # completes. If the run dies mid-matrix (provider hang, billing
+        # cap, network), partial results survive on disk. Each
+        # checkpoint overwrites the JSON file so the most recent state
+        # is always one read away.
+        if args.json:
+            checkpoint = {
+                "candidates": per_candidate_labels,
+                "results": {
+                    cname: per_candidate_results[cname]
+                    for cname in per_candidate_results
+                },
+                "checkpoint_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "checkpoint_after_candidate": candidate,
+            }
+            with open(args.json, "w", encoding="utf-8") as fh:
+                json.dump(checkpoint, fh, indent=2)
+            print(
+                f"   [checkpoint] wrote partial results to {args.json}",
+                flush=True,
+            )
+
+        # Per-candidate roll-up so totals are visible without waiting
+        # for the final comparison matrix.
+        passed_count = sum(1 for r in results if r["passed"])
+        total_cost = sum((r.get("metrics") or {}).get("cost_usd", 0) for r in results)
+        total_tokens = sum(
+            (r.get("metrics") or {}).get("total_tokens", 0) for r in results
+        )
+        avg_latency = (
+            sum((r.get("metrics") or {}).get("elapsed_seconds", 0) for r in results)
+            / len(results)
+            if results
+            else 0
+        )
+        print(
+            f"   ===> {candidate} done: {passed_count}/{len(results)} PASS, "
+            f"avg {avg_latency:.1f}s/scenario, {total_tokens} tok, "
+            f"${total_cost:.4f}",
+            flush=True,
+        )
 
     if not per_candidate_results:
         print("\nNo candidates ran. Check --candidates / API key configuration.")
@@ -765,6 +1134,7 @@ def main() -> int:
                 cname: per_candidate_results[cname]
                 for cname in per_candidate_results
             },
+            "completed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2)
