@@ -2126,3 +2126,219 @@ What's parked for Phase 3: eval expansion to 15-20 fixtures, an
 optional `pending_followups` UI panel, external web-search provider
 integration (only if a quality gap surfaces), and a multi-provider
 agentic eval when ADR-028 D1 lands.
+
+## Day 60: Slice 1G — multi-provider agentic eval (and the THIRD silent-fallback bug)
+
+Phase 2's parked "multi-provider agentic eval when ADR-028 D1 lands"
+got pulled forward by the operator's question: *is gpt-5.4@medium
+actually the right model for this surface, or would Sonnet 4.5 / one
+of the other strong models do better?* Built the eval, ran it across
+the planned candidate slate, found the answer.
+
+### What landed
+
+**`tests/quality/openrouter_eval_service.py`** — new adapter.
+``OpenRouterEvalService`` is a duck-type of
+``OpenAIService.run_tool_loop`` that routes through OpenRouter's
+Chat-Completions endpoint. Sits next to the existing
+``KimiEvalService`` (which only does plain JSON-prompt suites; the
+agentic eval needs the tool-loop translation glue). Translates:
+
+  - Responses-API tool spec ``{"type":"function","name":...}`` to
+    Chat-Completions ``{"type":"function","function":{...}}``
+  - OpenAI's ``function_call`` items in ``response.output`` to
+    Chat-Completions ``message.tool_calls`` + role:"tool" results
+  - JSON parsing — see the bug section below.
+
+Tied off with 22 hermetic tests
+(``tests/backend/test_openrouter_eval_service.py``): translation
+shapes, parallel tool calls in one iteration, iteration-cap
+exhaustion, executor exceptions captured as tool outputs not raised
+across the boundary, markdown-fence handling.
+
+**`tests/quality/resume_builder_agentic_runner.py`** — refactored
+to multi-candidate mode. ``--candidates`` flag accepts ``all`` (=
+openai baseline + every OpenRouter slug in ``_AGENTIC_CANDIDATES``)
+or a comma-list. Auto-skips the 2 ``web_search`` scenarios for
+non-openai providers (the function-wrap uses an inner OpenAI
+Responses-API call to OpenAI's built-in search; no Chat-Completions
+equivalent). Prints a candidate × scenario PASS/FAIL matrix +
+per-candidate totals. JSON report carries the per-candidate result
+list so a comparison script can diff runs.
+
+Candidate slate matches ``report.md`` §4 (ADR-028 D1 blueprint),
+slug-corrected against the live OpenRouter catalogue, plus
+Anthropic Sonnet 4.5 as the operator's explicit add:
+
+    sonnet-4.5 = anthropic/claude-sonnet-4.5
+    gemini     = google/gemini-3.1-pro-preview
+    kimi       = moonshotai/kimi-k2.6
+    glm        = z-ai/glm-5.1
+    grok       = x-ai/grok-4.20
+    deepseek   = deepseek/deepseek-v4-pro
+    qwen       = qwen/qwen3.6-max-preview
+
+**`scripts/compare_multi_provider_eval.py`** — comparison helper.
+Loads two eval JSON reports + classifies each remaining failure as
+``regex_fallback`` (every assistant_reply is a canonical step-machine
+message AND no tool_events — the adapter raised on every turn, the
+service caught it, the deterministic intake ran), ``partial_fallback``
+(some turns succeeded, some fell back — sporadic parse issue), or
+``model_behavior`` (the model ran cleanly and the behavior didn't
+match — REAL signal). Catches the difference between adapter bugs
+and genuine cross-provider capability gaps.
+
+### THE BUG (silent-fallback #3)
+
+The first run (v1, all 8 candidates × 8 cross-provider scenarios)
+came back with:
+  openai 10/10 · **sonnet-4.5 2/8** · gemini 5/8 · kimi 3/8 ·
+  glm 6/8 · grok 6/8 · deepseek 5/8 · qwen 5/8
+
+Sonnet at the BOTTOM was suspicious. The comparison script's
+classifier found why: **every single sonnet failure was
+``regex_fallback``** — every turn, the OpenRouter adapter raised
+``AgentExecutionError("returned invalid JSON")``, the resume-builder
+service caught it and ran the deterministic step-machine.
+
+Root cause: Anthropic models through OpenRouter ignore the
+``response_format={"type":"json_object"}`` hint and wrap their JSON
+output in markdown code fences:
+
+    ```json
+    {
+      "draft_updates": {...},
+      "assistant_message": "...",
+      ...
+    }
+    ```
+
+Anthropic's own API doesn't have a native JSON-mode constraint, so
+the OpenRouter shim's prompt-coerced "respond in JSON" reads to
+Claude as "format the JSON nicely". My adapter's bare
+``json.loads(content)`` rejected the fences → silent fallback.
+
+Other providers wrap intermittently — kimi, gemini, deepseek showed
+partial fallbacks; glm/grok/qwen mostly emit bare JSON. Sonnet 4.5
+wraps consistently.
+
+Third silent-fallback bug of the session — same pattern as the
+schema-400 bug (Slice 1C) and the theme-registry drift bug (between
+Slices 1C and 1D). Each lived in production for weeks because the
+fallback path was "good enough" to mask the failure.
+
+### THE FIX
+
+``_parse_provider_json(content)`` in the OpenRouter adapter:
+
+  1. Fast path — bare JSON
+  2. Strip markdown fences (`` ```json ... ``` `` or `` ``` ... ``` ``)
+     and retry
+  3. Last-ditch: extract the first balanced ``{...}`` substring (with
+     string-literal awareness so braces inside JSON strings don't
+     throw the count off) and retry
+
+Wired into both ``run_tool_loop`` and ``run_json_prompt`` so the same
+fix covers both code paths. 9 new hermetic tests pin the parser
+behavior down: bare JSON, ```json fence, ``` fence, ```JSON
+(uppercase tag), JSON wrapped in prose, balanced-brace extraction
+with embedded `{`/`}` inside strings, empty input, unparseable
+input, end-to-end loop with a fenced response.
+
+### V2 RESULTS (post-fence-fix)
+
+    candidate    v1     v2    change
+    openai       10/10  10/10   -
+    sonnet-4.5    2/ 8   6/ 8  +4   ← all 4 of those were regex-fallback
+    gemini        5/ 8   6/ 8  +1
+    kimi          3/ 8   5/ 8  +2
+    glm           6/ 8   6/ 8   -
+    grok          6/ 8   6/ 8   -
+    deepseek      5/ 8   6/ 8  +1
+    qwen          5/ 8   5/ 8   -
+
+The classifier on v2 remaining failures:
+
+    regex_fallback     : 0    (the fix eliminated this class entirely)
+    partial_fallback   : 5    (occasional adapter parse hiccups)
+    model_behavior     : 11   (the real cross-provider signal)
+
+### What the model-behavior failures actually tell us
+
+Five scenarios are universal PASS across every provider:
+  - honesty_on_linkedin_scrape
+  - proactive_offer_after_enough_signal
+  - proactive_offer_silent_mid_basics
+  - multi_turn_correction_preserved
+  - non_github_url_no_fetch (except grok over-eagerly fired
+    fetch_github_readme on a non-github URL)
+
+The differentiators are three specific behaviors:
+
+  - **`github_url_fires_tool`** — only openai, glm, grok call the
+    tool reliably when given a github.com URL. Sonnet / gemini /
+    kimi / deepseek / qwen sometimes ask the user a clarifying
+    question first before committing. **Tool-use discipline
+    differs by provider.** Not a "wrong" behavior — different style.
+  - **`promise_tracking_remembers_deferred_publication`** — half
+    the providers (openai, sonnet, glm, deepseek) add the deferred
+    publication to ``pending_followups[]`` reliably; gemini, kimi,
+    grok, qwen miss it. **Multi-turn memory discipline differs.**
+  - **`structured_payload_runs_after_generate`** — only openai and
+    grok pass. The structuring LLM call (a SEPARATE path from the
+    agentic loop, fires only when generate_resume_builder_resume is
+    invoked) uses an ~11K-char prompt with worked BEFORE/AFTER
+    examples. Most OpenRouter providers drop a field or malformed-
+    JSON it. **Heavy structured-output prompts are where the OpenAI
+    Responses-API strict-schema mode shows its value most clearly.**
+
+### Headline conclusion (for the operator question)
+
+**Sonnet 4.5 ties — does not beat — the strong OpenRouter providers
+at 6/8 on the cross-provider scenarios.** No clean "switch to
+Sonnet" signal on this workload. The 25% gap to gpt-5.4 baseline
+(6/8 vs 8/8) concentrates in two specific behaviors (github tool
+firing + structured-output reliability under heavy prompts).
+
+**Recommendation: keep gpt-5.4@medium as the default agent.**
+Sonnet, gemini, glm, grok, deepseek are all viable failover targets
+for non-PII workloads under ADR-028 D1's criteria — they cluster
+tightly enough that the choice between them on capability is a
+wash; pick on cost / EU posture / outage diversification instead.
+
+### Artifacts preserved
+
+`docs/eval-runs/2026-05-21-agentic-eval-v1-pre-fence-fix.json` and
+`docs/eval-runs/2026-05-21-agentic-eval-v2-post-fence-fix.json` —
+both raw eval reports, indexed by candidate, with full
+assistant_replies, tool_events, and findings preserved for future
+re-analysis. Re-running the eval after a prompt change is one
+command: `uv run python tests/quality/resume_builder_agentic_runner.py
+--candidates all --json out.json`.
+
+### Lesson for future readers
+
+This is the **third silent-fallback bug** found this session. All
+three followed the same shape: two configs/contracts that should
+have matched drifted apart, downstream code silently fell back to a
+"safe default" instead of erroring loudly, and the bug only
+surfaced when a measurement (eval / replay / md5 comparison) forced
+the question. The pattern is so consistent it's worth naming:
+**the silent-fallback antipattern**.
+
+Three pact-tests now defend the architecture against this class:
+
+  1. `test_llm_schema_strictness` — every Pydantic schema wired to
+     `run_structured_prompt` must produce a JSON Schema with no
+     `dict[K, V]` patterns and no multi-branch unions (the
+     schema-400 trap)
+  2. `test_resume_themes_registry_matches_supported_themes` — the
+     RESUME_THEMES gate must list every theme in SUPPORTED_THEMES
+     (the registry-drift trap)
+  3. `test_parse_provider_json_*` — the OpenRouter adapter parser
+     must tolerate markdown-fenced JSON (the provider-quirk trap)
+
+If a fourth silent-fallback bug surfaces, the right move is to
+generalise these into a shared "bug-class regression" pattern in
+the test suite. For now, three is enough to make the lesson sticky
+without over-engineering the abstraction.

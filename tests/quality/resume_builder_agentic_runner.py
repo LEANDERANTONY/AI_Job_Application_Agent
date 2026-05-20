@@ -188,6 +188,12 @@ SCENARIOS: list[dict[str, Any]] = [
             "expects from a role) that the agent can't know from the "
             "conversation alone. Agent should fire web_search."
         ),
+        # Slice 1G: web_search is OpenAI-specific (wraps the built-in
+        # server-side tool via an inner Responses-API call). The
+        # OpenRouter adapter has no Chat-Completions equivalent, so we
+        # auto-skip scenarios with this flag when running against any
+        # non-openai provider.
+        "requires_web_search": True,
         "turns": [
             "I'm Anika from Boston, anika@example.com.",
             "Looking for senior MLE roles at Anthropic specifically.",
@@ -226,6 +232,7 @@ SCENARIOS: list[dict[str, Any]] = [
             "it's wasted latency + the user is the source of truth for "
             "their own life."
         ),
+        "requires_web_search": True,
         "turns": [
             "I'm Rohit from Hyderabad, rohit@example.com.",
             "Targeting backend engineer roles.",
@@ -508,6 +515,113 @@ def run_scenario(scenario: dict[str, Any], openai_service: OpenAIService) -> dic
     }
 
 
+# Multi-provider candidate pool. Mirrors the candidate set in
+# ``provider_ab_runner._CANDIDATES`` (the ADR-028 D1 candidate slate
+# from report.md §4) plus Anthropic Sonnet 4.5 as the operator's
+# explicit add for the agentic eval. ``openai`` is the special
+# baseline routed through the production ``OpenAIService`` (Responses
+# API native); everything else goes via OpenRouter Chat Completions.
+#
+# Slugs verified against the live OpenRouter catalogue per
+# report.md §4 — the provider_ab_runner copy still has three stale
+# slugs (gemini-3.1-pro / deepseek-v4 / qwen-3.5) we deliberately
+# correct here.
+_AGENTIC_CANDIDATES: dict[str, str] = {
+    "sonnet-4.5": "anthropic/claude-sonnet-4.5",
+    "gemini": "google/gemini-3.1-pro-preview",
+    "kimi": "moonshotai/kimi-k2.6",
+    "glm": "z-ai/glm-5.1",
+    "grok": "x-ai/grok-4.20",
+    "deepseek": "deepseek/deepseek-v4-pro",
+    "qwen": "qwen/qwen3.6-max-preview",
+}
+
+
+def _resolve_candidate_list(spec: str) -> list[str]:
+    """Parse the --candidates argument into an ordered list of names.
+
+    Accepts:
+      "all"                       -> openai + every entry in _AGENTIC_CANDIDATES
+      "openai,sonnet-4.5,gemini"  -> just those (preserves order)
+      "sonnet-4.5"                -> just one
+    """
+    cleaned = (spec or "all").strip()
+    if cleaned == "all":
+        return ["openai", *_AGENTIC_CANDIDATES.keys()]
+    names = [part.strip() for part in cleaned.split(",") if part.strip()]
+    known = {"openai", *_AGENTIC_CANDIDATES.keys()}
+    bad = [n for n in names if n not in known]
+    if bad:
+        raise SystemExit(
+            f"Unknown candidate(s) {bad!r}. Known: {sorted(known)}."
+        )
+    return names
+
+
+def _build_arm(name: str, *, model_override: str | None = None) -> tuple[Any, str]:
+    """Build (service, label) for a candidate name.
+
+    ``openai`` returns the production OpenAIService (no model override
+    plumbed — the route picks gpt-5.4 by default). Anything else
+    returns an OpenRouterEvalService bound to the slug from
+    ``_AGENTIC_CANDIDATES`` (or the explicit model_override).
+    """
+    if name == "openai":
+        svc = OpenAIService()
+        return svc, "openai:gpt-5.4"
+    slug = model_override or _AGENTIC_CANDIDATES[name]
+    from tests.quality.openrouter_eval_service import OpenRouterEvalService
+
+    svc = OpenRouterEvalService(model=slug)
+    return svc, f"openrouter:{slug}"
+
+
+def _print_comparison_matrix(per_candidate_results: dict[str, list[dict]]) -> None:
+    """Render the candidate × scenario PASS/FAIL grid + totals."""
+    candidate_names = list(per_candidate_results.keys())
+    # Collect the union of scenario names across every candidate (some
+    # candidates may have skipped web_search scenarios).
+    scenario_names: list[str] = []
+    seen: set[str] = set()
+    for results in per_candidate_results.values():
+        for r in results:
+            if r["name"] not in seen:
+                scenario_names.append(r["name"])
+                seen.add(r["name"])
+
+    # Build a lookup so we can render misses as a blank cell.
+    cell: dict[tuple[str, str], str] = {}
+    for cname, results in per_candidate_results.items():
+        for r in results:
+            cell[(cname, r["name"])] = "PASS" if r["passed"] else "FAIL"
+
+    # Column-width: name field width = longest scenario name.
+    name_w = max((len(n) for n in scenario_names), default=10)
+    col_w = max(8, max(len(c) for c in candidate_names))
+
+    print()
+    print("=" * 80)
+    print("MULTI-PROVIDER AGENTIC EVAL — comparison matrix")
+    print("=" * 80)
+    header = f"{'scenario'.ljust(name_w)} | " + " | ".join(
+        c.ljust(col_w) for c in candidate_names
+    )
+    print(header)
+    print("-" * len(header))
+    for sname in scenario_names:
+        row = f"{sname.ljust(name_w)} | " + " | ".join(
+            cell.get((c, sname), "skip").ljust(col_w) for c in candidate_names
+        )
+        print(row)
+    print("-" * len(header))
+    totals: list[str] = []
+    for cname in candidate_names:
+        results = per_candidate_results[cname]
+        passed = sum(1 for r in results if r["passed"])
+        totals.append(f"{cname}: {passed}/{len(results)}")
+    print("Totals — " + " · ".join(totals))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", help="Optional path to write the full JSON report.")
@@ -519,43 +633,151 @@ def main() -> int:
             "Default: run every scenario."
         ),
     )
+    parser.add_argument(
+        "--candidates",
+        default="openai",
+        help=(
+            "Candidate(s) to evaluate. 'all' = OpenAI baseline plus every "
+            "OpenRouter slug in _AGENTIC_CANDIDATES (sonnet-4.5, gemini, "
+            "kimi, glm, grok, deepseek, qwen). Comma-separated list (e.g. "
+            "'openai,sonnet-4.5') picks a subset in that order. Default is "
+            "'openai' so a vanilla run stays single-provider."
+        ),
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "Optional model slug override. Only meaningful when --candidates "
+            "is a single non-baseline name; overrides _AGENTIC_CANDIDATES's "
+            "default slug for that one candidate. Useful for testing a new "
+            "model id without editing this file."
+        ),
+    )
     args = parser.parse_args()
 
-    openai_service = OpenAIService()
-    if not openai_service.is_available():
-        print(
-            "OpenAIService is not configured. Set OPENAI_API_KEY or drop the "
-            "key file in the expected location and re-run."
-        )
-        return 2
+    candidate_names = _resolve_candidate_list(args.candidates)
 
-    selected = SCENARIOS
+    # Resolve scenario filter once (applies across every candidate).
+    base_scenarios: list[dict[str, Any]] = SCENARIOS
     if args.scenario:
-        selected = [s for s in SCENARIOS if s["name"] in set(args.scenario)]
-        if not selected:
+        base_scenarios = [s for s in SCENARIOS if s["name"] in set(args.scenario)]
+        if not base_scenarios:
             print(f"No scenarios matched --scenario filter: {args.scenario}")
             return 2
 
-    results: list[dict[str, Any]] = []
-    for scenario in selected:
-        print(f"-- running {scenario['name']} ...")
-        result = run_scenario(scenario, openai_service)
-        results.append(result)
-        status = "PASS" if result["passed"] else "FAIL"
-        print(f"   {status}")
-        if not result["passed"]:
-            for finding in result["findings"]:
-                print(f"     - {finding}")
+    per_candidate_results: dict[str, list[dict[str, Any]]] = {}
+    per_candidate_labels: dict[str, str] = {}
+
+    # Run each candidate end-to-end before moving to the next. Lets
+    # the user see early results streaming + cap spend mid-run by
+    # killing the script if an early candidate is hopeless.
+    for candidate in candidate_names:
+        try:
+            service, provider_label = _build_arm(
+                candidate,
+                model_override=(args.model if len(candidate_names) == 1 else None),
+            )
+        except KeyError as exc:
+            print(f"Skipping unknown candidate {candidate!r}: {exc}")
+            continue
+        per_candidate_labels[candidate] = provider_label
+
+        if not service.is_available():
+            env_hint = (
+                "OPENAI_API_KEY or openai_key.txt"
+                if candidate == "openai"
+                else "OPENROUTER_API_KEY (env or .env)"
+            )
+            print(
+                f"== {candidate} ({provider_label}) — SKIPPED: not configured "
+                f"({env_hint})"
+            )
+            per_candidate_results[candidate] = []
+            continue
+
+        # web_search is OpenAI-only (Slice 1F — wraps an inner
+        # Responses-API call to OpenAI's built-in search tool). For
+        # cross-provider fairness, skip those scenarios on every non-
+        # openai candidate.
+        if candidate == "openai":
+            scenarios_for_arm = base_scenarios
+            skipped_names: list[str] = []
+        else:
+            scenarios_for_arm = []
+            skipped_names = []
+            for s in base_scenarios:
+                if s.get("requires_web_search"):
+                    skipped_names.append(s["name"])
+                else:
+                    scenarios_for_arm.append(s)
+
+        print()
+        print("=" * 80)
+        print(f"== {candidate} ({provider_label}) ==")
+        if skipped_names:
+            print(
+                f"   (skipping {len(skipped_names)} web_search scenario(s) "
+                f"for non-openai provider: {', '.join(skipped_names)})"
+            )
+
+        results: list[dict[str, Any]] = []
+        for scenario in scenarios_for_arm:
+            print(f"-- running {scenario['name']} ...", flush=True)
+            try:
+                result = run_scenario(scenario, service)
+            except Exception as exc:
+                # A provider hard-failure (auth, slug, billing) on
+                # ONE scenario shouldn't tank the entire matrix run.
+                # Record it as a failure so the row stays comparable.
+                result = {
+                    "name": scenario["name"],
+                    "description": scenario["description"],
+                    "passed": False,
+                    "findings": [f"runtime error: {type(exc).__name__}: {exc}"],
+                    "tool_events": [],
+                    "proactive_offers": [],
+                    "assistant_replies": [],
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "structured_projects_count": 0,
+                    "structured_education_count": 0,
+                    "structured_skill_categories_count": 0,
+                }
+            result["provider"] = provider_label
+            results.append(result)
+            status = "PASS" if result["passed"] else "FAIL"
+            print(f"   {status}", flush=True)
+            if not result["passed"]:
+                for finding in result["findings"]:
+                    print(f"     - {finding}")
+        per_candidate_results[candidate] = results
+
+    if not per_candidate_results:
+        print("\nNo candidates ran. Check --candidates / API key configuration.")
+        return 2
+
+    _print_comparison_matrix(per_candidate_results)
 
     if args.json:
+        report = {
+            "candidates": per_candidate_labels,
+            "results": {
+                cname: per_candidate_results[cname]
+                for cname in per_candidate_results
+            },
+        }
         with open(args.json, "w", encoding="utf-8") as fh:
-            json.dump(results, fh, indent=2)
+            json.dump(report, fh, indent=2)
         print(f"\nwrote JSON report -> {args.json}")
 
-    total = len(results)
-    passed = sum(1 for r in results if r["passed"])
-    print(f"\n{passed}/{total} scenarios passed.")
-    return 0 if passed == total else 1
+    # Exit non-zero if any candidate failed any scenario — keeps this
+    # script usable as a CI gate for "did the chosen provider regress?"
+    any_failures = any(
+        not r["passed"]
+        for results in per_candidate_results.values()
+        for r in results
+    )
+    return 0 if not any_failures else 1
 
 
 if __name__ == "__main__":

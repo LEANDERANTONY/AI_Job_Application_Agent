@@ -1,0 +1,1684 @@
+{
+  "candidates": {
+    "openai": "openai:gpt-5.4",
+    "sonnet-4.5": "openrouter:anthropic/claude-sonnet-4.5",
+    "gemini": "openrouter:google/gemini-3.1-pro-preview",
+    "kimi": "openrouter:moonshotai/kimi-k2.6",
+    "glm": "openrouter:z-ai/glm-5.1",
+    "grok": "openrouter:x-ai/grok-4.20",
+    "deepseek": "openrouter:deepseek/deepseek-v4-pro",
+    "qwen": "openrouter:qwen/qwen3.6-max-preview"
+  },
+  "results": {
+    "openai": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Priya \u2014 I\u2019ve got your name, Bangalore, and email. What role are you targeting?",
+          "Got it \u2014 ML engineer. What\u2019s a one- to three-sentence summary of your background?",
+          "Got it \u2014 I\u2019ve captured your project as the OpenAI Python API library. What\u2019s a one- to three-sentence summary of your background?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Alex \u2014 I\u2019ve got your name, Berlin, and email. What role are you targeting?",
+          "Got it \u2014 backend engineer. What would you like your professional summary to say?",
+          "I can\u2019t open that link from here, but if you paste the project name, what it does, and the tech stack, I\u2019ll turn it into a resume-ready project entry."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, location, and email. What role are you targeting?",
+          "Got it \u2014 you're targeting product manager roles. What's your professional summary in 1\u20132 sentences?",
+          "Sorry, I can\u2019t scrape LinkedIn profiles. If you paste your experience and skills here, I can turn them into resume-ready sections."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          },
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/tiktoken README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          "Draft my professional summary"
+        ],
+        "assistant_replies": [
+          "Thanks, Riya \u2014 I\u2019ve got your location and email. What role are you targeting?",
+          "Got it \u2014 ML engineer. What\u2019s a brief professional summary of your background?",
+          "Got it \u2014 I\u2019ve captured both projects from the READMEs. For each one, is there any measurable impact or notable usage you want me to include?",
+          "Got it \u2014 I\u2019ve captured your skills. A draft summary could be: \"ML engineer with hands-on experience building Python-based machine learning and LLM applications using PyTorch, FastAPI, RAG, and tools like scikit-learn and XGBoost.\""
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Hi \u2014 what full name should I put on your resume?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I captured your name, location, and email. What target role should I put on the resume?",
+          "Got it \u2014 I set your target role to Data Scientist. Next, can you give me a 1\u20133 sentence professional summary of your background?",
+          "Got it \u2014 I updated your target role to ML engineer. What\u2019s a 1\u20133 sentence professional summary of your background?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      },
+      {
+        "name": "web_search_fires_on_external_context_question",
+        "description": "User asks about EXTERNAL context (what an employer typically expects from a role) that the agent can't know from the conversation alone. Agent should fire web_search.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          "Tailor my resume to Anthropic Senior MLE"
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, Boston location, and email. What target role are you applying for?",
+          "Got it \u2014 you're targeting Senior MLE roles. What should I use as your professional summary, in one or two sentences?",
+          "Based on Anthropic\u2019s careers pages, a Senior MLE resume should emphasize strong ML systems engineering, scaling/production impact, and collaboration with researchers, with measurable wins around infrastructure, inference/training, or evals. If you want, I can help you tailor your summary and experience bullets to that bar next."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      },
+      {
+        "name": "web_search_skipped_for_user_provided_info",
+        "description": "User is providing their OWN background \u2014 no external context is needed. The agent should NOT burn a web_search on this; it's wasted latency + the user is the source of truth for their own life.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, location, and email. What role are you targeting?",
+          "Got it \u2014 backend engineer. What\u2019s your professional summary in 1\u20133 sentences?",
+          "Got it \u2014 I\u2019ve captured your Acme Corp experience and the Go/gRPC stack. What\u2019s your professional summary in 1\u20133 sentences?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, location, and email. What role are you targeting?",
+          "Got it \u2014 I\u2019ve set your target role to research engineer. What\u2019s a one- to three-sentence professional summary of your background?",
+          "Absolutely \u2014 I\u2019ll leave the publication open for now and add it once you share the details. What\u2019s a one- to three-sentence professional summary of your background?",
+          "Got it \u2014 I\u2019ve added your skills. Next, could you share a 1\u20133 sentence professional summary of your background?",
+          "Earlier you mentioned a publication on graph neural networks \u2014 want to share the details now? After that, I still need a short professional summary, then education."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, location, and email. What role are you targeting?",
+          "Got it \u2014 ML engineer. What would you like your professional summary to say, in one or two sentences?",
+          "Got it \u2014 I captured this project and your note that you tested it heavily and used it across two production teams. What would you like your professional summary to say in one or two sentences?"
+        ],
+        "error": null,
+        "structured_projects_count": 1,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openai:gpt-5.4"
+      }
+    ],
+    "sonnet-4.5": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": false,
+        "findings": [
+          "expected tool 'fetch_github_readme' to be called, got: []",
+          "draft field 'projects_notes' is empty (expected non-empty)",
+          "turn 2 assistant_message lacks any of ['read', 'captured', 'saw', 'README', 'from your github', 'openai-python', 'openai python sdk']; got: 'Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:anthropic/claude-sonnet-4.5"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": false,
+        "findings": [
+          "turn 2 assistant_message lacks any of ['github.com', 'describe', 'paste']; got: 'Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:anthropic/claude-sonnet-4.5"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:anthropic/claude-sonnet-4.5"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": false,
+        "findings": [
+          "expected EITHER a proactive_offer chip OR an inline summary draft on the final turn; got offer=None reply='Perfect. I\u2019ve added your education details. List the tools, technologies, and strengths you want highlighted on the resu'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.",
+          "Perfect. I\u2019ve added your education details. List the tools, technologies, and strengths you want highlighted on the resume."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:anthropic/claude-sonnet-4.5"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:anthropic/claude-sonnet-4.5"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": false,
+        "findings": [
+          "draft.target_role does not contain 'ML engineer' (got: 'data scientist')"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:anthropic/claude-sonnet-4.5"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": false,
+        "findings": [
+          "turn 4 assistant_message lacks any of ['publication', 'paper', 'earlier you mentioned', 'graph neural']; got: 'Nice. I\u2019ve captured the skills you want highlighted. Everything is collected. Review the draft and generate your base resume when you\u2019re rea'",
+          "expected pending_followups to mention any of ['publication', 'paper', 'graph neural']; got: []"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.",
+          "Perfect. I\u2019ve added your education details. List the tools, technologies, and strengths you want highlighted on the resume.",
+          "Nice. I\u2019ve captured the skills you want highlighted. Everything is collected. Review the draft and generate your base resume when you\u2019re ready."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:anthropic/claude-sonnet-4.5"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": false,
+        "findings": [
+          "structured_projects_payload is empty after generate \u2014 structuring LLM likely silently fell back to the regex parser. Check the strict-mode schema produced by _build_response_format_schema."
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:anthropic/claude-sonnet-4.5"
+      }
+    ],
+    "gemini": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": false,
+        "findings": [
+          "expected tool 'fetch_github_readme' to be called, got: []",
+          "draft field 'projects_notes' is empty (expected non-empty)",
+          "turn 2 assistant_message lacks any of ['read', 'captured', 'saw', 'README', 'from your github', 'openai-python', 'openai python sdk']; got: 'Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Priya! To get started, what specific role or job title are you targeting?",
+          "Got it, Machine Learning Engineer. Could you tell me about your most recent role, including the company, your title, and a few key accomplishments?",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:google/gemini-3.1-pro-preview"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Hi Alex! I've got your location and email down. What kind of role are you targeting for your next position?",
+          "Got it, Backend Engineer. Could you tell me a bit about your past experience? Feel free to share company names, your titles, and a brief overview of what you built or achieved.",
+          "I can't browse external websites directly, but if you paste the text from your portfolio or share a public github.com link, I can take it from there. Could you briefly describe the main project or experience highlighted on your site?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:google/gemini-3.1-pro-preview"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Sam! To get started, what specific role or job title are you targeting?",
+          "Got it, Product Manager. Could you tell me about your most recent role, including the company, your title, and a couple of key achievements?",
+          "I can't scrape LinkedIn directly, but if you copy and paste the text from your experience and skills sections here, I can organize it perfectly for your resume."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:google/gemini-3.1-pro-preview"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": false,
+        "findings": [
+          "expected EITHER a proactive_offer chip OR an inline summary draft on the final turn; got offer=None reply='Perfect. I\u2019ve added your education details. List the tools, technologies, and strengths you want highlighted on the resu'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Hi Riya! I've got your location and email down. What kind of role are you targeting for your next position?",
+          "Got it, ML Engineer. Could you tell me about your most recent role? What company were you at, and what were your main responsibilities?",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.",
+          "Perfect. I\u2019ve added your education details. List the tools, technologies, and strengths you want highlighted on the resume."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:google/gemini-3.1-pro-preview"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Hi there! I'm here to help you build a great resume. To get started, what is your full name?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:google/gemini-3.1-pro-preview"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Dev! To get started, what specific role or job title are you targeting?",
+          "Got it, Data Scientist. How would you summarize your professional background in a sentence or two?",
+          "Got it, I've updated your target role to ML Engineer! How would you summarize your professional background in a sentence or two?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:google/gemini-3.1-pro-preview"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": false,
+        "findings": [
+          "expected pending_followups to mention any of ['publication', 'paper', 'graph neural']; got: []"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          "Group my skills into categories",
+          null
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Aarav! I've got your location and email down. What specific role are you targeting for your next job?",
+          "Got it, Research Engineer! To start building your profile, could you give me a 1-2 sentence summary of your professional background and what you specialize in?",
+          "No problem, I've made a note to circle back to your graph neural networks publication later. For now, could you tell me about your most recent role? What company did you work for, and what were your main responsibilities?",
+          "Got those skills down\u2014that's a great stack for a Research Engineer! Let's jump back to your experience. What was your most recent role, and what were your main responsibilities?",
+          "Earlier you mentioned a publication on graph neural networks that you wanted to include. Would you like to share the details for that now?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:google/gemini-3.1-pro-preview"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Maya! To get started, what specific role or job title are you targeting?",
+          "Got it, Machine Learning Engineer. Could you tell me about your most recent role? What company are you at, and what kind of models or systems are you building?",
+          "Got it \u2014 I read the README and saw it's the official Python client for the OpenAI API built with httpx and Pydantic. Anything I missed, like specific metrics or impact from deploying it to those two production teams?"
+        ],
+        "error": null,
+        "structured_projects_count": 1,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:google/gemini-3.1-pro-preview"
+      }
+    ],
+    "kimi": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": false,
+        "findings": [
+          "expected tool 'fetch_github_readme' to be called, got: []",
+          "draft field 'projects_notes' is empty (expected non-empty)",
+          "turn 2 assistant_message lacks any of ['read', 'captured', 'saw', 'README', 'from your github', 'openai-python', 'openai python sdk']; got: 'Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:moonshotai/kimi-k2.6"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": false,
+        "findings": [
+          "turn 2 assistant_message lacks any of ['github.com', 'describe', 'paste']; got: 'Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:moonshotai/kimi-k2.6"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:moonshotai/kimi-k2.6"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": false,
+        "findings": [
+          "expected EITHER a proactive_offer chip OR an inline summary draft on the final turn; got offer=None reply='Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.'"
+        ],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          },
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/tiktoken README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "These look like the official OpenAI repositories rather than your personal projects. Could you share links to repos you own, or describe a project you built and the tech stack you used?",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:moonshotai/kimi-k2.6"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Hi there! I'm here to help you build a polished resume. To get started, what's your full name?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:moonshotai/kimi-k2.6"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": false,
+        "findings": [
+          "draft.target_role does not contain 'ML engineer' (got: 'Data Scientist')"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Got it \u2014 targeting data scientist roles. What city or region should I list as your location? (Or say 'Remote' if you prefer.)",
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:moonshotai/kimi-k2.6"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": false,
+        "findings": [
+          "turn 4 assistant_message lacks any of ['publication', 'paper', 'earlier you mentioned', 'graph neural']; got: 'Nice. I\u2019ve captured the skills you want highlighted. Everything is collected. Review the draft and generate your base resume when you\u2019re rea'",
+          "expected pending_followups to mention any of ['publication', 'paper', 'graph neural']; got: []"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 Aarav in Pune, reachable at aarav@example.com. What role are you targeting?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.",
+          "Perfect. I\u2019ve added your education details. List the tools, technologies, and strengths you want highlighted on the resume.",
+          "Nice. I\u2019ve captured the skills you want highlighted. Everything is collected. Review the draft and generate your base resume when you\u2019re ready."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:moonshotai/kimi-k2.6"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 1,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:moonshotai/kimi-k2.6"
+      }
+    ],
+    "glm": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": false,
+        "findings": [
+          "expected tool 'fetch_github_readme' to be called, got: []",
+          "draft field 'projects_notes' is empty (expected non-empty)",
+          "turn 2 assistant_message lacks any of ['read', 'captured', 'saw', 'README', 'from your github', 'openai-python', 'openai python sdk']; got: 'Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impac'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Priya! I've got your name, location, and email. What role are you targeting for your resume?",
+          "Got it \u2014 ML Engineer it is! Can you tell me a bit about your professional background? For example, how many years of experience you have and what kind of work you've done.",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:z-ai/glm-5.1"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Hi Alex! Got your name, Berlin location, and email. What role are you targeting for your resume?",
+          "Got it \u2014 Backend Engineer. Can you tell me a bit about your professional background? For example, how many years of experience and what kind of systems you've worked on?",
+          "I can't fetch that link \u2014 my project-lookup tool only works with public github.com URLs. Could you either share a GitHub repo URL or describe the project in your own words (what it does, tech stack, any outcomes)?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:z-ai/glm-5.1"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Sam! I've noted your name, location, and email. What role are you targeting for your resume?",
+          "Great, Product Manager it is! Can you tell me about your work experience \u2014 companies, roles, and roughly when you were there?",
+          "I can't scrape LinkedIn \u2014 I don't have access to browse the web or pull data from external profiles. If you paste the relevant sections (like your experience and skills) as text, I can take it from there!"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:z-ai/glm-5.1"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          "Draft my professional summary"
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Riya! I've noted your name, location, and email. What role are you targeting for your resume?",
+          "Got it \u2014 ML Engineer is your target role. Can you tell me a bit about your professional background, like your current/most recent job and company?",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.",
+          "Great skills list \u2014 captured! I'll draft a professional summary for you based on what I know so far. Also, I noticed you shared two GitHub repos earlier \u2014 let me pull those details so we can place them properly under Projects instead of Experience."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:z-ai/glm-5.1"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Hi there! I'll help you build a structured resume profile. Let's start with the basics \u2014 what's your full name?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:z-ai/glm-5.1"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Dev! I've got your name, location, and email. What role are you targeting for your resume?",
+          "Got it \u2014 Data Scientist it is! Can you tell me a bit about your professional background? For example, how many years of experience you have and what kind of work you've done.",
+          "Updated \u2014 ML Engineer it is! Can you tell me a bit about your professional background? For example, how many years of experience you have and what kind of work you've done."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:z-ai/glm-5.1"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Aarav \u2014 I've noted your name, location (Pune), and email. What role are you targeting?",
+          "Noted \u2014 Research Engineer it is. Can you tell me about your work experience so far (companies, roles, dates, and what you worked on)?",
+          "Got it \u2014 I'll circle back for your graph neural networks publication details later. For now, could you walk me through your work experience (companies, roles, dates, and what you worked on)?",
+          "Great \u2014 I've captured your skills: Python, PyTorch, JAX, NumPy, scikit-learn, and pandas. Now, could you walk me through your work experience (companies, roles, dates, and what you worked on)?",
+          "Earlier you mentioned a graph neural networks publication you'd like to include \u2014 want to share the details now?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:z-ai/glm-5.1"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": false,
+        "findings": [
+          "structured_projects_payload is empty after generate \u2014 structuring LLM likely silently fell back to the regex parser. Check the strict-mode schema produced by _build_response_format_schema."
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Maya! What role are you targeting?",
+          "Great, ML Engineer it is! Can you give me a brief professional summary \u2014 like how many years of experience you have and what you specialize in?",
+          "Let me pull up that repo to understand the project details!"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:z-ai/glm-5.1"
+      }
+    ],
+    "grok": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Priya Sharma from Bangalore with email priya@example.com. What's the role title you're targeting (e.g. Software Engineer, Data Analyst)?",
+          "Great, targeting ML Engineer roles in Bangalore. What experience or background do you have in ML (companies, titles, dates, key impacts)?",
+          "Captured your OpenAI Python library project \u2014 it's the official SDK for the API with sync/async clients, streaming, realtime, and more. Since you're targeting ML Engineer, can you share your professional experience (companies, titles, dates, key ML impacts)?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:x-ai/grok-4.20"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": false,
+        "findings": [
+          "tool 'fetch_github_readme' was called but should NOT have been"
+        ],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "failed: invalid_url"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Alex from Berlin with email alex@example.com. What's the target role you're applying for?",
+          "Great, targeting backend engineer roles. What's your professional summary or a quick overview of your experience?",
+          "Thanks for sharing your portfolio link. Since it's not a GitHub repo, could you describe the project (what it does, tech used, outcomes)?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:x-ai/grok-4.20"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          "Draft my professional summary"
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I've captured your name, location in Singapore, and email. What's the role you're targeting (e.g. Software Engineer)?",
+          "Got it \u2014 targeting Product Manager roles. What's your professional summary or a quick overview of your experience?",
+          "Sorry, I can't scrape LinkedIn profiles. If you paste the relevant experience/skills text here (or a public GitHub URL for projects), I can capture it for your Product Manager resume. Want to share that now, or shall we draft a professional summary from what we have?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:x-ai/grok-4.20"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          },
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/tiktoken README"
+          },
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I've added your name as Riya, location Mumbai, and email. What's the role you're targeting (e.g. Software Engineer)?",
+          "Great \u2014 targeting ML Engineer roles. Based on Mumbai job norms, these resumes highlight Python, PyTorch/TensorFlow, model deployment, and 2-4 impactful projects. What's one key part of your professional background or a recent role I should capture next?",
+          "Captured your two OpenAI projects with details from their READMEs (Python API library + tiktoken tokenizer). Since you're targeting ML Engineer, can you share one recent role or experience (company, title, dates, and key impacts) next?",
+          "Added your skills list and drafted a professional summary based on them plus your projects (feel free to tweak it). Next, can you share one recent role or experience (company, title, dates, and key impacts)?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:x-ai/grok-4.20"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Hi! I'm here to help you build a strong resume. To get started, what's your full name?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:x-ai/grok-4.20"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Dev Kumar from Pune with email dev@example.com. What's the target role you're applying for?",
+          "Great \u2014 targeting Data Scientist roles. What's one or two sentences for your professional summary (e.g., years of experience, key strengths, what you deliver)?",
+          "Updated to target ML Engineer roles. What's one or two sentences for your professional summary (e.g., years of experience, key strengths in ML, what you deliver)?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:x-ai/grok-4.20"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": false,
+        "findings": [
+          "expected pending_followups to mention any of ['publication', 'paper', 'graph neural']; got: []"
+        ],
+        "tool_events": [
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Aarav from Pune with your email captured. What's the specific role title you're targeting with this resume?",
+          "Great, targeting Research Engineer roles. What experience or background do you have in research, ML, or engineering that we should highlight?",
+          "Noted \u2014 we'll capture the full details on your graph neural networks publication later. For now, what experience or background do you have in research, ML, or engineering that we should highlight on the resume?",
+          "Skills captured \u2014 Python, PyTorch, JAX, NumPy, scikit-learn, and pandas look perfect for a Research Engineer role. Earlier you mentioned a publication on graph neural networks you'd share details on later \u2014 want to add those now, or shall we move to your experience and education?",
+          "Earlier you mentioned a publication on graph neural networks you'd share details on later \u2014 want to add those now? Otherwise, let's capture your professional experience next (roles, companies, dates, and key impacts)."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:x-ai/grok-4.20"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "web_search",
+            "outcome": "ok"
+          },
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got your name, location in Chennai, and email. What's the target role you're applying for (e.g. Software Engineer)?",
+          "Got it \u2014 targeting ML Engineer roles. What would you say is your professional summary or headline (1-3 sentences on your ML background)?",
+          "Captured your OpenAI Python library project \u2014 noted the heavy testing and production use across two teams. For your ML Engineer target, what's your professional summary (1-3 sentences on your ML background)?"
+        ],
+        "error": null,
+        "structured_projects_count": 1,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:x-ai/grok-4.20"
+      }
+    ],
+    "deepseek": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": false,
+        "findings": [
+          "expected tool 'fetch_github_readme' to be called, got: []",
+          "draft field 'projects_notes' is empty (expected non-empty)"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Priya. I've captured your name, Bangalore, and email. What role are you targeting?",
+          "ML Engineer \u2014 captured. Can you give me a quick headline about your background? Something like your years of experience, specialties, or the kind of ML work you do.",
+          "Let me pull up that repo's README to understand what it does."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:deepseek/deepseek-v4-pro"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Got it \u2014 targeting Backend Engineer roles. Where are you based, or are you looking for remote?",
+          "I can't open that link \u2014 my tool only works with github.com repos. If you can share a GitHub URL or describe the project yourself (name, tech stack, what it does), I'll capture it. Meanwhile \u2014 where are you based, or are you looking for remote?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:deepseek/deepseek-v4-pro"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Sam! I've captured your name, location, and email. What role are you targeting?",
+          "Product Manager it is \u2014 updated! Can you tell me about your most recent PM role or relevant experience?",
+          "I can't access LinkedIn or scrape external profiles \u2014 that's outside my reach. But if you paste your experience, skills, or education here, I'll capture it right into your resume draft. Want to start with your most recent PM role?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:deepseek/deepseek-v4-pro"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "ML Engineer \u2014 noted! And your location? I ask because I currently have 'Mumbai' as part of your full name \u2014 should I move it to location, or is Mumbai actually your surname?",
+          "Got it. I\u2019ve captured your contact details. What kind of role are you targeting, and how would you describe your background in 2-3 lines?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:deepseek/deepseek-v4-pro"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Hi! I'm here to help you build your resume step by step \u2014 no forms, just a conversation. To kick things off, what's your full name?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:deepseek/deepseek-v4-pro"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Dev. I've captured your name, location, and email. What role are you targeting?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Updated \u2014 targeting ML engineer now. Let's move to your experience: what roles have you held so far?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:deepseek/deepseek-v4-pro"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": false,
+        "findings": [
+          "turn 4 assistant_message lacks any of ['publication', 'paper', 'earlier you mentioned', 'graph neural']; got: 'Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included.'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Aarav from Pune! I've captured your name, location, and email. What role are you targeting?",
+          "Research Engineer \u2014 noted. Can you give me a one- or two-sentence headline about your professional background?",
+          "Noted \u2014 I'll circle back to the graph neural networks publication when you're ready to share. In the meantime, you were about to give me a one- or two-sentence headline about your professional background \u2014 what's your elevator pitch?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Great. I\u2019ve saved your experience notes. Share your education details and any certifications you want included."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:deepseek/deepseek-v4-pro"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": false,
+        "findings": [
+          "structured_projects_payload is empty after generate \u2014 structuring LLM likely silently fell back to the regex parser. Check the strict-mode schema produced by _build_response_format_schema."
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Maya. I've captured your name, location, and email. What role are you targeting?",
+          "ML Engineer \u2014 noted. Can you give me a one-line professional summary? Something like 'ML engineer with X years of experience in Y' works great.",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:deepseek/deepseek-v4-pro"
+      }
+    ],
+    "qwen": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": false,
+        "findings": [
+          "expected tool 'fetch_github_readme' to be called, got: []",
+          "draft field 'projects_notes' is empty (expected non-empty)",
+          "turn 2 assistant_message lacks any of ['read', 'captured', 'saw', 'README', 'from your github', 'openai-python', 'openai python sdk']; got: 'Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impac'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Priya! I've got your contact info saved. What role are you targeting for your next position?",
+          "Got it \u2014 ML Engineer. Could you share a 1-2 sentence professional summary highlighting your background and key strengths in machine learning?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:qwen/qwen3.6-max-preview"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Hi Alex! I've got your location and email saved. What role are you targeting for your next position?",
+          "Got it \u2014 Backend Engineer. Could you share a quick 1-2 sentence professional headline? (e.g., years of experience, main tech stack, or what you specialize in)",
+          "I can't browse external portfolio sites directly, but if you paste a short bio or describe your main tech stack and years of experience, I'll capture it for your professional summary. What would you like that headline to say?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:qwen/qwen3.6-max-preview"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Sam! I've saved your contact details. What role are you targeting?",
+          "Got it, Product Manager. Could you share a 1\u20132 sentence professional summary or a quick overview of your background?",
+          "I can't browse or scrape LinkedIn profiles, but if you paste the text from your profile here, I can extract and format everything for you. Alternatively, you can just share a quick 1\u20132 sentence overview of your background as a Product Manager to get us started!"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:qwen/qwen3.6-max-preview"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Riya! I've got your location and email saved. What role are you targeting for your next position?",
+          "Got it \u2014 ML Engineer. Could you share a 1-2 sentence professional summary or a quick overview of your background in machine learning?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can.",
+          "Got it \u2014 I've saved your skills. I'd be happy to draft a professional summary for you once we have a bit more context on your background. Could you share your most recent role (company, title, dates, and a couple of key impacts)?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:qwen/qwen3.6-max-preview"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Hi there! I'm here to help you build your resume. To get started, what's your full name?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:qwen/qwen3.6-max-preview"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Dev! I've got your name, location, and email down. What role are you targeting for your next position?",
+          "Got it, targeting Data Scientist roles. Could you share a brief professional summary? For example, your years of experience, key focus areas, or what you specialize in.",
+          "Noted \u2014 I've updated your target role to ML Engineer. Could you share a brief professional summary, like your years of experience and key focus areas in ML?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:qwen/qwen3.6-max-preview"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": false,
+        "findings": [
+          "expected pending_followups to mention any of ['publication', 'paper', 'graph neural']; got: []"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Aarav! I've saved your location and email. What role are you targeting?",
+          "Got it \u2014 Research Engineer. Could you share a 1-2 sentence professional headline or summary of your background?",
+          "Noted \u2014 we'll circle back to the GNN publication when you're ready. To keep things moving, could you share a 1-2 sentence professional headline or summary of your background?",
+          "Got those skills saved. Could you share a 1-2 sentence professional headline or summary of your background?",
+          "Earlier you mentioned a publication on graph neural networks you wanted to include \u2014 want to share the details now? After that, we'll just need your professional summary, work experience, and education."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:qwen/qwen3.6-max-preview"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": false,
+        "findings": [
+          "structured_projects_payload is empty after generate \u2014 structuring LLM likely silently fell back to the regex parser. Check the strict-mode schema produced by _build_response_format_schema."
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it, Maya. What role are you targeting for this resume?",
+          "Got it, targeting ML Engineer roles. Could you share a 1-2 sentence professional summary or a quick overview of your background in machine learning?",
+          "Nice. I\u2019ve got the role direction and your summary. Describe your most relevant experience. Include your role, company, dates, and 2-4 impact points if you can."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "provider": "openrouter:qwen/qwen3.6-max-preview"
+      }
+    ]
+  }
+}
