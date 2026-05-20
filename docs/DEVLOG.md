@@ -1687,3 +1687,107 @@ plan):
 Slice 1A demo path: paste a public GitHub URL into the resume builder
 and watch the agent read it. The honesty patch + tool dispatch fall
 out for free.
+
+## Day 57: Résumé-builder Slice 1B — full conversation history + `proactive_offer` chip
+
+Slice 1A made the agent capable; Slice 1B makes it FEEL intelligent.
+The two user complaints behind this slice:
+
+1. "Is each new question going to a fresh gpt instance?" — the agent
+   was forgetting mid-conversation. Why: `build_resume_builder_prompt`
+   hard-sliced history at `[-12:]` (the last 6 user/assistant pairs).
+   Past that point the model saw nothing — no context, no callbacks,
+   no "as I said earlier." Felt like a fresh instance because, prompt-
+   wise, it nearly was.
+2. "I want it to suggest things — like draft a summary based on the
+   projects I shared, the way you do." — the agent never volunteered.
+   It asked questions and saved answers; it never said "given what
+   we have, want me to draft your professional summary?"
+
+Slice 1B addresses both, end-to-end (backend + UI):
+
+**(1) Full conversation history with a character-budget guard.**
+
+- Dropped the hard `history[-12:]` slice in `build_resume_builder_prompt`.
+- New `_slice_history_for_budget(history, max_chars=...)` helper
+  (default 30 000 chars ≈ ~7 500 tokens) walks newest-first,
+  accumulating serialized entries until adding the next would exceed
+  budget. Returns a contiguous SUFFIX of the history in chronological
+  order. ALWAYS keeps at least the most recent entry so an over-budget
+  newest message doesn't silently break the chat.
+- The in-memory `conversation_history` cap bumped from 48 to 200
+  (~100 turn pairs + interleaved tool events) — the soft prompt-time
+  guard is what defends per-turn token budget; the hard cap is a
+  pathological-session memory safety valve.
+- New unit tests for the slicer (4 cases: under-budget passthrough;
+  over-budget keeps a suffix; single-entry-over-budget still returned;
+  empty/None input).
+
+**(2) `proactive_offer` JSON channel + UI chip.**
+
+- Added `proactive_offer: str | None` as a 5th key to the resume-
+  builder LLM contract. Documented in
+  `prompts/resume_builder/v1.json` with concrete examples of GOOD
+  offers ("Draft my professional summary"; "Group my skills into
+  Languages / Frameworks / Tools") and BAD ones ("Help me with my
+  resume" — too vague; "Continue" — not an action; "Are you done?"
+  — that's a question, not an offer). The prompt also tells the
+  model the CTA is rendered FROM THE USER'S point of view (first-
+  person imperative), so the user clicks the chip to say "yes, do
+  that." Mirrored byte-for-byte in `tests/test_prompts.py` and added
+  to the `expected_keys` assertion so a typo in the JSON fails at
+  parse time. Slice 1B also caps the offer at 200 chars at the
+  backend boundary — defense against a model that returns a full
+  paragraph instead of a CTA.
+- `_run_llm_turn` returns a `(assistant_message, proactive_offer)`
+  tuple; the caller (`answer_resume_builder_message`) threads the
+  offer through to `_serialize_session`, which adds it to the
+  response payload alongside `assistant_message`.
+- Frontend: added `proactive_offer?: string | null` to
+  `ResumeBuilderSessionResponse`. In `ResumeIntake.tsx`, when the
+  field is populated, render a single pill-shaped chip below the
+  assistant message ("✨ Draft my professional summary"). The chip
+  calls a new `onBuilderProactiveOfferAccept(offer)` callback —
+  `handleResumeBuilderAnswer` in `WorkspaceShell` now accepts an
+  optional `overrideText` parameter, so the chip submits the offer
+  text directly without round-tripping through the textarea state
+  (avoiding the React setState async window where a Continue click
+  fires before the prefilled value commits).
+
+What this changes for users:
+
+- The agent remembers across the whole session — you can correct a
+  field you mentioned 15 turns ago and the model knows what you're
+  referring to. Within prompt-budget anyway (30k chars ≈ ~25 dense
+  turn pairs; for typical sessions, the whole thing fits).
+- The agent volunteers. Once you've shared a few projects and
+  experience entries, you'll see a "✨ Draft my professional summary"
+  chip pop up — one click and the model goes off and writes it from
+  what you've already told it. No more typing "yes, do that" by hand.
+
+What's still parked (`report.md` Phase 2/3):
+
+- Promise tracking (`pending_followups[]` session state, so the agent
+  remembers things it said it would do later)
+- `web_search` tool for company / role / domain context
+- Full conversational eval (15–20 hand-curated transcript fixtures
+  + rubric) — important quality infra; the smaller 5–8 fixture
+  minimal eval is also still parked. Slice 1B intentionally doesn't
+  block on eval; the changes are additive (existing behavior
+  preserved when `proactive_offer` is null and full history fits
+  under budget) and locally tested.
+- ADR-031 for the agentic shape (draft during Slice 1C, accept when
+  the rest of Phase 2 lands).
+
+Verification: **172 tests** across `tests/test_prompts.py` +
+`tests/test_resume_builder.py` + the Slice 1A tool tests +
+`test_prompt_registry` + `test_cost_tracking` +
+`test_structured_outputs` + `test_backend_workspace` — all green
+(168 → 172, the 4 added are the budget-slicer unit tests). Frontend
+`tsc --noEmit` clean (exit 0). Frontend `eslint src` clean (exit 0).
+
+Demo path: open the resume builder, give the agent a couple of
+projects + an experience entry, watch the "✨ Draft my professional
+summary" chip appear below its next reply. Click it — the agent
+writes the summary from what you've told it so far. No retyping, no
+restating.

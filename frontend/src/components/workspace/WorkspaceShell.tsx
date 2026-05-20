@@ -1281,13 +1281,17 @@ export function WorkspaceShell() {
     }
   }
 
-  async function handleResumeBuilderAnswer() {
+  async function handleResumeBuilderAnswer(overrideText?: string) {
     if (!resumeBuilderSession) {
       await handleStartResumeBuilder();
       return;
     }
 
-    if (!resumeBuilderAnswer.trim()) {
+    // Slice 1B: the proactive_offer chip submits the offer text
+    // directly, bypassing the textarea state — this is the
+    // override path. Plain Continue clicks use the textarea state.
+    const rawText = overrideText ?? resumeBuilderAnswer;
+    if (!rawText.trim()) {
       setResumeBuilderNotice({
         level: "warning",
         message: "Add an answer before continuing.",
@@ -1301,7 +1305,7 @@ export function WorkspaceShell() {
       message: "Saving your answer and moving to the next step...",
     });
 
-    const userMessage = resumeBuilderAnswer.trim();
+    const userMessage = rawText.trim();
     try {
       const response = await sendResumeBuilderMessage(
         resumeBuilderSession.session_id,
@@ -2235,6 +2239,9 @@ export function WorkspaceShell() {
             mode={resumeIntakeMode}
             onBuilderAnswerChange={setResumeBuilderAnswer}
             onBuilderAnswerSubmit={() => void handleResumeBuilderAnswer()}
+            onBuilderProactiveOfferAccept={(offer) =>
+              void handleResumeBuilderAnswer(offer)
+            }
             onBuilderCommit={() => void handleResumeBuilderCommit()}
             onBuilderDraftSave={() => void handleResumeBuilderDraftSave()}
             onBuilderExport={(format) =>

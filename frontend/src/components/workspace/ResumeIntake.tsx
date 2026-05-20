@@ -162,6 +162,12 @@ export type ResumeIntakeProps = {
   onBuilderExportThemeChange: (theme: ArtifactTheme) => void;
   onBuilderExport: (format: WorkspaceArtifactExportFormat) => void;
   onBuilderAnswerSubmit: () => void;
+  /** Slice 1B: accept the assistant's proactive offer (one-click CTA
+   *  chip). The offer text is submitted as the next user turn so the
+   *  agent can act on it immediately. Optional so callers that
+   *  haven't been updated still work — when omitted, the chip just
+   *  doesn't render. */
+  onBuilderProactiveOfferAccept?: (offer: string) => void;
   onBuilderGenerate: () => void;
   onBuilderCommit: () => void;
   onBuilderDraftSave: () => void;
@@ -206,6 +212,7 @@ export function ResumeIntake({
   onBuilderExportThemeChange,
   onBuilderExport,
   onBuilderAnswerSubmit,
+  onBuilderProactiveOfferAccept,
   onBuilderGenerate,
   onBuilderCommit,
   onBuilderDraftSave,
@@ -587,6 +594,41 @@ export function ResumeIntake({
                       "Type a quick intro to get started — your name, where you're based, and the role you're targeting."}
                   </p>
                 )}
+
+                {/* Slice 1B: proactive_offer renders as a single
+                    one-click CTA chip below the latest assistant
+                    reply. Hidden during loading so the user can't
+                    double-submit while a turn is in flight. The
+                    parent owns the actual submit — clicking calls
+                    `onBuilderProactiveOfferAccept(offer)` which
+                    bypasses the textarea state and dispatches the
+                    offer text as the next user turn. */}
+                {builderSession?.proactive_offer &&
+                onBuilderProactiveOfferAccept &&
+                !builderLoading ? (
+                  <button
+                    aria-label={`Accept assistant suggestion: ${builderSession.proactive_offer}`}
+                    className="rd-btn rd-btn-sm"
+                    onClick={() =>
+                      onBuilderProactiveOfferAccept(
+                        builderSession.proactive_offer ?? "",
+                      )
+                    }
+                    style={{
+                      alignSelf: "flex-start",
+                      background: "var(--surface-2)",
+                      border: "1px solid var(--border-1)",
+                      borderRadius: 999,
+                      color: "var(--fg-1)",
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      padding: "6px 12px",
+                    }}
+                    type="button"
+                  >
+                    ✨ {builderSession.proactive_offer}
+                  </button>
+                ) : null}
 
                 {builderNotice ? (
                   <div className={noticeClassName(builderNotice.level)}>

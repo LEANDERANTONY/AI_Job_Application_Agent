@@ -363,6 +363,14 @@ export type ResumeBuilderSessionResponse = {
   total_steps: number;
   progress_percent: number;
   assistant_message: string;
+  /** Slice 1B: optional one-click CTA the LLM fires when it has
+   *  enough signal to draft a piece of the resume (e.g. "Draft my
+   *  professional summary from what we have so far"). UI renders as
+   *  a small chip below the assistant_message; click submits the
+   *  offer text as the next user turn. Null on turns where the model
+   *  didn't fire one — most turns leave this null because asking the
+   *  next question is more useful than offering a draft. */
+  proactive_offer?: string | null;
   draft_profile: ResumeBuilderDraftProfile;
   generated_resume_markdown: string;
   generated_resume_plain_text: string;

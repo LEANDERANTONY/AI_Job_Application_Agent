@@ -58,6 +58,59 @@ def _json_block(label: str, value: Any) -> str:
     return "{label}:\n{payload}".format(label=label, payload=payload)
 
 
+# Slice 1B: how many characters of conversation history the resume-
+# builder prompt is willing to feed back to the model on each turn.
+# 30k chars ≈ ~7.5k tokens — well under the conversational budget for
+# even the cheaper models, leaves headroom for the structured draft +
+# system prompt + completion. The cap is HOLISTIC: when the serialized
+# history would exceed it, the OLDEST entries are dropped one at a
+# time until it fits.
+RESUME_BUILDER_HISTORY_CHAR_BUDGET = 30000
+
+
+def _slice_history_for_budget(
+    history: list,
+    *,
+    max_chars: int = RESUME_BUILDER_HISTORY_CHAR_BUDGET,
+) -> list:
+    """Return the most recent suffix of `history` whose JSON
+    serialization fits under `max_chars`.
+
+    Drops the OLDEST entries first — earlier turns are summarized by
+    the structured ``draft`` state we also pass to the model, so
+    losing the verbatim back-and-forth from turn 1 is graceful. The
+    most-recent turn pair is ALWAYS retained: if even the last entry
+    doesn't fit, we still return it (the model will see at least one
+    turn of context). The caller's responsibility to enforce a
+    sensible cap on the conversation_history list overall — this
+    function is a per-prompt budget guard, not the memory cap.
+    """
+    if not history:
+        return []
+    # Walk from the newest entry backward, accumulating until we'd
+    # blow the budget. The check is on the serialized form because
+    # that's what actually rides in the prompt — a single entry whose
+    # raw `content` is short can still take >2× its raw length in
+    # JSON (escapes + indentation + quotes).
+    selected: list = []
+    accumulated_chars = 0
+    for entry in reversed(history):
+        serialized_entry = json.dumps(_to_serializable(entry), default=str)
+        # Estimate the cost of this entry as if added to the array.
+        # We count the entry's serialized length + 2 (for the comma +
+        # newline-indent the json.dumps(indent=2) emits between items)
+        # to avoid the off-by-one of guessing the final framing chars.
+        entry_cost = len(serialized_entry) + 2
+        if selected and accumulated_chars + entry_cost > max_chars:
+            break
+        selected.append(entry)
+        accumulated_chars += entry_cost
+    # We accumulated newest-first; flip back so the model sees them in
+    # chronological order.
+    selected.reverse()
+    return selected
+
+
 def _truncate_text(value: Any, max_chars: int) -> str:
     text = str(value or "")
     if max_chars <= 0 or len(text) <= max_chars:
@@ -586,7 +639,18 @@ def build_resume_builder_prompt(
 
     template = get_prompt("resume_builder")
     missing = resume_builder_missing_fields(draft)
-    history_payload = list(history or [])[-12:]
+    # Slice 1B: drop the hard `[-12:]` truncation in favor of a
+    # character-budget guard. The full conversation_history (capped
+    # in-memory at ~200 entries by the service) is included as long as
+    # it fits under RESUME_BUILDER_HISTORY_CHAR_BUDGET; when it
+    # doesn't, the OLDEST entries are dropped (sliding window) until
+    # it does. Earlier turns are summarized by the structured `draft`
+    # state, so dropping them is graceful — the agent still sees the
+    # accumulated facts, just not the verbatim back-and-forth.
+    history_payload = _slice_history_for_budget(
+        list(history or []),
+        max_chars=RESUME_BUILDER_HISTORY_CHAR_BUDGET,
+    )
 
     user_prompt = "\n\n".join(
         [

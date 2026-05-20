@@ -2,6 +2,7 @@ from src.prompts import (
     _RESUME_BUILDER_FIELD_DESCRIPTIONS,
     _WORKSPACE_STATE_GUIDANCE,
     _build_contract,
+    _slice_history_for_budget,
     build_application_qa_assistant_prompt,
     build_assistant_followup_prompt,
     build_assistant_prompt,
@@ -252,6 +253,17 @@ def _expected_resume_builder_system() -> str:
         "(browse the web, open a PDF, read a private link, run code, scrape LinkedIn, etc.), say so plainly in one "
         "sentence and offer the closest thing you CAN do — usually \"if you paste the relevant text or a github.com URL, "
         "I can take it from there.\" Better one honest sentence than a confident-sounding promise you can't keep.\n"
+        "\n"
+        "Proactive offers:\n"
+        "- When you notice the user has given enough signal for you to draft a piece of the resume — and it would be MORE "
+        "useful than another question — offer to do it. Set `proactive_offer` to a short, click-to-accept CTA like "
+        "\"Draft my professional summary from what we have so far\" or \"Group my skills into Languages / Frameworks / "
+        "Tools\". One offer per turn, max. Leave `proactive_offer` as null when there's no clear-enough signal yet, or "
+        "when you're already in the middle of capturing a specific field. The CTA should be phrased FROM THE USER'S "
+        "point of view (first-person, imperative) — the UI shows it as a button the user clicks to say \"yes, do that.\" "
+        "Examples of GOOD offers: \"Draft my professional summary\"; \"Suggest 2 impact bullets from my Acme experience\"; "
+        "\"Group my skills into categories\". Examples of BAD offers (don't fire these): \"Help me with my resume\" "
+        "(too vague); \"Continue\" (not an action); \"Are you done?\" (that's a question, not an offer).\n"
     )
     contract = _build_contract(
         {
@@ -262,6 +274,10 @@ def _expected_resume_builder_system() -> str:
             "assistant_message": "the next conversational reply to show the user (1-2 sentences)",
             "status": "one of: 'collecting' (more fields to gather), 'reviewing' (enough to draft), 'ready' (user confirmed)",
             "focus_field": "the field your next question is about, or '' if none",
+            "proactive_offer": (
+                "optional short CTA string the UI renders as a clickable chip, "
+                "or null when there is no proactive action worth offering this turn"
+            ),
         }
     )
     return body + contract
@@ -429,6 +445,7 @@ def test_resume_builder_prompt_matches_pre_migration_system_byte_for_byte():
         "assistant_message",
         "status",
         "focus_field",
+        "proactive_offer",
     ]
 
 
@@ -442,6 +459,54 @@ def test_resume_builder_structuring_prompt_matches_pre_migration_system_byte_for
         "skill_categories",
         "professional_summary",
     ]
+
+
+def test_slice_history_for_budget_returns_all_entries_under_budget():
+    # Five small entries should comfortably fit a generous budget;
+    # nothing gets trimmed.
+    history = [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi there"},
+        {"role": "user", "content": "i'm priya"},
+        {"role": "assistant", "content": "got it"},
+        {"role": "user", "content": "from bangalore"},
+    ]
+    sliced = _slice_history_for_budget(history, max_chars=10000)
+    assert sliced == history
+
+
+def test_slice_history_for_budget_drops_oldest_when_over_budget():
+    # Each "content" string is ~1000 chars, so 10 entries serialize
+    # well past a 3000-char budget. Verify we keep the NEWEST suffix
+    # whose serialized form fits.
+    history = [
+        {"role": "user" if i % 2 == 0 else "assistant", "content": "x" * 1000}
+        for i in range(10)
+    ]
+    sliced = _slice_history_for_budget(history, max_chars=3000)
+    # Must drop at least some — the full 10 entries can't fit at 3000.
+    assert 0 < len(sliced) < len(history)
+    # Slice should be a contiguous SUFFIX (chronological order
+    # preserved, oldest dropped first).
+    assert sliced == history[-len(sliced) :]
+
+
+def test_slice_history_for_budget_always_keeps_last_entry():
+    # Even when the single newest entry exceeds the budget on its own,
+    # we still return it — losing all context to a too-tight budget
+    # would silently break the conversational flow. Returning at least
+    # one entry surfaces the over-budget condition through prompt
+    # length rather than empty-history symptoms.
+    history = [
+        {"role": "user", "content": "huge entry " + "x" * 50000},
+    ]
+    sliced = _slice_history_for_budget(history, max_chars=100)
+    assert sliced == history
+
+
+def test_slice_history_for_budget_handles_empty_input():
+    assert _slice_history_for_budget([], max_chars=1000) == []
+    assert _slice_history_for_budget(None, max_chars=1000) == []  # type: ignore[arg-type]
 
 
 def test_product_help_assistant_inherits_assistant_system_via_delegation():

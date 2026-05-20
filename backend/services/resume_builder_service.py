@@ -1512,6 +1512,7 @@ def _serialize_session(
     session: ResumeBuilderSession,
     *,
     assistant_message: str | None = None,
+    proactive_offer: str | None = None,
 ):
     # `_step_index("review")` returns 0 because "review" isn't in
     # RESUME_BUILDER_STEPS — that used to flicker the UI back to 0%
@@ -1533,6 +1534,12 @@ def _serialize_session(
         "total_steps": len(RESUME_BUILDER_STEPS),
         "progress_percent": progress_percent,
         "assistant_message": assistant_message or _current_prompt(session.current_step),
+        # Slice 1B: optional click-to-accept CTA the UI renders as a
+        # chip below the assistant_message. Carried only on turns
+        # where the LLM fired one — other call sites (regex fallback,
+        # /update, /generate, /commit) leave this null because there's
+        # no LLM payload to read it from.
+        "proactive_offer": proactive_offer,
         "draft_profile": asdict(session.draft),
         "generated_resume_markdown": session.generated_resume_markdown,
         "generated_resume_plain_text": session.generated_resume_plain_text,
@@ -1899,11 +1906,14 @@ def _run_llm_turn(
 ):
     """Drive one conversational turn through the LLM intake prompt.
 
-    Returns the assistant message text on success. Mutates the session
-    in place: applies `draft_updates`, updates `status` and
-    `current_step`, appends the user/assistant turn pair to
-    `conversation_history`. Raises `AgentExecutionError` on any failure
-    so the caller can swallow it and fall back to the regex flow.
+    Returns a tuple ``(assistant_message, proactive_offer)`` on
+    success. ``proactive_offer`` is a short CTA string the UI renders
+    as a clickable chip below the assistant_message, or None when the
+    model didn't fire one this turn. Mutates the session in place:
+    applies `draft_updates`, updates `status` and `current_step`,
+    appends the user/assistant turn pair to `conversation_history`.
+    Raises `AgentExecutionError` on any failure so the caller can
+    swallow it and fall back to the regex flow.
 
     Slice 1A: when the OpenAIService exposes a `run_tool_loop`
     method (the agentic-loop entry-point that supports Responses-API
@@ -1973,6 +1983,25 @@ def _run_llm_turn(
     if not assistant_message:
         raise AgentExecutionError("LLM returned an empty assistant_message.")
 
+    # Slice 1B: proactive_offer rides on the assistant_message turn but
+    # is rendered separately by the UI (as a clickable chip the user
+    # can accept with one click). Null / empty / placeholder values
+    # are normalized to None so the UI doesn't render a dead chip.
+    raw_offer = payload.get("proactive_offer")
+    proactive_offer: str | None
+    if isinstance(raw_offer, str):
+        stripped = raw_offer.strip()
+        # Cap at a friendly length — the chip button can't render a
+        # full sentence comfortably. Past this the prompt is doing
+        # something wrong (writing a question, not a CTA); cropping
+        # also defends the UI from accidental paragraph blobs.
+        if 0 < len(stripped) <= 200:
+            proactive_offer = stripped
+        else:
+            proactive_offer = None
+    else:
+        proactive_offer = None
+
     raw_status = str(payload.get("status") or "").strip().lower()
     status = raw_status if raw_status in _VALID_STATUSES else "collecting"
     session.status = status
@@ -2015,14 +2044,20 @@ def _run_llm_turn(
     session.conversation_history.append(
         {"role": "assistant", "content": assistant_message}
     )
-    # Cap memory: keep only the last 24 turn pairs (+ any interleaved
-    # tool events) so a long session doesn't blow the prompt budget.
-    # The model still sees enough context for back-references; older
-    # turns are summarized by the current `draft` state itself.
-    if len(session.conversation_history) > 48:
-        session.conversation_history = session.conversation_history[-48:]
+    # Cap memory: keep up to ~100 turn pairs (+ any interleaved tool
+    # events) per session. Slice 1B widened this from the previous 48
+    # entries because the user complaint was "is each new question
+    # going to a fresh gpt instance?" — the agent was forgetting
+    # mid-session, and a 12-pair window was clearly too narrow. The
+    # prompt-time guard
+    # (``prompts._slice_history_for_budget`` with a 30k-char cap) is
+    # what actually defends the per-turn token budget; this hard cap
+    # is just a long-session memory safety valve so pathological
+    # sessions don't grow unboundedly in process memory.
+    if len(session.conversation_history) > 200:
+        session.conversation_history = session.conversation_history[-200:]
 
-    return assistant_message
+    return assistant_message, proactive_offer
 
 
 def _advance_step_after_regex_apply(session: ResumeBuilderSession, current_step: str):
@@ -2068,7 +2103,7 @@ def answer_resume_builder_message(
     # on JSON-decode failures, or on any other LLM error.
     if openai_service is not None and openai_service.is_available():
         try:
-            assistant_message = _run_llm_turn(
+            assistant_message, proactive_offer = _run_llm_turn(
                 session=session,
                 user_message=normalized_message,
                 openai_service=openai_service,
@@ -2076,6 +2111,7 @@ def answer_resume_builder_message(
             return _serialize_session(
                 session,
                 assistant_message=assistant_message,
+                proactive_offer=proactive_offer,
             )
         except AgentExecutionError as exc:
             log_event(
