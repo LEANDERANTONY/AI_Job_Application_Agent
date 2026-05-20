@@ -406,13 +406,13 @@ def _apply_draft_updates(session: ResumeBuilderSession, updates: dict):
             updates.get("professional_summary", "") or ""
         ).strip()
     if "experience_notes" in updates:
-        session.draft.experience_notes = str(
-            updates.get("experience_notes", "") or ""
-        ).strip()
+        session.draft.experience_notes = _coerce_prose_field(
+            updates.get("experience_notes")
+        )
     if "education_notes" in updates:
-        session.draft.education_notes = str(
-            updates.get("education_notes", "") or ""
-        ).strip()
+        session.draft.education_notes = _coerce_prose_field(
+            updates.get("education_notes")
+        )
     if "skills" in updates:
         skills = updates.get("skills", [])
         if not isinstance(skills, list):
@@ -428,7 +428,9 @@ def _apply_draft_updates(session: ResumeBuilderSession, updates: dict):
             [str(item).strip() for item in certifications if str(item).strip()]
         )
     if "projects_notes" in updates:
-        session.draft.projects_notes = str(updates.get("projects_notes", "") or "").strip()
+        session.draft.projects_notes = _coerce_prose_field(
+            updates.get("projects_notes")
+        )
     if "publications" in updates:
         publications = updates.get("publications", [])
         if not isinstance(publications, list):
@@ -1839,13 +1841,13 @@ def _apply_llm_draft_updates(session: ResumeBuilderSession, updates: dict):
             updates.get("professional_summary") or ""
         ).strip()
     if "experience_notes" in updates:
-        session.draft.experience_notes = str(
-            updates.get("experience_notes") or ""
-        ).strip()
+        session.draft.experience_notes = _coerce_prose_field(
+            updates.get("experience_notes")
+        )
     if "education_notes" in updates:
-        session.draft.education_notes = str(
-            updates.get("education_notes") or ""
-        ).strip()
+        session.draft.education_notes = _coerce_prose_field(
+            updates.get("education_notes")
+        )
     if "skills" in updates:
         session.draft.skills = dedupe_strings(_coerce_string_list(updates.get("skills")))
     if "certifications" in updates:
@@ -1853,13 +1855,43 @@ def _apply_llm_draft_updates(session: ResumeBuilderSession, updates: dict):
             _coerce_string_list(updates.get("certifications"))
         )
     if "projects_notes" in updates:
-        session.draft.projects_notes = str(
-            updates.get("projects_notes") or ""
-        ).strip()
+        session.draft.projects_notes = _coerce_prose_field(
+            updates.get("projects_notes")
+        )
     if "publications" in updates:
         session.draft.publications = dedupe_strings(
             _coerce_string_list(updates.get("publications"))
         )
+
+
+def _coerce_prose_field(value) -> str:
+    """Coerce an LLM-emitted prose field to a clean string.
+
+    The LLM contract specifies that ``experience_notes`` /
+    ``education_notes`` / ``projects_notes`` are STRINGS — verbatim
+    user prose, one block per field. In practice the model
+    occasionally emits them as LISTS of entries, especially right
+    after a multi-URL tool round-trip where each fetched README
+    becomes a logical project. Naively wrapping that in ``str(...)``
+    captured the Python ``repr()`` of the list, including the square
+    brackets and quoted entries — and the downstream structuring
+    prompt choked on the malformed shape, then the regex fallback
+    rendered the raw list literal into the markdown.
+
+    This helper joins list/tuple inputs with ``\n\n`` so the
+    structuring pass sees newline-separated entries instead of a
+    stringified list. Single-string inputs pass through unchanged.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        cleaned_parts = [
+            str(item).strip()
+            for item in value
+            if str(item or "").strip()
+        ]
+        return "\n\n".join(cleaned_parts).strip()
+    return str(value).strip()
 
 
 def _summarize_tool_event(event: dict) -> dict:
@@ -1943,11 +1975,19 @@ def _run_llm_turn(
             tools=RESUME_BUILDER_TOOL_SPECS,
             tool_executor=execute_resume_builder_tool,
             expected_keys=prompt["expected_keys"],
-            # Five iterations is enough for the realistic case (one
-            # URL → one fetch → one JSON answer) with headroom for the
-            # model to retry on transient tool errors. A higher cap
-            # invites runaway loops on malformed responses.
-            max_iterations=5,
+            # Twelve iterations: covers the realistic worst case of a
+            # user pasting ~10 GitHub URLs in one turn and the model
+            # choosing to fetch them SERIALLY instead of in parallel
+            # (one fetch_github_readme per iteration + the final
+            # answer = N+1 iterations). The original cap of 5 hit a
+            # regression on QA replay when the model serialized 6
+            # fetches — the loop exhausted at iteration 5, the
+            # service caught AgentExecutionError, and the regex
+            # fallback dumped the URL list into experience_notes.
+            # Above ~12 is a runaway-loop signal (prompt drift or
+            # tool bug); below ~10 leaves no headroom for the
+            # ~6-URL-in-one-turn case the user actually exercised.
+            max_iterations=12,
             temperature=None,
             max_completion_tokens=get_openai_max_completion_tokens_for_task("resume_builder"),
             task_name="resume_builder",
