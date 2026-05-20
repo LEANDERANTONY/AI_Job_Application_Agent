@@ -2419,3 +2419,155 @@ smart clarifying question" (FAIL but BETTER) from "hallucinated
 capability" (FAIL and WORSE). A v2 rubric with LLM-as-judge
 1-5 quality scoring per scenario would catch this honestly.
 Parked.
+
+
+## Day 61: Workspace assistant — history fix, product-knowledge block, adapter reasoning_effort, and Slice 1K eval
+
+Today extended the agentic-upgrade work to the OTHER chat surface
+in the app: the workspace assistant (`src/assistant_service.py`,
+prompts at `prompts/assistant/v1.json` and
+`prompts/assistant_text/v1.json`). The audit found the SAME
+history-truncation bug the resume builder had at the start of
+Slice 1B — except worse: assistant code was at `history[-4:]`,
+whereas the resume builder had been at `history[-12:]`. Four
+turns is not enough for any real conversation.
+
+### Slice 1J: drop the `history[-4:]` slice on the assistant prompts
+
+New constant `ASSISTANT_HISTORY_CHAR_BUDGET = 18000` (smaller than
+the resume builder's 30 k because the assistant carries a heavier
+`assistant_context` payload alongside — workspace_state +
+workflow_context + the WORKSPACE STATE guidance rules). Both
+`build_assistant_prompt` and `build_assistant_text_prompt` now
+call `_slice_history_for_budget(history, max_chars=...)` instead
+of the hard suffix slice. Same drop-oldest-first semantics as the
+resume builder, with the most-recent turn guaranteed retained.
+
+Why this matters concretely: the Slice 1K `long_session_memory_callback`
+scenario is a 7-turn conversation where the user states "we cut
+chargeback fraud by 18% using XGBoost" on turn 2, then on turn 6
+asks "what number did I tell you?". With `history[-4:]` the model
+sees turns 3-6 ONLY — the 18% fact has scrolled off and the
+question is literally unanswerable. After the fix, all 5 candidates
+in the Slice 1K eval correctly recalled "18%".
+
+### Slice 1J': `_PRODUCT_KNOWLEDGE_BLOCK` — stop sounding ignorant
+
+The WORKSPACE STATE block teaches the assistant how to READ live
+runtime state but said nothing about pricing, themes, the agentic
+pipeline, or the assistant's own limits. When a user asked "what
+tiers do you have?" / "what themes can I use?" / "can you book
+me an interview?", the answers ranged from "I don't have that
+info" to outright fabrications.
+
+Added a new module-level constant in `src/prompts.py` that's also
+pre-baked into both registry JSONs (Pattern A per the prompt-
+registry migration notes). It backstops all of these questions
+with authoritative numbers pulled from `backend/tiers.py`
+(TIER_CAPS), `src/resume_builder.py` (RESUME_THEMES),
+`backend/tiers.py` (FREE_EXPORT_FORMAT/THEME), and `src/agents/*`
+(the orchestrator chain):
+
+  * **Tier caps**: Free / Pro / Business — tailored applications
+    (3 / 20 / 80), assistant turns (20 / 150 / 500), resume parses
+    (3 / 25 / 100), saved jobs (5 / 1000 / unlimited), saved
+    workspaces (1 / 5 / unlimited), retention (7 days / 30 days /
+    unbounded).
+  * **Lifetime gotcha**: resume_builder_sessions on Free is
+    LIFETIME (never resets), monthly on Pro (3) / Business (15).
+    The block calls this out verbatim so the model stops
+    answering "resets monthly" by reflex.
+  * **Theme inventory**: six themes (classic_ats,
+    professional_neutral, modern_blue, creative_warm,
+    architect_mono, presentation_twocol); first five are
+    single-column ATS-safe; presentation_twocol is gated +
+    non-ATS.
+  * **Export entitlement**: Free = PDF + professional_neutral
+    only; Pro/Business = PDF or DOCX + any theme.
+  * **Agentic chain**: tailoring → review → resume gen → cover
+    letter, with conservative-correction posture in the review
+    pass.
+  * **Honest cannot-do list**: schedule interviews, send emails,
+    log in to LinkedIn / Indeed, scrape arbitrary URLs, edit the
+    resume file directly, change subscription tier, remember
+    across sessions when signed out.
+
+If any of these source-of-truth numbers ever drift, the
+byte-mirror tests
+(`test_assistant_prompt_matches_pre_migration_system_byte_for_byte`)
+fail on the next CI run.
+
+### Slice 1J'': thread `reasoning_effort` through both eval adapters
+
+`OpenRouterEvalService.run_tool_loop`, `run_json_prompt`, and
+`run_structured_prompt` — plus the symmetric `KimiEvalService._chat`
++ entry points — now forward the `reasoning_effort` kwarg to
+`chat.completions.create`. Conditional (only when truthy) because
+non-reasoning slugs (Sonnet, Haiku, DeepSeek v4) 400 if it's set.
+
+Added pricing entries for the new Slice 1K candidates:
+`openai/o4-mini` ($1.10 / $4.40 per Mtok — substituted for the
+non-existent `openai/gpt-5.1-mini`) and `anthropic/claude-haiku-4.5`
+($1.00 / $5.00 per Mtok).
+
+Bonus bugfix from the Slice 1K smoke run: the
+`OpenRouterEvalService.run_json_prompt` path was never
+accumulating `response.usage` into the snapshot — only
+`run_tool_loop` was. The smoke at first reported $0.0000 for
+every call. Mirrored the accumulator into the single-shot path so
+the assistant / parser / structuring suites all surface accurate
+per-call cost.
+
+### Slice 1K: 5-candidate assistant eval (12 scenarios)
+
+New runner `tests/quality/assistant_agentic_runner.py` — mirrors
+the Phase B incremental-checkpoint + heartbeat pattern but
+targets the assistant prompt surface directly via
+`build_assistant_prompt` + `run_json_prompt`. Twelve scenarios
+across product-knowledge fluency, honest refusals, grounding
+discipline, and multi-turn memory. Substring-matcher rubric with
+the same normalisation (smart quotes / em-dashes) as Slice 1H.
+
+Candidate slate (user-approved after dropping Opus + substituting
+o4-mini for the non-existent gpt-5.1-mini): gpt-5.4@med,
+gpt-5.4-mini@med, o4-mini@high, sonnet-4.5, haiku-4.5.
+
+Headline result (full per-candidate × per-scenario data in
+`docs/eval-runs/2026-05-21-assistant-eval-full.json`):
+
+  | candidate         | avg   | pass  | wall    | cost   |
+  | gpt-5.4@med       | 0.986 | 1.000 | 74.7s   | $0.094 |
+  | gpt-5.4-mini@med  | 1.000 | 1.000 | 40.5s   | $0.018 |
+  | o4-mini@high      | 1.000 | 1.000 | 117.3s  | $0.081 |
+  | sonnet-4.5        | 1.000 | 1.000 | 161.3s  | $0.116 |
+  | haiku-4.5         | 0.917 | 0.917 | 37.6s   | $0.038 |
+
+**Surprise:** `gpt-5.4-mini@med` is the winner on all three axes
+— quality 1.000, fastest at 40 s, cheapest at $0.018 (1/5 the
+cost of gpt-5.4@med which scored 0.986). The assistant surface
+is mostly retrieval-and-refuse: pulling facts from the new
+product-knowledge block, declining off-topic asks, recalling
+earlier turns. Heavy reasoning is wasted; smart-but-cheap wins.
+
+The two sub-1.0 scores re-classify cleanly:
+  * `gpt-5.4@med` :: `off_topic_movie` (0.833) — matcher-bug:
+    the model's "I can only help with your job application
+    workflow here" is a textbook refusal but wasn't in the
+    `one_of` rubric. Real behavior = PASS.
+  * `haiku-4.5` :: `quota_resume_builder_lifetime` (0.000) —
+    real JSON-mode fidelity miss; haiku returned content that
+    didn't parse. The other 11 scenarios were valid JSON. Same
+    drift pattern Phase B caught for parser/JD on Anthropic
+    via OpenRouter (~92 % reliability).
+
+**Recommendation:** route the workspace-assistant default to
+`openai/gpt-5.4-mini` at `reasoning_effort=medium`. This is a
+real departure from the resume-builder default (gpt-5.4) and the
+Phase B verdict (gpt-5.4 for parser/JD/analysis); the surface
+characteristics genuinely differ. Expected ~80 % savings on
+assistant API spend. Full read-out in
+`docs/eval-runs/2026-05-21-assistant-eval-report.md`.
+
+Slice 1J's history fix paid off concretely: all 5 candidates
+correctly recalled the "18 %" fact from turn 2 in a 7-turn
+session — unscorable before the fix.

@@ -1,0 +1,1189 @@
+{
+  "candidates": {
+    "gpt-5.4@med": {
+      "slug": "openai/gpt-5.4",
+      "reasoning_effort": "medium"
+    },
+    "gpt-5.4-mini@med": {
+      "slug": "openai/gpt-5.4-mini",
+      "reasoning_effort": "medium"
+    },
+    "o4-mini@high": {
+      "slug": "openai/o4-mini",
+      "reasoning_effort": "high"
+    },
+    "sonnet-4.5": {
+      "slug": "anthropic/claude-sonnet-4.5",
+      "reasoning_effort": null
+    },
+    "haiku-4.5": {
+      "slug": "anthropic/claude-haiku-4.5",
+      "reasoning_effort": null
+    }
+  },
+  "scenarios": [
+    "pricing_tiers_question",
+    "theme_list_question",
+    "theme_unlock_question",
+    "quota_assistant_turns",
+    "quota_resume_builder_lifetime",
+    "refuse_schedule_interview",
+    "refuse_login_external",
+    "pre_resume_grounding",
+    "post_analysis_grounding",
+    "off_topic_movie",
+    "long_session_memory_callback",
+    "multi_turn_correction"
+  ],
+  "results": {
+    "gpt-5.4@med": {
+      "slug": "openai/gpt-5.4",
+      "reasoning_effort": "medium",
+      "rows": [
+        {
+          "fixture": "pricing_tiers_question",
+          "score": 1.0,
+          "reason": "+'free'=True +'pro'=True +'business'=True one_of(['3', '20', '80', '150', '500', '1000', 'unlimited'])=True",
+          "answer": "We have 3 tiers: Free, Pro, and Business.\n\nFree: 3 tailored applications/month, 0 premium applications/month, 20 assistant turns/month, 3 resume parses/month, 50 job searches/month, 5 saved jobs, 1 saved workspace, 1 lifetime resume-builder session, 7-day saved-workspace retention, and PDF export in the professional_neutral theme only.\n\nPro: 20 tailored applications/month, 5 premium applications/month, 150 assistant turns/month, 25 resume parses/month, unlimited job searches, 1000 saved jobs, 5 saved workspaces, 3 resume-builder sessions/month, 30-day saved-workspace retention, and PDF or DOCX export in any resume theme.\n\nBusiness: 80 tailored applications/month, 25 premium applications/month, 500 assistant turns/month, 100 resume parses/month, unlimited job searches, unlimited saved jobs, unlimited saved workspaces, 15 resume-builder sessions/month, unbounded saved-workspace retention, and PDF or DOCX export in any resume theme.\n\nMonthly quotas reset at the start of each calendar month (UTC); lifetime counters do not reset.",
+          "sources": [
+            "Product knowledge: pricing tiers and quotas"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 12.37,
+            "prompt_tokens": 1935,
+            "completion_tokens": 636,
+            "total_tokens": 2571,
+            "cost_usd": 0.0112
+          }
+        },
+        {
+          "fixture": "theme_list_question",
+          "score": 1.0,
+          "reason": "one_of(['professional_neutral', 'professional neutral'])=True one_of(['modern_blue', 'modern blue'])=True one_of(['creative_warm', 'creative warm', 'architect_mono', 'architect mono', 'classic_ats', 'classic ats', 'presentation_twocol', 'presentation', 'two-column', 'two column'])=True",
+          "answer": "There are 6 export themes: classic_ats, professional_neutral, modern_blue, creative_warm, architect_mono, and presentation_twocol. The first 5 are single-column ATS-safe layouts; presentation_twocol is a two-column designer layout and is flagged non-ATS. If you're on Free, you can export PDF only in professional_neutral; Pro and Business can export PDF or DOCX in any theme.",
+          "sources": [
+            "Product knowledge: resume themes",
+            "Product knowledge: export entitlement",
+            "Workspace state: current_step = analysis"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.78,
+            "prompt_tokens": 2079,
+            "completion_tokens": 339,
+            "total_tokens": 2418,
+            "cost_usd": 0.0086
+          }
+        },
+        {
+          "fixture": "theme_unlock_question",
+          "score": 1.0,
+          "reason": "-'unlock code'=True -'promo code'=True one_of(['gated', 'non-ats', 'not ats', 'pro', 'business', 'upgrade'])=True one_of(['two-column', 'two column', 'presentation'])=True",
+          "answer": "The two-column theme is unlocked on Pro or Business. On Free, exports are limited to PDF in the default professional_neutral theme; with Pro/Business you can export in any theme, including the non-ATS two-column presentation_twocol layout.",
+          "sources": [
+            "Product knowledge: resume themes and export entitlement",
+            "Workspace state: resume is present in the current workspace"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 5.91,
+            "prompt_tokens": 1930,
+            "completion_tokens": 328,
+            "total_tokens": 2258,
+            "cost_usd": 0.0081
+          }
+        },
+        {
+          "fixture": "quota_assistant_turns",
+          "score": 1.0,
+          "reason": "+'20'=True +'150'=True +'500'=True",
+          "answer": "You can message this chat 20 times/month on Free, 150/month on Pro, and 500/month on Business. Those assistant-turn limits reset at the start of each calendar month (UTC).",
+          "sources": [
+            "Product knowledge: Pricing tiers and assistant-turn limits",
+            "Product knowledge: Monthly quota reset timing"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.69,
+            "prompt_tokens": 1934,
+            "completion_tokens": 217,
+            "total_tokens": 2151,
+            "cost_usd": 0.007
+          }
+        },
+        {
+          "fixture": "quota_resume_builder_lifetime",
+          "score": 1.0,
+          "reason": "-'resets monthly'=True -'every month'=True -'each month'=True one_of(['lifetime', 'never resets', 'one-time', '1 total', \"doesn't reset\"])=True",
+          "answer": "On Free, it doesn\u2019t reset \u2014 the resume builder session quota is 1 lifetime session total. Only the Pro and Business builder-session limits reset monthly; lifetime counters never reset.",
+          "sources": [
+            "Product knowledge: Pricing tiers and resume builder session limits",
+            "Product knowledge: Quota reset policy"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 5.19,
+            "prompt_tokens": 1887,
+            "completion_tokens": 240,
+            "total_tokens": 2127,
+            "cost_usd": 0.0071
+          }
+        },
+        {
+          "fixture": "refuse_schedule_interview",
+          "score": 1.0,
+          "reason": "-'scheduled'=True -'confirmed for 3'=True -'confirmed at 3'=True -\"i've booked\"=True one_of([\"can't\", 'cannot', \"i'm not able\", 'unable', \"won't be able\", 'do not schedule', \"don't schedule\"])=True",
+          "answer": "I can\u2019t schedule interviews or contact the hiring manager on your behalf. I can help you prepare for this Senior ML Engineer interview or draft a message you can send yourself.",
+          "sources": [
+            "Analysis page",
+            "workspace_state.current_step=analysis",
+            "workflow_context.fit_analysis.target_role=Senior ML Engineer",
+            "product knowledge: assistant cannot schedule interviews or send messages on the user's behalf"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.31,
+            "prompt_tokens": 2083,
+            "completion_tokens": 217,
+            "total_tokens": 2300,
+            "cost_usd": 0.0074
+          }
+        },
+        {
+          "fixture": "refuse_login_external",
+          "score": 1.0,
+          "reason": "-'logged in'=True -'submitted the application'=True -'applied on linkedin'=True one_of([\"can't\", 'cannot', \"won't\", 'unable', 'not able', \"don't have access\"])=True",
+          "answer": "I can\u2019t log in to LinkedIn or submit applications on your behalf. If you save the role here and paste or import the job description, I can help you analyze the fit and tailor your resume and cover letter before you apply.",
+          "sources": [
+            "Product capability limits: cannot log in to external accounts or submit applications for the user",
+            "Workspace state: current step is Job Search",
+            "Workspace state: resume is present, but no job description has been added yet",
+            "Workspace state: 4 saved jobs, last search was \"ml engineer bangalore\""
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.66,
+            "prompt_tokens": 1934,
+            "completion_tokens": 290,
+            "total_tokens": 2224,
+            "cost_usd": 0.0077
+          }
+        },
+        {
+          "fixture": "pre_resume_grounding",
+          "score": 1.0,
+          "reason": "-'python,'=True -'javascript,'=True -'your skills include'=True one_of([\"haven't uploaded\", 'no resume', 'not uploaded', 'no profile', 'upload', 'resume builder'])=True",
+          "answer": "I can\u2019t list any resume skills yet because no resume has been uploaded or built in this workspace. The next step is to add your resume on the Resume step, and then I can tell you what was parsed.",
+          "sources": [
+            "workspace_state.has_resume = false",
+            "current page: Resume",
+            "step 01 = Resume"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.06,
+            "prompt_tokens": 1881,
+            "completion_tokens": 146,
+            "total_tokens": 2027,
+            "cost_usd": 0.0062
+          }
+        },
+        {
+          "fixture": "post_analysis_grounding",
+          "score": 1.0,
+          "reason": "+'72'=True one_of(['aws', 'kubernetes', 'missing'])=True",
+          "answer": "Your current fit score is 72, labeled Strong, for the Senior ML Engineer role. The main factors holding it back are missing hard-skill coverage in AWS and Kubernetes; your experience looks roughly aligned, so the biggest gap appears to be specific platform/tool match rather than overall seniority.",
+          "sources": [
+            "workflow_context.fit_analysis.overall_score",
+            "workflow_context.fit_analysis.readiness_label",
+            "workflow_context.fit_analysis.missing_hard_skills",
+            "workflow_context.fit_analysis.experience_signal"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 5.55,
+            "prompt_tokens": 2079,
+            "completion_tokens": 253,
+            "total_tokens": 2332,
+            "cost_usd": 0.0077
+          }
+        },
+        {
+          "fixture": "off_topic_movie",
+          "score": 0.833,
+          "reason": "-'interstellar'=True -'inception'=True -'blade runner'=True -'the matrix'=True -'dune'=True one_of([\"can't\", 'cannot', \"won't\", 'stay focused', 'focus on', 'outside', 'scope'])=False",
+          "answer": "I can only help with your job application workflow here\u2014if you want, I can help with your job search, saved jobs, or next application step.",
+          "sources": [
+            "current_page: Job Search",
+            "workspace_state.current_step = jobs",
+            "workspace_state.saved_jobs_count = 4"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 5.23,
+            "prompt_tokens": 1931,
+            "completion_tokens": 168,
+            "total_tokens": 2099,
+            "cost_usd": 0.0065
+          }
+        },
+        {
+          "fixture": "long_session_memory_callback",
+          "score": 1.0,
+          "reason": "+'18'=True one_of(['chargeback', 'fraud reduction', 'fraud cut'])=True",
+          "answer": "You said the impact was an 18% reduction in chargeback fraud.",
+          "sources": [
+            "Recent builder chat history",
+            "User-provided Stripe achievement note"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.47,
+            "prompt_tokens": 2287,
+            "completion_tokens": 257,
+            "total_tokens": 2544,
+            "cost_usd": 0.0083
+          }
+        },
+        {
+          "fixture": "multi_turn_correction",
+          "score": 1.0,
+          "reason": "-'backend engineer'=True -'backend role'=True one_of(['data science', 'data scientist', 'data-science'])=True",
+          "answer": "Right now you\u2019re targeting data-science roles, and you want to keep Python in the profile. Since no resume has been uploaded yet, that target is coming from this chat rather than a saved workspace artifact.",
+          "sources": [
+            "Recent chat context",
+            "Resume step workspace state: no resume uploaded yet"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 13.51,
+            "prompt_tokens": 2026,
+            "completion_tokens": 265,
+            "total_tokens": 2291,
+            "cost_usd": 0.0077
+          }
+        }
+      ],
+      "totals": {
+        "scenarios": 12,
+        "scored": 12,
+        "avg_score": 0.986,
+        "pass_rate": 1.0,
+        "total_seconds": 74.74,
+        "total_tokens": 27342,
+        "total_cost_usd": 0.0935
+      }
+    },
+    "gpt-5.4-mini@med": {
+      "slug": "openai/gpt-5.4-mini",
+      "reasoning_effort": "medium",
+      "rows": [
+        {
+          "fixture": "pricing_tiers_question",
+          "score": 1.0,
+          "reason": "+'free'=True +'pro'=True +'business'=True one_of(['3', '20', '80', '150', '500', '1000', 'unlimited'])=True",
+          "answer": "We have three tiers: Free, Pro, and Business.\n\n- Free: 3 tailored applications/month, 0 premium applications, 20 assistant turns/month, 3 resume parses/month, 50 job searches/month, 5 saved jobs, 1 saved workspace, 1 lifetime resume builder session, and PDF export in the professional_neutral theme only.\n- Pro: 20 tailored apps/month, 5 premium apps/month, 150 assistant turns/month, 25 resume parses/month, unlimited job searches, 1,000 saved jobs, 5 saved workspaces, 3 resume builder sessions/month, and PDF or DOCX export in any theme.\n- Business: 80 tailored apps/month, 25 premium apps/month, 500 assistant turns/month, 100 resume parses/month, unlimited job searches, unlimited saved jobs, unlimited saved workspaces, 15 resume builder sessions/month, and PDF or DOCX export in any theme.\n\nMonthly counters reset at the start of each calendar month UTC.",
+          "sources": [
+            "Product knowledge: pricing tiers and monthly caps",
+            "Product knowledge: persistent counters, resume builder sessions, and export entitlement"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.51,
+            "prompt_tokens": 1935,
+            "completion_tokens": 519,
+            "total_tokens": 2454,
+            "cost_usd": 0.002
+          }
+        },
+        {
+          "fixture": "theme_list_question",
+          "score": 1.0,
+          "reason": "one_of(['professional_neutral', 'professional neutral'])=True one_of(['modern_blue', 'modern blue'])=True one_of(['creative_warm', 'creative warm', 'architect_mono', 'architect mono', 'classic_ats', 'classic ats', 'presentation_twocol', 'presentation', 'two-column', 'two column'])=True",
+          "answer": "You can export with six resume themes: classic_ats, professional_neutral, modern_blue, creative_warm, architect_mono, and presentation_twocol. The first five are single-column and ATS-safe; presentation_twocol is a two-column designer layout and is flagged non-ATS.",
+          "sources": [
+            "Product knowledge: resume themes and export options",
+            "Workspace state: current page = Analysis"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 3.44,
+            "prompt_tokens": 2079,
+            "completion_tokens": 199,
+            "total_tokens": 2278,
+            "cost_usd": 0.0014
+          }
+        },
+        {
+          "fixture": "theme_unlock_question",
+          "score": 1.0,
+          "reason": "-'unlock code'=True -'promo code'=True one_of(['gated', 'non-ats', 'not ats', 'pro', 'business', 'upgrade'])=True one_of(['two-column', 'two column', 'presentation'])=True",
+          "answer": "The two-column theme is part of the presentation_twocol export theme, and it\u2019s available only on Pro or Business. If you\u2019re on Free, you can export PDF only in professional_neutral; there isn\u2019t a separate in-workspace unlock for the theme itself.",
+          "sources": [
+            "Product knowledge: Resume themes and export entitlement",
+            "Workspace state: current page = Job Search"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 8.72,
+            "prompt_tokens": 1930,
+            "completion_tokens": 543,
+            "total_tokens": 2473,
+            "cost_usd": 0.0021
+          }
+        },
+        {
+          "fixture": "quota_assistant_turns",
+          "score": 1.0,
+          "reason": "+'20'=True +'150'=True +'500'=True",
+          "answer": "This chat is capped at 20 messages per month on Free, 150 on Pro, and 500 on Business.",
+          "sources": [
+            "Product knowledge: pricing tiers and monthly assistant-turn limits"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 1.53,
+            "prompt_tokens": 1934,
+            "completion_tokens": 184,
+            "total_tokens": 2118,
+            "cost_usd": 0.0013
+          }
+        },
+        {
+          "fixture": "quota_resume_builder_lifetime",
+          "score": 1.0,
+          "reason": "-'resets monthly'=True -'every month'=True -'each month'=True one_of(['lifetime', 'never resets', 'one-time', '1 total', \"doesn't reset\"])=True",
+          "answer": "On Free, the resume builder session quota does not reset \u2014 it\u2019s 1 total session for life.",
+          "sources": [
+            "Product knowledge: Pricing tiers / resume builder sessions"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.21,
+            "prompt_tokens": 1887,
+            "completion_tokens": 214,
+            "total_tokens": 2101,
+            "cost_usd": 0.0014
+          }
+        },
+        {
+          "fixture": "refuse_schedule_interview",
+          "score": 1.0,
+          "reason": "-'scheduled'=True -'confirmed for 3'=True -'confirmed at 3'=True -\"i've booked\"=True one_of([\"can't\", 'cannot', \"i'm not able\", 'unable', \"won't be able\", 'do not schedule', \"don't schedule\"])=True",
+          "answer": "I can\u2019t schedule interviews or contact the hiring manager for you. I can help you prepare a follow-up message or interview prep based on your current analysis for the Senior ML Engineer role.",
+          "sources": [
+            "workspace_state.current_step=analysis",
+            "workflow_context.fit_analysis"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.5,
+            "prompt_tokens": 2083,
+            "completion_tokens": 284,
+            "total_tokens": 2367,
+            "cost_usd": 0.0016
+          }
+        },
+        {
+          "fixture": "refuse_login_external",
+          "score": 1.0,
+          "reason": "-'logged in'=True -'submitted the application'=True -'applied on linkedin'=True one_of([\"can't\", 'cannot', \"won't\", 'unable', 'not able', \"don't have access\"])=True",
+          "answer": "I can\u2019t open LinkedIn or submit applications on your behalf. If you paste the job description or save the role into Job Search here, I can help you analyze it and tailor your resume or cover letter.",
+          "sources": [
+            "workspace_state: current_step='jobs'",
+            "product knowledge: cannot log in to external accounts or send applications/messages",
+            "workspace_state: has_resume=true, has_jd=false"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.37,
+            "prompt_tokens": 1934,
+            "completion_tokens": 289,
+            "total_tokens": 2223,
+            "cost_usd": 0.0015
+          }
+        },
+        {
+          "fixture": "pre_resume_grounding",
+          "score": 1.0,
+          "reason": "-'python,'=True -'javascript,'=True -'your skills include'=True one_of([\"haven't uploaded\", 'no resume', 'not uploaded', 'no profile', 'upload', 'resume builder'])=True",
+          "answer": "I can\u2019t see any resume skills yet because no resume has been uploaded in this workspace. Once you upload your resume on the Resume step, I can summarize the skills it contains.",
+          "sources": [
+            "workspace_state: has_resume=false",
+            "current_page: Resume"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 3.35,
+            "prompt_tokens": 1881,
+            "completion_tokens": 195,
+            "total_tokens": 2076,
+            "cost_usd": 0.0013
+          }
+        },
+        {
+          "fixture": "post_analysis_grounding",
+          "score": 1.0,
+          "reason": "+'72'=True one_of(['aws', 'kubernetes', 'missing'])=True",
+          "answer": "Your fit score is 72, labeled Strong. The main factors holding it back are the missing hard skills AWS and Kubernetes; the analysis otherwise shows your experience is roughly aligned and you already match Python, FastAPI, and Docker.",
+          "sources": [
+            "workflow_context.fit_analysis",
+            "product_context.workspace_state",
+            "current_page: Analysis"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.53,
+            "prompt_tokens": 2079,
+            "completion_tokens": 204,
+            "total_tokens": 2283,
+            "cost_usd": 0.0014
+          }
+        },
+        {
+          "fixture": "off_topic_movie",
+          "score": 1.0,
+          "reason": "-'interstellar'=True -'inception'=True -'blade runner'=True -'the matrix'=True -'dune'=True one_of([\"can't\", 'cannot', \"won't\", 'stay focused', 'focus on', 'outside', 'scope'])=True",
+          "answer": "I can\u2019t help with entertainment recommendations here, but I can help with your job search, resume, or tailoring next.",
+          "sources": [
+            "workspace_state.current_step = jobs",
+            "current_page = Job Search"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.36,
+            "prompt_tokens": 1931,
+            "completion_tokens": 154,
+            "total_tokens": 2085,
+            "cost_usd": 0.0013
+          }
+        },
+        {
+          "fixture": "long_session_memory_callback",
+          "score": 1.0,
+          "reason": "+'18'=True one_of(['chargeback', 'fraud reduction', 'fraud cut'])=True",
+          "answer": "You said it was an 18% reduction in chargeback fraud.",
+          "sources": [
+            "Recent conversation history"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.94,
+            "prompt_tokens": 2287,
+            "completion_tokens": 164,
+            "total_tokens": 2451,
+            "cost_usd": 0.0015
+          }
+        },
+        {
+          "fixture": "multi_turn_correction",
+          "score": 1.0,
+          "reason": "-'backend engineer'=True -'backend role'=True one_of(['data science', 'data scientist', 'data-science'])=True",
+          "answer": "You\u2019re targeting data-science roles, and I\u2019ll keep Python as a relevant signal.",
+          "sources": [
+            "Recent conversation history",
+            "workspace_state: current_step=resume"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.06,
+            "prompt_tokens": 2026,
+            "completion_tokens": 262,
+            "total_tokens": 2288,
+            "cost_usd": 0.0015
+          }
+        }
+      ],
+      "totals": {
+        "scenarios": 12,
+        "scored": 12,
+        "avg_score": 1.0,
+        "pass_rate": 1.0,
+        "total_seconds": 40.52,
+        "total_tokens": 27197,
+        "total_cost_usd": 0.0183
+      }
+    },
+    "o4-mini@high": {
+      "slug": "openai/o4-mini",
+      "reasoning_effort": "high",
+      "rows": [
+        {
+          "fixture": "pricing_tiers_question",
+          "score": 1.0,
+          "reason": "+'free'=True +'pro'=True +'business'=True one_of(['3', '20', '80', '150', '500', '1000', 'unlimited'])=True",
+          "answer": "We offer three subscription tiers:\n\nFree\n\u2022 3 tailored applications/month, 0 premium applications\n\u2022 20 assistant (chat) turns, 3 resume parses, 50 job searches\n\u2022 Up to 5 saved jobs, 1 saved workspace (retained 7 days)\n\u2022 1 lifetime resume-builder session\n\u2022 PDF export in the professional_neutral theme only\n\nPro\n\u2022 20 tailored applications/month, 5 premium applications\n\u2022 150 assistant turns, 25 resume parses, unlimited job searches\n\u2022 Up to 1,000 saved jobs, 5 saved workspaces (retained 30 days)\n\u2022 3 resume-builder sessions/month\n\u2022 PDF or DOCX export in any of the six themes\n\nBusiness\n\u2022 80 tailored applications/month, 25 premium applications\n\u2022 500 assistant turns, 100 resume parses, unlimited job searches\n\u2022 Unlimited saved jobs and workspaces (unbounded retention)\n\u2022 15 resume-builder sessions/month\n\u2022 PDF or DOCX export in any of the six themes",
+          "sources": [
+            "Pricing tiers: Free / Pro / Business",
+            "Monthly caps on tailored & premium applications, assistant turns, resume parses, job searches",
+            "Persistent limits on saved jobs & workspaces",
+            "Resume builder sessions & export entitlements"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 11.0,
+            "prompt_tokens": 1935,
+            "completion_tokens": 1583,
+            "total_tokens": 3518,
+            "cost_usd": 0.0091
+          }
+        },
+        {
+          "fixture": "theme_list_question",
+          "score": 1.0,
+          "reason": "one_of(['professional_neutral', 'professional neutral'])=True one_of(['modern_blue', 'modern blue'])=True one_of(['creative_warm', 'creative warm', 'architect_mono', 'architect mono', 'classic_ats', 'classic ats', 'presentation_twocol', 'presentation', 'two-column', 'two column'])=True",
+          "answer": "When exporting your resume you can choose from six themes: classic_ats, professional_neutral (the default ATS-safe layout), modern_blue, creative_warm, and architect_mono (all single-column ATS-safe), or the two-column designer layout presentation_twocol. On the Free tier you can export PDF only in professional_neutral; Pro and Business let you export PDF or DOCX in any of the six themes.",
+          "sources": [
+            "Resume themes (product knowledge)",
+            "Pricing tiers (product knowledge)"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 11.35,
+            "prompt_tokens": 2079,
+            "completion_tokens": 1321,
+            "total_tokens": 3400,
+            "cost_usd": 0.0081
+          }
+        },
+        {
+          "fixture": "theme_unlock_question",
+          "score": 1.0,
+          "reason": "-'unlock code'=True -'promo code'=True one_of(['gated', 'non-ats', 'not ats', 'pro', 'business', 'upgrade'])=True one_of(['two-column', 'two column', 'presentation'])=True",
+          "answer": "The two-column (presentation_twocol) theme is only available on Pro and Business plans. To unlock it, upgrade your subscription, then go to the Resume tab, click Export, and select the two-column theme.",
+          "sources": [
+            "Product knowledge: resume themes",
+            "Product knowledge: export entitlement"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 11.07,
+            "prompt_tokens": 1930,
+            "completion_tokens": 1274,
+            "total_tokens": 3204,
+            "cost_usd": 0.0077
+          }
+        },
+        {
+          "fixture": "quota_assistant_turns",
+          "score": 1.0,
+          "reason": "+'20'=True +'150'=True +'500'=True",
+          "answer": "The monthly cap for in-chat assistant turns is 20 on Free, 150 on Pro, and 500 on Business.",
+          "sources": [
+            "Product pricing & usage quotas"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 7.56,
+            "prompt_tokens": 1934,
+            "completion_tokens": 723,
+            "total_tokens": 2657,
+            "cost_usd": 0.0053
+          }
+        },
+        {
+          "fixture": "quota_resume_builder_lifetime",
+          "score": 1.0,
+          "reason": "-'resets monthly'=True -'every month'=True -'each month'=True one_of(['lifetime', 'never resets', 'one-time', '1 total', \"doesn't reset\"])=True",
+          "answer": "On the Free tier, you get one resume builder session total and it never resets (lifetime allotment).",
+          "sources": [
+            "Product Knowledge: Resume builder sessions"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 7.46,
+            "prompt_tokens": 1887,
+            "completion_tokens": 597,
+            "total_tokens": 2484,
+            "cost_usd": 0.0047
+          }
+        },
+        {
+          "fixture": "refuse_schedule_interview",
+          "score": 1.0,
+          "reason": "-'scheduled'=True -'confirmed for 3'=True -'confirmed at 3'=True -\"i've booked\"=True one_of([\"can't\", 'cannot', \"i'm not able\", 'unable', \"won't be able\", 'do not schedule', \"don't schedule\"])=True",
+          "answer": "I\u2019m sorry, I can\u2019t schedule interviews. Let me know if you\u2019d like help with your resume, cover letter, or application analysis.",
+          "sources": [
+            "Agent capabilities"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 8.56,
+            "prompt_tokens": 2083,
+            "completion_tokens": 1034,
+            "total_tokens": 3117,
+            "cost_usd": 0.0068
+          }
+        },
+        {
+          "fixture": "refuse_login_external",
+          "score": 1.0,
+          "reason": "-'logged in'=True -'submitted the application'=True -'applied on linkedin'=True one_of([\"can't\", 'cannot', \"won't\", 'unable', 'not able', \"don't have access\"])=True",
+          "answer": "I\u2019m sorry, I can\u2019t do that\u2014let\u2019s focus on preparing your application materials here.",
+          "sources": [],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 5.23,
+            "prompt_tokens": 1934,
+            "completion_tokens": 592,
+            "total_tokens": 2526,
+            "cost_usd": 0.0047
+          }
+        },
+        {
+          "fixture": "pre_resume_grounding",
+          "score": 1.0,
+          "reason": "-'python,'=True -'javascript,'=True -'your skills include'=True one_of([\"haven't uploaded\", 'no resume', 'not uploaded', 'no profile', 'upload', 'resume builder'])=True",
+          "answer": "It looks like you haven\u2019t uploaded a resume yet, so I can\u2019t extract any skills. Please upload your PDF or start the resume builder to get started.",
+          "sources": [
+            "workspace_state.has_resume",
+            "Resume page"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.78,
+            "prompt_tokens": 1881,
+            "completion_tokens": 615,
+            "total_tokens": 2496,
+            "cost_usd": 0.0048
+          }
+        },
+        {
+          "fixture": "post_analysis_grounding",
+          "score": 1.0,
+          "reason": "+'72'=True one_of(['aws', 'kubernetes', 'missing'])=True",
+          "answer": "Your analysis shows an overall fit score of 72 for the Senior ML Engineer role (labeled \u201cStrong\u201d). The main gaps holding it back are missing AWS and Kubernetes experience, which the JD marks as must-have skills.",
+          "sources": [
+            "workflow_context.fit_analysis"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 15.44,
+            "prompt_tokens": 2079,
+            "completion_tokens": 1161,
+            "total_tokens": 3240,
+            "cost_usd": 0.0074
+          }
+        },
+        {
+          "fixture": "off_topic_movie",
+          "score": 1.0,
+          "reason": "-'interstellar'=True -'inception'=True -'blade runner'=True -'the matrix'=True -'dune'=True one_of([\"can't\", 'cannot', \"won't\", 'stay focused', 'focus on', 'outside', 'scope'])=True",
+          "answer": "I\u2019m sorry, but I can\u2019t help with that; please let me know if you need assistance with your job application.",
+          "sources": [],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 14.97,
+            "prompt_tokens": 1931,
+            "completion_tokens": 1119,
+            "total_tokens": 3050,
+            "cost_usd": 0.007
+          }
+        },
+        {
+          "fixture": "long_session_memory_callback",
+          "score": 1.0,
+          "reason": "+'18'=True one_of(['chargeback', 'fraud reduction', 'fraud cut'])=True",
+          "answer": "You said you cut chargeback fraud by 18%.",
+          "sources": [
+            "Recent chat history"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 10.08,
+            "prompt_tokens": 2287,
+            "completion_tokens": 1298,
+            "total_tokens": 3585,
+            "cost_usd": 0.0082
+          }
+        },
+        {
+          "fixture": "multi_turn_correction",
+          "score": 1.0,
+          "reason": "-'backend engineer'=True -'backend role'=True one_of(['data science', 'data scientist', 'data-science'])=True",
+          "answer": "You\u2019re targeting data-science roles right now, based on your last update.",
+          "sources": [
+            "Recent chat context"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 9.79,
+            "prompt_tokens": 2026,
+            "completion_tokens": 1067,
+            "total_tokens": 3093,
+            "cost_usd": 0.0069
+          }
+        }
+      ],
+      "totals": {
+        "scenarios": 12,
+        "scored": 12,
+        "avg_score": 1.0,
+        "pass_rate": 1.0,
+        "total_seconds": 117.31,
+        "total_tokens": 36370,
+        "total_cost_usd": 0.0807
+      }
+    },
+    "sonnet-4.5": {
+      "slug": "anthropic/claude-sonnet-4.5",
+      "reasoning_effort": null,
+      "rows": [
+        {
+          "fixture": "pricing_tiers_question",
+          "score": 1.0,
+          "reason": "+'free'=True +'pro'=True +'business'=True one_of(['3', '20', '80', '150', '500', '1000', 'unlimited'])=True",
+          "answer": "We have three pricing tiers: **Free**, **Pro**, and **Business**. Here's what you get on each:\n\n**Free**: 3 tailored applications/month, 0 premium applications, 20 assistant chat turns/month, 3 resume parses/month, 50 job searches/month, 5 saved jobs, 1 saved workspace (7-day retention), 1 lifetime resume builder session, PDF export in professional_neutral theme only.\n\n**Pro**: 20 tailored applications/month, 5 premium applications/month, 150 assistant turns/month, 25 resume parses/month, unlimited job searches, 1,000 saved jobs, 5 saved workspaces (30-day retention), 3 resume builder sessions/month, PDF or DOCX export in any of the six themes.\n\n**Business**: 80 tailored applications/month, 25 premium applications/month, 500 assistant turns/month, 100 resume parses/month, unlimited job searches, unlimited saved jobs, unlimited saved workspaces (no expiration), 15 resume builder sessions/month, PDF or DOCX export in any theme.\n\nMonthly counters reset at the start of each calendar month (UTC).",
+          "sources": [
+            "Product pricing tiers",
+            "Monthly and lifetime quota definitions",
+            "Export and theme entitlements"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 8.38,
+            "prompt_tokens": 2184,
+            "completion_tokens": 399,
+            "total_tokens": 2583,
+            "cost_usd": 0.0125
+          }
+        },
+        {
+          "fixture": "theme_list_question",
+          "score": 1.0,
+          "reason": "one_of(['professional_neutral', 'professional neutral'])=True one_of(['modern_blue', 'modern blue'])=True one_of(['creative_warm', 'creative warm', 'architect_mono', 'architect mono', 'classic_ats', 'classic ats', 'presentation_twocol', 'presentation', 'two-column', 'two column'])=True",
+          "answer": "You can choose from six resume themes when exporting: classic_ats, professional_neutral (the default), modern_blue, creative_warm, architect_mono, and presentation_twocol. The first five are single-column ATS-safe layouts; presentation_twocol is a two-column designer layout that is not ATS-optimized. Your export format and theme options depend on your plan tier.",
+          "sources": [
+            "Product knowledge: resume themes",
+            "Product knowledge: export entitlements"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 5.47,
+            "prompt_tokens": 2360,
+            "completion_tokens": 184,
+            "total_tokens": 2544,
+            "cost_usd": 0.0098
+          }
+        },
+        {
+          "fixture": "theme_unlock_question",
+          "score": 1.0,
+          "reason": "-'unlock code'=True -'promo code'=True one_of(['gated', 'non-ats', 'not ats', 'pro', 'business', 'upgrade'])=True one_of(['two-column', 'two column', 'presentation'])=True",
+          "answer": "The two-column theme (presentation_twocol) is available on Pro and Business plans when you export your tailored resume. After running an analysis and generating a tailored resume, you'll see theme options in the export dialog\u2014select presentation_twocol there. Note that this theme is flagged as non-ATS-safe, so it's best for direct submissions or networking rather than applicant tracking systems.",
+          "sources": [
+            "Product knowledge: resume themes and export entitlements",
+            "Workspace state: analysis step (locked until you run analysis on a JD)",
+            "Export flow: theme picker appears after tailored resume generation"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 8.95,
+            "prompt_tokens": 2179,
+            "completion_tokens": 225,
+            "total_tokens": 2404,
+            "cost_usd": 0.0099
+          }
+        },
+        {
+          "fixture": "quota_assistant_turns",
+          "score": 1.0,
+          "reason": "+'20'=True +'150'=True +'500'=True",
+          "answer": "Assistant turns per month: Free tier gets 20, Pro gets 150, and Business gets 500. These counters reset at the start of each calendar month (UTC).",
+          "sources": [
+            "Product pricing tiers",
+            "Monthly quota limits"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 22.42,
+            "prompt_tokens": 2182,
+            "completion_tokens": 128,
+            "total_tokens": 2310,
+            "cost_usd": 0.0085
+          }
+        },
+        {
+          "fixture": "quota_resume_builder_lifetime",
+          "score": 1.0,
+          "reason": "-'resets monthly'=True -'every month'=True -'each month'=True one_of(['lifetime', 'never resets', 'one-time', '1 total', \"doesn't reset\"])=True",
+          "answer": "On the Free tier, the resume builder session quota never resets\u2014you get 1 session for the lifetime of your account. Pro and Business tiers reset monthly (3 and 15 sessions respectively).",
+          "sources": [
+            "Product pricing tiers",
+            "Resume builder session entitlements"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 10.21,
+            "prompt_tokens": 2124,
+            "completion_tokens": 154,
+            "total_tokens": 2278,
+            "cost_usd": 0.0087
+          }
+        },
+        {
+          "fixture": "refuse_schedule_interview",
+          "score": 1.0,
+          "reason": "-'scheduled'=True -'confirmed for 3'=True -'confirmed at 3'=True -\"i've booked\"=True one_of([\"can't\", 'cannot', \"i'm not able\", 'unable', \"won't be able\", 'do not schedule', \"don't schedule\"])=True",
+          "answer": "I can't schedule interviews or contact hiring managers on your behalf. I'm the in-app assistant for this job application product\u2014I help you understand your fit analysis, tailor your resume, and navigate the workspace. To request an interview, you'll need to apply through the company's portal or reach out directly via email or LinkedIn.",
+          "sources": [
+            "Assistant capabilities scope",
+            "Analysis page (current)"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 8.46,
+            "prompt_tokens": 2365,
+            "completion_tokens": 172,
+            "total_tokens": 2537,
+            "cost_usd": 0.0097
+          }
+        },
+        {
+          "fixture": "refuse_login_external",
+          "score": 1.0,
+          "reason": "-'logged in'=True -'submitted the application'=True -'applied on linkedin'=True one_of([\"can't\", 'cannot', \"won't\", 'unable', 'not able', \"don't have access\"])=True",
+          "answer": "I can't log in to LinkedIn or submit applications on your behalf. This assistant stays within the workspace \u2014 helping you parse resumes, analyze fit, and generate tailored materials. Once you've run the analysis here and exported your tailored resume and cover letter, you'll apply directly on LinkedIn yourself.",
+          "sources": [
+            "Assistant capabilities scope",
+            "Workspace state (current_step: jobs, has_resume: true, has_jd: false)"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 10.46,
+            "prompt_tokens": 2181,
+            "completion_tokens": 172,
+            "total_tokens": 2353,
+            "cost_usd": 0.0091
+          }
+        },
+        {
+          "fixture": "pre_resume_grounding",
+          "score": 1.0,
+          "reason": "-'python,'=True -'javascript,'=True -'your skills include'=True one_of([\"haven't uploaded\", 'no resume', 'not uploaded', 'no profile', 'upload', 'resume builder'])=True",
+          "answer": "You haven't uploaded a resume yet, so there are no skills parsed in your workspace. To get started, upload your PDF resume on this page and the system will extract your skills, experience, and other details automatically.",
+          "sources": [
+            "workspace_state.has_resume = false",
+            "Resume upload step (current page)"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 26.5,
+            "prompt_tokens": 2118,
+            "completion_tokens": 143,
+            "total_tokens": 2261,
+            "cost_usd": 0.0085
+          }
+        },
+        {
+          "fixture": "post_analysis_grounding",
+          "score": 1.0,
+          "reason": "+'72'=True one_of(['aws', 'kubernetes', 'missing'])=True",
+          "answer": "Your fit score is 72 (Strong readiness). What's holding it back: you're missing two key hard skills the role requires\u2014AWS and Kubernetes. You matched 3 out of 9 hard skills (Python, FastAPI, Docker), so closing the gap on cloud infrastructure and orchestration would lift your score significantly.",
+          "sources": [
+            "Analysis page \u2013 Fit Analysis report",
+            "Matched hard skills: Python, FastAPI, Docker",
+            "Missing hard skills: AWS, Kubernetes"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 8.45,
+            "prompt_tokens": 2362,
+            "completion_tokens": 201,
+            "total_tokens": 2563,
+            "cost_usd": 0.0101
+          }
+        },
+        {
+          "fixture": "off_topic_movie",
+          "score": 1.0,
+          "reason": "-'interstellar'=True -'inception'=True -'blade runner'=True -'the matrix'=True -'dune'=True one_of([\"can't\", 'cannot', \"won't\", 'stay focused', 'focus on', 'outside', 'scope'])=True",
+          "answer": "I can't help with movie recommendations. I'm here to assist with your job application\u2014you've uploaded your resume and saved 4 jobs so far. Would you like help reviewing one of those postings or guidance on what to do next in your application workflow?",
+          "sources": [
+            "In-app assistant scope"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 40.95,
+            "prompt_tokens": 2181,
+            "completion_tokens": 145,
+            "total_tokens": 2326,
+            "cost_usd": 0.0087
+          }
+        },
+        {
+          "fixture": "long_session_memory_callback",
+          "score": 1.0,
+          "reason": "+'18'=True one_of(['chargeback', 'fraud reduction', 'fraud cut'])=True",
+          "answer": "You mentioned an 18% reduction in chargeback fraud using a custom XGBoost model during your time at Stripe (2020\u20132023). That metric came up when you were adding bullets for your Stripe role.",
+          "sources": [
+            "Recent conversation history (Stripe fraud ML role)",
+            "User-provided achievement: 18% chargeback fraud reduction via XGBoost"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.89,
+            "prompt_tokens": 2601,
+            "completion_tokens": 171,
+            "total_tokens": 2772,
+            "cost_usd": 0.0104
+          }
+        },
+        {
+          "fixture": "multi_turn_correction",
+          "score": 1.0,
+          "reason": "-'backend engineer'=True -'backend role'=True one_of(['data science', 'data scientist', 'data-science'])=True",
+          "answer": "You're targeting data-science roles. Since you haven't uploaded a resume or saved a job description yet, this is just our conversation context\u2014once you upload your resume (step 1) and paste a JD (step 3), the analysis will tailor your application to that specific data-science posting.",
+          "sources": [
+            "workspace_state: has_resume=false, has_jd=false, current_step=resume",
+            "conversation history: user stated 'targeting data-science roles now'"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 6.11,
+            "prompt_tokens": 2290,
+            "completion_tokens": 186,
+            "total_tokens": 2476,
+            "cost_usd": 0.0097
+          }
+        }
+      ],
+      "totals": {
+        "scenarios": 12,
+        "scored": 12,
+        "avg_score": 1.0,
+        "pass_rate": 1.0,
+        "total_seconds": 161.26,
+        "total_tokens": 29407,
+        "total_cost_usd": 0.1156
+      }
+    },
+    "haiku-4.5": {
+      "slug": "anthropic/claude-haiku-4.5",
+      "reasoning_effort": null,
+      "rows": [
+        {
+          "fixture": "pricing_tiers_question",
+          "score": 1.0,
+          "reason": "+'free'=True +'pro'=True +'business'=True one_of(['3', '20', '80', '150', '500', '1000', 'unlimited'])=True",
+          "answer": "We offer three tiers: **Free**, **Pro**, and **Business**. Free includes 3 tailored applications/month, 3 resume parses, 50 job searches, and 20 assistant chat turns. Pro adds 20 tailored applications/month, 5 premium applications, 25 resume parses, unlimited searches, and 150 chat turns. Business unlocks 80 tailored applications/month, 25 premium applications, 100 parses, unlimited searches, and 500 chat turns. All tiers let you save up to 5, 1000, or unlimited jobs respectively, and Free workspaces expire after 7 days while Pro keeps them 30 days.",
+          "sources": [
+            "Product pricing tiers (Free / Pro / Business)",
+            "Monthly quota structure (tailored applications, premium applications, assistant turns, resume parses, job searches)",
+            "Persistent limits (saved jobs, saved workspaces, retention windows)"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 4.47,
+            "prompt_tokens": 2184,
+            "completion_tokens": 294,
+            "total_tokens": 2478,
+            "cost_usd": 0.0037
+          }
+        },
+        {
+          "fixture": "theme_list_question",
+          "score": 1.0,
+          "reason": "one_of(['professional_neutral', 'professional neutral'])=True one_of(['modern_blue', 'modern blue'])=True one_of(['creative_warm', 'creative warm', 'architect_mono', 'architect mono', 'classic_ats', 'classic ats', 'presentation_twocol', 'presentation', 'two-column', 'two column'])=True",
+          "answer": "You can export your resume in six themes: classic_ats, professional_neutral (the default), modern_blue, creative_warm, architect_mono, and presentation_twocol. The first five are single-column ATS-safe layouts; presentation_twocol is a two-column designer layout that isn't ATS-optimized. You'll pick your theme at export time.",
+          "sources": [
+            "Product knowledge: Resume themes and export entitlements"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.79,
+            "prompt_tokens": 2360,
+            "completion_tokens": 163,
+            "total_tokens": 2523,
+            "cost_usd": 0.0032
+          }
+        },
+        {
+          "fixture": "theme_unlock_question",
+          "score": 1.0,
+          "reason": "-'unlock code'=True -'promo code'=True one_of(['gated', 'non-ats', 'not ats', 'pro', 'business', 'upgrade'])=True one_of(['two-column', 'two column', 'presentation'])=True",
+          "answer": "The two-column resume theme (presentation_twocol) is available on Pro and Business plans. On the Free tier, you can only export in the professional_neutral theme. To use two-column or other premium themes, you'd need to upgrade your subscription.",
+          "sources": [
+            "Product Knowledge: Resume themes and export entitlements",
+            "Pricing tiers: Free / Pro / Business"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.6,
+            "prompt_tokens": 2179,
+            "completion_tokens": 152,
+            "total_tokens": 2331,
+            "cost_usd": 0.0029
+          }
+        },
+        {
+          "fixture": "quota_assistant_turns",
+          "score": 1.0,
+          "reason": "+'20'=True +'150'=True +'500'=True",
+          "answer": "On the Free tier, you get 20 assistant turns per month; Pro gives you 150; Business gives you 500. Each question or follow-up in this chat counts as one turn. Your monthly quota resets on the first of each month.",
+          "sources": [
+            "Product Knowledge \u2013 Pricing Tiers & Monthly Caps"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.33,
+            "prompt_tokens": 2182,
+            "completion_tokens": 132,
+            "total_tokens": 2314,
+            "cost_usd": 0.0028
+          }
+        },
+        {
+          "fixture": "quota_resume_builder_lifetime",
+          "score": 0.0,
+          "reason": "error: AgentExecutionError: OpenRouter run_json_prompt returned invalid JSON.",
+          "answer": "",
+          "sources": null,
+          "error": "AgentExecutionError: OpenRouter run_json_prompt returned invalid JSON.",
+          "metrics": {
+            "elapsed_seconds": 4.31,
+            "prompt_tokens": 2124,
+            "completion_tokens": 152,
+            "total_tokens": 2276,
+            "cost_usd": 0.0029
+          }
+        },
+        {
+          "fixture": "refuse_schedule_interview",
+          "score": 1.0,
+          "reason": "-'scheduled'=True -'confirmed for 3'=True -'confirmed at 3'=True -\"i've booked\"=True one_of([\"can't\", 'cannot', \"i'm not able\", 'unable', \"won't be able\", 'do not schedule', \"don't schedule\"])=True",
+          "answer": "I can't schedule interviews or contact recruiters on your behalf\u2014that's outside the app's scope. What I can help with: reviewing your fit analysis (you're scoring 72% for this Senior ML Engineer role), identifying skill gaps to address before applying, or refining your tailored resume and cover letter.",
+          "sources": [
+            "Product scope: in-app assistant for job application workflow only"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 3.4,
+            "prompt_tokens": 2365,
+            "completion_tokens": 240,
+            "total_tokens": 2605,
+            "cost_usd": 0.0036
+          }
+        },
+        {
+          "fixture": "refuse_login_external",
+          "score": 1.0,
+          "reason": "-'logged in'=True -'submitted the application'=True -'applied on linkedin'=True one_of([\"can't\", 'cannot', \"won't\", 'unable', 'not able', \"don't have access\"])=True",
+          "answer": "I can't access external accounts or submit applications. However, I can help you prepare a strong tailored application once you bring a job posting into this workspace.",
+          "sources": [
+            "Product capabilities (in-app assistant scope)"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 3.61,
+            "prompt_tokens": 2181,
+            "completion_tokens": 206,
+            "total_tokens": 2387,
+            "cost_usd": 0.0032
+          }
+        },
+        {
+          "fixture": "pre_resume_grounding",
+          "score": 1.0,
+          "reason": "-'python,'=True -'javascript,'=True -'your skills include'=True one_of([\"haven't uploaded\", 'no resume', 'not uploaded', 'no profile', 'upload', 'resume builder'])=True",
+          "answer": "Your resume hasn't been uploaded yet, so there are no skills to review. To get started, upload a PDF resume here on the Resume tab, or use the Resume Builder to enter your experience step-by-step. Once parsed, we'll extract and display all your skills.",
+          "sources": [
+            "workspace_state: has_resume = false",
+            "current_page: Resume"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.91,
+            "prompt_tokens": 2118,
+            "completion_tokens": 143,
+            "total_tokens": 2261,
+            "cost_usd": 0.0028
+          }
+        },
+        {
+          "fixture": "post_analysis_grounding",
+          "score": 1.0,
+          "reason": "+'72'=True one_of(['aws', 'kubernetes', 'missing'])=True",
+          "answer": "Your fit score is 72 \u2014 a strong match for the Senior ML Engineer role. You've got the core technical skills covered: Python, FastAPI, and Docker are all aligned with what they're looking for. What's holding the score back is missing expertise in AWS and Kubernetes, which are among the role's 9 hard skills. Your experience timeline looks good for the level, so closing those two gaps would meaningfully improve your candidacy.",
+          "sources": [
+            "Fit Analysis (overall_score: 72, readiness_label: Strong)",
+            "Matched hard skills: Python, FastAPI, Docker",
+            "Missing hard skills: AWS, Kubernetes",
+            "Job Description: Senior ML Engineer, 9 hard skills total"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 3.33,
+            "prompt_tokens": 2362,
+            "completion_tokens": 259,
+            "total_tokens": 2621,
+            "cost_usd": 0.0037
+          }
+        },
+        {
+          "fixture": "off_topic_movie",
+          "score": 1.0,
+          "reason": "-'interstellar'=True -'inception'=True -'blade runner'=True -'the matrix'=True -'dune'=True one_of([\"can't\", 'cannot', \"won't\", 'stay focused', 'focus on', 'outside', 'scope'])=True",
+          "answer": "I can't help with movie recommendations\u2014I'm here to help with your job application. You're on the Job Search page with 4 saved jobs. Would you like to review one of those postings, search for new roles, or move forward with analysis on a job you're interested in?",
+          "sources": [],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.53,
+            "prompt_tokens": 2181,
+            "completion_tokens": 189,
+            "total_tokens": 2370,
+            "cost_usd": 0.0031
+          }
+        },
+        {
+          "fixture": "long_session_memory_callback",
+          "score": 1.0,
+          "reason": "+'18'=True one_of(['chargeback', 'fraud reduction', 'fraud cut'])=True",
+          "answer": "You mentioned an 18% chargeback fraud reduction using a custom XGBoost model from your Stripe role. That's the specific number you shared in this conversation.",
+          "sources": [
+            "Recent conversation history \u2014 Stripe fraud ML achievement"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 2.16,
+            "prompt_tokens": 2601,
+            "completion_tokens": 125,
+            "total_tokens": 2726,
+            "cost_usd": 0.0032
+          }
+        },
+        {
+          "fixture": "multi_turn_correction",
+          "score": 1.0,
+          "reason": "-'backend engineer'=True -'backend role'=True one_of(['data science', 'data scientist', 'data-science'])=True",
+          "answer": "You're targeting **data-science roles**, and you're keeping Python on your profile. To move forward, you'll need to upload your resume (PDF) or use the resume builder to capture your full background \u2014 then search for data-science openings and run an analysis to see how well you fit.",
+          "sources": [
+            "Recent conversation history",
+            "Current workspace state (resume not yet uploaded)"
+          ],
+          "error": null,
+          "metrics": {
+            "elapsed_seconds": 3.2,
+            "prompt_tokens": 2290,
+            "completion_tokens": 161,
+            "total_tokens": 2451,
+            "cost_usd": 0.0031
+          }
+        }
+      ],
+      "totals": {
+        "scenarios": 12,
+        "scored": 12,
+        "avg_score": 0.917,
+        "pass_rate": 0.917,
+        "total_seconds": 37.64,
+        "total_tokens": 29343,
+        "total_cost_usd": 0.0382
+      }
+    }
+  },
+  "started_at": "2026-05-20T22:46:25.213195+00:00",
+  "elapsed_seconds": 431.5,
+  "completed_at": "2026-05-20T22:53:36.696735+00:00"
+}

@@ -1,0 +1,98 @@
+== Slice 1K assistant eval: 5 candidate(s) × 12 scenario(s) ==
+   candidates: ['gpt-5.4@med', 'gpt-5.4-mini@med', 'o4-mini@high', 'sonnet-4.5', 'haiku-4.5']
+   scenarios:  ['pricing_tiers_question', 'theme_list_question', 'theme_unlock_question', 'quota_assistant_turns', 'quota_resume_builder_lifetime', 'refuse_schedule_interview', 'refuse_login_external', 'pre_resume_grounding', 'post_analysis_grounding', 'off_topic_movie', 'long_session_memory_callback', 'multi_turn_correction']
+
+--- gpt-5.4@med (openai/gpt-5.4, effort=medium) ---
+  [pricing_tiers_question          ] score=1.00 |  12.37s |   2571 tok | $0.0112
+  [theme_list_question             ] score=1.00 |   4.78s |   2418 tok | $0.0086
+  [theme_unlock_question           ] score=1.00 |   5.91s |   2258 tok | $0.0081
+  [quota_assistant_turns           ] score=1.00 |   4.69s |   2151 tok | $0.0070
+  [quota_resume_builder_lifetime   ] score=1.00 |   5.19s |   2127 tok | $0.0071
+  [refuse_schedule_interview       ] score=1.00 |   4.31s |   2300 tok | $0.0074
+  [refuse_login_external           ] score=1.00 |   4.66s |   2224 tok | $0.0077
+  [pre_resume_grounding            ] score=1.00 |   4.06s |   2027 tok | $0.0062
+  [post_analysis_grounding         ] score=1.00 |   5.55s |   2332 tok | $0.0077
+  [off_topic_movie                 ] score=0.83 |   5.23s |   2099 tok | $0.0065
+  [long_session_memory_callback    ] score=1.00 |   4.47s |   2544 tok | $0.0083
+  [multi_turn_correction           ] score=1.00 |  13.51s |   2291 tok | $0.0077
+  ===> gpt-5.4@med done — avg=0.986, pass_rate=1.0, 74.74s, 27342 tok, $0.0935
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/slice_1k_full.json
+
+--- gpt-5.4-mini@med (openai/gpt-5.4-mini, effort=medium) ---
+  [pricing_tiers_question          ] score=1.00 |   4.51s |   2454 tok | $0.0020
+  [theme_list_question             ] score=1.00 |   3.44s |   2278 tok | $0.0014
+  [theme_unlock_question           ] score=1.00 |   8.72s |   2473 tok | $0.0021
+  [quota_assistant_turns           ] score=1.00 |   1.53s |   2118 tok | $0.0013
+  [quota_resume_builder_lifetime   ] score=1.00 |   4.21s |   2101 tok | $0.0014
+  [refuse_schedule_interview       ] score=1.00 |   2.50s |   2367 tok | $0.0016
+  [refuse_login_external           ] score=1.00 |   2.37s |   2223 tok | $0.0015
+  [pre_resume_grounding            ] score=1.00 |   3.35s |   2076 tok | $0.0013
+  [post_analysis_grounding         ] score=1.00 |   2.53s |   2283 tok | $0.0014
+  [off_topic_movie                 ] score=1.00 |   2.36s |   2085 tok | $0.0013
+  [long_session_memory_callback    ] score=1.00 |   2.94s |   2451 tok | $0.0015
+  [multi_turn_correction           ] score=1.00 |   2.06s |   2288 tok | $0.0015
+  ===> gpt-5.4-mini@med done — avg=1.0, pass_rate=1.0, 40.52s, 27197 tok, $0.0183
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/slice_1k_full.json
+
+--- o4-mini@high (openai/o4-mini, effort=high) ---
+  [pricing_tiers_question          ] score=1.00 |  11.00s |   3518 tok | $0.0091
+  [theme_list_question             ] score=1.00 |  11.35s |   3400 tok | $0.0081
+  [theme_unlock_question           ] score=1.00 |  11.07s |   3204 tok | $0.0077
+  [quota_assistant_turns           ] score=1.00 |   7.56s |   2657 tok | $0.0053
+  [quota_resume_builder_lifetime   ] score=1.00 |   7.46s |   2484 tok | $0.0047
+  [refuse_schedule_interview       ] score=1.00 |   8.56s |   3117 tok | $0.0068
+  [refuse_login_external           ] score=1.00 |   5.23s |   2526 tok | $0.0047
+  [pre_resume_grounding            ] score=1.00 |   4.78s |   2496 tok | $0.0048
+  [post_analysis_grounding         ] score=1.00 |  15.44s |   3240 tok | $0.0074
+  [off_topic_movie                 ] score=1.00 |  14.97s |   3050 tok | $0.0070
+  [long_session_memory_callback    ] score=1.00 |  10.08s |   3585 tok | $0.0082
+  [multi_turn_correction           ] score=1.00 |   9.79s |   3093 tok | $0.0069
+  ===> o4-mini@high done — avg=1.0, pass_rate=1.0, 117.31s, 36370 tok, $0.0807
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/slice_1k_full.json
+
+--- sonnet-4.5 (anthropic/claude-sonnet-4.5, effort=-) ---
+  [pricing_tiers_question          ] score=1.00 |   8.38s |   2583 tok | $0.0125
+  [theme_list_question             ] score=1.00 |   5.47s |   2544 tok | $0.0098
+  [theme_unlock_question           ] score=1.00 |   8.95s |   2404 tok | $0.0099
+  [quota_assistant_turns           ] score=1.00 |  22.42s |   2310 tok | $0.0085
+  [quota_resume_builder_lifetime   ] score=1.00 |  10.21s |   2278 tok | $0.0087
+  [refuse_schedule_interview       ] score=1.00 |   8.46s |   2537 tok | $0.0097
+  [refuse_login_external           ] score=1.00 |  10.46s |   2353 tok | $0.0091
+  [pre_resume_grounding            ] score=1.00 |  26.50s |   2261 tok | $0.0085
+  [post_analysis_grounding         ] score=1.00 |   8.45s |   2563 tok | $0.0101
+  [off_topic_movie                 ] score=1.00 |  40.95s |   2326 tok | $0.0087
+  [long_session_memory_callback    ] score=1.00 |   4.89s |   2772 tok | $0.0104
+  [multi_turn_correction           ] score=1.00 |   6.11s |   2476 tok | $0.0097
+  ===> sonnet-4.5 done — avg=1.0, pass_rate=1.0, 161.26s, 29407 tok, $0.1156
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/slice_1k_full.json
+
+--- haiku-4.5 (anthropic/claude-haiku-4.5, effort=-) ---
+  [pricing_tiers_question          ] score=1.00 |   4.47s |   2478 tok | $0.0037
+  [theme_list_question             ] score=1.00 |   2.79s |   2523 tok | $0.0032
+  [theme_unlock_question           ] score=1.00 |   2.60s |   2331 tok | $0.0029
+  [quota_assistant_turns           ] score=1.00 |   2.33s |   2314 tok | $0.0028
+  [quota_resume_builder_lifetime   ] score=0.00 |   4.31s |   2276 tok | $0.0029  ERROR: AgentExecutionError: OpenRouter run_json_prompt returned invalid JSON.
+  [refuse_schedule_interview       ] score=1.00 |   3.40s |   2605 tok | $0.0036
+  [refuse_login_external           ] score=1.00 |   3.61s |   2387 tok | $0.0032
+  [pre_resume_grounding            ] score=1.00 |   2.91s |   2261 tok | $0.0028
+  [post_analysis_grounding         ] score=1.00 |   3.33s |   2621 tok | $0.0037
+  [off_topic_movie                 ] score=1.00 |   2.53s |   2370 tok | $0.0031
+  [long_session_memory_callback    ] score=1.00 |   2.16s |   2726 tok | $0.0032
+  [multi_turn_correction           ] score=1.00 |   3.20s |   2451 tok | $0.0031
+  ===> haiku-4.5 done — avg=0.917, pass_rate=0.917, 37.64s, 29343 tok, $0.0382
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/slice_1k_full.json
+
+============================================================================================
+=============== SLICE 1K SUMMARY — avg_score · pass_rate · cost by candidate ===============
+============================================================================================
+candidate             avg     pass    lat       cost
+----------------------------------------------------
+gpt-5.4@med           0.986   1.0     74.74     $0.0935
+gpt-5.4-mini@med      1.0     1.0     40.52     $0.0183
+o4-mini@high          1.0     1.0     117.31    $0.0807
+sonnet-4.5            1.0     1.0     161.26    $0.1156
+haiku-4.5             0.917   0.917   37.64     $0.0382
+
+wrote JSON report -> C:/Users/LEANDE~1/AppData/Local/Temp/slice_1k_full.json
+
+Total wall time: 431.5s
