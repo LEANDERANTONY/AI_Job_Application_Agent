@@ -1791,3 +1791,154 @@ projects + an experience entry, watch the "✨ Draft my professional
 summary" chip appear below its next reply. Click it — the agent
 writes the summary from what you've told it so far. No retyping, no
 restating.
+
+## Day 58: Two silent-fallback bugs (structuring schema + theme registry) + agentic eval
+
+QA replay of the user's original 10-turn transcript surfaced TWO bugs
+that had been hiding in production for weeks. Both followed the same
+pattern: two configs that should match drifted apart, downstream code
+silently substituted a "safe default" instead of erroring, and the
+quality regression went unnoticed because the fallback output looked
+plausible.
+
+### Bug 1: structuring LLM silently 400-erroring on a `dict[K, V]` field
+
+The resume-builder structuring schema's
+``skill_categories: dict[str, list[str]]`` translated to a JSON
+Schema with ``{"type": "object", "additionalProperties": <schema>}``.
+OpenAI's strict-mode validator rejects this shape when the field is
+in ``required`` — error: "Extra required key 'skill_categories'
+supplied". The exception was caught by a broad ``except`` in
+``_structure_via_llm``, the regex fallback ran, and the visible
+output was the regex parser's best-effort — empty bullets, link
+field grabbed the first tech-stack token, single-paragraph projects.
+The structuring LLM had been failing **every single call** since the
+schema landed.
+
+Fix: refactored ``skill_categories`` from ``dict[K, V]`` to
+``list[ResumeBuilderStructuringSkillBucket]`` where each bucket is
+``{label: str, skills: list[str]}``. List-of-typed-objects is OpenAI-
+strict-mode friendly. Boundary conversion in
+``_sanitize_skill_categories`` reshapes back to ``dict[str, list[str]]``
+so the artifact renderer (downstream consumer) stays unchanged. Bonus
+prompt overhaul that finally got to RUN: worked BEFORE/AFTER examples
+for projects + education, strict link-URL rule, third-person-voice
+rule across all fields, multi-turn education merge example. Commit
+``bcd64d5``.
+
+### Bug 2: 4 of 6 themes rendering as classic_ats
+
+``src.exporters._THEME_SPECS`` (the canonical theme registry, surfaced
+via ``SUPPORTED_THEMES``) lists six themes. But
+``src.resume_builder.RESUME_THEMES`` only listed two
+(``classic_ats`` + ``professional_neutral``). Every consumer of
+``build_tailored_resume_artifact`` runs the picked theme through
+``_resolve_resume_theme(theme, ...)`` which checks
+``if theme in RESUME_THEMES:`` — and silently substitutes
+``classic_ats`` for any non-matching name. So ``modern_blue``,
+``creative_warm``, ``architect_mono``, and ``presentation_twocol``
+all rendered as classic_ats. Confirmed by md5-comparing the rendered
+PDFs: ``classic_ats.pdf`` and ``modern_blue.pdf`` were byte-identical.
+
+Blast radius: the workspace export flow (``artifact_export_service``),
+the workspace tailoring run (``workspace_service``),
+the persistence pipeline (``workspace_persistence_service``), and the
+resume builder export. Every user who picked one of the 4 newer themes
+in any of these flows since the Phase 2 theme expansion (Day 54)
+silently got classic_ats output. ~4 weeks of degraded UX.
+
+Fix: ``RESUME_THEMES`` now lists all 6 themes with per-theme label +
+tagline. Two new pact-tests in ``tests/test_resume_builder.py``
+(``test_resume_themes_registry_matches_supported_themes`` +
+``test_resolve_resume_theme_round_trips_every_supported_theme``) lock
+the two registries together so the same drift cannot recur. Commit
+``23ec230``.
+
+### Slice 1D: minimal conversational eval
+
+The fact that BOTH of the above bugs lived for weeks without anyone
+noticing is exactly what the parked plan flagged when it said
+"conversational quality IS the product, eval is load-bearing."
+Building it now.
+
+Two complementary pieces landed:
+
+**1. Hermetic schema strictness tests**
+(`tests/backend/test_llm_schema_strictness.py`, 18 tests):
+
+Walks the JSON Schema produced by ``_build_response_format_schema``
+for every Pydantic model that's wired to ``run_structured_prompt`` in
+production (9 models — TailoringOutput, ReviewOutput,
+ResumeGenerationOutput, CoverLetterOutput, JDSummaryOutput,
+ResumeBuilderStructuringOutput, ResumeParserOutput, JDParserOutput,
+ResumeBuilderTurnOutput) and asserts:
+  - No node has ``additionalProperties`` set to a schema dict (the
+    ``dict[K, V]`` trap that broke the structuring call).
+  - No node uses ``anyOf`` with more than one non-null branch (the
+    multi-type-union trap).
+
+These tests are **static** — they don't hit the API, so they run on
+every CI build in ~1.5s. If anyone introduces a new ``dict[K, V]``
+field or a multi-branch union in any production schema, this fails
+at CI before the change can ship and start silently 400-erroring in
+production. Critical to keeping the bug we just caught from coming
+back in a new place.
+
+**2. LLM-driven agentic-behavior eval**
+(`tests/quality/resume_builder_agentic_runner.py`, 7 scenarios):
+
+Complements the existing 13-scenario `resume_builder_quality_runner`
+by focusing only on the Slice 1A + 1B behaviors:
+
+  - `github_url_fires_tool`: user shares a github.com URL →
+    `fetch_github_readme` called → `projects_notes` populated.
+  - `non_github_url_no_fetch`: non-github URL → tool NOT called →
+    agent honestly says it can't fetch.
+  - `honesty_on_linkedin_scrape`: user asks to scrape LinkedIn →
+    agent refuses honestly without promising the capability.
+  - `proactive_offer_after_enough_signal`: after role + projects
+    (with tool fetches) + skills are shared → agent fires a
+    `proactive_offer` OR drafts the summary inline (behavior
+    matcher accepts either).
+  - `proactive_offer_silent_mid_basics`: first turn → no proactive
+    offer (the agent shouldn't fire one mid-collection).
+  - `multi_turn_correction_preserved`: user corrects target role
+    across turns → final draft holds the corrected value.
+  - `structured_payload_runs_after_generate`: after generate,
+    `structured_projects_payload` must be non-empty. THIS IS THE
+    CANARY for the silent-fallback bug — if the structuring schema
+    gets a 400 and falls back to regex, this scenario fails because
+    the regex parser doesn't populate `structured_*_payload` (it
+    builds entries directly from raw notes).
+
+Scoring is behavior-level, not vocabulary-level: matchers accept any
+of several markers ("read" / "captured" / "saw" / "README" / etc.)
+to absorb LLM phrasing variance. Vocabulary-strict matchers were
+calibrated wrong on first run — caught + broadened during the build.
+
+Cost: ~7 scenarios × ~3-4 turns × gpt-5.4 ≈ $0.05 per run. Runs
+on-demand (manual trigger), not on every CI build. Wire into nightly
+or pre-release runs.
+
+VERIFICATION: full eval ran 7/7 green against the live API.
+``test_llm_schema_strictness`` ran 18/18 green. The complete affected
+test surface (172+18+14 = 204 tests across the impacted suites) all
+green.
+
+What's still parked (`report.md` Phase 2/3):
+- `web_search` tool for company/role/domain context
+- Promise tracking via `pending_followups[]` session state
+- Conversational eval expansion to the full 15-20 fixture set
+- ADR-031 for the agentic shape
+
+This session, end-to-end:
+  - Slice 1A (agentic loop + fetch_github_readme, `055fd60`)
+  - Slice 1B (full history + proactive_offer chip, `78184fe`)
+  - Iteration cap + list coercion fixes (`ff2c93a`)
+  - Structuring schema + prompt overhaul (`bcd64d5`)
+  - Theme registry drift fix (`23ec230`)
+  - Schema strictness pact + agentic eval (this commit)
+
+Six commits. The user's original "the projects sections couldn't
+generate the data" complaint and the modern_blue-looks-like-classic_ats
+complaint both resolved, with regression tests pinning each fix down.
