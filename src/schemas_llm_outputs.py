@@ -346,14 +346,36 @@ class ResumeBuilderStructuringProjectEntry(_StrictBase):
     link: str = Field(default="")
 
 
+class ResumeBuilderStructuringSkillBucket(_StrictBase):
+    """One named skill bucket — e.g. {label='Languages & Tools',
+    skills=['Python', 'SQL']}.
+
+    Originally the structuring schema used ``dict[str, list[str]]``
+    for skill_categories, which Pydantic v2 emits as
+    ``{"type": "object", "additionalProperties": <schema>}``. That
+    shape is REJECTED by OpenAI's strict-mode JSON Schema validator
+    when the parent schema lists the field in ``required`` — the
+    error returned is "Extra required key 'skill_categories'
+    supplied", because strict mode requires every ``required`` key
+    to have an explicit ``properties`` enumeration, not an
+    arbitrary-key map. Discovered when the resume-builder structuring
+    call started silently 4xx-ing on every export and the regex
+    fallback was producing the visible output.
+    """
+
+    label: str = Field(default="")
+    skills: list[str] = Field(default_factory=list)
+
+
 class ResumeBuilderStructuringOutput(_StrictBase):
     """Schema for ``build_resume_builder_structuring_prompt``.
 
-    ``skill_categories`` is a free-form dict of category-label →
-    skill-list. Using ``dict[str, list[str]]`` keeps the schema
-    flexible — the prompt picks domain-appropriate buckets at
-    runtime and OpenAI's structured outputs accepts the
-    ``additionalProperties`` value-type without enumerating keys.
+    ``skill_categories`` is a LIST of named buckets — see
+    ``ResumeBuilderStructuringSkillBucket`` for the rationale (the
+    previous ``dict[str, list[str]]`` shape was rejected by OpenAI
+    strict-mode JSON Schema). The service layer reshapes the list
+    back to a ``dict[str, list[str]]`` for downstream consumers
+    (the artifact renderer expects the dict form).
     """
 
     experience: list[ResumeBuilderStructuringExperienceEntry] = Field(
@@ -365,7 +387,9 @@ class ResumeBuilderStructuringOutput(_StrictBase):
     projects: list[ResumeBuilderStructuringProjectEntry] = Field(
         default_factory=list
     )
-    skill_categories: dict[str, list[str]] = Field(default_factory=dict)
+    skill_categories: list[ResumeBuilderStructuringSkillBucket] = Field(
+        default_factory=list
+    )
     professional_summary: str = Field(default="")
 
 
@@ -387,4 +411,5 @@ __all__ = [
     "ResumeBuilderStructuringExperienceEntry",
     "ResumeBuilderStructuringEducationEntry",
     "ResumeBuilderStructuringProjectEntry",
+    "ResumeBuilderStructuringSkillBucket",
 ]

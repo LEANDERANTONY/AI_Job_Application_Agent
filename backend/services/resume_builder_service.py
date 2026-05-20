@@ -1372,21 +1372,48 @@ def _sanitize_skill_categories(
     flat skill list. Drops any skill the LLM invented; drops empty
     buckets; preserves user casing where possible.
 
-    Returns {} on any structural problem so the renderer falls back to
-    the flat list cleanly.
+    Accepts two input shapes:
+      * NEW: ``list[{"label": str, "skills": list[str]}]`` — emitted by
+        the OpenAI-strict-mode-friendly schema
+        (``ResumeBuilderStructuringSkillBucket``). The original
+        ``dict[str, list[str]]`` shape was rejected at the API
+        boundary because OpenAI's strict mode doesn't accept
+        ``additionalProperties: <schema>`` for ``required`` fields.
+      * LEGACY: ``dict[str, list[str]]`` — kept for the regex
+        fallback path and for any cached payloads written before the
+        schema migration.
+
+    Returns ``{}`` on any structural problem so the renderer falls
+    back cleanly to the flat skills list.
     """
-    if not isinstance(raw, dict):
+    # Normalize the input to a list of (label, items) pairs so the
+    # validation logic is shared across both shapes.
+    bucket_pairs: list[tuple[str, list]] = []
+    if isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            label = entry.get("label")
+            items = entry.get("skills")
+            if isinstance(label, str) and isinstance(items, list):
+                bucket_pairs.append((label, items))
+    elif isinstance(raw, dict):
+        for label, items in raw.items():
+            if isinstance(label, str) and isinstance(items, list):
+                bucket_pairs.append((label, items))
+    else:
         return {}
+    if not bucket_pairs:
+        return {}
+
     # Build a case-insensitive lookup of allowed skills, mapping lowercase
     # back to the user's original casing.
     canon = {str(s).lower().strip(): str(s).strip() for s in allowed_skills if str(s).strip()}
     if not canon:
         return {}
     cleaned: dict[str, list[str]] = {}
-    for label, items in raw.items():
-        if not isinstance(label, str) or not label.strip():
-            continue
-        if not isinstance(items, list):
+    for label, items in bucket_pairs:
+        if not label.strip():
             continue
         bucket: list[str] = []
         for item in items:
