@@ -686,43 +686,37 @@ export function ResumeIntake({
                         Download your resume now, or continue to tailor it
                         for a specific role below.
                       </p>
-                      <div
-                        role="radiogroup"
-                        aria-label="Resume theme"
-                        style={{
-                          display: "flex",
-                          gap: 6,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        {(
-                          [
-                            {
-                              value: "professional_neutral",
-                              label: "Professional",
-                            },
-                            { value: "classic_ats", label: "Classic ATS" },
-                          ] as const
-                        ).map((option) => (
-                          <button
-                            aria-checked={
-                              builderExportTheme === option.value
-                            }
-                            className="b-artifact-style-option"
-                            data-active={
-                              builderExportTheme === option.value
-                            }
-                            disabled={builderExporting !== null}
-                            key={option.value}
-                            onClick={() =>
-                              onBuilderExportThemeChange(option.value)
-                            }
-                            role="radio"
-                            type="button"
-                          >
-                            {option.label}
-                          </button>
-                        ))}
+                      {/* Same dropdown pattern as the main ArtifactViewer
+                          picker (consistent UX; scales beyond 2 themes).
+                          The earlier segmented-button + `.b-artifact-style-
+                          option` class is dead — that CSS was removed when
+                          the main picker switched to a <select>; this
+                          picker still referenced it, which is why the
+                          buttons rendered with no visible selected state.
+                          Now matches main viewer; the 5 themes here mirror
+                          the workspace_models export Literal. */}
+                      <div className="b-artifact-style-select-wrap">
+                        <select
+                          aria-label="Resume theme"
+                          className="b-artifact-style-select"
+                          disabled={builderExporting !== null}
+                          onChange={(event) =>
+                            onBuilderExportThemeChange(
+                              event.target.value as ArtifactTheme,
+                            )
+                          }
+                          value={builderExportTheme}
+                        >
+                          <option value="professional_neutral">
+                            Professional
+                          </option>
+                          <option value="classic_ats">Classic ATS</option>
+                          <option value="modern_blue">Modern Blue</option>
+                          <option value="creative_warm">Creative Warm</option>
+                          <option value="architect_mono">
+                            Architect Mono
+                          </option>
+                        </select>
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button
