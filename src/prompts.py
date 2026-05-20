@@ -53,6 +53,40 @@ _WORKSPACE_STATE_GUIDANCE = (
 )
 
 
+# Slice 1J': stop sounding ignorant about product details. The
+# WORKSPACE STATE block teaches the assistant how to read live runtime
+# state but says nothing about pricing, themes, the agentic pipeline,
+# or the assistant's own limits — so when a user asked "what tiers do
+# you have?" / "what themes can I use?" / "can you book me an
+# interview?", the answers ranged from "I don't have that info" to
+# outright fabrications. This block backstops all of those questions
+# with authoritative numbers sourced from backend/tiers.py + the
+# RESUME_THEMES registry. If a value here drifts from the source-of-
+# truth tables, the
+# ``test_assistant_prompt_matches_pre_migration_system_byte_for_byte``
+# byte-mirror test catches it on the next CI run.
+#
+# Source of truth: backend/tiers.py (TIER_CAPS), src/resume_builder.py
+# (RESUME_THEMES), backend/tiers.py (FREE_EXPORT_FORMAT/THEME), and
+# src/agents/* (the orchestrator chain).
+_PRODUCT_KNOWLEDGE_BLOCK = (
+    "PRODUCT KNOWLEDGE (authoritative — use these answers when asked): "
+    "Pricing tiers: Free / Pro / Business. The monthly caps are: "
+    "tailored applications 3 / 20 / 80; premium applications 0 / 5 / 25; "
+    "assistant turns (this chat) 20 / 150 / 500; resume parses 3 / 25 / 100; "
+    "job searches 50 / unlimited / unlimited. Persistent counters: saved jobs 5 / 1000 / unlimited; saved workspaces 1 / 5 / unlimited. "
+    "Resume builder sessions are LIFETIME on Free (1 total, never resets) and monthly on Pro (3) / Business (15). "
+    "Saved-workspace retention: Free 7 days, Pro 30 days, Business unbounded. "
+    "Resume themes (six total, picked per-export on the workspace): classic_ats, professional_neutral (the product-wide default), modern_blue, creative_warm, architect_mono, and presentation_twocol. "
+    "The first five are single-column ATS-safe layouts; presentation_twocol is a two-column designer layout flagged non-ATS. "
+    "Export entitlement: Free exports PDF in professional_neutral only; Pro and Business export PDF or DOCX in any theme. There is no plain-text or HTML export. "
+    "Resume intake paths: users can either UPLOAD a PDF (parsed into a CandidateProfile) or use the conversational RESUME BUILDER (multi-turn chat that fills the same profile field-by-field). Both feed the same downstream pipeline. "
+    "Agentic analysis chain when the user presses 'Run analysis' on a resume + JD pair: tailoring → review → resume generation → cover letter. The review pass detects fabrications and asks the user before rewriting (conservative correction posture). "
+    "What this assistant CANNOT do (be honest if asked): schedule interviews, send emails or messages to recruiters, log in to LinkedIn / Indeed / any external account on the user's behalf, scrape arbitrary URLs (it can only summarize artifacts present in the workspace context), edit the user's resume file directly (resume edits happen through the upload or builder flow), make payments or change the user's subscription tier, or remember anything across browser sessions when signed out. "
+    "Quotas reset at the start of each calendar month (UTC) for monthly counters; lifetime counters never reset. If a user hits a cap, they see the upgrade nudge — this assistant does not bypass the gate. "
+)
+
+
 def _json_block(label: str, value: Any) -> str:
     payload = json.dumps(_to_serializable(value), indent=2, default=str)
     return "{label}:\n{payload}".format(label=label, payload=payload)
@@ -66,6 +100,18 @@ def _json_block(label: str, value: Any) -> str:
 # history would exceed it, the OLDEST entries are dropped one at a
 # time until it fits.
 RESUME_BUILDER_HISTORY_CHAR_BUDGET = 30000
+
+# Slice 1J: the workspace-assistant prompts (JSON + SSE-text variants)
+# carry a much larger static payload than the resume builder — the
+# `assistant_context` block alone embeds workspace_snapshot, workflow_
+# context, and the verbose _WORKSPACE_STATE_GUIDANCE rules. To keep the
+# total turn under the same effective token ceiling we cap history at
+# 18k chars (~4.5k tokens), leaving ~13k for context + system + reply.
+# Same drop-oldest-first semantics as the resume builder. Before Slice
+# 1J this was a hard `history[-4:]` slice that lost mid-session memory
+# in any session longer than 4 turns — a worse version of the bug Slice
+# 1B fixed for the resume builder.
+ASSISTANT_HISTORY_CHAR_BUDGET = 18000
 
 
 def _slice_history_for_budget(
@@ -437,12 +483,21 @@ def build_assistant_prompt(
     from backend.prompt_registry import get_prompt
 
     template = get_prompt("assistant")
+    # Slice 1J: history used to be hard-sliced at history[-4:], which
+    # cratered mid-session memory the moment a conversation passed 4
+    # turns. Now we budget by chars (drop-oldest-first, same shape as
+    # _slice_history_for_budget for the resume builder) so the model
+    # gets as much continuity as the prompt budget allows.
+    history_payload = _slice_history_for_budget(
+        list(history or []),
+        max_chars=ASSISTANT_HISTORY_CHAR_BUDGET,
+    )
     user_prompt = "\n\n".join(
         [
             _json_block("Assistant Context", assistant_context),
             _json_block("User Question", {"question": question}),
         ]
-        + ([_json_block("Recent History", history[-4:])] if history else [])
+        + ([_json_block("Recent History", history_payload)] if history_payload else [])
     )
     expected_keys = _strict_expected_keys(template)
     return {
@@ -475,12 +530,19 @@ def build_assistant_text_prompt(
     from backend.prompt_registry import get_prompt
 
     template = get_prompt("assistant_text")
+    # Slice 1J: mirror the JSON-variant fix — drop the hard
+    # history[-4:] slice in favour of the char-budget slider so
+    # streaming chat keeps multi-turn memory.
+    history_payload = _slice_history_for_budget(
+        list(history or []),
+        max_chars=ASSISTANT_HISTORY_CHAR_BUDGET,
+    )
     user_prompt = "\n\n".join(
         [
             _json_block("Assistant Context", assistant_context),
             _json_block("User Question", {"question": question}),
         ]
-        + ([_json_block("Recent History", history[-4:])] if history else [])
+        + ([_json_block("Recent History", history_payload)] if history_payload else [])
     )
     return {
         "system": template.system,

@@ -1,4 +1,5 @@
 from src.prompts import (
+    _PRODUCT_KNOWLEDGE_BLOCK,
     _RESUME_BUILDER_FIELD_DESCRIPTIONS,
     _WORKSPACE_STATE_GUIDANCE,
     _build_contract,
@@ -154,7 +155,7 @@ def _expected_assistant_system() -> str:
             "suggested_follow_ups": "array of 0-3 follow-up questions the user may want to ask next",
         }
     )
-    return intro + _WORKSPACE_STATE_GUIDANCE + contract
+    return intro + _WORKSPACE_STATE_GUIDANCE + _PRODUCT_KNOWLEDGE_BLOCK + contract
 
 
 def _expected_assistant_text_system() -> str:
@@ -175,7 +176,7 @@ def _expected_assistant_text_system() -> str:
     closer = (
         "Respond as a concise, direct prose answer. Do not return JSON, do not wrap the answer in code fences, and do not list sources — sources are surfaced separately by the app."
     )
-    return intro + _WORKSPACE_STATE_GUIDANCE + closer
+    return intro + _WORKSPACE_STATE_GUIDANCE + _PRODUCT_KNOWLEDGE_BLOCK + closer
 
 
 def _expected_assistant_followup_system(scope: str) -> str:
