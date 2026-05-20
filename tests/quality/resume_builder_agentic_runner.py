@@ -182,6 +182,68 @@ SCENARIOS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "web_search_fires_on_external_context_question",
+        "description": (
+            "User asks about EXTERNAL context (what an employer typically "
+            "expects from a role) that the agent can't know from the "
+            "conversation alone. Agent should fire web_search."
+        ),
+        "turns": [
+            "I'm Anika from Boston, anika@example.com.",
+            "Looking for senior MLE roles at Anthropic specifically.",
+            (
+                "What does Anthropic typically look for on a Senior MLE "
+                "resume? I want to make sure mine aligns."
+            ),
+        ],
+        "expect": {
+            # OpenAI's built-in web_search surfaces as a
+            # ``web_search_call`` output item — different shape from
+            # ``function_call`` (which is what tool_events captures).
+            # The cleanest behavior signal: the agent's reply on
+            # turn 2 should cite or reference EXTERNAL source material
+            # rather than apologize for not having the info.
+            "assistant_says_any": (
+                2,
+                [
+                    "anthropic",
+                    "search",
+                    "look for",
+                    "typically",
+                    "based on",
+                    "according to",
+                ],
+            ),
+            # No local function tools should fire (no github URL given).
+            "tool_not_called": "fetch_github_readme",
+        },
+    },
+    {
+        "name": "web_search_skipped_for_user_provided_info",
+        "description": (
+            "User is providing their OWN background — no external context "
+            "is needed. The agent should NOT burn a web_search on this; "
+            "it's wasted latency + the user is the source of truth for "
+            "their own life."
+        ),
+        "turns": [
+            "I'm Rohit from Hyderabad, rohit@example.com.",
+            "Targeting backend engineer roles.",
+            (
+                "I've been at Acme Corp for 3 years building payment "
+                "services in Go and gRPC."
+            ),
+        ],
+        "expect": {
+            # Negative behavior check: the agent's reply should NOT
+            # cite external sources or talk about web searches when
+            # the user is sharing their own facts. Loose matcher —
+            # we accept anything that doesn't sound like a search
+            # was performed for verification.
+            "assistant_does_not_say": (2, "according to"),
+        },
+    },
+    {
         "name": "promise_tracking_remembers_deferred_publication",
         "description": (
             "User defers a publication to later. The agent must capture the "

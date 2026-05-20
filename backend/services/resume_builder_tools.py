@@ -279,8 +279,189 @@ FETCH_GITHUB_README_TOOL_SPEC: dict[str, Any] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# web_search (FUNCTION-wrapped, dispatches to OpenAI's built-in web_search)
+# ---------------------------------------------------------------------------
+#
+# Why this is wrapped as a function tool instead of being a raw
+# {"type": "web_search"} server-side tool: OpenAI's API rejects
+# combining ``web_search`` with ``text.format = json_object`` —
+# the 400 reads "Web Search cannot be used with JSON mode." Our
+# main intake loop NEEDS json_object (we return a structured envelope
+# with draft_updates / assistant_message / status / etc.), so we
+# can't put web_search on the same call.
+#
+# The wrap: the agent calls ``web_search(query)`` like any other
+# function tool. The dispatcher makes a SEPARATE internal
+# responses.create call — no json_object format, with OpenAI's
+# built-in web_search enabled — and returns the synthesized text as
+# the function_call_output. Main loop stays JSON-mode safe; the
+# agent gets a research capability on-demand.
+#
+# Cost shape: each ``web_search`` invocation is ONE extra
+# responses.create call (so two API calls per search round-trip:
+# the model decides to search, the dispatcher fires the search,
+# the model uses the result on the next iteration). The prompt
+# tells the agent to use this SPARINGLY, so realistic usage is
+# 0–2 web_search calls per session.
+#
+# Search execution itself runs on OpenAI infrastructure (US-hosted).
+# Our EU-data-residency posture (docs/competitive-landscape.md)
+# applies to user data we store, not to outbound research queries
+# — so this is acceptable for v1. Revisit when ADR-028 D1 multi-
+# provider eval lands and a concrete EU alternative exists.
+WEB_SEARCH_TIMEOUT_SECONDS = 30.0
+# Hard cap on the synthesized result string — searches can return
+# long answers, and we feed the result back into the main loop's
+# input list (which we want to keep manageable). 8KB ≈ ~2k tokens,
+# enough for a research summary, small enough not to bloat history.
+WEB_SEARCH_MAX_RESULT_CHARS = 8 * 1024
+
+
+def _web_search(
+    query: str,
+    *,
+    openai_service: Any | None = None,
+) -> dict:
+    """Run a web_search via OpenAI's built-in tool and return the
+    synthesized text result.
+
+    Routed through a fresh ``responses.create`` call WITHOUT json
+    mode so OpenAI's strict-mode check doesn't reject the combination.
+    The model in this inner call is small + cheap (the search
+    synthesis doesn't need the main intake model's reasoning depth);
+    we hard-code ``gpt-5.4-mini`` to keep latency + cost predictable.
+
+    Returns ``{"ok": True, "result": str, "query": str}`` on success
+    or ``{"ok": False, "error": str, "message": str}`` on failure.
+    Like ``fetch_github_readme``, errors are first-class outputs —
+    never raised across the tool boundary.
+    """
+    cleaned_query = str(query or "").strip()
+    if not cleaned_query:
+        return {
+            "ok": False,
+            "error": "empty_query",
+            "message": "web_search needs a non-empty query.",
+        }
+    if openai_service is None or not getattr(openai_service, "is_available", lambda: False)():
+        return {
+            "ok": False,
+            "error": "no_openai_service",
+            "message": (
+                "Web search requires an OpenAI client. Ask the user "
+                "to describe the external context directly."
+            ),
+        }
+    client = getattr(openai_service, "_client", None)
+    if client is None:
+        return {
+            "ok": False,
+            "error": "no_openai_client",
+            "message": "OpenAI client is not initialized.",
+        }
+
+    try:
+        response = client.responses.create(
+            model="gpt-5.4-mini",
+            instructions=(
+                "You are a research assistant. Use the web_search tool to "
+                "answer the user's question with concrete sources. Cite the "
+                "source domain inline. Keep the answer short — 4 sentences "
+                "max. If the search returns nothing useful, say so plainly "
+                "instead of inventing."
+            ),
+            input=cleaned_query,
+            store=False,
+            max_output_tokens=600,
+            tools=[{"type": "web_search"}],
+            tool_choice="auto",
+        )
+    except Exception as exc:
+        LOGGER.exception("web_search dispatch failed.")
+        return {
+            "ok": False,
+            "error": "search_dispatch_failed",
+            "message": f"{type(exc).__name__}: {exc}"[:240],
+        }
+
+    # Extract the synthesized text. The inner response can carry both
+    # ``web_search_call`` items (OpenAI's record of the search) and
+    # ``message`` items containing the answer text. We only need the
+    # text — the search-call items are an implementation detail.
+    collected: list[str] = []
+    for item in getattr(response, "output", None) or []:
+        item_type = getattr(item, "type", None)
+        if isinstance(item, dict):
+            item_type = item.get("type")
+        if item_type != "message":
+            continue
+        content = (
+            item.content
+            if not isinstance(item, dict)
+            else item.get("content")
+        ) or []
+        for part in content:
+            part_type = getattr(part, "type", None)
+            if isinstance(part, dict):
+                part_type = part.get("type")
+            if part_type == "output_text":
+                text = (
+                    part.text
+                    if not isinstance(part, dict)
+                    else part.get("text")
+                )
+                if text:
+                    collected.append(str(text))
+    result_text = "\n".join(collected).strip()
+    if not result_text:
+        return {
+            "ok": False,
+            "error": "empty_result",
+            "message": "Search returned no synthesized text.",
+        }
+    if len(result_text) > WEB_SEARCH_MAX_RESULT_CHARS:
+        result_text = (
+            result_text[: WEB_SEARCH_MAX_RESULT_CHARS].rstrip()
+            + "…[truncated]"
+        )
+    return {"ok": True, "query": cleaned_query, "result": result_text}
+
+
+WEB_SEARCH_TOOL_SPEC: dict[str, Any] = {
+    "type": "function",
+    "name": "web_search",
+    "description": (
+        "Search the web (via OpenAI's built-in search) for EXTERNAL CONTEXT "
+        "the user is asking about — company profile, role expectations, "
+        "industry norms, what a specific employer typically looks for on a "
+        "resume. Returns a short synthesized answer with source attribution. "
+        "Use SPARINGLY: don't search for info the user already shared, don't "
+        "search for generic resume advice, don't search for speculative "
+        "questions like 'what salary will I get'. The query should be "
+        "specific and short — one focused question, not a paragraph."
+    ),
+    "parameters": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": (
+                    "A specific, focused search query — e.g. 'Senior MLE "
+                    "role expectations at Anthropic 2026' or 'standard "
+                    "sections on a fintech compliance resume'."
+                ),
+            },
+        },
+        "required": ["query"],
+    },
+}
+
+
 RESUME_BUILDER_TOOL_SPECS: list[dict[str, Any]] = [
     FETCH_GITHUB_README_TOOL_SPEC,
+    WEB_SEARCH_TOOL_SPEC,
 ]
 
 
@@ -288,10 +469,23 @@ RESUME_BUILDER_TOOL_SPECS: list[dict[str, Any]] = [
 # function_call item to the Python callable that implements it.
 _TOOL_IMPLEMENTATIONS: dict[str, Callable[..., dict]] = {
     "fetch_github_readme": fetch_github_readme,
+    "web_search": _web_search,
 }
 
 
-def execute_tool(name: str, arguments_json: str) -> str:
+# Tools that need the ``OpenAIService`` injected into their call (set
+# by name to avoid signature introspection at hot-path execute time).
+# ``_web_search`` needs it to fire its inner ``responses.create`` for
+# the search; ``fetch_github_readme`` is HTTP-only and doesn't.
+_TOOLS_REQUIRING_OPENAI: frozenset[str] = frozenset({"web_search"})
+
+
+def execute_tool(
+    name: str,
+    arguments_json: str,
+    *,
+    openai_service: Any | None = None,
+) -> str:
     """Dispatch a Responses-API function_call to the matching tool.
 
     Inputs:
@@ -299,6 +493,11 @@ def execute_tool(name: str, arguments_json: str) -> str:
       arguments_json: Raw JSON string of arguments. The Responses API
         always passes arguments as a JSON-encoded string; we parse it
         here so each tool can sign its own typed signature.
+      openai_service: Optional OpenAIService instance. Forwarded only
+        to tools that declare in ``_TOOLS_REQUIRING_OPENAI`` that they
+        need it (e.g. ``web_search``, which makes its own internal
+        ``responses.create`` call to use OpenAI's built-in search
+        tool from outside JSON mode).
 
     Returns a string. The agentic-loop driver attaches this string to a
     ``function_call_output`` item, which is fed back to the model on
@@ -333,6 +532,11 @@ def execute_tool(name: str, arguments_json: str) -> str:
                 "message": "Arguments must be a JSON object.",
             }
         )
+    if name in _TOOLS_REQUIRING_OPENAI:
+        # Inject as a kwarg so the tool's signature can declare it
+        # explicitly (and so a model-emitted ``openai_service`` arg
+        # can't slip in via ``args`` — we always overwrite).
+        args["openai_service"] = openai_service
     try:
         result = impl(**args)
     except TypeError as exc:

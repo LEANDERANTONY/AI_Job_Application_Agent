@@ -2034,7 +2034,16 @@ def _run_llm_turn(
             prompt["system"],
             prompt["user"],
             tools=RESUME_BUILDER_TOOL_SPECS,
-            tool_executor=execute_resume_builder_tool,
+            # web_search needs an OpenAI client (fires its own
+            # responses.create with the built-in search tool from
+            # outside JSON mode), so we bind the service into the
+            # executor closure. fetch_github_readme ignores the
+            # openai_service kwarg and runs HTTP-only.
+            tool_executor=lambda call_name, call_args_json: execute_resume_builder_tool(
+                call_name,
+                call_args_json,
+                openai_service=openai_service,
+            ),
             expected_keys=prompt["expected_keys"],
             # Twelve iterations: covers the realistic worst case of a
             # user pasting ~10 GitHub URLs in one turn and the model

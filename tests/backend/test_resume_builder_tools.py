@@ -233,8 +233,41 @@ def test_execute_tool_rejects_wrong_argument_shape():
 
 
 def test_tool_spec_includes_fetch_github_readme():
-    names = [spec["name"] for spec in tools.RESUME_BUILDER_TOOL_SPECS]
+    # Function tools have a "name" key at the top level. Server-side
+    # built-in tools (like OpenAI's web_search) don't — they only
+    # have "type". Filter to function tools before reading names.
+    names = [
+        spec["name"]
+        for spec in tools.RESUME_BUILDER_TOOL_SPECS
+        if spec.get("type") == "function"
+    ]
     assert "fetch_github_readme" in names
+
+
+def test_tool_spec_includes_web_search():
+    """Slice 1F: ``web_search`` is exposed as a FUNCTION tool (not a
+    server-side ``{"type": "web_search"}`` spec) because OpenAI's
+    server-side web_search is incompatible with JSON mode
+    (``text.format = json_object``) that our intake contract
+    requires — the API returns "Web Search cannot be used with JSON
+    mode." The function wrap lets the dispatcher make a separate
+    inner ``responses.create`` call without JSON mode for the search
+    itself, returning the synthesized text back to the agent."""
+    function_tool_names = [
+        spec["name"]
+        for spec in tools.RESUME_BUILDER_TOOL_SPECS
+        if spec.get("type") == "function"
+    ]
+    assert "web_search" in function_tool_names
+    # And confirm the spec has a required `query` parameter.
+    web_search_spec = next(
+        spec
+        for spec in tools.RESUME_BUILDER_TOOL_SPECS
+        if spec.get("name") == "web_search"
+    )
+    assert web_search_spec["parameters"]["required"] == ["query"]
+    assert "query" in web_search_spec["parameters"]["properties"]
+    assert web_search_spec["parameters"]["additionalProperties"] is False
 
 
 def test_tool_spec_has_required_parameters_schema():
@@ -247,3 +280,142 @@ def test_tool_spec_has_required_parameters_schema():
     # additionalProperties must be False so the LLM can't smuggle extra
     # fields into the call.
     assert params["additionalProperties"] is False
+
+
+# ---------------------------------------------------------------------------
+# web_search dispatcher tests (hermetic — mocks the OpenAI client)
+# ---------------------------------------------------------------------------
+
+
+class _StubOpenAIClient:
+    """Minimal client mock that records the call args and returns a
+    canned response shape. Matches the duck-typing OpenAIService gives
+    us — ``client.responses.create(...)``."""
+
+    def __init__(self, *, output_text="External context summary.", raise_exc=None):
+        self._output_text = output_text
+        self._raise = raise_exc
+        self.last_payload = None
+
+        class _ResponsesNamespace:
+            def __init__(_self, outer):
+                _self._outer = outer
+
+            def create(_self, **payload):
+                _self._outer.last_payload = payload
+                if _self._outer._raise is not None:
+                    raise _self._outer._raise
+                # Build a response object matching the SDK shape.
+                class _Part:
+                    type = "output_text"
+                    text = _self._outer._output_text
+
+                class _Message:
+                    type = "message"
+                    content = [_Part()]
+
+                class _Response:
+                    output = [_Message()]
+
+                return _Response()
+
+        self.responses = _ResponsesNamespace(self)
+
+
+class _StubOpenAIService:
+    def __init__(self, *, output_text="External context summary.", raise_exc=None):
+        self._client = _StubOpenAIClient(output_text=output_text, raise_exc=raise_exc)
+
+    def is_available(self):
+        return True
+
+
+def test_web_search_success_returns_synthesized_text():
+    svc = _StubOpenAIService(
+        output_text="Anthropic Senior MLE roles typically expect: 1) ..."
+    )
+    output = tools.execute_tool(
+        "web_search",
+        json.dumps({"query": "Anthropic Senior MLE expectations"}),
+        openai_service=svc,
+    )
+    payload = json.loads(output)
+    assert payload["ok"] is True
+    assert "Anthropic" in payload["result"]
+    # The inner call must NOT use json_object format (that's the whole
+    # reason for the function wrap) and must enable the built-in
+    # web_search server-side tool.
+    sent_payload = svc._client.last_payload
+    assert "text" not in sent_payload or sent_payload.get("text", {}).get(
+        "format", {}
+    ).get("type") != "json_object"
+    assert any(
+        t.get("type") == "web_search" for t in sent_payload.get("tools", [])
+    )
+
+
+def test_web_search_rejects_empty_query():
+    svc = _StubOpenAIService()
+    output = tools.execute_tool(
+        "web_search", json.dumps({"query": "   "}), openai_service=svc
+    )
+    payload = json.loads(output)
+    assert payload["ok"] is False
+    assert payload["error"] == "empty_query"
+
+
+def test_web_search_requires_openai_service():
+    # No openai_service forwarded — must return a structured error
+    # rather than raising.
+    output = tools.execute_tool(
+        "web_search",
+        json.dumps({"query": "Anthropic"}),
+        openai_service=None,
+    )
+    payload = json.loads(output)
+    assert payload["ok"] is False
+    assert payload["error"] == "no_openai_service"
+
+
+def test_web_search_handles_dispatch_exception():
+    svc = _StubOpenAIService(raise_exc=RuntimeError("API exploded"))
+    output = tools.execute_tool(
+        "web_search", json.dumps({"query": "test"}), openai_service=svc
+    )
+    payload = json.loads(output)
+    assert payload["ok"] is False
+    assert payload["error"] == "search_dispatch_failed"
+
+
+def test_web_search_truncates_oversize_result():
+    huge = "x" * (tools.WEB_SEARCH_MAX_RESULT_CHARS + 5000)
+    svc = _StubOpenAIService(output_text=huge)
+    output = tools.execute_tool(
+        "web_search", json.dumps({"query": "test"}), openai_service=svc
+    )
+    payload = json.loads(output)
+    assert payload["ok"] is True
+    assert len(payload["result"]) <= tools.WEB_SEARCH_MAX_RESULT_CHARS + 32
+    assert payload["result"].endswith("…[truncated]")
+
+
+def test_execute_tool_does_not_forward_openai_service_to_fetch():
+    """fetch_github_readme is HTTP-only — execute_tool must NOT
+    leak the openai_service into its kwargs (would crash since the
+    impl doesn't accept it)."""
+    def fake_fetch(url, *, timeout, max_bytes):
+        return {"status": 200, "content_type": "text/plain", "body": "# Hi"}
+
+    monkeypatch_target = tools._fetch_text
+    tools._fetch_text = fake_fetch
+    try:
+        svc = _StubOpenAIService()
+        output = tools.execute_tool(
+            "fetch_github_readme",
+            json.dumps({"url": "https://github.com/foo/bar"}),
+            openai_service=svc,
+        )
+        payload = json.loads(output)
+        assert payload["ok"] is True
+    finally:
+        tools._fetch_text = monkeypatch_target
