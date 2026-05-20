@@ -2655,3 +2655,51 @@ Full read-out:
 `docs/eval-runs/2026-05-21-resume-builder-mini-eval-report.md`.
 Artifacts:
 `docs/eval-runs/2026-05-21-resume-builder-mini-eval.json`.
+
+### Followup: `gpt-5.4@low` — explicit-low effort is WORSE than default
+
+User hypothesis: `openai-via-or` in Slice 1H ran gpt-5.4 at the
+model's default reasoning_effort (no kwarg). If gpt-5.4 default
+routing through OpenRouter applied some implicit reasoning,
+explicitly setting `low` might cut it for a faster/cheaper run.
+
+Disproven. Same 16 scenarios:
+
+  | candidate                | eff   | lat/scn  | cost   |
+  | openai-via-or (default)  | 16/16 |  8.3s    | ~$0.12 |
+  | gpt-5.4@low (new)        | 16/16 | 18.4s    | $0.647 |
+
+Explicit `reasoning_effort=low` is **5x more expensive and 2x
+slower** than the default-routing baseline. The default OR routing
+for gpt-5.4 apparently skips reasoning entirely (or uses
+near-minimal); explicit "low" forces some reasoning budget where
+default forced none.
+
+Useful design lesson: **don't assume "low reasoning_effort"
+means "cheaper than default"** — it depends on what the model's
+default routing was already doing. For gpt-5.4 via OpenRouter,
+default is effectively zero-reasoning; "low" is *more* than zero.
+
+Qualitative inspection: gpt-5.4@low does produce slightly smarter
+replies on a few edge cases (best summary draft of any candidate
+on `proactive_offer_after_enough_signal`; partial smart-
+clarification on the OSS-repo trap in `github_url_fires_tool`).
+But the gain is on ~10-20% of scenarios; doesn't justify 5x cost.
+
+Final resume-builder verdict UNCHANGED: keep gpt-5.4 at default
+routing as production default. mini@low remains valid
+cost-equivalent backup. gpt-5.4@low is strictly dominated.
+
+Full surface ranking:
+
+  | candidate              | eff   | per-scn | $/scn   |
+  | openai-via-or (default)| 16/16 |  8.3s   | $0.008  |  <- prod default
+  | mini@low               | 16/16 | 12.5s   | $0.008  |  <- backup
+  | mini@med               | 16/16 | 15.4s   | $0.009  |
+  | sonnet-4.5             | 14/16 | 17.1s   | $0.061  |
+  | gpt-5.4@low            | 16/16 | 18.4s   | $0.040  |  <- dominated
+
+Artifacts:
+`docs/eval-runs/2026-05-21-resume-builder-gpt54-low-eval.json` +
+`…-log.txt`. Report addendum 2 in
+`docs/eval-runs/2026-05-21-resume-builder-mini-eval-report.md`.

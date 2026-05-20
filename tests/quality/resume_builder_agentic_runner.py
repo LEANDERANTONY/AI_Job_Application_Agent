@@ -842,6 +842,12 @@ _AGENTIC_CANDIDATES: dict[str, dict[str, Any]] = {
     # can compare reasoning tiers head-to-head on the same slug.
     "gpt-5.4-mini@med": {"slug": "openai/gpt-5.4-mini", "reasoning_effort": "medium"},
     "gpt-5.4-mini@low": {"slug": "openai/gpt-5.4-mini", "reasoning_effort": "low"},
+    # gpt-5.4 explicit-low variant — the openai-via-or baseline above
+    # runs at the model's default reasoning effort (we don't pass
+    # the kwarg). If gpt-5.4 has any reasoning-token headroom on this
+    # surface, dropping to explicit low could be faster + cheaper at
+    # the same quality. Tiny cost to test.
+    "gpt-5.4@low": {"slug": "openai/gpt-5.4", "reasoning_effort": "low"},
     "sonnet-4.5": {"slug": "anthropic/claude-sonnet-4.5", "reasoning_effort": None},
     "gemini": {"slug": "google/gemini-3.1-pro-preview", "reasoning_effort": None},
     "kimi": {"slug": "moonshotai/kimi-k2.6", "reasoning_effort": None},

@@ -97,6 +97,55 @@ This eval was only this fast / cheap because of upstream fixes:
 2. **Per-instance default reasoning_effort** (this addendum): Added `default_reasoning_effort` to `OpenRouterEvalService.__init__` so the eval matrix can inject the effort tier per candidate without touching production caller code in `resume_builder_service.py`. The kwarg falls back to the instance default when production callers don't pass one.
 3. **`run_json_prompt` usage accumulator** (Slice 1K bugfix): Without this, the structuring-pass cost would still read $0.00 — same bug Slice 1H hit on `openai-via-or`. Today's mini cost numbers are accurate because of the patch.
 
+## Addendum 2 — `gpt-5.4@low` sweep (does explicit-low effort beat default?)
+
+Follow-up hypothesis: `openai-via-or` in Slice 1H ran gpt-5.4 at the model's **default** reasoning effort (no `reasoning_effort` kwarg). If gpt-5.4 default routing through OpenRouter applies some implicit reasoning, explicitly setting `low` might cut it for a faster/cheaper run at the same quality. Same 16 scenarios, single new candidate.
+
+### Result — hypothesis disproven (in an interesting way)
+
+| Candidate | raw pass | effective | latency total | per-scn | cost |
+|---|---:|---:|---:|---:|---:|
+| `openai-via-or` (default) — Slice 1H | 14/16 | 16/16 | 133 s | 8.3 s | ~$0.12 |
+| **`gpt-5.4@low` (new)** | 15/16 | **16/16** | **294 s** | **18.4 s** | **$0.647** |
+
+The 1 raw fail is the same curly-apostrophe matcher bug (`"can't"` U+2019 in *"I can't schedule interviews…"*); real behavior PASSES. So `gpt-5.4@low` is effective 16/16, matching the default-routing baseline on quality.
+
+But explicit-low is **5× more expensive and 2× slower** than the default-routing baseline. The default OR routing for gpt-5.4 apparently skips reasoning entirely (or uses near-minimal); explicit `"low"` forces some reasoning budget where default forced none.
+
+### Reply quality — gpt-5.4@low IS smarter on edge cases, but the rubric doesn't reward it
+
+Inspecting the actual transcripts surfaces three places where the extra reasoning shows:
+
+**`proactive_offer_after_enough_signal`** — best summary draft of any candidate
+> *"A strong summary could be: **'ML Engineer with hands-on experience building LLM and machine learning applications using Python, PyTorch, FastAPI, and OpenAI APIs. Skilled in RAG systems, model development, and deploying scalable AI services…'**"*
+
+Compared to mini@low's terser *"ML engineer focused on building Python-based AI systems with PyTorch, FastAPI, and LLM tooling."* — gpt-5.4@low's draft is more substantive and ATS-ready.
+
+**`github_url_fires_tool`** — partial smart-clarification on the OSS-repo trap
+> *"Did you contribute to this repo directly, and if so, what part or impact should I mention?"*
+
+Sits between gpt-5.4 default (*"Anything you want to add, like your specific contribution?"* — assumes contribution) and Sonnet's hard refusal (*"this is OpenAI's own library, I can't capture it as your work"*). Explicitly asks whether they contributed, but doesn't refuse to capture the repo.
+
+**`failed_tool_graceful_fallback`** — same honest-fallback behavior, slightly more verbose: *"I can't infer the project details from the link alone."*
+
+### Full surface ranking (all 5 candidates tested)
+
+| Candidate | eff | per-scn | total cost | $/scn |
+|---|---:|---:|---:|---:|
+| **`openai-via-or` (default)** | 16/16 | **8.3 s** | ~$0.12 | **$0.008** |
+| `mini@low` | 16/16 | 12.5 s | $0.127 | $0.008 |
+| `mini@med` | 16/16 | 15.4 s | $0.144 | $0.009 |
+| `sonnet-4.5` | 14/16 ⚠ | 17.1 s | $0.977 | $0.061 |
+| **`gpt-5.4@low` (new)** | 16/16 | 18.4 s | $0.647 | $0.040 |
+
+### Recommendation — unchanged
+
+**Keep gpt-5.4 at default routing as the resume-builder production default.** The explicit-low variant adds 5× cost and 2× latency for edge-case smartness the rubric doesn't reward and that arises on a small fraction of scenarios. Mini@low remains the cost-equivalent backup.
+
+Useful lesson: **don't assume "low reasoning_effort" means "cheaper than default"** — it depends on what the model's default routing was already doing. For gpt-5.4 via OpenRouter, default is effectively zero-reasoning; "low" is *more* than zero.
+
+Artifacts: `docs/eval-runs/2026-05-21-resume-builder-gpt54-low-eval.json` + `…-log.txt`.
+
 ## Artifacts
 
 - `docs/eval-runs/2026-05-21-resume-builder-mini-eval.json` — full raw report with per-scenario rows + metrics for both candidates
