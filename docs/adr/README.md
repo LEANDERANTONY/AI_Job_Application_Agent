@@ -22,6 +22,7 @@ The accepted set is grouped into four thematic clusters to make the current prod
 - [ADR-015: DOCX-first artifact export with theme palette](ADR-015-docx-first-artifact-export-with-theme-palette.md)
 - [ADR-029: ThemeSpec single-source + color-theme expansion](ADR-029-themespec-single-source-and-color-theme-expansion.md) — realises ADR-015's typed-`ThemeSpec` follow-up; one registry derives résumé + cover-letter + DOCX palettes + the backend gate set; first new theme `modern_blue` (single-column, ATS-safe). Two-column "presentation" layout reserved for a later gated phase
 - [ADR-016: Conversational LLM resume builder](ADR-016-conversational-llm-resume-builder.md)
+- [ADR-031: Résumé-builder agentic architecture (tool-calling loop, promise tracking, silent-fallback discipline)](ADR-031-resume-builder-agentic-architecture.md) — extends ADR-016 from form-filler to tool-using agent: `fetch_github_readme` + `web_search` (function-wrapped to sidestep OpenAI's JSON-mode incompatibility), full conversation history with char-budget guard, `proactive_offer` channel, `pending_followups[]` promise tracking, schema-strictness + registry pact-tests against the silent-fallback antipattern that surfaced twice this slice
 - [ADR-017: Workspace assistant — ungated and state-aware context](ADR-017-workspace-assistant-state-aware-context.md)
 - [ADR-018: Three-layer LLM retry and per-agent fallback isolation](ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md)
 - [ADR-019: Independent step navigation in the workspace](ADR-019-independent-step-navigation.md)

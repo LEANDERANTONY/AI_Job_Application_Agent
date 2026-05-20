@@ -1942,3 +1942,187 @@ This session, end-to-end:
 Six commits. The user's original "the projects sections couldn't
 generate the data" complaint and the modern_blue-looks-like-classic_ats
 complaint both resolved, with regression tests pinning each fix down.
+
+## Day 59: Phase 2 of the agentic upgrade — promise tracking, web_search, ADR-031
+
+Slices 1E and 1F close out Phase 2 from `report.md`. ADR-031 documents
+the whole arc (1A through 1F).
+
+### Slice 1E: `pending_followups[]` promise tracking
+
+The agent today acknowledges deferrals ("we can do the summary later
+based on the projects") and then evaporates them. Slice 1E gives the
+agent a memory across turns:
+
+- New session field: `pending_followups: list[str]` — each entry a
+  short topic string the LLM owns end-to-end.
+- New JSON channels on the intake turn: `add_followups: list[str]`
+  (new commitments captured this turn) + `resolved_followups:
+  list[str]` (items addressed this turn). The service applies
+  resolutions first (substring + case-insensitive match — the model
+  sometimes paraphrases its own wording), then adds new commitments
+  (dedupe by case-insensitive equality), then caps at 12 outstanding.
+- Prompt receives an `Outstanding Follow-ups` block each turn so the
+  agent can see what's open.
+- TRIGGER PRIORITY rule made the behavior reliable: when the user
+  asks an open-ended question (`"what else?"` / `"what's next?"` /
+  `"anything missing?"`), the agent surfaces the OLDEST outstanding
+  follow-up before asking for a new field. Without this rule,
+  gpt-5.4@medium preferred new collection questions and the eval
+  flagged it on the first calibrated run.
+- Session persistence (export/restore JSON) carries the field through
+  with a backward-compatible default of `[]` for older saves.
+- `_serialize_session` exposes `pending_followups` so an optional UI
+  surface can render an "outstanding items" panel later (v1 relies on
+  the agent's natural assistant_message + proactive_offer behavior).
+
+Verification:
+- 3 hermetic unit tests for the apply logic (add → resolve via
+  paraphrased substring; 14 items + dedupe + cap-at-12; export →
+  restore round-trip preserves the list).
+- 1 new conversational eval scenario
+  (`promise_tracking_remembers_deferred_publication`): user defers a
+  publication on turn 3, gives skills on turn 4, asks "what else do
+  you need from me?" on turn 5 → agent must add the deferral to
+  follow-ups AND resurface it on turn 5 (behavior matcher accepts
+  "publication" / "paper" / "earlier you mentioned" / "graph
+  neural").
+- 8/8 LLM scenarios green on the live API. Commit `a2699d8`.
+
+### Slice 1F: `web_search` tool via function-wrapped OpenAI built-in
+
+The user's original ask included "you have all the capabilities to
+access urls if provided or browse web yourself." Slice 1A gave the
+GitHub-URL path (`fetch_github_readme`); Slice 1F delivers the
+general-web path.
+
+The non-obvious decision (worth preserving for future readers):
+
+**OpenAI's built-in `{"type": "web_search"}` is INCOMPATIBLE with
+JSON mode.** The API returns:
+```
+400 - "Web Search cannot be used with JSON mode."
+```
+Our intake contract REQUIRES `text.format = json_object` (structured
+envelope with `draft_updates` / `assistant_message` / `status` /
+etc.). Removing JSON mode would force ad-hoc parsing and degrade
+reliability. So the naive "add `web_search` to the tool list"
+approach silently 400'd every intake turn and the service fell back
+to the regex step-machine — exactly the silent-fallback pattern
+Slice 1D pact-tests were built to catch. The agentic eval surfaced
+the regression immediately: 3/10 passing.
+
+The function-wrap is the fix:
+- `web_search` is exposed as a FUNCTION tool to the agent (`{"type":
+  "function", "name": "web_search", "parameters": {"query": ...}}`).
+- When the agent calls it, the dispatcher fires a SEPARATE inner
+  `responses.create` — WITHOUT `json_object`, WITH OpenAI's built-in
+  `{"type": "web_search"}` enabled — and returns the synthesized
+  text as the function_call_output.
+- Main loop stays JSON-mode-safe; the agent gets a research
+  capability on-demand.
+- Zero new dependencies, no new API key, no new HTTP client. Same
+  shape as `fetch_github_readme` from the loop's perspective.
+
+Cost shape: each invocation = one extra `responses.create` call
+(gpt-5.4-mini, ~600 tokens). Realistic usage per session: 0-2
+invocations (prompt explicitly tells the agent "use SPARINGLY").
+Latency: +1-2s per search.
+
+The prompt teaches the agent:
+- DO use it for: "what does a Senior MLE role at Anthropic typically
+  expect?", "what's standard for a fintech compliance officer
+  resume?", "compare Stripe vs Adyen engineering bar".
+- DO NOT use it for: anything the user already shared, generic
+  resume advice, small talk, speculative queries ("what salary will
+  I get?" — refuse politely instead).
+- When citing, attribute the source ("based on what I read on
+  Levels.fyi…") rather than asserting as fact.
+
+Hermetic tests (`tests/backend/test_resume_builder_tools.py`,
+6 new cases via a stubbed OpenAI client):
+- success path returns synthesized text + asserts the inner call
+  does NOT use json_object format
+- empty query → reject
+- no openai_service → structured error
+- inner-call exception → captured as `search_dispatch_failed`,
+  never raised across the tool boundary
+- oversize result → truncated at 8 KB with `…[truncated]` marker
+- `execute_tool` does NOT leak `openai_service` into
+  `fetch_github_readme`'s kwargs (would crash since fetch is
+  HTTP-only)
+
+Conversational eval scenarios (2 new):
+- `web_search_fires_on_external_context_question`: user asks
+  "what does Anthropic typically look for on a Senior MLE resume?"
+  → agent fires web_search → grounded answer with source attribution
+- `web_search_skipped_for_user_provided_info`: user is sharing their
+  own background → agent does NOT burn a search (no "according to"
+  citations in the reply)
+
+Verification:
+- 145 hermetic tests across affected suites green
+- 10/10 LLM scenarios pass on the live API on the first calibrated
+  run. Inspection of the external-context scenario shows the model
+  fires `web_search` ONCE, receives a grounded answer ("Anthropic's
+  Senior MLE postings tend to emphasize strong Python + ML +
+  software engineering, production ML systems, and measurable impact
+  like scale, latency, reliability, or cost improvements..."), and
+  synthesizes a tailored reply with no hallucination.
+
+Commit `674c994`.
+
+### ADR-031: documenting the whole arc
+
+`docs/adr/ADR-031-resume-builder-agentic-architecture.md` records the
+architecture decisions across Slices 1A through 1F:
+- Native Responses-API tool calling over LangGraph (zero clear
+  value-add at this scope for an enormous dependency cost)
+- `run_tool_loop` lives on `OpenAIService` (cross-cutting concerns
+  like budget + cost-trace already live there)
+- Iteration cap = 12 (raised from 5 after the QA replay caught the
+  serial-fetch regression)
+- Tool registry + JSON-error contract (errors are first-class
+  outputs, never raised across the tool boundary)
+- The function-wrap pattern for `web_search` (and the JSON-mode
+  incompatibility rationale)
+- Schema-strictness pact-tests as mandatory CI guard against the
+  `dict[K, V]` silent-400 trap
+- Pair-registry pact-tests as mandatory CI guard against the
+  silent-fallback drift class (the
+  `RESUME_THEMES` vs `SUPPORTED_THEMES` bug that surfaced this
+  session is the canonical example)
+- Character-budget history slicing (replaces the hard `[-12:]` cap)
+- `proactive_offer` as a distinct JSON channel + click-to-accept
+  chip in the UI
+- `pending_followups` with the TRIGGER PRIORITY rule for open-ended
+  questions
+
+The ADR explicitly names the trade-offs we're NOT making (no
+LangGraph, no external search provider yet, no UI surface for
+`pending_followups`, eval at 10 not 15-20) and the follow-ups
+parked for Phase 3 (eval expansion, external search provider eval,
+UI surface, multi-provider agentic eval).
+
+### Session arc, end-to-end
+
+The user's original three complaints, all resolved:
+
+| Complaint | Resolution |
+|---|---|
+| Agent hallucinated URL-fetching capability | `fetch_github_readme` tool + honesty patch (1A) |
+| "Each new question feels like a fresh GPT instance" | Full conversation history with char-budget guard (1B) |
+| Agent forgot deferred commitments | `pending_followups[]` with TRIGGER PRIORITY (1E) |
+
+Plus two silent-fallback bugs that lived in production for weeks
+were caught + pact-tested:
+- Schema 400 on `dict[K, V]` (the structuring LLM had been failing
+  on every export since the schema landed — see Day 58)
+- Theme registry drift (4 of 6 themes silently rendering as
+  classic_ats since Phase 2a — see Day 58)
+
+Phase 1 + Phase 2 of the parked agentic-upgrade plan: **shipped**.
+What's parked for Phase 3: eval expansion to 15-20 fixtures, an
+optional `pending_followups` UI panel, external web-search provider
+integration (only if a quality gap surfaces), and a multi-provider
+agentic eval when ADR-028 D1 lands.
