@@ -31,6 +31,26 @@ RESUME_THEMES = {
         "label": "Professional Neutral",
         "tagline": "Single-column, ATS-safe, recruiter-readable structure.",
     },
+    # ADR-029 Phase 2a — cool slate + deep professional blue (all sans).
+    "modern_blue": {
+        "label": "Modern Blue",
+        "tagline": "Cool sans-serif palette with a professional blue accent.",
+    },
+    # ADR-029 Phase 2b — warm editorial, serif name + clean sans body.
+    "creative_warm": {
+        "label": "Creative Warm",
+        "tagline": "Editorial warm-sand band with an emerald accent.",
+    },
+    # ADR-029 Phase 2c — high-contrast monochrome with an ink masthead.
+    "architect_mono": {
+        "label": "Architect Mono",
+        "tagline": "Bold ink masthead, mono accents, structural typography.",
+    },
+    # ADR-029 Phase 3 — gated two-column "presentation" layout.
+    "presentation_twocol": {
+        "label": "Presentation (Two-Column)",
+        "tagline": "Two-column designer layout (gated; non-ATS).",
+    },
 }
 
 
@@ -38,7 +58,23 @@ def _resolve_resume_theme(theme: str, agent_result: Optional[AgentWorkflowResult
     """Validate the requested theme and fall back to classic_ats if the
     name is unknown. The agent_result hook stays in the signature so a
     future agent can override the theme based on JD signals; for now
-    the user picks per-document on the frontend."""
+    the user picks per-document on the frontend.
+
+    BUG HISTORY (worth keeping the rationale): this registry used to
+    list only ``classic_ats`` + ``professional_neutral``. Every other
+    theme name (``modern_blue``, ``creative_warm``, ``architect_mono``,
+    ``presentation_twocol``) silently fell through to ``classic_ats``
+    — the user picked Modern Blue in the UI, the route validated it
+    against ``SUPPORTED_THEMES`` (which DOES list all six), forwarded
+    it to ``build_tailored_resume_artifact``, and THIS resolver
+    quietly substituted classic_ats. The rendered PDF was a
+    byte-identical classic_ats render. Surfaced when a QA replay
+    discovered ``classic_ats.pdf`` and ``modern_blue.pdf`` had the
+    SAME md5 hash. The fix is to keep this registry in sync with
+    ``src.exporters._THEME_SPECS`` — the
+    ``test_resume_themes_registry_matches_supported_themes`` test
+    enforces that pact so the same drift can't happen again.
+    """
     if theme in RESUME_THEMES:
         return theme
     return "classic_ats"

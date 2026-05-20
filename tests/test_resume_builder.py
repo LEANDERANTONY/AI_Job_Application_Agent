@@ -1,5 +1,8 @@
+from src.exporters import SUPPORTED_THEMES
 from src.resume_builder import (
+    RESUME_THEMES,
     _normalize_section_name,
+    _resolve_resume_theme,
     _resolve_section_order,
     build_tailored_resume_artifact,
     compute_section_order,
@@ -352,3 +355,34 @@ def test_build_tailored_resume_artifact_renders_markdown_in_section_order_for_st
     assert md.index("## Education") < md.index("## Projects")
     assert md.index("## Projects") < md.index("## Core Skills")
     assert artifact.section_order[:3] == ["summary", "education", "projects"]
+
+
+def test_resume_themes_registry_matches_supported_themes():
+    """The resume_builder.RESUME_THEMES registry must list the same
+    themes as src.exporters._THEME_SPECS (exposed as SUPPORTED_THEMES).
+
+    HISTORY: a drift between these two registries silently broke 4 of
+    6 themes — the route accepted ``modern_blue`` / ``creative_warm``
+    / ``architect_mono`` / ``presentation_twocol`` (all are in
+    SUPPORTED_THEMES), but ``_resolve_resume_theme`` in resume_builder
+    only knew about ``classic_ats`` and ``professional_neutral``, so
+    everything else fell back to classic_ats. The rendered PDFs for
+    Modern Blue and Classic ATS were byte-identical. This pact-test
+    locks the two registries together so the same drift cannot
+    recur.
+    """
+    assert set(RESUME_THEMES.keys()) == set(SUPPORTED_THEMES), (
+        f"RESUME_THEMES is missing: {sorted(set(SUPPORTED_THEMES) - set(RESUME_THEMES))}, "
+        f"RESUME_THEMES has extras: {sorted(set(RESUME_THEMES) - set(SUPPORTED_THEMES))}"
+    )
+
+
+def test_resolve_resume_theme_round_trips_every_supported_theme():
+    """Every theme in SUPPORTED_THEMES must round-trip through
+    ``_resolve_resume_theme`` without falling back to classic_ats."""
+    for theme in SUPPORTED_THEMES:
+        resolved = _resolve_resume_theme(theme, agent_result=None)
+        assert resolved == theme, (
+            f"Theme {theme!r} fell back to {resolved!r} — "
+            "this means RESUME_THEMES has drifted from SUPPORTED_THEMES."
+        )
