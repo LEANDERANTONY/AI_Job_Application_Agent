@@ -44,8 +44,19 @@ OPENAI_REASONING_DEFAULT = os.getenv("OPENAI_REASONING_DEFAULT", "medium").strip
 OPENAI_REASONING_HIGH_TRUST = os.getenv(
     "OPENAI_REASONING_HIGH_TRUST", "high"
 ).strip().lower()
+# Workspace-assistant reasoning effort. Default lowered from "medium"
+# to "low" on 2026-05-21 after the Slice 1K eval matrix showed
+# gpt-5.4-mini@low matched gpt-5.4-mini@medium with a PERFECT 1.000
+# score on the same 12 scenarios (product-knowledge fluency, honest
+# refusals, grounding discipline, multi-turn memory) at 32% lower
+# latency and 15% lower cost. The assistant is a retrieve-and-refuse
+# surface — thinking-token spend beyond "low" earns nothing on this
+# rubric. Operators can still override via env var if a future
+# regression surfaces. See
+# `docs/eval-runs/2026-05-21-assistant-eval-report.md`
+# (addendum: gpt-5.4-mini@low sweep) for the data.
 OPENAI_REASONING_ASSISTANT = os.getenv(
-    "OPENAI_REASONING_ASSISTANT", "medium"
+    "OPENAI_REASONING_ASSISTANT", "low"
 ).strip().lower()
 OPENAI_MODEL_ROUTING = {
     "jd_summary": os.getenv("OPENAI_MODEL_JD_SUMMARY", OPENAI_MODEL_MID_TIER),

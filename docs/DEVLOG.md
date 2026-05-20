@@ -2703,3 +2703,29 @@ Artifacts:
 `docs/eval-runs/2026-05-21-resume-builder-gpt54-low-eval.json` +
 `…-log.txt`. Report addendum 2 in
 `docs/eval-runs/2026-05-21-resume-builder-mini-eval-report.md`.
+
+### Production change: assistant reasoning_effort medium → low
+
+Acted on the Slice 1K addendum verdict. One-line change in
+`src/config.py`: `OPENAI_REASONING_ASSISTANT` default lowered
+from `"medium"` to `"low"`. Operators can still override via env
+var if a regression surfaces.
+
+The assistant model was ALREADY `gpt-5.4-mini` in production —
+the only thing the eval data was prompting us to flip was the
+effort tier. `assistant_product_help` was already at "low";
+`assistant_application_qa` stays at gpt-5.4@high (it's the
+substantive Q&A scope where the user has analysis context).
+
+One test assertion updated:
+`test_openai_service_uses_default_reasoning_for_unified_assistant_task`
+now asserts `{"effort": "low"}` with a comment explaining the
+Slice 1K provenance. 78 / 78 relevant tests green; the one
+pre-existing failure in `test_workspace_retention.py::
+test_sweep_with_no_service_role_client_logs_and_returns_zero`
+was already failing on main before this commit (verified via
+stash + re-run).
+
+Expected impact: ~80% reduction in assistant API spend, ~30%
+lower per-turn latency. Quality holds at 1.000 per the Slice 1K
+data. No frontend changes required.

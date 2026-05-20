@@ -276,6 +276,15 @@ def test_openai_service_uses_medium_reasoning_for_review_tasks():
 
 
 def test_openai_service_uses_default_reasoning_for_unified_assistant_task():
+    # 2026-05-21: assistant default dropped from "medium" to "low"
+    # after the Slice 1K eval showed gpt-5.4-mini@low matched
+    # mini@medium with perfect 1.000 quality at -32% latency / -15%
+    # cost on the same 12 scenarios. See
+    # `docs/eval-runs/2026-05-21-assistant-eval-report.md` (addendum
+    # for the head-to-head). The test asserts the resolver returns
+    # the NEW default; if a future operator overrides via env var
+    # they'd see the override value here, but the in-process default
+    # is what production ships with.
     client = FakeClient([_build_response('{"approved": true}', response_id="resp_low")])
     service = OpenAIService(client=client)
 
@@ -288,7 +297,7 @@ def test_openai_service_uses_default_reasoning_for_unified_assistant_task():
     )
 
     assert payload["approved"] is True
-    assert client.responses.calls[0]["reasoning"] == {"effort": "medium"}
+    assert client.responses.calls[0]["reasoning"] == {"effort": "low"}
     assert "temperature" not in client.responses.calls[0]
 
 
