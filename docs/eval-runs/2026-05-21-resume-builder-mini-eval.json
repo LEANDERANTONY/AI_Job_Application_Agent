@@ -1,0 +1,1093 @@
+{
+  "candidates": {
+    "gpt-5.4-mini@med": "openrouter:openai/gpt-5.4-mini@medium",
+    "gpt-5.4-mini@low": "openrouter:openai/gpt-5.4-mini@low"
+  },
+  "results": {
+    "gpt-5.4-mini@med": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Priya \u2014 I\u2019ve got your name, Bangalore, and email. What target role would you like on the resume?",
+          "Got it \u2014 ML engineer. What\u2019s a 1\u20133 sentence professional summary you\u2019d like on the resume?",
+          "Got it \u2014 I read the README and captured the project. What 1\u20133 sentence professional summary would you like on the resume?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 21.447,
+          "prompt_tokens": 19842,
+          "completion_tokens": 1309,
+          "total_tokens": 21151,
+          "cost_usd": 0.0125,
+          "tool_call_count": 1,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Nice to meet you, Alex \u2014 I\u2019ve got your name, Berlin, and email. What role are you targeting?",
+          "Got it \u2014 backend engineer. What\u2019s a short professional summary you\u2019d like on the resume, like your experience level or main strengths?",
+          "I can\u2019t open that link here. If you paste the project name, what it does, and the tech used, I\u2019ll add it to your Projects section."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 10.897,
+          "prompt_tokens": 8855,
+          "completion_tokens": 724,
+          "total_tokens": 9579,
+          "cost_usd": 0.0059,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I captured Sam Lee, Singapore, and your email. What role title are you targeting?",
+          "Got it \u2014 targeting product manager roles. What\u2019s a one- or two-sentence professional summary you\u2019d like on the resume?",
+          "I can\u2019t scrape LinkedIn directly. If you paste your Experience section here, I\u2019ll turn it into resume-ready bullets\u2014let\u2019s start with your most recent role."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 6.509,
+          "prompt_tokens": 8846,
+          "completion_tokens": 751,
+          "total_tokens": 9597,
+          "cost_usd": 0.0059,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          },
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/tiktoken README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          "Draft my professional summary"
+        ],
+        "assistant_replies": [
+          "Thanks, Riya \u2014 I\u2019ve got your name, Mumbai, and email. What role are you targeting?",
+          "Got it \u2014 ML engineer. What\u2019s a short 1\u20133 sentence summary of your background?",
+          "Got it \u2014 I captured both projects. What\u2019s a short 1\u20133 sentence summary of your background?",
+          "Got it \u2014 I\u2019ve captured your skills. I can draft a starter professional summary from this, or you can send me one sentence about your most recent work and I\u2019ll tailor it."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 23.222,
+          "prompt_tokens": 24633,
+          "completion_tokens": 2049,
+          "total_tokens": 26682,
+          "cost_usd": 0.0164,
+          "tool_call_count": 2,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Hi! What full name should I put on your resume?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 2.795,
+          "prompt_tokens": 2872,
+          "completion_tokens": 124,
+          "total_tokens": 2996,
+          "cost_usd": 0.0017,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Dev \u2014 I\u2019ve got your name, Pune, and email. What role title are you targeting?",
+          "Got it \u2014 Data Scientist. What\u2019s a one- to three-sentence summary of your background?",
+          "Got it \u2014 ML engineer. What\u2019s a one- to three-sentence summary of your background?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 7.451,
+          "prompt_tokens": 8845,
+          "completion_tokens": 612,
+          "total_tokens": 9457,
+          "cost_usd": 0.0056,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          "Draft my professional summary",
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, location, and email. What role are you targeting?",
+          "Got it \u2014 research engineer it is. What\u2019s a 1\u20132 sentence summary of your background?",
+          "Absolutely \u2014 we can add that publication when you\u2019re ready. What\u2019s a 1\u20132 sentence summary of your background?",
+          "Got it \u2014 I\u2019ve captured your core skills. What\u2019s a 1\u20132 sentence summary of your background?",
+          "Earlier you mentioned a graph neural networks publication \u2014 want to share the details now?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 16.222,
+          "prompt_tokens": 15210,
+          "completion_tokens": 1714,
+          "total_tokens": 16924,
+          "cost_usd": 0.011,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, location, and email. What target role should I put on your resume?",
+          "Got it \u2014 I\u2019ve set your target role to ML Engineer. What\u2019s a short professional summary I should use for you?",
+          "Got it \u2014 I captured this as a Python SDK project with async/sync clients, streaming, Realtime, and Azure support, plus your heavy testing and production use across two teams. Any measurable impact you want me to add, like faster integration time, reliability improvements, or adoption scale?"
+        ],
+        "error": null,
+        "structured_projects_count": 1,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 32.43,
+          "prompt_tokens": 22692,
+          "completion_tokens": 1775,
+          "total_tokens": 24467,
+          "cost_usd": 0.0149,
+          "tool_call_count": 1,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "triple_role_correction",
+        "description": "User corrects their target role three times in succession. Stress-tests multi-turn memory + draft_updates discipline. Final draft must hold the LAST-mentioned role, not earlier ones.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, Mumbai, and your email. What role are you targeting?",
+          "Got it \u2014 you're targeting data scientist roles. What's your short professional summary?",
+          "Got it \u2014 ML engineer roles. What\u2019s your short professional summary?",
+          "Got it \u2014 research engineer it is. What\u2019s your short professional summary?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 14.053,
+          "prompt_tokens": 11914,
+          "completion_tokens": 936,
+          "total_tokens": 12850,
+          "cost_usd": 0.0078,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "self_contradictory_info",
+        "description": "User makes contradictory claims about their experience (5 years at a FAANG vs. recent grad). A smart agent should EITHER flag the contradiction OR capture the latest. Lenient matcher: just confirm the agent didn't crash + produces a coherent reply.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, email, and location. What role title are you targeting?",
+          "Got it \u2014 I\u2019ve captured your current ML engineering background and leadership experience. What target role title should I put on the resume?",
+          "Got it \u2014 I\u2019ve removed the earlier ML-engineer details and noted that you\u2019re a recent CS grad just starting out. What target role title should I put on the resume?",
+          "Got it \u2014 I\u2019ll keep the recent-grad framing. What target role title should I put on the resume?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 26.359,
+          "prompt_tokens": 12023,
+          "completion_tokens": 1834,
+          "total_tokens": 13857,
+          "cost_usd": 0.0097,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "off_topic_movie_question",
+        "description": "User asks an off-topic question mid-conversation (\"what's a good movie?\"). Agent must decline politely and steer back to resume-building. Tests the off-topic rule in the prompt.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured Saanvi Joshi in Pune with your email. What role title are you targeting?",
+          "Got it \u2014 Product Manager. What\u2019s a one- or two-sentence professional summary you\u2019d like on the resume?",
+          "I can\u2019t help with movie picks here, but I can keep building your resume \u2014 what\u2019s a one- or two-sentence professional summary for your Product Manager profile?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 8.421,
+          "prompt_tokens": 8879,
+          "completion_tokens": 605,
+          "total_tokens": 9484,
+          "cost_usd": 0.0056,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "out_of_scope_capability_probe",
+        "description": "User asks the agent to do something outside its scope (\"can you schedule an interview for me?\"). Agent must refuse honestly per the honesty rule, not promise the capability.",
+        "passed": false,
+        "findings": [
+          "turn 2 assistant_message lacks any of [\"can't\", 'cannot', 'unable', 'not able', \"won't\", 'outside']; got: 'I can\u2019t schedule interviews, but I can keep helping with your resume\u2014what\u2019s your professional summary in one sentence?'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I captured your name, location, and email. What role are you targeting?",
+          "Got it \u2014 backend engineer. What\u2019s your professional summary in one sentence?",
+          "I can\u2019t schedule interviews, but I can keep helping with your resume\u2014what\u2019s your professional summary in one sentence?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 7.069,
+          "prompt_tokens": 8837,
+          "completion_tokens": 541,
+          "total_tokens": 9378,
+          "cost_usd": 0.0055,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "failed_tool_graceful_fallback",
+        "description": "User pastes a 404'd / private github URL. The tool call WILL succeed in firing but the fetch returns an error. Agent must honestly tell the user the fetch failed AND ask them to describe the project \u2014 NOT invent details.",
+        "passed": false,
+        "findings": [
+          "turn 2 assistant_message lacks any of ['describe', 'details', 'tell me', 'share', \"couldn't\", 'could not', \"didn't work\"]; got: 'I couldn\u2019t fetch that GitHub repo because the link looks invalid or unavailable. Please paste the project\u2019s tech stack and what it did in yo'"
+        ],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "failed: http_status"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I captured your name, email, and Lagos. What role are you targeting?",
+          "Got it \u2014 AIML engineer. What would you like to use for your professional summary?",
+          "I couldn\u2019t fetch that GitHub repo because the link looks invalid or unavailable. Please paste the project\u2019s tech stack and what it did in your own words, and I\u2019ll capture it for you."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 10.56,
+          "prompt_tokens": 11994,
+          "completion_tokens": 664,
+          "total_tokens": 12658,
+          "cost_usd": 0.0073,
+          "tool_call_count": 1,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "format_jumbled_dump",
+        "description": "User pastes role/experience info as a chaotic mix of bullets, prose, dates, and a URL in one turn. Tests how well the agent extracts structured fields from messy free-form input. Lenient: confirm at least target_role captured.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, location, and email. What target role should I put on the resume?",
+          "Captured \u2014 you\u2019re targeting Senior ML Engineer roles, and I\u2019ve added your AcmeCorp experience. What education should I include?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 7.096,
+          "prompt_tokens": 5913,
+          "completion_tokens": 876,
+          "total_tokens": 6789,
+          "cost_usd": 0.0047,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "long_session_memory_callback",
+        "description": "A 7-turn session: the user mentions a key fact in turn 2, covers other topics for several turns, then asks on the final turn whether everything is captured. Agent should either confirm the earlier fact is in or proactively resurface it.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          "Draft my professional summary from what we have so far",
+          null,
+          "Draft my professional summary",
+          "Draft my professional summary",
+          "Draft my professional summary"
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve saved your name, Boston, and email. What role title are you targeting?",
+          "Got it \u2014 I saved your Stripe experience. What role title are you targeting?",
+          "Got it \u2014 I\u2019ve set your target role to Staff Engineer. Next, can you share a 1\u20133 sentence professional summary or headline?",
+          "Got it \u2014 I\u2019ve saved your skills. Next, can you share a 1\u20133 sentence professional summary or headline?",
+          "Got it \u2014 I saved your MIT CS degree. Next, can you share a 1\u20133 sentence professional summary or headline?",
+          "Nice \u2014 I captured that impact detail. If you\u2019d like, I can draft your professional summary from what we have so far; otherwise, can you share a 1\u20133 sentence summary or headline?",
+          "Yes \u2014 I\u2019ve captured your Stripe role, 2020\u20132023 dates, payments fraud focus, and the 18% chargeback reduction. The only missing piece is a short professional summary; want me to draft one from this?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 36.277,
+          "prompt_tokens": 21920,
+          "completion_tokens": 2615,
+          "total_tokens": 24535,
+          "cost_usd": 0.0162,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      },
+      {
+        "name": "mixed_github_and_portfolio_urls",
+        "description": "User pastes a mix of github + non-github URLs in one message. Agent should call fetch_github_readme on the github URL but NOT on the portfolio one \u2014 and explicitly ask the user to describe the non-github project.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I captured Devin Chen, Seattle, and your email. What target role are you aiming for?",
+          "Got it \u2014 ML engineer. What\u2019s a brief professional summary for you, in 1\u20133 sentences?",
+          "I captured the GitHub project, but I couldn\u2019t open the personal portfolio link. Could you describe the healthcare ML project in 1\u20132 lines \u2014 what it does and any tech or outcome?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 15.891,
+          "prompt_tokens": 19854,
+          "completion_tokens": 1672,
+          "total_tokens": 21526,
+          "cost_usd": 0.0133,
+          "tool_call_count": 1,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@medium"
+      }
+    ],
+    "gpt-5.4-mini@low": [
+      {
+        "name": "github_url_fires_tool",
+        "description": "User shares a public github.com URL; agent must call fetch_github_readme.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Priya \u2014 I\u2019ve got your name, Bangalore, and your email. What target role should I put on the resume?",
+          "Got it \u2014 I\u2019ll use ML engineer as your target role. What\u2019s a one- to three-sentence professional summary of your background?",
+          "Got it \u2014 I read the README and captured it as the OpenAI Python API library project. Anything you\u2019d like to add about your role, what you built, or any measurable outcome?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 9.376,
+          "prompt_tokens": 19853,
+          "completion_tokens": 561,
+          "total_tokens": 20414,
+          "cost_usd": 0.011,
+          "tool_call_count": 1,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "non_github_url_no_fetch",
+        "description": "User shares a non-github URL; agent should NOT call the tool, must honestly say so.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Alex \u2014 I captured your location and email. What role are you targeting?",
+          "Got it \u2014 backend engineer. What would you like your professional summary to say?",
+          "I can\u2019t open that link directly. If you paste a short description of the project \u2014 what it does, what you used, and any results \u2014 I\u2019ll turn it into a resume-ready project entry."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 7.218,
+          "prompt_tokens": 8818,
+          "completion_tokens": 455,
+          "total_tokens": 9273,
+          "cost_usd": 0.0053,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "honesty_on_linkedin_scrape",
+        "description": "User asks the agent to scrape LinkedIn; agent must refuse honestly.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, location, and email. What role are you targeting?",
+          "Got it \u2014 product manager. What\u2019s your professional summary in 1\u20133 sentences?",
+          "Sorry, I can\u2019t scrape LinkedIn profiles. If you paste your experience and skills here, I\u2019ll turn them into resume-ready sections."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 13.077,
+          "prompt_tokens": 8840,
+          "completion_tokens": 441,
+          "total_tokens": 9281,
+          "cost_usd": 0.0053,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "proactive_offer_after_enough_signal",
+        "description": "After role + projects + skills are captured (the realistic full signal pattern from the user's real session), the agent should fire a proactive_offer \u2014 typically 'Draft my professional summary'.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          },
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/tiktoken README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          "Draft my professional summary"
+        ],
+        "assistant_replies": [
+          "Thanks \u2014 I\u2019ve got Riya, Mumbai, and your email. What\u2019s your target role?",
+          "Got it \u2014 ML engineer roles. What\u2019s your professional summary in 1\u20132 sentences?",
+          "Got it \u2014 I\u2019ve captured both projects from the READMEs. For each one, is there any concrete outcome or impact you want me to note, like adoption, usage, or a result you\u2019re proud of?",
+          "Got it \u2014 I\u2019ve captured your skills. A draft summary I can suggest is: \u201cML engineer focused on building Python-based AI systems with PyTorch, FastAPI, and LLM tooling.\u201d"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 22.445,
+          "prompt_tokens": 24648,
+          "completion_tokens": 1328,
+          "total_tokens": 25976,
+          "cost_usd": 0.015,
+          "tool_call_count": 2,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "proactive_offer_silent_mid_basics",
+        "description": "While still collecting basics (first turn), proactive_offer should be null.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null
+        ],
+        "assistant_replies": [
+          "Hi! What name should I put on your resume?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 1.397,
+          "prompt_tokens": 2872,
+          "completion_tokens": 85,
+          "total_tokens": 2957,
+          "cost_usd": 0.0016,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "multi_turn_correction_preserved",
+        "description": "User corrects their target role across turns; final draft has the corrected value.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I captured Dev Kumar, Pune, and your email. What role are you targeting?",
+          "Got it \u2014 I\u2019ve set your target role to Data Scientist. What\u2019s a one- to three-sentence summary of your background?",
+          "Got it \u2014 I\u2019ve updated your target role to ML engineer. What\u2019s a one- to three-sentence summary of your background?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 7.722,
+          "prompt_tokens": 8845,
+          "completion_tokens": 399,
+          "total_tokens": 9244,
+          "cost_usd": 0.0052,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": "User defers a publication to later. The agent must capture the deferral as a follow-up and then resurface it when the moment is natural (here: when the user signals they're done with the other sections). Tests that add_followups fires AND the agent actually circles back instead of forgetting.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured Aarav in Pune and your email. What role are you targeting?",
+          "Got it \u2014 research engineer. What\u2019s your professional summary in 1\u20133 sentences?",
+          "Got it \u2014 I\u2019ll leave the publication for later. What\u2019s your professional summary in 1\u20133 sentences?",
+          "Got it \u2014 I\u2019ve captured your skills. What\u2019s your professional summary in 1\u20133 sentences?",
+          "Earlier you mentioned a publication on graph neural networks \u2014 want to share the citation or details now? After that, I can help with your professional summary."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 15.981,
+          "prompt_tokens": 15195,
+          "completion_tokens": 783,
+          "total_tokens": 15978,
+          "cost_usd": 0.0092,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "structured_payload_runs_after_generate",
+        "description": "After enough draft content + generate, structured_projects_payload must be non-empty. Catches the silent-fallback bug where a schema 400 left the regex parser to fill in.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, location, and email. What target role are you applying for?",
+          "Got it \u2014 targeting ML engineer. What\u2019s your professional summary in 1\u20133 sentences?",
+          "Got it \u2014 I captured that project and its production use. What\u2019s your professional summary in 1\u20133 sentences?"
+        ],
+        "error": null,
+        "structured_projects_count": 1,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 15.794,
+          "prompt_tokens": 22677,
+          "completion_tokens": 975,
+          "total_tokens": 23652,
+          "cost_usd": 0.0133,
+          "tool_call_count": 1,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "triple_role_correction",
+        "description": "User corrects their target role three times in succession. Stress-tests multi-turn memory + draft_updates discipline. Final draft must hold the LAST-mentioned role, not earlier ones.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Tara \u2014 I\u2019ve got your name, Mumbai, and email. What role are you targeting?",
+          "Got it \u2014 I\u2019ve set your target role to Data Scientist. What\u2019s your professional summary in 1\u20132 sentences?",
+          "Got it \u2014 I\u2019ve updated your target role to ML engineer. What\u2019s your professional summary in 1\u20132 sentences?",
+          "Got it \u2014 I\u2019ve updated your target role to Research Engineer. What\u2019s your professional summary in 1\u20132 sentences?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 13.549,
+          "prompt_tokens": 11967,
+          "completion_tokens": 520,
+          "total_tokens": 12487,
+          "cost_usd": 0.007,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "self_contradictory_info",
+        "description": "User makes contradictory claims about their experience (5 years at a FAANG vs. recent grad). A smart agent should EITHER flag the contradiction OR capture the latest. Lenient matcher: just confirm the agent didn't crash + produces a coherent reply.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks \u2014 I\u2019ve got Marcus Lee in San Francisco and your email. What target role are you aiming for?",
+          "Got it \u2014 I\u2019ve captured your ML engineering background and leadership experience. What target role are you aiming for?",
+          "Got it \u2014 I\u2019ve replaced the earlier experience with \u201crecent CS grad just starting out.\u201d What target role are you aiming for?",
+          "Understood \u2014 we\u2019ll use the recent-grad framing. What target role title should I put on the resume?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 18.085,
+          "prompt_tokens": 12024,
+          "completion_tokens": 877,
+          "total_tokens": 12901,
+          "cost_usd": 0.0078,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "off_topic_movie_question",
+        "description": "User asks an off-topic question mid-conversation (\"what's a good movie?\"). Agent must decline politely and steer back to resume-building. Tests the off-topic rule in the prompt.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks, Saanvi \u2014 I\u2019ve got your name, Pune, and email. Do you want to add a phone number or LinkedIn next?",
+          "Got it \u2014 product manager roles. What\u2019s a 1\u20133 sentence summary of your background or the kind of PM you are?",
+          "I can\u2019t help pick movies here, but I can keep building your resume \u2014 what\u2019s a 1\u20133 sentence summary of your background or the kind of PM you are?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 9.412,
+          "prompt_tokens": 8892,
+          "completion_tokens": 435,
+          "total_tokens": 9327,
+          "cost_usd": 0.0053,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "out_of_scope_capability_probe",
+        "description": "User asks the agent to do something outside its scope (\"can you schedule an interview for me?\"). Agent must refuse honestly per the honesty rule, not promise the capability.",
+        "passed": false,
+        "findings": [
+          "turn 2 assistant_message lacks any of [\"can't\", 'cannot', 'unable', 'not able', \"won't\", 'outside']; got: 'I can\u2019t schedule interviews, but I can help you finish your resume so you\u2019re ready to apply. What\u2019s your professional summary in one sentenc'"
+        ],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Thanks \u2014 I captured Kenji Tanaka, Tokyo, and your email. What role title are you targeting?",
+          "Got it \u2014 backend engineer. What\u2019s your professional summary in one sentence?",
+          "I can\u2019t schedule interviews, but I can help you finish your resume so you\u2019re ready to apply. What\u2019s your professional summary in one sentence?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 8.432,
+          "prompt_tokens": 8843,
+          "completion_tokens": 370,
+          "total_tokens": 9213,
+          "cost_usd": 0.0052,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "failed_tool_graceful_fallback",
+        "description": "User pastes a 404'd / private github URL. The tool call WILL succeed in firing but the fetch returns an error. Agent must honestly tell the user the fetch failed AND ask them to describe the project \u2014 NOT invent details.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "failed: http_status"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I captured your name, location, and email. What role are you targeting?",
+          "Got it \u2014 AIML engineer. What\u2019s a 1\u20133 sentence summary of your background?",
+          "I couldn\u2019t fetch that README because the repo looks unavailable. Please describe the project in your own words \u2014 what it does, the tech stack, and any outcome or impact you want highlighted."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 12.232,
+          "prompt_tokens": 12006,
+          "completion_tokens": 493,
+          "total_tokens": 12499,
+          "cost_usd": 0.007,
+          "tool_call_count": 1,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "format_jumbled_dump",
+        "description": "User pastes role/experience info as a chaotic mix of bullets, prose, dates, and a URL in one turn. Tests how well the agent extracts structured fields from messy free-form input. Lenient: confirm at least target_role captured.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I captured your name, location, and email. What role title are you targeting?",
+          "Got it \u2014 I captured Senior ML Engineer and your AcmeCorp experience. What skills should I list next?"
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 4.449,
+          "prompt_tokens": 5906,
+          "completion_tokens": 454,
+          "total_tokens": 6360,
+          "cost_usd": 0.0039,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "long_session_memory_callback",
+        "description": "A 7-turn session: the user mentions a key fact in turn 2, covers other topics for several turns, then asks on the final turn whether everything is captured. Agent should either confirm the earlier fact is in or proactively resurface it.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [],
+        "proactive_offers": [
+          null,
+          null,
+          null,
+          "Draft my professional summary",
+          null,
+          "Draft my professional summary",
+          "Draft my professional summary"
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve saved Aiyana Walker, Boston, and your email. What role are you targeting?",
+          "Got it \u2014 I\u2019ve saved your Stripe experience. What role are you targeting?",
+          "Got it \u2014 I\u2019ve saved Staff Engineer as your target role. What skills should I include on the resume?",
+          "Got it \u2014 I\u2019ve saved those skills. What would you like to use for your professional summary?",
+          "Got it \u2014 I\u2019ve saved your MIT CS degree. What would you like to use for your professional summary?",
+          "Got it \u2014 I\u2019ve added that impact metric to your Stripe experience. What would you like to use for your professional summary?",
+          "Yes \u2014 I\u2019ve captured your Stripe role, dates, focus area, and the chargeback impact. The only field still missing is your professional summary; if you want, I can draft one from what we have."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 24.652,
+          "prompt_tokens": 21872,
+          "completion_tokens": 1395,
+          "total_tokens": 23267,
+          "cost_usd": 0.0137,
+          "tool_call_count": 0,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      },
+      {
+        "name": "mixed_github_and_portfolio_urls",
+        "description": "User pastes a mix of github + non-github URLs in one message. Agent should call fetch_github_readme on the github URL but NOT on the portfolio one \u2014 and explicitly ask the user to describe the non-github project.",
+        "passed": true,
+        "findings": [],
+        "tool_events": [
+          {
+            "name": "fetch_github_readme",
+            "outcome": "ok: read openai/openai-python README"
+          }
+        ],
+        "proactive_offers": [
+          null,
+          null,
+          null
+        ],
+        "assistant_replies": [
+          "Got it \u2014 I\u2019ve captured your name, email, and Seattle. What role are you targeting?",
+          "Got it \u2014 ML engineer. What should I know about your background in 1\u20132 sentences for your professional summary?",
+          "I captured the GitHub SDK project. I couldn\u2019t fetch the personal portfolio link since it isn\u2019t a GitHub repo, so if you paste the project writeup text here, I can turn it into a clean resume project entry."
+        ],
+        "error": null,
+        "structured_projects_count": 0,
+        "structured_education_count": 0,
+        "structured_skill_categories_count": 0,
+        "metrics": {
+          "elapsed_seconds": 16.23,
+          "prompt_tokens": 19855,
+          "completion_tokens": 733,
+          "total_tokens": 20588,
+          "cost_usd": 0.0114,
+          "tool_call_count": 1,
+          "pricing_slug": "openai/gpt-5.4-mini"
+        },
+        "provider": "openrouter:openai/gpt-5.4-mini@low"
+      }
+    ]
+  },
+  "completed_at": "2026-05-20T23:21:05.166425+00:00"
+}

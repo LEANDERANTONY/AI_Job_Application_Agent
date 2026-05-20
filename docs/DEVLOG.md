@@ -2588,3 +2588,70 @@ default to `openai/gpt-5.4-mini` at `reasoning_effort=low`. The
 assistant surface is retrieval-and-refuse; thinking-token spend
 beyond "low" earns nothing on this rubric. Artifacts:
 `docs/eval-runs/2026-05-21-assistant-eval-mini-low.json`.
+
+### Resume-builder × mini sweep (does the cost story transfer?)
+
+Slice 1K's mini@low win on the workspace-assistant surface
+prompted the natural followup: does it hold on the much heavier
+resume-builder surface (tool loop, multi-turn intake,
+proactive_offer + pending_followups channels, the 11 K-char
+structuring-pass canary)?
+
+Wired `gpt-5.4-mini@med` + `gpt-5.4-mini@low` into
+`tests/quality/resume_builder_agentic_runner.py` (changed
+`_AGENTIC_CANDIDATES` from `dict[str, str]` to
+`dict[str, dict]` carrying `slug` + `reasoning_effort` per
+candidate). Added `default_reasoning_effort` to
+`OpenRouterEvalService.__init__` so the eval matrix can inject
+the effort tier per candidate without touching the production
+`resume_builder_service` caller; the per-call kwarg falls back to
+the instance default when production code doesn't pass one.
+
+Result on the same 16 OpenRouter scenarios:
+
+  | candidate         | raw   | eff   | lat    | cost   |
+  | gpt-5.4-mini@med  | 14/16 | 16/16 | 247s   | $0.144 |
+  | gpt-5.4-mini@low  | 15/16 | 16/16 | 200s   | $0.127 |
+
+Re-classifying the raw fails: both candidates trip the curly-
+apostrophe matcher bug Slice 1H flagged ("can't" / "couldn't"
+with U+2019). Real behavior PASSES on every flagged miss — the
+resume-builder runner just never got the normalisation patch the
+assistant runner has.
+
+Compared to Slice 1H baselines on the same 16 scenarios:
+gpt-5.4-via-OR scored 16/16 effective at 8.3 s / scenario and
+roughly $0.12. Sonnet-4.5 scored 14/16 (1 real fail on
+`structured_payload`) at $0.98. So mini matches gpt-5.4 quality
+AND beats Sonnet/Gemini/DeepSeek on this surface (which all
+failed `structured_payload` and/or `proactive_offer`).
+
+But — and this is the important finding — on this surface the
+mini cost story DOES NOT transfer:
+
+  * gpt-5.4-via-OR: 8.3 s / scenario, ~$0.12 total
+  * mini@low:       12.5 s / scenario, $0.127 total
+  * mini@med:       15.4 s / scenario, $0.144 total
+
+Mini's 5x per-token discount is eaten by reasoning-token
+overhead. On the short retrieve-and-refuse assistant surface
+reasoning_effort barely fires; on the long multi-turn agentic
+resume-builder surface the model thinks before AND after each
+tool call. Net cost ends up similar to gpt-5.4 — and latency is
+50-85 % higher.
+
+**Recommendation:** keep `gpt-5.4` as the resume-builder
+default. mini doesn't earn the switch on this surface. The
+finding is genuinely surface-specific:
+
+  * Workspace assistant → mini@low (Slice 1K result holds)
+  * Resume builder      → gpt-5.4 (Slice 1H result holds)
+
+Design lesson worth keeping: reasoning models shine when the
+inference is short and structured; they're a wash when the
+agentic loop is already providing the "reasoning" externally.
+
+Full read-out:
+`docs/eval-runs/2026-05-21-resume-builder-mini-eval-report.md`.
+Artifacts:
+`docs/eval-runs/2026-05-21-resume-builder-mini-eval.json`.

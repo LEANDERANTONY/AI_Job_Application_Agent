@@ -825,7 +825,7 @@ def run_scenario(scenario: dict[str, Any], openai_service: OpenAIService) -> dic
 # report.md §4 — the provider_ab_runner copy still has three stale
 # slugs (gemini-3.1-pro / deepseek-v4 / qwen-3.5) we deliberately
 # correct here.
-_AGENTIC_CANDIDATES: dict[str, str] = {
+_AGENTIC_CANDIDATES: dict[str, dict[str, Any]] = {
     # gpt-5.4 routed THROUGH OpenRouter — same proxy hop as every other
     # OpenRouter candidate, so cross-provider latency comparisons are
     # apples-to-apples (the `openai` baseline above uses the production
@@ -833,14 +833,22 @@ _AGENTIC_CANDIDATES: dict[str, str] = {
     # head-to-head with OpenRouter-routed peers on latency). The
     # delta between `openai` and `openai-via-or` quantifies OpenRouter
     # proxy overhead by itself.
-    "openai-via-or": "openai/gpt-5.4",
-    "sonnet-4.5": "anthropic/claude-sonnet-4.5",
-    "gemini": "google/gemini-3.1-pro-preview",
-    "kimi": "moonshotai/kimi-k2.6",
-    "glm": "z-ai/glm-5.1",
-    "grok": "x-ai/grok-4.20",
-    "deepseek": "deepseek/deepseek-v4-pro",
-    "qwen": "qwen/qwen3.6-max-preview",
+    "openai-via-or": {"slug": "openai/gpt-5.4", "reasoning_effort": None},
+    # Resume-builder addendum: the assistant-surface eval (Slice 1K
+    # addendum) showed `gpt-5.4-mini@low` matching `gpt-5.4-mini@med`
+    # quality at -32% latency / -15% cost. Worth retesting on the
+    # heavier resume-builder surface (tool loop, multi-turn intake,
+    # proactive_offer + pending_followups channels). Two variants so we
+    # can compare reasoning tiers head-to-head on the same slug.
+    "gpt-5.4-mini@med": {"slug": "openai/gpt-5.4-mini", "reasoning_effort": "medium"},
+    "gpt-5.4-mini@low": {"slug": "openai/gpt-5.4-mini", "reasoning_effort": "low"},
+    "sonnet-4.5": {"slug": "anthropic/claude-sonnet-4.5", "reasoning_effort": None},
+    "gemini": {"slug": "google/gemini-3.1-pro-preview", "reasoning_effort": None},
+    "kimi": {"slug": "moonshotai/kimi-k2.6", "reasoning_effort": None},
+    "glm": {"slug": "z-ai/glm-5.1", "reasoning_effort": None},
+    "grok": {"slug": "x-ai/grok-4.20", "reasoning_effort": None},
+    "deepseek": {"slug": "deepseek/deepseek-v4-pro", "reasoning_effort": None},
+    "qwen": {"slug": "qwen/qwen3.6-max-preview", "reasoning_effort": None},
 }
 
 
@@ -871,16 +879,23 @@ def _build_arm(name: str, *, model_override: str | None = None) -> tuple[Any, st
     ``openai`` returns the production OpenAIService (no model override
     plumbed — the route picks gpt-5.4 by default). Anything else
     returns an OpenRouterEvalService bound to the slug from
-    ``_AGENTIC_CANDIDATES`` (or the explicit model_override).
+    ``_AGENTIC_CANDIDATES`` (or the explicit model_override) plus the
+    per-candidate reasoning_effort default — see the dict shape change
+    in the resume-builder addendum.
     """
     if name == "openai":
         svc = OpenAIService()
         return svc, "openai:gpt-5.4"
-    slug = model_override or _AGENTIC_CANDIDATES[name]
+    spec = _AGENTIC_CANDIDATES[name]
+    slug = model_override or spec["slug"]
+    effort = spec.get("reasoning_effort")
     from tests.quality.openrouter_eval_service import OpenRouterEvalService
 
-    svc = OpenRouterEvalService(model=slug)
-    return svc, f"openrouter:{slug}"
+    svc = OpenRouterEvalService(model=slug, default_reasoning_effort=effort)
+    label = f"openrouter:{slug}"
+    if effort:
+        label = f"{label}@{effort}"
+    return svc, label
 
 
 def _print_comparison_matrix(per_candidate_results: dict[str, list[dict]]) -> None:

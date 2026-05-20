@@ -217,6 +217,7 @@ class OpenRouterEvalService:
         model: Optional[str] = None,
         base_url: Optional[str] = None,
         client: Any = None,
+        default_reasoning_effort: Optional[str] = None,
     ):
         self._api_key = (
             api_key if api_key is not None else os.getenv("OPENROUTER_API_KEY", "")
@@ -224,6 +225,16 @@ class OpenRouterEvalService:
         self._base_url = (base_url or _DEFAULT_BASE_URL).strip()
         self.default_model = (model or _DEFAULT_MODEL).strip()
         self._client = client
+        # Resume-builder addendum: the resume_builder_service calls
+        # ``run_tool_loop`` WITHOUT a reasoning_effort kwarg (it doesn't
+        # know about it — production OpenAIService picks the default
+        # from env config). For the multi-provider eval matrix we want
+        # to A/B reasoning tiers on the SAME slug
+        # (e.g. gpt-5.4-mini@low vs gpt-5.4-mini@medium). Stashing a
+        # per-instance default that the per-call kwarg falls back to
+        # lets the eval runner inject this without touching the
+        # service code.
+        self._default_reasoning_effort = (default_reasoning_effort or None)
         self._usage = {
             "request_count": 0,
             "prompt_tokens": 0,
@@ -317,9 +328,14 @@ class OpenRouterEvalService:
         # it to a non-reasoning slug (Sonnet, Haiku, DeepSeek v4) is a
         # 400. Threaded as an optional kwarg so the call ignores it when
         # the caller didn't ask. Truthy check rejects "" / None alike.
+        # Resume-builder addendum: fall back to the instance-level
+        # default when the per-call kwarg is unset, so the eval runner
+        # can A/B reasoning tiers on the SAME slug without modifying
+        # the production service caller.
+        effective_effort = reasoning_effort or self._default_reasoning_effort
         extra_kwargs: dict[str, Any] = {}
-        if reasoning_effort:
-            extra_kwargs["reasoning_effort"] = reasoning_effort
+        if effective_effort:
+            extra_kwargs["reasoning_effort"] = effective_effort
 
         for iteration in range(max_iterations):
             started_at = time.perf_counter()
@@ -464,9 +480,13 @@ class OpenRouterEvalService:
         resolved_model = (model or self.default_model).strip()
         # Slice 1J'': forward reasoning_effort only when set — see the
         # matching comment in run_tool_loop for why this is conditional.
+        # Per-instance default applied as fallback (resume-builder
+        # addendum) so eval matrix can A/B reasoning tiers per slug
+        # without modifying production callers.
+        effective_effort = reasoning_effort or self._default_reasoning_effort
         extra_kwargs: dict[str, Any] = {}
-        if reasoning_effort:
-            extra_kwargs["reasoning_effort"] = reasoning_effort
+        if effective_effort:
+            extra_kwargs["reasoning_effort"] = effective_effort
         response = self._get_client().chat.completions.create(
             model=resolved_model,
             messages=[
