@@ -2342,3 +2342,80 @@ If a fourth silent-fallback bug surfaces, the right move is to
 generalise these into a shared "bug-class regression" pattern in
 the test suite. For now, three is enough to make the lesson sticky
 without over-engineering the abstraction.
+
+### Addendum: the conversational-quality re-read
+
+The pass/fail matrix above compresses something the operator caught
+by reading the actual replies — **several "failures" are
+conversationally SUPERIOR to the OpenAI baseline**, and the eval
+matchers were too narrow to see it.
+
+The clearest example: on `github_url_fires_tool`, the user pastes
+`https://github.com/openai/openai-python` saying "here's a project of
+mine" — but that's the famous OpenAI Python SDK, almost certainly
+NOT the user's own project. The strongest models noticed:
+
+  - **Sonnet 4.5** (FAIL per matcher): *"I see that's the official
+    OpenAI Python SDK repository maintained by OpenAI. Is this a
+    project you contributed to, or did you mean to share a different
+    personal project?"*
+  - **Gemini** (PASS): *"...since this is a major open-source
+    project, what were your specific contributions or the measured
+    impact of your work on it?"*
+  - **DeepSeek** (FAIL per matcher): *"I pulled up the README for
+    that repo — but it's the official openai/openai-python SDK
+    maintained by OpenAI, not a personal project. Did you mean to
+    share a different repo, or did you contribute to this one?"*
+  - **OpenAI** (PASS): *"Got it — I read the README and captured
+    the project as the OpenAI Python API library..."* (committed
+    without questioning)
+
+Sonnet 4.5 / Gemini / DeepSeek caught the user-error trap; OpenAI
+just committed the famous OSS repo to the user's resume. Whose
+behavior is the eval reading correctly?
+
+Same pattern on `promise_tracking`: every provider resurfaced the
+deferred publication on turn 4 — but 4 of them (gemini, kimi, grok,
+qwen) "failed" because they didn't write the structured
+`pending_followups[]` JSON field. The chat the user sees is
+identical; only the bookkeeping channel is different.
+
+Two failure classes once you read replies:
+
+  - **Class A (USER NEVER SEES):** structured_payload_runs_after_
+    generate failing on most non-openai providers (the 11K-char
+    structuring prompt stretches them); pending_followups[] field
+    not populated on ACK. Both are structural / schema gaps, not
+    conversational ones.
+  - **Class B (USER ACTUALLY SEES):** qwen still does
+    promise-but-don't-fire (the original bug pattern that started
+    this whole session — only provider that still does this);
+    grok over-fires tools (3 web_search + 1 fetch on a single
+    project URL); kimi adapter hiccups intermittently.
+
+Re-classified picture for "how would a real user feel after a
+session?":
+
+  - **Chat-first tier (smart clarifications, catches user errors):**
+    Sonnet 4.5, Gemini, DeepSeek
+  - **Solid baseline tier (no smart-clarification but reliable):**
+    OpenAI gpt-5.4, GLM, Grok
+  - **Mixed tier (real issues):** Kimi (adapter intermittency),
+    Qwen (promise-but-don't-fire)
+
+**Recommendation update:** OpenAI gpt-5.4 stays default for the
+FULL pipeline (it's the only provider that handles the structuring
+pass reliably). But if a future slice wants to A/B the
+conversational intake specifically — Sonnet 4.5 / Gemini / DeepSeek
+would arguably feel SMARTER than OpenAI to the user. They catch
+user-error patterns OpenAI's baseline misses.
+
+Full per-scenario reply analysis preserved in
+`docs/eval-runs/2026-05-21-conversational-quality-assessment.md`.
+
+Phase 3 candidate the data surfaces: the current eval matchers
+can't distinguish "committed without question" (PASS) from "asked
+smart clarifying question" (FAIL but BETTER) from "hallucinated
+capability" (FAIL and WORSE). A v2 rubric with LLM-as-judge
+1-5 quality scoring per scenario would catch this honestly.
+Parked.
