@@ -312,6 +312,15 @@ class OpenRouterEvalService:
         ]
         tool_trace: list[dict] = []
 
+        # Slice 1J'': reasoning_effort is only valid on reasoning-class
+        # models (OpenAI o-series and gpt-5.x via OpenRouter). Passing
+        # it to a non-reasoning slug (Sonnet, Haiku, DeepSeek v4) is a
+        # 400. Threaded as an optional kwarg so the call ignores it when
+        # the caller didn't ask. Truthy check rejects "" / None alike.
+        extra_kwargs: dict[str, Any] = {}
+        if reasoning_effort:
+            extra_kwargs["reasoning_effort"] = reasoning_effort
+
         for iteration in range(max_iterations):
             started_at = time.perf_counter()
             try:
@@ -323,6 +332,7 @@ class OpenRouterEvalService:
                     response_format={"type": "json_object"},
                     max_tokens=max_completion_tokens,
                     temperature=0,
+                    **extra_kwargs,
                 )
             except Exception as exc:
                 LOGGER.exception(
@@ -452,6 +462,11 @@ class OpenRouterEvalService:
                 "OpenRouter adapter is not configured (OPENROUTER_API_KEY)."
             )
         resolved_model = (model or self.default_model).strip()
+        # Slice 1J'': forward reasoning_effort only when set — see the
+        # matching comment in run_tool_loop for why this is conditional.
+        extra_kwargs: dict[str, Any] = {}
+        if reasoning_effort:
+            extra_kwargs["reasoning_effort"] = reasoning_effort
         response = self._get_client().chat.completions.create(
             model=resolved_model,
             messages=[
@@ -461,7 +476,20 @@ class OpenRouterEvalService:
             response_format={"type": "json_object"},
             max_tokens=max_completion_tokens,
             temperature=0,
+            **extra_kwargs,
         )
+        # Slice 1K bugfix: the smoke run showed $0.0000 cost on every
+        # call because this path never accumulated usage. run_tool_loop
+        # tracks it at the matching site — mirror that here so single-
+        # shot prompts (which is what the assistant + parser suites use)
+        # also surface accurate per-call cost.
+        usage = getattr(response, "usage", None)
+        self._usage["request_count"] += 1
+        self._usage["prompt_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
+        self._usage["completion_tokens"] += (
+            getattr(usage, "completion_tokens", 0) or 0
+        )
+        self._usage["total_tokens"] += getattr(usage, "total_tokens", 0) or 0
         content = response.choices[0].message.content or ""
         try:
             payload = _parse_provider_json(content)
@@ -506,6 +534,7 @@ class OpenRouterEvalService:
             max_completion_tokens=max_completion_tokens,
             task_name=task_name,
             model=model,
+            reasoning_effort=reasoning_effort,
         )
         try:
             return response_model.model_validate(payload)

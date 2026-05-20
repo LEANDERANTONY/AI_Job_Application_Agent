@@ -142,10 +142,20 @@ class KimiEvalService:
         return self._client
 
     def _chat(self, system_prompt: str, user_prompt: str, *, task_name: str,
-              max_tokens: int) -> str:
+              max_tokens: int, reasoning_effort: Any = None) -> str:
         if not self.is_available():
             raise AgentExecutionError("Kimi eval adapter not configured (KIMI_API_KEY).")
         started = time.perf_counter()
+        # Slice 1J'': reasoning_effort is valid only on reasoning-class
+        # slugs (OpenAI o-series / gpt-5.x). Other slugs 400 if it's
+        # set, so forward conditionally. The original adapter was built
+        # for Kimi K2 (non-thinking) — fine to leave the param off — but
+        # Phase B's runner now points this same adapter at o4-mini and
+        # gpt-5.4 reasoning slugs, and they need the effort signal to
+        # behave at the intended cost/latency tier.
+        extra_kwargs: dict[str, Any] = {}
+        if reasoning_effort:
+            extra_kwargs["reasoning_effort"] = reasoning_effort
         resp = self._get_client().chat.completions.create(
             model=self.default_model,
             messages=[{"role": "system", "content": system_prompt},
@@ -153,6 +163,7 @@ class KimiEvalService:
             response_format={"type": "json_object"},
             max_tokens=max_tokens,
             temperature=0,
+            **extra_kwargs,
         )
         usage = getattr(resp, "usage", None)
         pt = getattr(usage, "prompt_tokens", 0) or 0
@@ -185,7 +196,8 @@ class KimiEvalService:
         task = task_name or "unknown"
         content = self._chat(system_prompt, user_prompt, task_name=task,
                              max_tokens=min(max_completion_tokens or _EVAL_MAX_TOKENS,
-                                             _EVAL_MAX_TOKENS))
+                                             _EVAL_MAX_TOKENS),
+                             reasoning_effort=reasoning_effort)
         try:
             payload = _parse_provider_json(content)
         except ValueError as exc:
@@ -213,7 +225,8 @@ class KimiEvalService:
         task = task_name or "unknown"
         content = self._chat(system_prompt, user_prompt, task_name=task,
                              max_tokens=min(max_completion_tokens or _EVAL_MAX_TOKENS,
-                                             _EVAL_MAX_TOKENS))
+                                             _EVAL_MAX_TOKENS),
+                             reasoning_effort=reasoning_effort)
         try:
             raw = _parse_provider_json(content)
         except ValueError as exc:

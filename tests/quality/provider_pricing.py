@@ -40,9 +40,16 @@ _RATES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
     # OpenRouter catalogue — the 4-candidate shortlist plus the
     # adjacent models we might compare to (Opus for judge runs, etc).
     "anthropic/claude-sonnet-4.5": (3.00, 15.00),
+    "anthropic/claude-haiku-4.5": (1.00, 5.00),  # Slice 1K assistant eval
     "anthropic/claude-opus-4.7": (15.00, 75.00),
     "google/gemini-3.1-pro-preview": (2.00, 12.00),
     "deepseek/deepseek-v4-pro": (0.50, 2.00),
+    # OpenAI o-series reasoning model (Slice 1K substituted o4-mini in
+    # for the non-existent gpt-5.1-mini). The o-series is priced at the
+    # cheap-mini tier; reasoning tokens are billed as output tokens, so
+    # the eval cost on this slug is dominated by completion_tokens *
+    # output_rate when reasoning_effort=high is set.
+    "openai/o4-mini": (1.10, 4.40),
 
     # Slugs from the broader provider_ab_runner candidate slate.
     # Kept current so an apples-to-apples comparison stays possible
