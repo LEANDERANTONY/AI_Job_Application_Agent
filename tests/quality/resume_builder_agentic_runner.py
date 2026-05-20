@@ -182,6 +182,44 @@ SCENARIOS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "promise_tracking_remembers_deferred_publication",
+        "description": (
+            "User defers a publication to later. The agent must capture the "
+            "deferral as a follow-up and then resurface it when the moment "
+            "is natural (here: when the user signals they're done with the "
+            "other sections). Tests that add_followups fires AND the agent "
+            "actually circles back instead of forgetting."
+        ),
+        "turns": [
+            "I'm Aarav from Pune, aarav@example.com.",
+            "Targeting research engineer roles.",
+            (
+                "I have a publication on graph neural networks I'd like to "
+                "include but I'll share the details later."
+            ),
+            "Skills: Python, PyTorch, JAX, NumPy, scikit-learn, pandas.",
+            "What else do you need from me?",
+        ],
+        "expect": {
+            # The agent must have added the publication-deferral as a
+            # follow-up (we surface pending_followups through the
+            # response so this is observable).
+            "pending_followups_contain_any": [
+                "publication",
+                "paper",
+                "graph neural",
+            ],
+            # On the "what else?" turn, the agent should resurface the
+            # deferred publication rather than asking a fresh
+            # collection question. Behavior matcher accepts any of
+            # several natural phrasings.
+            "assistant_says_any": (
+                4,
+                ["publication", "paper", "earlier you mentioned", "graph neural"],
+            ),
+        },
+    },
+    {
         "name": "structured_payload_runs_after_generate",
         "description": (
             "After enough draft content + generate, structured_projects_payload "
@@ -366,6 +404,18 @@ def run_scenario(scenario: dict[str, Any], openai_service: OpenAIService) -> dic
                     f"turn {turn_index} assistant_message contains forbidden {needle!r}: "
                     f"{reply[:140]!r}"
                 )
+
+    if "pending_followups_contain_any" in expect:
+        needles = expect["pending_followups_contain_any"]
+        followups = (
+            list(live_session.pending_followups) if live_session else []
+        )
+        followups_lower = " ; ".join(followups).lower()
+        if not any(needle.lower() in followups_lower for needle in needles):
+            fail(
+                f"expected pending_followups to mention any of {needles}; "
+                f"got: {followups}"
+            )
 
     if "structured_payload_nonempty" in expect:
         which = expect["structured_payload_nonempty"]

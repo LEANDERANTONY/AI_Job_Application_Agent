@@ -102,6 +102,21 @@ class ResumeBuilderSession:
     # `{"role": "user" | "assistant", "content": str}`. Empty list means
     # the regex / step-machine flow is in use.
     conversation_history: list[dict] = field(default_factory=list)
+    # Slice 1E: promise tracking. The agent often says things like
+    # "we can do this later" or "I can share more on that when you're
+    # ready" — implicit commitments that previously evaporated turn-
+    # to-turn. ``pending_followups`` is a list of short topic strings
+    # (e.g. "circle back to the publication once experience is
+    # captured") that the LLM adds/resolves through the new
+    # ``add_followups`` / ``resolved_followups`` JSON channels. The
+    # service replays them into the prompt each turn so the model
+    # sees its outstanding commitments and can resurface them when
+    # the moment is right. Backend-only for v1 — the UI doesn't yet
+    # show an "outstanding items" panel, but the agent's natural
+    # behavior (resurfacing in ``assistant_message`` / firing a
+    # follow-up-aware ``proactive_offer``) is enough to demo the
+    # multi-turn promise discipline.
+    pending_followups: list[str] = field(default_factory=list)
     # Cache for the LLM structuring pass. The signature is a SHA256 of
     # the inputs the structuring prompt sees; if the user edits any of
     # those inputs the hash changes and we re-run the LLM. Without this
@@ -1569,6 +1584,13 @@ def _serialize_session(
         # /update, /generate, /commit) leave this null because there's
         # no LLM payload to read it from.
         "proactive_offer": proactive_offer,
+        # Slice 1E: expose outstanding follow-up commitments so an
+        # optional UI surface (e.g. a small "outstanding items" panel)
+        # can render them. The agent's natural assistant_message and
+        # proactive_offer behaviour is the primary surface in v1; this
+        # field gives the frontend a future opt-in without another API
+        # round-trip.
+        "pending_followups": list(session.pending_followups or []),
         "draft_profile": asdict(session.draft),
         "generated_resume_markdown": session.generated_resume_markdown,
         "generated_resume_plain_text": session.generated_resume_plain_text,
@@ -1610,6 +1632,12 @@ def export_resume_builder_session_payload(*, session_id: str):
             "structured_professional_summary": (
                 session.structured_professional_summary or ""
             ),
+            # Slice 1E: persist outstanding follow-up commitments so a
+            # container restart / browser-refresh / load-from-Supabase
+            # doesn't drop the agent's open promises. Drops gracefully
+            # for sessions saved before this field existed (restore
+            # path defaults to []).
+            "pending_followups": list(session.pending_followups or []),
         },
         separators=(",", ":"),
     )
@@ -1702,6 +1730,11 @@ def restore_resume_builder_session_payload(payload_json: str):
         structured_professional_summary=str(
             raw_payload.get("structured_professional_summary", "") or ""
         ),
+        pending_followups=[
+            str(item).strip()
+            for item in (raw_payload.get("pending_followups") or [])
+            if str(item or "").strip()
+        ],
     )
     _SESSIONS[session.session_id] = session
     return _serialize_session(session)
@@ -1992,6 +2025,7 @@ def _run_llm_turn(
         draft=asdict(session.draft),
         history=session.conversation_history,
         user_message=user_message,
+        pending_followups=session.pending_followups,
     )
 
     tool_trace: list[dict] = []
@@ -2049,6 +2083,51 @@ def _run_llm_turn(
     assistant_message = str(payload.get("assistant_message") or "").strip()
     if not assistant_message:
         raise AgentExecutionError("LLM returned an empty assistant_message.")
+
+    # Slice 1E: apply pending_followups mutations BEFORE serializing.
+    # The agent's add_followups / resolved_followups are short topic
+    # strings; we apply resolutions first (so a same-turn add+resolve
+    # is a no-op, not a phantom commitment), then add new commitments,
+    # then dedupe the list. Cap at 12 outstanding items as a sanity
+    # bound — if the agent is accumulating more than that, the prompt
+    # is doing something wrong and the cap prevents the prompt block
+    # from ballooning.
+    raw_resolved = payload.get("resolved_followups")
+    resolved_items = (
+        [str(item).strip() for item in raw_resolved if str(item or "").strip()]
+        if isinstance(raw_resolved, list)
+        else []
+    )
+    raw_added = payload.get("add_followups")
+    added_items = (
+        [str(item).strip() for item in raw_added if str(item or "").strip()]
+        if isinstance(raw_added, list)
+        else []
+    )
+    if resolved_items:
+        # Resolve by case-insensitive substring match — the LLM
+        # sometimes paraphrases the original wording slightly.
+        resolved_lower = [r.lower() for r in resolved_items]
+        session.pending_followups = [
+            item
+            for item in session.pending_followups
+            if not any(
+                resolved.lower() == item.lower()
+                or resolved.lower() in item.lower()
+                or item.lower() in resolved.lower()
+                for resolved in resolved_items
+            )
+        ]
+    if added_items:
+        existing_lower = {item.lower() for item in session.pending_followups}
+        for entry in added_items:
+            if entry.lower() not in existing_lower:
+                session.pending_followups.append(entry)
+                existing_lower.add(entry.lower())
+    if len(session.pending_followups) > 12:
+        # Keep the most recent commitments — drop the oldest. Better
+        # to lose stale context than to blow the prompt budget.
+        session.pending_followups = session.pending_followups[-12:]
 
     # Slice 1B: proactive_offer rides on the assistant_message turn but
     # is rendered separately by the UI (as a clickable chip the user

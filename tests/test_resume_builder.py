@@ -386,3 +386,171 @@ def test_resolve_resume_theme_round_trips_every_supported_theme():
             f"Theme {theme!r} fell back to {resolved!r} — "
             "this means RESUME_THEMES has drifted from SUPPORTED_THEMES."
         )
+
+
+# ---------------------------------------------------------------------------
+# Slice 1E: pending_followups apply logic (hermetic — exercises the service
+# layer's mutation rules without needing a live LLM call).
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_openai_service(turn_payload):
+    """Tiny stub that returns a fixed JSON payload from run_tool_loop /
+    run_json_prompt. The resume-builder service uses whichever method
+    is available; both return the same shape (a dict). run_tool_loop
+    must return ``(payload, tool_trace)`` so we mirror that.
+    """
+
+    class _FakeOpenAIService:
+        def is_available(self):
+            return True
+
+        def run_tool_loop(self, *_args, **_kwargs):
+            return dict(turn_payload), []
+
+        def run_json_prompt(self, *_args, **_kwargs):
+            return dict(turn_payload)
+
+    return _FakeOpenAIService()
+
+
+def test_pending_followups_add_then_resolve_round_trips():
+    from backend.services.resume_builder_service import (
+        _SESSIONS,
+        answer_resume_builder_message,
+        start_resume_builder_session,
+    )
+
+    session_state = start_resume_builder_session()
+    session_id = session_state["session_id"]
+
+    # Turn 1: agent captures TWO new commitments and addresses NEITHER.
+    fake = _make_fake_openai_service(
+        {
+            "draft_updates": {"full_name": "Test User"},
+            "assistant_message": "Got it.",
+            "status": "collecting",
+            "focus_field": "role",
+            "proactive_offer": None,
+            "add_followups": [
+                "capture publication details when ready",
+                "draft summary once projects are gathered",
+            ],
+            "resolved_followups": [],
+        }
+    )
+    response = answer_resume_builder_message(
+        session_id=session_id, message="Hi.", openai_service=fake
+    )
+    assert response["pending_followups"] == [
+        "capture publication details when ready",
+        "draft summary once projects are gathered",
+    ]
+
+    # Turn 2: agent resolves the first commitment (substring match
+    # should be tolerated for paraphrased wording).
+    fake = _make_fake_openai_service(
+        {
+            "draft_updates": {},
+            "assistant_message": "Captured the publication.",
+            "status": "collecting",
+            "focus_field": "skills",
+            "proactive_offer": None,
+            "add_followups": [],
+            "resolved_followups": ["capture publication details"],
+        }
+    )
+    response = answer_resume_builder_message(
+        session_id=session_id,
+        message="Publication: Solar paper, 2018.",
+        openai_service=fake,
+    )
+    assert response["pending_followups"] == [
+        "draft summary once projects are gathered",
+    ]
+    _SESSIONS.pop(session_id, None)
+
+
+def test_pending_followups_dedupes_and_caps_at_twelve():
+    from backend.services.resume_builder_service import (
+        _SESSIONS,
+        answer_resume_builder_message,
+        start_resume_builder_session,
+    )
+
+    session_state = start_resume_builder_session()
+    session_id = session_state["session_id"]
+
+    # First turn: add many items, including a duplicate phrasing.
+    fake = _make_fake_openai_service(
+        {
+            "draft_updates": {},
+            "assistant_message": "Got it.",
+            "status": "collecting",
+            "focus_field": "role",
+            "proactive_offer": None,
+            # 14 items, one a dupe ("publication note" twice with
+            # different casing).
+            "add_followups": [
+                "item-a",
+                "item-b",
+                "publication note",
+                "Publication Note",  # dupe (case-insensitive)
+                "item-c",
+                "item-d",
+                "item-e",
+                "item-f",
+                "item-g",
+                "item-h",
+                "item-i",
+                "item-j",
+                "item-k",
+                "item-l",
+            ],
+            "resolved_followups": [],
+        }
+    )
+    response = answer_resume_builder_message(
+        session_id=session_id, message="Hi.", openai_service=fake
+    )
+    # 14 items - 1 dedupe = 13, capped at 12.
+    assert len(response["pending_followups"]) == 12
+    # The dedupe ran (Publication Note duplicate dropped) — only one
+    # publication-note variant survives.
+    publication_count = sum(
+        1
+        for item in response["pending_followups"]
+        if item.lower() == "publication note"
+    )
+    assert publication_count == 1
+    _SESSIONS.pop(session_id, None)
+
+
+def test_pending_followups_persist_across_serialize_restore():
+    from backend.services.resume_builder_service import (
+        _SESSIONS,
+        export_resume_builder_session_payload,
+        restore_resume_builder_session_payload,
+        start_resume_builder_session,
+    )
+
+    session_state = start_resume_builder_session()
+    session_id = session_state["session_id"]
+
+    # Manually plant follow-ups on the session (simulates an LLM turn
+    # that already mutated them — avoiding the openai_service
+    # injection complexity in this small unit test).
+    _SESSIONS[session_id].pending_followups = [
+        "draft summary once projects are gathered",
+        "circle back to publication once experience is captured",
+    ]
+
+    payload_json = export_resume_builder_session_payload(session_id=session_id)
+    _SESSIONS.pop(session_id, None)
+
+    restored = restore_resume_builder_session_payload(payload_json)
+    assert restored["pending_followups"] == [
+        "draft summary once projects are gathered",
+        "circle back to publication once experience is captured",
+    ]
+    _SESSIONS.pop(restored["session_id"], None)

@@ -613,6 +613,7 @@ def build_resume_builder_prompt(
     draft: Dict[str, Any],
     history: Any = None,
     user_message: str,
+    pending_followups: Any = None,
 ) -> Dict[str, Any]:
     """LLM intake prompt for the conversational resume builder.
 
@@ -651,11 +652,22 @@ def build_resume_builder_prompt(
         list(history or []),
         max_chars=RESUME_BUILDER_HISTORY_CHAR_BUDGET,
     )
+    # Slice 1E: thread the agent's outstanding follow-up commitments
+    # back into its prompt context every turn. The model uses this
+    # block to decide whether to surface a pending item now — either
+    # by addressing it in assistant_message or by firing a
+    # proactive_offer that nudges the user to resolve it.
+    pending_followups_payload = [
+        str(item).strip()
+        for item in (pending_followups or [])
+        if str(item or "").strip()
+    ]
 
     user_prompt = "\n\n".join(
         [
             _json_block("Current Draft", draft),
             _json_block("Missing Fields", missing),
+            _json_block("Outstanding Follow-ups", pending_followups_payload),
             _json_block("Recent Conversation", history_payload),
             _json_block("Latest User Message", {"message": user_message}),
         ]

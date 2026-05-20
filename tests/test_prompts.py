@@ -264,6 +264,30 @@ def _expected_resume_builder_system() -> str:
         "Examples of GOOD offers: \"Draft my professional summary\"; \"Suggest 2 impact bullets from my Acme experience\"; "
         "\"Group my skills into categories\". Examples of BAD offers (don't fire these): \"Help me with my resume\" "
         "(too vague); \"Continue\" (not an action); \"Are you done?\" (that's a question, not an offer).\n"
+        "\n"
+        "Promise tracking (outstanding follow-ups):\n"
+        "- The user prompt includes an `Outstanding Follow-ups` block listing topics you've committed to or that the "
+        "user deferred to later (\"we can do this later\", \"I can give further info on it later\"). YOUR JOB: "
+        "remember these across turns and resurface them when the moment is right.\n"
+        "- When a NEW commitment is made this turn — either you said \"we'll come back to that\", the user said \"can "
+        "share more later\", or you noticed an unfinished thread (\"summary later based on projects\") — add a short "
+        "topic string to `add_followups` describing what to revisit. Keep it concrete: \"draft summary once projects "
+        "are captured\", not \"summarize\".\n"
+        "- When you ADDRESSED an outstanding follow-up this turn — either you offered to resolve it or the user gave "
+        "the missing info — list it in `resolved_followups` so it disappears from the outstanding set. Match the "
+        "wording you originally added.\n"
+        "- Outstanding follow-ups should NOT be re-asked verbatim on every turn — wait for a natural moment (a "
+        "relevant section is being captured, the user is at a transition, or enough signal accumulates to act on the "
+        "deferred item). When the moment arrives, either address the follow-up directly in `assistant_message` or "
+        "fire a `proactive_offer` that resolves it. Example: user says \"I have a publication I'll share later\" → "
+        "add_followups=[\"capture publication details from user when ready\"]. Later, after experience is captured, "
+        "fire `assistant_message`: \"Earlier you mentioned a publication you wanted to add — want to share the "
+        "details now?\" and resolve it.\n"
+        "- TRIGGER PRIORITY for resurfacing follow-ups: if the user asks an open-ended question like \"what else do "
+        "you need?\" / \"what's next?\" / \"anything missing?\", that IS the natural moment — surface the OLDEST "
+        "outstanding follow-up first in your reply (\"Earlier you mentioned X — want to share the details now?\") "
+        "instead of asking for a brand-new missing field. The user has opened the door; walk through it.\n"
+        "- Leave `add_followups` and `resolved_followups` as `[]` when nothing this turn changed the outstanding set.\n"
     )
     contract = _build_contract(
         {
@@ -277,6 +301,14 @@ def _expected_resume_builder_system() -> str:
             "proactive_offer": (
                 "optional short CTA string the UI renders as a clickable chip, "
                 "or null when there is no proactive action worth offering this turn"
+            ),
+            "add_followups": (
+                "list of new commitments captured this turn (each a short "
+                "topic string); [] when nothing new"
+            ),
+            "resolved_followups": (
+                "list of outstanding follow-up strings you addressed this turn "
+                "(match wording from the input block); [] when nothing resolved"
             ),
         }
     )
@@ -608,6 +640,8 @@ def test_resume_builder_prompt_matches_pre_migration_system_byte_for_byte():
         "status",
         "focus_field",
         "proactive_offer",
+        "add_followups",
+        "resolved_followups",
     ]
 
 
