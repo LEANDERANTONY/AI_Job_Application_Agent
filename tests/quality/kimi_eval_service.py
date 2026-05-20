@@ -51,6 +51,17 @@ from typing import Any, Optional, Type
 from pydantic import BaseModel, ValidationError
 
 from src.errors import AgentExecutionError
+# Slice 1I: import the fence-tolerant JSON parser the OpenRouter
+# adapter uses. Slice 1G found that Anthropic models through
+# OpenRouter wrap their JSON output in ```json...``` markdown
+# fences regardless of response_format=json_object, because Claude
+# has no native JSON-mode constraint. The Phase A run had to fix
+# this to get truthful Sonnet numbers. Phase B (this file) needs
+# the same fix or Sonnet's parser/JD/analysis fidelity scores will
+# be artificially depressed (every fenced response → JSONDecodeError
+# → content_failures++ → looks like a Sonnet quality issue when it's
+# actually a parser issue on our side).
+from tests.quality.openrouter_eval_service import _parse_provider_json
 
 _DEFAULT_BASE_URL = os.getenv("KIMI_BASE_URL", "https://openrouter.ai/api/v1").strip()
 _DEFAULT_MODEL = os.getenv("KIMI_MODEL", "moonshotai/kimi-k2.6").strip()
@@ -176,8 +187,8 @@ class KimiEvalService:
                              max_tokens=min(max_completion_tokens or _EVAL_MAX_TOKENS,
                                              _EVAL_MAX_TOKENS))
         try:
-            payload = json.loads(content)
-        except json.JSONDecodeError as exc:
+            payload = _parse_provider_json(content)
+        except ValueError as exc:
             self._fidelity[task]["content_failures"] += 1
             raise AgentExecutionError(
                 "The AI workflow returned an invalid JSON response.",
@@ -204,8 +215,8 @@ class KimiEvalService:
                              max_tokens=min(max_completion_tokens or _EVAL_MAX_TOKENS,
                                              _EVAL_MAX_TOKENS))
         try:
-            raw = json.loads(content)
-        except json.JSONDecodeError as exc:
+            raw = _parse_provider_json(content)
+        except ValueError as exc:
             self._fidelity[task]["content_failures"] += 1
             raise AgentExecutionError(
                 "The AI workflow returned an invalid JSON response.",
