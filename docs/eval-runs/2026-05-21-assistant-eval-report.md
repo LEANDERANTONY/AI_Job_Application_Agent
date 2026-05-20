@@ -139,6 +139,41 @@ The patches that landed *before* this run:
 
 Without any one of these, the eval would have either failed to score (1, 4), produced garbage answers (2), or used the wrong reasoning tier (3) — and the report would have been misleading.
 
+## Addendum — `gpt-5.4-mini@low` sweep (same 12 scenarios)
+
+Since `gpt-5.4-mini@med` scored perfect 1.000, the obvious next question: is the `reasoning_effort=medium` setting earning its keep on this surface, or could we drop to `low` and save even more? Re-ran the same 12 scenarios with the candidate added to the runner.
+
+| Variant | avg | pass | wall | per-scn | cost | tokens |
+|---|---:|---:|---:|---:|---:|---:|
+| `gpt-5.4-mini@med` | 1.000 | 12/12 | 40.5s | 3.4s | $0.0183 | 27 197 |
+| **`gpt-5.4-mini@low`** | **1.000** | **12/12** | **27.6s** | **2.3s** | **$0.0155** | 25 723 |
+| _delta_ | _0_ | _0_ | _-32 %_ | _-32 %_ | _-15 %_ | _-5 %_ |
+
+Same perfect score across the board. Answer quality verified on the demanding scenarios — neither dropped a beat:
+
+> **mini@low on `long_session_memory_callback`:** *"You told me it was an 18 % reduction in chargeback fraud."* (correctly recalled from turn 2 of 7-turn session)
+>
+> **mini@low on `multi_turn_correction`:** *"You're targeting data-science roles right now, and I should keep Python in the profile."* (correctly tracked the user's mid-session pivot AND remembered the explicit "keep Python" follow-up)
+>
+> **mini@low on `theme_list_question`:** *"You can choose from six resume themes when you export: classic_ats, professional_neutral, modern_blue, creative_warm, architect_mono, and presentation_twocol. The first five are single-column and ATS-safe; presentation_twocol is a two-column designer layout and is flagged non-ATS."*
+>
+> **mini@low on `pricing_tiers_question`:** complete enumeration of all three tiers with all numbers (cap matrix verbatim).
+
+**Refined recommendation:** route the workspace-assistant default to `openai/gpt-5.4-mini` at `reasoning_effort=low`. The medium-effort variant was overkill on this surface — retrieval-and-refuse work doesn't reward thinking-token spend.
+
+Cost-per-scenario ranking after the addendum:
+
+| Candidate | $/scn | rank |
+|---|---:|---:|
+| `gpt-5.4-mini@low` | $0.0013 | 🥇 new best |
+| `gpt-5.4-mini@med` | $0.0015 | |
+| `haiku-4.5` | $0.0035 | |
+| `o4-mini@high` | $0.0067 | |
+| `gpt-5.4@med` | $0.0078 | |
+| `sonnet-4.5` | $0.0096 | |
+
+Artifacts: `docs/eval-runs/2026-05-21-assistant-eval-mini-low.json`, `docs/eval-runs/2026-05-21-assistant-eval-mini-low-log.txt`.
+
 ## Artifacts
 
 - `docs/eval-runs/2026-05-21-assistant-eval-full.json` — full raw report with per-scenario rows + metrics

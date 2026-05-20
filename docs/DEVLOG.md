@@ -2571,3 +2571,20 @@ assistant API spend. Full read-out in
 Slice 1J's history fix paid off concretely: all 5 candidates
 correctly recalled the "18 %" fact from turn 2 in a 7-turn
 session — unscorable before the fix.
+
+### Slice 1K addendum: `gpt-5.4-mini@low` sweep
+
+Since mini@med scored 1.000 the obvious next question was
+whether `reasoning_effort=medium` was earning its keep on the
+assistant surface. Added `gpt-5.4-mini@low` to the candidate
+slate and re-ran the same 12 scenarios. Result: also perfect
+1.000, but 32 % faster (27.6 s vs 40.5 s) and 15 % cheaper
+($0.0155 vs $0.0183). Verified answer quality directly on the
+hardest scenarios (long-session callback, multi-turn correction,
+pricing-tier numeric recall) — no degradation.
+
+**Refined recommendation:** route the workspace-assistant
+default to `openai/gpt-5.4-mini` at `reasoning_effort=low`. The
+assistant surface is retrieval-and-refuse; thinking-token spend
+beyond "low" earns nothing on this rubric. Artifacts:
+`docs/eval-runs/2026-05-21-assistant-eval-mini-low.json`.

@@ -1,0 +1,30 @@
+== Slice 1K assistant eval: 1 candidate(s) × 12 scenario(s) ==
+   candidates: ['gpt-5.4-mini@low']
+   scenarios:  ['pricing_tiers_question', 'theme_list_question', 'theme_unlock_question', 'quota_assistant_turns', 'quota_resume_builder_lifetime', 'refuse_schedule_interview', 'refuse_login_external', 'pre_resume_grounding', 'post_analysis_grounding', 'off_topic_movie', 'long_session_memory_callback', 'multi_turn_correction']
+
+--- gpt-5.4-mini@low (openai/gpt-5.4-mini, effort=low) ---
+  [pricing_tiers_question          ] score=1.00 |   4.09s |   2253 tok | $0.0016
+  [theme_list_question             ] score=1.00 |   1.81s |   2225 tok | $0.0013
+  [theme_unlock_question           ] score=1.00 |   3.58s |   2134 tok | $0.0014
+  [quota_assistant_turns           ] score=1.00 |   1.82s |   2041 tok | $0.0012
+  [quota_resume_builder_lifetime   ] score=1.00 |   1.67s |   2025 tok | $0.0012
+  [refuse_schedule_interview       ] score=1.00 |   1.67s |   2189 tok | $0.0013
+  [refuse_login_external           ] score=1.00 |   1.69s |   2068 tok | $0.0012
+  [pre_resume_grounding            ] score=1.00 |   1.46s |   2005 tok | $0.0012
+  [post_analysis_grounding         ] score=1.00 |   1.59s |   2201 tok | $0.0013
+  [off_topic_movie                 ] score=1.00 |   1.46s |   2035 tok | $0.0012
+  [long_session_memory_callback    ] score=1.00 |   3.20s |   2414 tok | $0.0014
+  [multi_turn_correction           ] score=1.00 |   3.50s |   2133 tok | $0.0012
+  ===> gpt-5.4-mini@low done — avg=1.0, pass_rate=1.0, 27.56s, 25723 tok, $0.0155
+  [checkpoint] wrote partial results to C:/Users/LEANDE~1/AppData/Local/Temp/slice_1k_mini_low.json
+
+============================================================================================
+=============== SLICE 1K SUMMARY — avg_score · pass_rate · cost by candidate ===============
+============================================================================================
+candidate             avg     pass    lat       cost
+----------------------------------------------------
+gpt-5.4-mini@low      1.0     1.0     27.56     $0.0155
+
+wrote JSON report -> C:/Users/LEANDE~1/AppData/Local/Temp/slice_1k_mini_low.json
+
+Total wall time: 27.6s

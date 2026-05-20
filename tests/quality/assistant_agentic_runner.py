@@ -103,6 +103,15 @@ _CANDIDATES: dict[str, dict[str, Any]] = {
         "slug": "openai/gpt-5.4-mini",
         "reasoning_effort": "medium",
     },
+    # Slice 1K addendum: mini@med scored 1.000 perfectly across all 12
+    # scenarios — the assistant surface is retrieval-and-refuse, which
+    # doesn't reward heavy reasoning. Adding the low-effort variant to
+    # see whether we can cut reasoning-token cost further without
+    # losing the long-session callback or grounding correctness.
+    "gpt-5.4-mini@low": {
+        "slug": "openai/gpt-5.4-mini",
+        "reasoning_effort": "low",
+    },
     "o4-mini@high": {
         "slug": "openai/o4-mini",
         "reasoning_effort": "high",
