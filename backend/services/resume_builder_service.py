@@ -10,6 +10,10 @@ from uuid import uuid4
 
 from backend import quota
 from backend.services.auth_session_service import resolve_authenticated_context
+from backend.services.resume_builder_tools import (
+    RESUME_BUILDER_TOOL_SPECS,
+    execute_tool as execute_resume_builder_tool,
+)
 from backend.tiers import resolve_user_tier
 from src.config import get_openai_max_completion_tokens_for_task
 from src.errors import AgentExecutionError
@@ -1851,6 +1855,42 @@ def _apply_llm_draft_updates(session: ResumeBuilderSession, updates: dict):
         )
 
 
+def _summarize_tool_event(event: dict) -> dict:
+    """Compress one tool-loop trace entry for `conversation_history`.
+
+    The raw `output` field is the full JSON string returned by the
+    tool — for `fetch_github_readme` that's a whole README. Storing
+    that verbatim in history would blow the prompt budget on the very
+    next turn. We keep the name + arguments + a short outcome line so
+    the model on a later turn can see "we already fetched X" without
+    re-reading the body.
+    """
+    name = str(event.get("name") or "")
+    arguments = str(event.get("arguments") or "")
+    raw_output = str(event.get("output") or "")
+    outcome = "no_output"
+    try:
+        parsed = json.loads(raw_output)
+        if isinstance(parsed, dict):
+            if parsed.get("ok") is True:
+                # For fetch_github_readme: surface the repo so the
+                # later-turn model knows what it already read.
+                if "repo" in parsed and "owner" in parsed:
+                    outcome = f"ok: read {parsed.get('owner')}/{parsed.get('repo')} README"
+                else:
+                    outcome = "ok"
+            elif parsed.get("ok") is False:
+                outcome = f"failed: {parsed.get('error') or 'unknown_error'}"
+    except (TypeError, ValueError):
+        outcome = "non_json_output"
+    return {
+        "role": "tool",
+        "name": name,
+        "arguments": arguments,
+        "outcome": outcome,
+    }
+
+
 def _run_llm_turn(
     *,
     session: ResumeBuilderSession,
@@ -1864,6 +1904,17 @@ def _run_llm_turn(
     `current_step`, appends the user/assistant turn pair to
     `conversation_history`. Raises `AgentExecutionError` on any failure
     so the caller can swallow it and fall back to the regex flow.
+
+    Slice 1A: when the OpenAIService exposes a `run_tool_loop`
+    method (the agentic-loop entry-point that supports Responses-API
+    function calling), this turn is routed through it with the
+    resume-builder tool registry available. The model may choose to
+    call `fetch_github_readme` BEFORE returning the JSON envelope —
+    e.g. when the user pastes a GitHub URL — and any tool events get
+    summarized into `conversation_history` so subsequent turns
+    remember what was fetched. Falls back to the prior single-shot
+    `run_json_prompt` path when the service hasn't been updated yet
+    (keeps old test stubs and provider mocks working).
     """
     if openai_service is None or not openai_service.is_available():
         raise AgentExecutionError("OpenAI service is not available for resume builder intake.")
@@ -1873,22 +1924,41 @@ def _run_llm_turn(
         history=session.conversation_history,
         user_message=user_message,
     )
-    payload = openai_service.run_json_prompt(
-        prompt["system"],
-        prompt["user"],
-        expected_keys=prompt["expected_keys"],
-        temperature=None,
-        max_completion_tokens=get_openai_max_completion_tokens_for_task("resume_builder"),
-        task_name="resume_builder",
-        # Deliberate fast-fail, consistent with the assistant: this is
-        # an interactive turn with a graceful regex fallback (see the
-        # `resume_builder_llm_fallback` except path). The heavier
-        # structuring pass that emits the big JSON is a SEPARATE call
-        # already budgeted generously (resume_builder_structuring=4000),
-        # so the conversational turn doesn't carry the parser-style
-        # silent-corruption risk. Revisit only as a product decision.
-        allow_output_budget_retry=False,
-    )
+
+    tool_trace: list[dict] = []
+    if hasattr(openai_service, "run_tool_loop"):
+        payload, tool_trace = openai_service.run_tool_loop(
+            prompt["system"],
+            prompt["user"],
+            tools=RESUME_BUILDER_TOOL_SPECS,
+            tool_executor=execute_resume_builder_tool,
+            expected_keys=prompt["expected_keys"],
+            # Five iterations is enough for the realistic case (one
+            # URL → one fetch → one JSON answer) with headroom for the
+            # model to retry on transient tool errors. A higher cap
+            # invites runaway loops on malformed responses.
+            max_iterations=5,
+            temperature=None,
+            max_completion_tokens=get_openai_max_completion_tokens_for_task("resume_builder"),
+            task_name="resume_builder",
+        )
+    else:
+        payload = openai_service.run_json_prompt(
+            prompt["system"],
+            prompt["user"],
+            expected_keys=prompt["expected_keys"],
+            temperature=None,
+            max_completion_tokens=get_openai_max_completion_tokens_for_task("resume_builder"),
+            task_name="resume_builder",
+            # Deliberate fast-fail, consistent with the assistant: this is
+            # an interactive turn with a graceful regex fallback (see the
+            # `resume_builder_llm_fallback` except path). The heavier
+            # structuring pass that emits the big JSON is a SEPARATE call
+            # already budgeted generously (resume_builder_structuring=4000),
+            # so the conversational turn doesn't carry the parser-style
+            # silent-corruption risk. Revisit only as a product decision.
+            allow_output_budget_retry=False,
+        )
 
     draft_updates = payload.get("draft_updates")
     if isinstance(draft_updates, dict):
@@ -1931,13 +2001,24 @@ def _run_llm_turn(
     session.conversation_history.append(
         {"role": "user", "content": user_message}
     )
+    # Persist a compact summary of any tool calls that fired during
+    # this turn. Stored between the user and assistant entries so a
+    # later turn's "Recent Conversation" block reads as:
+    #   user: "here's my github link"
+    #   tool: fetch_github_readme(...) → ok: read owner/repo README
+    #   assistant: "Captured your X project — should I add ..."
+    # The model can then answer "did you already fetch that repo?" with
+    # context instead of guessing. We summarize rather than store the
+    # raw README body (which blows token budget on the next turn).
+    for event in tool_trace:
+        session.conversation_history.append(_summarize_tool_event(event))
     session.conversation_history.append(
         {"role": "assistant", "content": assistant_message}
     )
-    # Cap memory: keep only the last 24 turn pairs so a long session
-    # doesn't blow the prompt budget. The model still sees enough
-    # context for back-references; older turns are summarized by the
-    # current `draft` state itself.
+    # Cap memory: keep only the last 24 turn pairs (+ any interleaved
+    # tool events) so a long session doesn't blow the prompt budget.
+    # The model still sees enough context for back-references; older
+    # turns are summarized by the current `draft` state itself.
     if len(session.conversation_history) > 48:
         session.conversation_history = session.conversation_history[-48:]
 

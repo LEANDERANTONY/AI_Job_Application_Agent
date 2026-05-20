@@ -1573,3 +1573,117 @@ frontend tsc + eslint — all green. Still the ADR-029 series (Update
 note covers the deltas; no Decision change). Operator approved the
 push: `src/` + `backend/` + `frontend/` → backend re-deploy + Vercel;
 the prior held stack (`365321d`/`e16048e`/`d2c4e82`) ships with it.
+
+## Day 56: Résumé-builder → tool-using agentic loop (Slice 1A) — `fetch_github_readme` + Responses-API native function calling
+
+QA had a clean reproduction of the symptom: the conversational
+resume-builder told a user "Yes — if you share the GitHub project
+links, I can extract the skills and tools from them," then captured
+the URLs verbatim into `projects_notes` with no tech stack and no
+project description. The agent had **no tool wired** — it was a
+form-filler dressed up as an agent, and the LLM was happy to claim a
+capability it didn't have.
+
+Slice 1A is the parked "résumé-builder → tool-using agentic loop"
+plan (`report.md`, parked 2026-05-20) cashed in — the smallest piece
+that turns the form-filler into a tool-using agent, demonstrable end-
+to-end. **Native Responses-API function calling**, not LangGraph —
+the platform is already Responses-native and the agent is single-
+provider single-tool; a LangChain/LangGraph layer would add weight
+without value at this scope.
+
+What landed:
+
+- **New tool module** `backend/services/resume_builder_tools.py` with
+  `fetch_github_readme(url)` — github.com hostname allowlist
+  (no github.io / gist / api / IP literals); fetches
+  `raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md` so the
+  default branch resolves regardless of `main` vs `master`;
+  200 KB size cap + 6 s timeout (hard ceilings on conversational-turn
+  latency and prompt budget); `text/plain` or `text/markdown` content-
+  type gate; stable error codes (`invalid_url` / `timeout` /
+  `network_error` / `http_status` / `wrong_content_type` / `oversize`
+  / `empty_body` / `decode_error`) — never raises across the tool
+  boundary, every failure is a first-class output the model can
+  reason about. Plus a dispatcher (`execute_tool(name, args_json)`)
+  that wraps unknown-tool / bad-JSON / wrong-shape cases in the same
+  JSON envelope.
+
+- **Agentic-loop driver** as a new `OpenAIService.run_tool_loop`
+  method — mirrors `run_json_prompt` (same instructions / user-prompt
+  / expected-keys / cost-trace contract) but loops on Responses-API
+  `function_call` items: model emits a call → server executes via the
+  passed-in `tool_executor` → both the `function_call` echo AND the
+  `function_call_output` get appended to the next iteration's input
+  list → loop. Final response (text, no function calls) is parsed as
+  the JSON envelope and returned as `(payload, trace)`. Iteration cap
+  = 5 (one URL → one fetch → one answer + headroom). Each iteration
+  hits `_enforce_budget` + records usage via the new
+  `_track_usage_from_response` helper, so a runaway loop trips the
+  budget guard instead of silently burning credits. On cap-hit the
+  loop raises `AgentExecutionError` — the resume-builder service
+  already catches that and drops to the regex/step-machine fallback.
+
+- **Wired into `_run_llm_turn`** in
+  `backend/services/resume_builder_service.py` — when the service
+  exposes `run_tool_loop`, the turn routes through it with the
+  resume-builder tool registry; otherwise falls back to
+  `run_json_prompt` (keeps old test stubs and provider mocks working
+  without an interface bump). Tool events get summarized
+  (`fetch_github_readme(...) → ok: read owner/repo README`) and
+  appended to `conversation_history` between the user and assistant
+  entries, so a later turn's "Recent Conversation" block reads as a
+  three-part chain (`user → tool → assistant`) and the model
+  remembers what it already fetched without re-reading the README.
+
+- **Prompt v1 evolved in place** (`prompts/resume_builder/v1.json`,
+  byte-mirror in `tests/test_prompts.py`): added a "Tools you can
+  call" block telling the model `fetch_github_readme(url)` exists and
+  how to use it ("Call the tool BEFORE describing the project — never
+  invent details"), plus an explicit **Honesty rule**: "Never promise
+  a capability you don't have. If the user asks you to browse the
+  web, open a PDF, read a private link, run code, scrape LinkedIn,
+  etc., say so plainly in one sentence and offer the closest thing
+  you CAN do." Both edits land together — the byte-equivalence test
+  catches drift between the JSON and the expected-prompt builder.
+
+- **Hermetic tests** (`tests/backend/test_resume_builder_tools.py`,
+  31 cases): URL parsing (canonical shapes, `.git` suffix, scheme
+  inference, all the rejected hosts including github.io / gist /
+  api.github.com / IP literals); fetch success + every failure mode
+  (timeout, oversize, 404, wrong content-type) via a monkeypatched
+  `_fetch_text` so no real network call goes out; dispatcher
+  contract (unknown tool, malformed JSON, non-object args, wrong
+  shape → all return a JSON error envelope, never raise); tool-spec
+  shape (`additionalProperties: False`, required = `["url"]`).
+
+Verification: **168 tests** across `tests/test_prompts.py` +
+`tests/test_resume_builder.py` + `tests/backend/test_resume_builder_tools.py`
++ `tests/backend/test_prompt_registry.py` +
+`tests/backend/test_cost_tracking.py` +
+`tests/backend/test_structured_outputs.py` +
+`tests/test_backend_workspace.py` — all green. The cost-tracking
+suite specifically exercises the new `_track_usage_from_response`
+extraction; that path is the most fragile part of the
+`run_json_prompt` → `run_tool_loop` refactor and it stays clean.
+
+What this changes for users:
+- Paste a github.com link mid-conversation → the agent fetches the
+  README, infers the tech stack and outcome, captures both into
+  `projects_notes` in the user's voice, and asks one targeted
+  follow-up. No more "I'll extract that — but actually I can't."
+- Out-of-scope requests (LinkedIn scraping, PDF reading, web search)
+  get a one-sentence honest refusal + the nearest available
+  alternative, instead of a confident-sounding hallucinated promise.
+
+What's still parked (`report.md`, Phase 2/3 of the agentic-upgrade
+plan):
+- A `web_search` tool (provider TBD — Tavily / Brave / OpenAI built-in)
+- Proactive-inference channel (model offers "want me to draft a summary
+  from your projects?" without being asked)
+- Promise tracking via `pending_followups[]` session state
+- Conversational eval fixture set + ADR-031 for the agentic shape
+
+Slice 1A demo path: paste a public GitHub URL into the resume builder
+and watch the agent read it. The honesty patch + tool dispatch fall
+out for free.

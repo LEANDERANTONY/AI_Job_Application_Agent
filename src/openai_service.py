@@ -726,6 +726,339 @@ class OpenAIService:
             )
         return payload
 
+    def run_tool_loop(
+        self,
+        system_prompt,
+        user_prompt,
+        *,
+        tools,
+        tool_executor,
+        expected_keys: Optional[Iterable[str]] = None,
+        max_iterations: int = 5,
+        temperature=None,
+        max_completion_tokens=1200,
+        task_name=None,
+        model=None,
+        metadata=None,
+        reasoning_effort=None,
+    ):
+        """Run a tool-using agentic loop and return the final JSON payload.
+
+        Mirrors :meth:`run_json_prompt` but lets the model call
+        registered tools before producing its final JSON answer. Each
+        loop iteration is one ``responses.create`` call; when the
+        model emits ``function_call`` items in the response output, we
+        execute them via ``tool_executor(name, arguments_json) -> str``
+        and feed the result back as ``function_call_output`` items on
+        the next iteration's input list. The loop terminates when the
+        model returns a text response (no more function calls) or when
+        the iteration cap is hit.
+
+        The return value is a tuple ``(payload, trace)`` where
+        ``payload`` is the parsed JSON (same shape as
+        ``run_json_prompt``) and ``trace`` is a list of
+        ``{"name": str, "arguments": str, "output": str}`` dicts the
+        caller can persist into conversation history so subsequent
+        turns see what the agent fetched.
+
+        Tools are passed straight through to ``responses.create``;
+        they should already be in the Responses-API function-tool
+        shape. The agentic-loop driver does NOT validate the tool spec
+        — that's the registry module's job (e.g.
+        ``backend.services.resume_builder_tools.RESUME_BUILDER_TOOL_SPECS``).
+
+        Safety: this method never crosses budget enforcement. Each
+        iteration calls ``_enforce_budget`` and counts usage, just
+        like ``run_json_prompt`` — so a runaway loop will hit the
+        configured guard rather than silently burning credits.
+        """
+        if not self.is_available():
+            raise AgentExecutionError(
+                "OpenAI is not configured for AI-assisted orchestration."
+            )
+
+        resolved_model = self._resolve_model(task_name=task_name, model=model)
+        reasoning_effort = self._resolve_reasoning_effort(
+            task_name=task_name, reasoning_override=reasoning_effort
+        )
+        request_metadata = {
+            key: str(value)
+            for key, value in dict(metadata or {}).items()
+            if value is not None
+        }
+        if task_name:
+            request_metadata.setdefault("task_name", task_name)
+
+        # The initial input is just the user prompt as a message item;
+        # the system prompt rides on the ``instructions`` field. Each
+        # iteration may append function_call + function_call_output
+        # items so the next call sees the full reasoning chain.
+        input_items: list[dict] = [
+            {"role": "user", "content": _ensure_json_input_prompt(user_prompt)}
+        ]
+        tool_trace: list[dict] = []
+
+        last_response = None
+        for iteration_index in range(max_iterations):
+            self._enforce_budget()
+            started_at = time.perf_counter()
+            log_event(
+                LOGGER,
+                logging.INFO,
+                "openai_tool_loop_iteration_started",
+                "Starting OpenAI tool-loop iteration.",
+                model=resolved_model,
+                task_name=task_name,
+                iteration_index=iteration_index,
+                input_item_count=len(input_items),
+                tools_count=len(tools or []),
+            )
+
+            request_payload = {
+                "model": resolved_model,
+                "instructions": system_prompt,
+                "input": input_items,
+                "store": False,
+                "max_output_tokens": max_completion_tokens,
+                "metadata": request_metadata or None,
+                "text": {"format": {"type": "json_object"}},
+                "tools": list(tools or []),
+                # Let the model decide whether a tool call helps; for
+                # most turns it'll just return the JSON directly.
+                "tool_choice": "auto",
+            }
+            if (
+                self._supports_reasoning_effort(resolved_model)
+                and reasoning_effort
+            ):
+                request_payload["reasoning"] = {"effort": reasoning_effort}
+
+            try:
+                response = self._create_response_with_app_retry(
+                    request_payload,
+                    task_name=task_name,
+                    resolved_model=resolved_model,
+                    started_at=started_at,
+                )
+            except Exception as exc:
+                log_event(
+                    LOGGER,
+                    logging.ERROR,
+                    "openai_tool_loop_iteration_failed",
+                    "OpenAI tool-loop iteration failed (after SDK + app retries).",
+                    model=resolved_model,
+                    task_name=task_name,
+                    iteration_index=iteration_index,
+                    duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                    error_type=type(exc).__name__,
+                    details=str(exc),
+                )
+                _raise_classified_provider_failure(exc)
+
+            last_response = response
+            self._track_usage_from_response(
+                response,
+                resolved_model=resolved_model,
+                task_name=task_name,
+                started_at=started_at,
+                request_metadata=request_metadata,
+                success=True,
+            )
+
+            output_items = list(getattr(response, "output", None) or [])
+            function_calls = [
+                item
+                for item in output_items
+                if self._get_field(item, "type") == "function_call"
+            ]
+            if not function_calls:
+                # Model produced a final text response — extract +
+                # parse the JSON and return.
+                content = self._extract_output_text(response)
+                try:
+                    payload = json.loads(content)
+                except json.JSONDecodeError as exc:
+                    raise AgentExecutionError(
+                        "The AI workflow returned an invalid JSON response.",
+                        details=content,
+                    ) from exc
+                missing_keys = [
+                    key for key in list(expected_keys or []) if key not in payload
+                ]
+                if missing_keys:
+                    raise AgentExecutionError(
+                        "The AI workflow response was missing required fields.",
+                        details=", ".join(missing_keys),
+                    )
+                return payload, tool_trace
+
+            # Echo each function_call back into the next iteration's
+            # input, then execute it and append the output item.
+            for call in function_calls:
+                call_id = self._get_field(call, "call_id") or self._get_field(call, "id")
+                call_name = self._get_field(call, "name") or ""
+                call_arguments = self._get_field(call, "arguments") or ""
+                # Re-emit the exact function_call item the model
+                # produced. Doing this from the structured fields
+                # (rather than passing the SDK object through) keeps
+                # the input list a plain list of dicts, which serializes
+                # cleanly and survives across SDK versions.
+                input_items.append(
+                    {
+                        "type": "function_call",
+                        "call_id": call_id,
+                        "name": call_name,
+                        "arguments": call_arguments,
+                    }
+                )
+                try:
+                    output_text = tool_executor(call_name, call_arguments)
+                except Exception as exc:  # pragma: no cover - defensive
+                    LOGGER.exception(
+                        "Tool executor raised for %s.", call_name
+                    )
+                    output_text = json.dumps(
+                        {
+                            "ok": False,
+                            "error": "executor_exception",
+                            "message": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
+                tool_trace.append(
+                    {
+                        "name": call_name,
+                        "arguments": call_arguments,
+                        "output": output_text,
+                    }
+                )
+                input_items.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": output_text,
+                    }
+                )
+                log_event(
+                    LOGGER,
+                    logging.INFO,
+                    "openai_tool_loop_tool_executed",
+                    "Tool executed during agentic loop.",
+                    model=resolved_model,
+                    task_name=task_name,
+                    iteration_index=iteration_index,
+                    tool_name=call_name,
+                    arguments_chars=len(call_arguments),
+                    output_chars=len(output_text),
+                )
+            # Loop continues — next iteration sends the updated input.
+
+        # Loop exhausted without a final text response — model kept
+        # asking for tools. Surface this as an execution error so the
+        # caller can fall back (resume_builder catches AgentExecutionError
+        # and drops to the regex/step-machine path).
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            "openai_tool_loop_iteration_cap_hit",
+            "Tool-loop hit iteration cap without a final response.",
+            model=resolved_model,
+            task_name=task_name,
+            max_iterations=max_iterations,
+            tool_calls_made=len(tool_trace),
+        )
+        raise AgentExecutionError(
+            "The AI workflow exceeded the tool-call iteration cap "
+            f"({max_iterations}) without producing a final response."
+        )
+
+    def _track_usage_from_response(
+        self,
+        response,
+        *,
+        resolved_model,
+        task_name,
+        started_at,
+        request_metadata,
+        success: bool,
+    ):
+        """Record token usage / cost trace for a single response.
+
+        Pulled out of ``run_json_prompt`` so ``run_tool_loop`` can call
+        it on every iteration (each iteration is a separate billable
+        responses.create call). The metadata + log shape mirror
+        ``run_json_prompt`` so the existing dashboards keep working.
+        """
+        usage = getattr(response, "usage", None)
+        status = getattr(response, "status", None)
+        incomplete_details = getattr(response, "incomplete_details", None)
+        incomplete_reason = (
+            getattr(incomplete_details, "reason", None)
+            if incomplete_details
+            else None
+        )
+        output_token_details = getattr(usage, "output_tokens_details", None)
+        reasoning_tokens = (
+            getattr(output_token_details, "reasoning_tokens", 0) or 0
+        )
+        prompt_tokens = getattr(usage, "input_tokens", 0) or 0
+        completion_tokens = getattr(usage, "output_tokens", 0) or 0
+        total_tokens = getattr(usage, "total_tokens", 0) or 0
+        self._record_usage(
+            resolved_model, prompt_tokens, completion_tokens, total_tokens
+        )
+        self._last_response_metadata = {
+            "response_id": getattr(response, "id", None),
+            "status": status,
+            "incomplete_reason": incomplete_reason,
+            "model": resolved_model,
+            "task_name": task_name,
+            "estimated_input_chars": request_metadata.get("estimated_input_chars"),
+            "compacted_sections": request_metadata.get("compacted_sections"),
+            "compacted_labels": request_metadata.get("compacted_labels"),
+            "prompt_budget_mode": request_metadata.get("prompt_budget_mode"),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "reasoning_tokens": reasoning_tokens,
+        }
+        log_event(
+            LOGGER,
+            logging.INFO,
+            "openai_request_completed",
+            "OpenAI request completed.",
+            model=resolved_model,
+            task_name=task_name,
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+            response_id=getattr(response, "id", None),
+            status=status,
+            incomplete_reason=incomplete_reason,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            reasoning_tokens=reasoning_tokens,
+            session_request_count=self._usage_totals["request_count"],
+            session_total_tokens=self._usage_totals["total_tokens"],
+        )
+        self._record_usage_event(
+            {
+                "task_name": task_name or "",
+                "model_name": resolved_model,
+                "request_count": 1,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "response_id": getattr(response, "id", None) or "",
+                "status": status or "",
+            }
+        )
+        self._record_cost_trace(
+            task_name=task_name,
+            model_name=resolved_model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            success=success,
+        )
+
     def run_structured_prompt(
         self,
         system_prompt,

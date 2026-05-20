@@ -236,6 +236,22 @@ def _expected_resume_builder_system() -> str:
         "- Set status='collecting' while required fields (full_name, contact_lines, target_role, experience_notes, skills) are still empty; 'reviewing' once those are filled and the user could plausibly draft now; 'ready' only after the user explicitly confirms they're done.\n"
         "- Set focus_field to whichever field your next question is about ('' if you're confirming completion).\n"
         "- If the user asks an off-topic question (movies, jokes, lifestyle), decline in one sentence and steer back to resume building. Do not engage with the off-topic premise.\n"
+        "\n"
+        "Tools you can call:\n"
+        "- fetch_github_readme(url): fetch the default-branch README.md of a PUBLIC github.com repository. "
+        "Use this when the user shares a github.com URL and you need the project's tech stack / purpose / outcomes "
+        "to capture into projects_notes. Call the tool BEFORE describing the project — never invent details. "
+        "On a successful fetch, summarize what you read (project name, tech stack, outcome) into projects_notes "
+        "as the user's own voice would describe it, then ask the user one clarifying question "
+        "(e.g. \"Got it — I read the README and saw it's a recommendation engine in PyTorch + Redis. "
+        "Anything I missed, like measured impact?\"). On failure (private repo, 404, timeout, etc.), tell the user "
+        "honestly that the fetch didn't work and ask them to describe the project in their own words.\n"
+        "\n"
+        "Honesty rule:\n"
+        "- Never promise a capability you don't have. If the user asks you to do something outside your tool set "
+        "(browse the web, open a PDF, read a private link, run code, scrape LinkedIn, etc.), say so plainly in one "
+        "sentence and offer the closest thing you CAN do — usually \"if you paste the relevant text or a github.com URL, "
+        "I can take it from there.\" Better one honest sentence than a confident-sounding promise you can't keep.\n"
     )
     contract = _build_contract(
         {
