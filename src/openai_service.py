@@ -309,6 +309,7 @@ class OpenAIService:
         quota_checker: Optional[Callable[[], None]] = None,
         user_id: Optional[str] = None,
         cost_trace_recorder: Optional[Callable[[dict], None]] = None,
+        usage_meter_recorder: Optional[Callable[[int], None]] = None,
     ):
         self._api_key = api_key if api_key is not None else load_openai_key(required=False)
         self.default_model = model or OPENAI_MODEL_DEFAULT
@@ -342,6 +343,14 @@ class OpenAIService:
         # ``backend.run_traces.record_trace`` (which talks to Supabase).
         self._user_id = user_id
         self._cost_trace_recorder = cost_trace_recorder
+        # Unified LLM token meter (report.md "Unified LLM token meter").
+        # Every LLM call funnels through ``_record_usage``, which adds
+        # this call's tokens to the user's weekly meter. Like the cost
+        # trace this needs no per-feature wiring — when ``user_id`` is
+        # set the accounting just happens. ``usage_meter_recorder`` is a
+        # test seam (mirrors ``cost_trace_recorder``); production leaves
+        # it None and the ``user_id`` path records via backend.quota.
+        self._usage_meter_recorder = usage_meter_recorder
         if self._client is None and self._api_key:
             self._client = OpenAI(api_key=self._api_key, timeout=120.0, max_retries=2)
 
@@ -497,6 +506,11 @@ class OpenAIService:
         self._usage_by_model[model_name]["prompt_tokens"] += prompt_tokens
         self._usage_by_model[model_name]["completion_tokens"] += completion_tokens
         self._usage_by_model[model_name]["total_tokens"] += total_tokens
+        # Unified LLM token meter: ``_record_usage`` is the one method
+        # every responses.create round-trip funnels through (incl. each
+        # iteration of a tool loop), so metering here counts ALL real
+        # token spend with a single hook and nothing to forget.
+        self._record_token_meter(total_tokens)
 
     def run_json_prompt(
         self,
@@ -1707,6 +1721,65 @@ class OpenAIService:
                 details=str(exc),
                 task_name=task_name,
                 model=model_name,
+            )
+
+    def _record_token_meter(self, total_tokens: int) -> None:
+        """Add this call's tokens to the user's weekly LLM usage meter.
+
+        The accounting half of the unified token meter (report.md
+        "Unified LLM token meter"). Called from ``_record_usage`` — the
+        one method every ``responses.create`` round-trip funnels
+        through, incl. each iteration of a tool loop — so every token
+        actually spent is metered with no per-feature wiring.
+
+        Best-effort and a deliberate no-op unless the service was built
+        for a real user: eval / nightly / fixture runs construct
+        ``OpenAIService`` without a ``user_id`` and are never metered.
+        Dispatch mirrors ``_record_cost_trace``: an injected
+        ``usage_meter_recorder`` (test seam) wins; otherwise, with a
+        ``user_id`` set, call ``backend.quota.record_llm_token_usage``
+        directly. ``record_llm_token_usage`` is itself best-effort, so
+        a metering hiccup never breaks the user's actual operation.
+        """
+        try:
+            amount = int(total_tokens or 0)
+        except (TypeError, ValueError):
+            return
+        if amount <= 0:
+            return
+
+        if self._usage_meter_recorder is not None:
+            try:
+                self._usage_meter_recorder(amount)
+            except Exception as exc:  # noqa: BLE001 - best-effort
+                log_event(
+                    LOGGER,
+                    logging.WARNING,
+                    "openai_token_meter_recorder_failed",
+                    "OpenAI token-meter recorder raised.",
+                    error_type=type(exc).__name__,
+                    details=str(exc),
+                )
+            return
+
+        # No injected recorder: only meter when we have a user to
+        # attribute the spend to. Anonymous / eval runs no-op here.
+        if not self._user_id:
+            return
+        try:
+            # Local import — same circular-avoidance pattern as the
+            # ``backend.run_traces`` import in ``_record_cost_trace``.
+            from backend.quota import record_llm_token_usage
+
+            record_llm_token_usage(self._user_id, amount)
+        except Exception as exc:  # noqa: BLE001 - best-effort
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                "openai_token_meter_persist_failed",
+                "OpenAI token-meter persistence failed.",
+                error_type=type(exc).__name__,
+                details=str(exc),
             )
 
     @classmethod

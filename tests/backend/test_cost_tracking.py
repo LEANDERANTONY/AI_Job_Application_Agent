@@ -358,6 +358,107 @@ def test_in_memory_backend_isolates_tests():
 
 
 # ---------------------------------------------------------------------
+# OpenAIService integration — unified LLM token meter
+# ---------------------------------------------------------------------
+
+
+def test_token_meter_recorder_receives_total_tokens_per_call():
+    """With a ``usage_meter_recorder`` injected, every LLM call hands
+    the recorder this call's ``total_tokens`` — and a second call adds
+    a second entry, which is exactly how a multi-iteration tool loop
+    accumulates (``_record_usage`` is the shared hook)."""
+    metered: list[int] = []
+    client = _FakeClient(
+        [
+            _build_response(
+                json.dumps({"approved": True}),
+                prompt_tokens=1000,
+                completion_tokens=500,
+            ),
+            _build_response(
+                json.dumps({"approved": True}),
+                prompt_tokens=400,
+                completion_tokens=300,
+            ),
+        ]
+    )
+    service = OpenAIService(
+        client=client,
+        user_id="user-test",
+        usage_meter_recorder=metered.append,
+    )
+    service.run_json_prompt("system", "user", expected_keys=["approved"])
+    service.run_json_prompt("system", "user", expected_keys=["approved"])
+    # 1000+500, then 400+300 — one entry per responses.create round-trip.
+    assert metered == [1500, 700]
+
+
+def test_token_meter_recorder_errors_are_logged_and_swallowed():
+    """An exception inside the meter recorder must not blow up the
+    OpenAI call — metering is best-effort, parity with the cost trace."""
+
+    def _exploding(_tokens):
+        raise RuntimeError("meter recorder is broken")
+
+    client = _FakeClient([_build_response(json.dumps({"approved": True}))])
+    service = OpenAIService(
+        client=client,
+        user_id="user-test",
+        usage_meter_recorder=_exploding,
+    )
+    # Must not raise.
+    payload = service.run_json_prompt("system", "user", expected_keys=["approved"])
+    assert payload == {"approved": True}
+
+
+def test_token_meter_records_to_quota_when_user_id_set(monkeypatch):
+    """The production path: no injected recorder, but a ``user_id`` is
+    configured → the service meters straight into the weekly
+    ``llm_tokens`` counter via ``backend.quota.record_llm_token_usage``."""
+    from backend import quota
+    from backend.quota import read_llm_token_usage
+
+    monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfiguredBackend())
+    quota.reset_in_memory_backend()
+    try:
+        client = _FakeClient(
+            [
+                _build_response(
+                    json.dumps({"approved": True}),
+                    prompt_tokens=1200,
+                    completion_tokens=800,
+                )
+            ]
+        )
+        service = OpenAIService(client=client, user_id="user-meter")
+        service.run_json_prompt("system", "user", expected_keys=["approved"])
+        # 1200 + 800 landed on this user's weekly meter.
+        assert read_llm_token_usage("user-meter", "free") == 2000
+    finally:
+        quota.reset_in_memory_backend()
+
+
+def test_token_meter_skipped_when_no_user_id_and_no_recorder(monkeypatch):
+    """Anonymous / eval runs build ``OpenAIService`` without a
+    ``user_id`` — there's nobody to attribute spend to, so the meter is
+    a deliberate no-op (no ``llm_tokens`` row written)."""
+    from backend import quota
+
+    monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfiguredBackend())
+    quota.reset_in_memory_backend()
+    try:
+        client = _FakeClient([_build_response(json.dumps({"approved": True}))])
+        service = OpenAIService(client=client)  # no user_id, no recorder
+        service.run_json_prompt("system", "user", expected_keys=["approved"])
+        assert not any(
+            key[2] == "llm_tokens"
+            for key in quota._IN_MEMORY_BACKEND._store
+        )
+    finally:
+        quota.reset_in_memory_backend()
+
+
+# ---------------------------------------------------------------------
 # RLS / backend selection — documents the contract from the migration
 # ---------------------------------------------------------------------
 
