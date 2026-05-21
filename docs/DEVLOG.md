@@ -2799,8 +2799,20 @@ font-assertion tests (classic_ats / professional_neutral) inverted
 to expect Arial-only. 32/32 exporter tests + renderer-fidelity
 runner (OVERALL PASS) green.
 
-Noted but NOT fixed (pre-existing, unrelated):
-`test_export_docx_bytes_unknown_theme_falls_back_to_classic_ats`
-compares raw timestamped `.docx` ZIP bytes — flaky across a
-DOS-timestamp second boundary. Should compare extracted content,
-not raw bytes; worth a separate fix.
+Follow-up fix — flaky DOCX byte-comparison tests. Two tests in
+`test_exporters.py` compared raw `.docx` bytes. A `.docx` is a ZIP
+and python-docx stamps the current mtime into every entry header,
+so two renders a second apart differ byte-wise even with identical
+content:
+  * `test_export_docx_bytes_unknown_theme_falls_back_to_classic_ats`
+    asserted `fallback_bytes == classic_bytes` — intermittently
+    failed across a DOS-timestamp boundary (~1-in-5).
+  * `test_export_docx_bytes_themes_produce_different_outputs`
+    asserted `classic_bytes != neutral_bytes` — never failed, but
+    vacuous: timestamps alone make the bytes differ, so it would
+    pass even if the theme switch were entirely broken.
+Both rewritten to compare EXTRACTED content via the existing
+helpers — `_docx_paragraph_pairs` + `_docx_run_color_hexes` +
+`_docx_run_font_names` (equal for the fallback test, color-set
+differs for the themes test). Deterministic now; confirmed stable
+5/5 consecutive runs. 32/32 exporter tests green.

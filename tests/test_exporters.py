@@ -866,18 +866,26 @@ def test_export_docx_bytes_professional_neutral_uses_black_palette():
 
 
 def test_export_docx_bytes_themes_produce_different_outputs():
-    """Sanity check: render the same artifact under both themes and
-    verify the bytes differ. This is a coarse but cheap regression
-    against accidentally short-circuiting the palette switch."""
+    """Sanity check: render the same artifact under two themes and
+    verify the PALETTE actually differs — a regression guard against
+    accidentally short-circuiting the theme switch.
+
+    Compares the extracted run-color set, NOT raw .docx bytes: a
+    .docx is a ZIP and python-docx stamps the current mtime into
+    every entry header, so two renders always have different bytes
+    regardless of content — a raw-byte `!=` would pass even if the
+    palette switch were broken. The color set is the real fingerprint."""
     artifact = _make_full_resume_artifact()
 
     artifact.theme = "classic_ats"
-    classic_bytes = export_docx_bytes(artifact)
+    classic_doc = _parse_docx(export_docx_bytes(artifact))
 
     artifact.theme = "professional_neutral"
-    neutral_bytes = export_docx_bytes(artifact)
+    neutral_doc = _parse_docx(export_docx_bytes(artifact))
 
-    assert classic_bytes != neutral_bytes
+    # classic_ats ships warm-brown ink/accent; professional_neutral is
+    # pure black/gray. Their run-color sets must differ.
+    assert _docx_run_color_hexes(classic_doc) != _docx_run_color_hexes(neutral_doc)
 
 
 def test_export_docx_bytes_unknown_theme_falls_back_to_classic_ats():
@@ -885,15 +893,21 @@ def test_export_docx_bytes_unknown_theme_falls_back_to_classic_ats():
     renderer never crashes on an unexpected artifact.theme value."""
     artifact = _make_full_resume_artifact()
     artifact.theme = "some_made_up_theme_we_have_not_built"
-
-    fallback_bytes = export_docx_bytes(artifact)
+    fallback_doc = _parse_docx(export_docx_bytes(artifact))
 
     artifact.theme = "classic_ats"
-    classic_bytes = export_docx_bytes(artifact)
+    classic_doc = _parse_docx(export_docx_bytes(artifact))
 
-    # The unknown-theme render should be identical to classic_ats —
-    # same palette, same fonts, same content.
-    assert fallback_bytes == classic_bytes
+    # The unknown-theme render must be EQUIVALENT to classic_ats —
+    # same content/structure, same palette, same fonts. We compare
+    # the extracted document, NOT raw .docx bytes: a .docx is a ZIP
+    # and python-docx stamps the current mtime into every entry
+    # header, so two renders a second apart differ byte-wise even
+    # when the content is identical (this test used to be flaky for
+    # exactly that reason). Compare what actually matters.
+    assert _docx_paragraph_pairs(fallback_doc) == _docx_paragraph_pairs(classic_doc)
+    assert _docx_run_color_hexes(fallback_doc) == _docx_run_color_hexes(classic_doc)
+    assert _docx_run_font_names(fallback_doc) == _docx_run_font_names(classic_doc)
 
 
 def test_export_docx_bytes_cover_letter_respects_theme():
