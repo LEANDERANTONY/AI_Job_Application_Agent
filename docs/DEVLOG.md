@@ -3596,3 +3596,82 @@ empty-section dropping, HTML-escaping, PDF render, section order);
 frontend `tsc --noEmit` clean; all six themes rendered to PDF via
 WeasyPrint and visually verified against their source
 `resume_builder/` templates.
+
+## Day 72: Two-column theme production-readiness polish
+
+A render review of the six ADR-032 two-column themes
+(`timeline_tech`, `editorial_minimal`, `classic_slate`,
+`monochrome_black`, `plum_berry`, `burgundy_champagne`) surfaced
+three classes of polish items. This was a TUNING pass — the six
+designs are approved; no redesign. Scope: only the six renderers'
+inline CSS in `src/exporters.py`.
+
+### Flex-column pagination artifacts (the big one)
+
+Every theme set `display:flex;flex-direction:column` on `.main`
+and `.sidebar`. WeasyPrint does not fragment flex containers
+cleanly: a flex container taller than one page inflates child
+boxes and strands content. The visible symptoms were a LIGHT test
+résumé spilling onto a near-empty page 2 on five of the six themes,
+and — on `classic_slate` — a large dead-space GAP mid-page-1
+between two experience entries. The flex-column on `.main` /
+`.sidebar` served no layout purpose (the children are plain
+stacked block sections; the two-column split is the `.sheet` flex
+row, which is untouched). Dropping it to block layout lets normal
+block pagination work: all six LIGHT résumés now fit ONE page, the
+dead-space gap is gone, and a genuinely full résumé still spills
+to two pages correctly. The colored sidebar still fills full page
+height — `.sidebar` is still a flex *item* of `.sheet` and
+stretches.
+
+A second flex-pagination artifact lived in the date-gutter family
+(`classic_slate`, `burgundy_champagne`): `.entry` and `.project`
+were each `display:flex` (fixed gutter + flexible body). On a
+two-page résumé these inflated by ~90pt each, leaving dead-space
+gaps on page 2. Converted to a float layout — `overflow:hidden`
+on the row (BFC, contains the float), `float:left` + fixed
+`width:22mm` on the gutter, `margin-left:27mm` on the body. Pixel-
+identical to the flex version (verified light/fuller/sparse,
+including a no-bullet entry where the gutter is taller than the
+body) and paginates with no inflation. The headrow-family `.entry`
+and the `editorial_minimal` flex `.project` were left alone — they
+hold single-line / short content and showed no inflation.
+
+### Publications marker spacing
+
+`timeline_tech`'s publications list used an em-dash `::before`
+marker at `left:0` with only `padding-left:12px` — the em-dash
+glyph (~9.5px) left a ~2px gap, so it rendered jammed
+(`—Distributed Eval at Scale`). Gave the `::before` an explicit
+`width:18px` and bumped `padding-left` to `18px` for a clean ~8px
+gap. Audited the marker spacing of all six themes — every other
+list marker (`[1]`, `01`, `§ 1`, the checkmark, the dot bullets,
+the plum-berry skill em-dash) already had adequate padding; this
+was the only jammed one.
+
+### Narrow-column wrapping
+
+Two columns make both columns narrow, so long unbroken tokens
+(project URLs, long emails) wrapped badly. Added
+`overflow-wrap:anywhere` to every `.project-link`, `.project-name`
+and `.skill-list li` across the six themes. The two date-gutter
+themes' `.project-link` is an `inline-block`, which won't shrink
+below content width — added `max-width:100%` so the wrap actually
+triggers. `monochrome_black`'s project name is `text-transform:
+uppercase`; softened its `letter-spacing` 0.5px → 0.3px so an
+uppercase name fits the narrow main column with less stacking,
+without losing the design's character. Contact lines already
+carried `word-break:break-word`, left as-is.
+
+Verification: built the `_make_full_resume_artifact` sample and
+rendered all six themes to PDF via WeasyPrint at three volumes —
+LIGHT (the test résumé), FULLER (5 jobs + 2 projects), SPARSE
+(optional sections dropped). Before → after LIGHT page count:
+`timeline_tech` 1 → 1, `editorial_minimal` 2 → 1, `classic_slate`
+2 → 1, `monochrome_black` 2 → 1, `plum_berry` 2 → 1,
+`burgundy_champagne` 2 → 1. FULLER stays a legitimate 2 pages on
+all six with no dead-space gaps; SPARSE stays 1 page with empty
+sections still dropped cleanly. `test_exporters.py` 37 passed;
+full suite 865 passed with the same 16 pre-existing failures in
+the rate-limit / quota / error-handling suites (confirmed
+identical on a clean baseline — unrelated to rendering).
