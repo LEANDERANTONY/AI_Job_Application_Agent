@@ -170,10 +170,13 @@ def compute_section_order(candidate_profile: CandidateProfile) -> list[str]:
       The threshold is deliberately high; senior industry engineers
       often have 2-4 conference talks / blog posts that shouldn't flip
       them onto the academic path.
-    - 0 work experience -> student / no-history path: education up,
-      projects up, experience after
-    - 2+ projects with at least 1 work entry -> career-switcher / proof-
-      heavy path: skills + projects up to lead with target-role evidence
+    - 2+ projects -> projects-led / proof-heavy path: skills + projects
+      lead. Covers career-switchers AND self-taught engineers who have
+      no formal jobs but a strong project portfolio. Checked BEFORE the
+      no-experience student path so a portfolio-strong candidate is not
+      misrouted to education-first.
+    - 0 work experience (and <2 projects) -> student / no-history path:
+      education leads as the primary credential.
     - everything else -> standard professional: experience after summary
       and skills
 
@@ -196,17 +199,16 @@ def compute_section_order(candidate_profile: CandidateProfile) -> list[str]:
             "certifications",
         ]
 
-    if exp_count == 0:
-        return [
-            "summary",
-            "education",
-            "projects",
-            "skills",
-            "experience",
-            "publications",
-            "certifications",
-        ]
-
+    # Projects-led / proof-heavy path. Checked BEFORE the
+    # `exp_count == 0` student path on purpose: a candidate with 2+
+    # projects is leading with project evidence whether or not they
+    # also hold formal jobs. Career-switchers AND self-taught
+    # engineers with a strong portfolio but no formal employment both
+    # belong here. The old ordering checked `exp_count == 0` first, so
+    # a self-taught AI/ML engineer with four metric-heavy projects was
+    # misrouted onto the student path — projects buried under
+    # Education and skills rendered dead last. Their projects ARE the
+    # proof of capability; lead with skills + projects.
     if proj_count >= 2:
         return [
             "summary",
@@ -214,6 +216,20 @@ def compute_section_order(candidate_profile: CandidateProfile) -> list[str]:
             "projects",
             "experience",
             "education",
+            "publications",
+            "certifications",
+        ]
+
+    # Student / no-history path: 0 work experience AND fewer than 2
+    # projects to lead with — a genuine fresh grad whose education is
+    # the primary credential.
+    if exp_count == 0:
+        return [
+            "summary",
+            "education",
+            "projects",
+            "skills",
+            "experience",
             "publications",
             "certifications",
         ]

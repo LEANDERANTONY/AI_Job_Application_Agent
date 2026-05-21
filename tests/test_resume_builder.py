@@ -206,7 +206,9 @@ def _proj(name="Project") -> ProjectEntry:
 
 
 def test_compute_section_order_routes_student_to_education_first():
-    profile = _profile(experience=[], projects=[_proj(), _proj(), _proj()])
+    # A genuine fresh grad: no work experience AND fewer than 2
+    # projects to lead with. Education is the primary credential.
+    profile = _profile(experience=[], projects=[_proj()])
 
     order = compute_section_order(profile)
 
@@ -214,6 +216,27 @@ def test_compute_section_order_routes_student_to_education_first():
     # experience after.
     assert order[:3] == ["summary", "education", "projects"]
     assert order.index("experience") > order.index("projects")
+
+
+def test_compute_section_order_routes_self_taught_portfolio_to_projects_first():
+    # Regression guard: a self-taught engineer with NO formal
+    # experience but a strong project portfolio (2+ projects) must
+    # lead with skills + projects — NOT be misrouted onto the
+    # education-first student path. This was a real bug: a portfolio
+    # of four metric-heavy AI/ML projects rendered with Education
+    # above Projects and Skills dead last, because `exp_count == 0`
+    # was checked before `proj_count >= 2`.
+    profile = _profile(
+        experience=[],
+        projects=[_proj(), _proj(), _proj(), _proj()],
+    )
+
+    order = compute_section_order(profile)
+
+    # Projects-led path: skills + projects lead; education drops below.
+    assert order[:3] == ["summary", "skills", "projects"]
+    assert order.index("education") > order.index("projects")
+    assert order.index("skills") < order.index("education")
 
 
 def test_compute_section_order_routes_academic_when_publications_high():
@@ -299,9 +322,10 @@ def test_resolve_section_order_ignores_agent_output_and_uses_helper():
 
     order = _resolve_section_order(profile, agent_result)
 
-    # Student path overrides the agent's experience-first preference
-    # because the candidate has no work history to lead with.
-    assert order[:3] == ["summary", "education", "projects"]
+    # The agent emitted experience-first; the helper overrides with the
+    # projects-led path (0 experience + 2 projects → lead with the
+    # portfolio, not the agent's reflexive experience-first).
+    assert order[:3] == ["summary", "skills", "projects"]
 
 
 def test_resolve_section_order_uses_compute_when_agent_skipped_it():
@@ -319,7 +343,8 @@ def test_resolve_section_order_uses_compute_when_agent_skipped_it():
 
     order = _resolve_section_order(profile, agent_result)
 
-    assert order[:2] == ["summary", "education"]
+    # 0 experience + 2 projects → projects-led path (skills lead).
+    assert order[:2] == ["summary", "skills"]
 
 
 def test_build_tailored_resume_artifact_renders_markdown_in_section_order_for_student():
@@ -329,9 +354,11 @@ def test_build_tailored_resume_artifact_renders_markdown_in_section_order_for_st
         skills=["Python", "Go", "Docker"],
         experience=[],  # student: no work history
         education=[EducationEntry(institution="IIT Bombay", degree="B.Tech")],
+        # A genuine fresh grad — 0 experience AND a single project, so
+        # this stays on the education-first student path (2+ projects
+        # would route to the projects-led path instead).
         projects=[
             ProjectEntry(name="DistKV", bullets=["Built a Raft-based KV store"]),
-            ProjectEntry(name="Search Indexer", bullets=["Sub-1ms autocomplete"]),
         ],
     )
     job_description = build_job_description_from_text(
