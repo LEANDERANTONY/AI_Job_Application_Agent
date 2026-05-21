@@ -15,6 +15,22 @@
 -- Applied to prod as migrations `search_cached_jobs_ranked_add_p_offset`
 -- and `search_cached_jobs_ranked_restore_service_role_only`.
 --
+-- 2026-05-21: parse `p_query` with `to_tsquery` instead of
+-- `websearch_to_tsquery`. The backend now expands synonyms /
+-- abbreviations in `src/job_search_synonyms.py` and passes a
+-- `to_tsquery`-syntax string (e.g.
+-- `(ml | machine<->learning) & (engineer | developer | dev)`).
+-- `websearch_to_tsquery` cannot express that grouping — it has no
+-- parentheses and binds OR with the wrong precedence — so the RPC
+-- must use `to_tsquery`. `p_query` is therefore a pre-built tsquery
+-- expression, NOT raw user text; `src/cached_jobs_store.py` is the
+-- only caller and always runs `expand_query` first. NOTE: this
+-- function change and the app code MUST deploy together — applying
+-- this migration while the old app code still sends raw user text
+-- breaks search (raw text with stray `:`/`&`/`(` makes `to_tsquery`
+-- raise). The empty-`p_query` short-circuit below is unchanged, so
+-- "browse recent jobs" still works.
+--
 -- SECURITY: SECURITY DEFINER + `SET search_path = public`. EXECUTE is granted
 -- ONLY to `service_role` (the backend uses the service-role client) — NOT to
 -- anon/authenticated/PUBLIC. This matches the project-wide posture for
@@ -51,7 +67,11 @@ DECLARE
     sort_mode   TEXT    := LOWER(COALESCE(p_sort_by, 'relevance'));
 BEGIN
     IF has_query THEN
-        tsquery_obj := websearch_to_tsquery('english', p_query);
+        -- p_query is a to_tsquery-syntax string built by the backend's
+        -- synonym expander (src/job_search_synonyms.py) — NOT raw user
+        -- text. websearch_to_tsquery can't express the `(a|b)&c`
+        -- grouping the expander emits, so to_tsquery is required.
+        tsquery_obj := to_tsquery('english', p_query);
     END IF;
 
     RETURN QUERY

@@ -31,6 +31,7 @@ from src.config import (
     SUPABASE_URL,
 )
 from src.errors import AppError
+from src.job_search_synonyms import expand_query
 
 
 def _utc_now_iso() -> str:
@@ -329,9 +330,23 @@ class CachedJobsStore:
 
         Empty `query` returns most-recent active jobs (the RPC
         short-circuits the FTS filter when the query is empty).
+
+        Synonym expansion: the raw query is run through
+        `expand_query` (src/job_search_synonyms.py) before it becomes
+        `p_query`. That turns e.g. "ml engineer" into the
+        `to_tsquery`-syntax string
+        `(ml | machine<->learning) & (engineer | developer | dev)`
+        so abbreviations match their long forms. The RPC's `p_query`
+        is therefore a `to_tsquery` expression, NOT raw user text —
+        the migration uses `to_tsquery` (not `websearch_to_tsquery`)
+        to parse it. `expand_query` returns '' for empty / all-
+        punctuation / lone-stopword input, which the RPC still treats
+        as "no FTS filter" -> recent jobs.
         """
         client = self._require_client()
-        normalized_query = str(query or "").strip()
+        # `expand_query` handles its own trimming/lowercasing and emits
+        # a to_tsquery-format string (or '' for nothing-searchable).
+        normalized_query = expand_query(query)
         normalized_location = str(location or "").strip()
         normalized_sources = (
             [str(s).strip().lower() for s in sources if str(s).strip()]
