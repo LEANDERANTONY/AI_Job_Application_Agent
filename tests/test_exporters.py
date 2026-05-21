@@ -548,11 +548,18 @@ def test_export_docx_bytes_renders_full_resume_with_all_sections():
     doc = _parse_docx(data)
     pairs = _docx_paragraph_pairs(doc)
 
-    # Header: name + contact line.
+    # Header: name -> role headline -> contact line. This artifact
+    # sets target_role="Senior ML Engineer", so the DOCX header
+    # renders the uppercase role line between the name and contact
+    # (mirrors the HTML/PDF `.resume-classic-role`; the DOCX builder
+    # was fixed 2026-05-21 to match). When target_role is "" the role
+    # line is omitted — covered by test_export_docx_bytes_drops_* /
+    # the headline tests.
     paragraph_texts = [text for _, text in pairs]
     assert "Leander Antony" in paragraph_texts[0]
-    assert "Chennai, India" in paragraph_texts[1]
-    assert "leander@example.com" in paragraph_texts[1]
+    assert paragraph_texts[1] == "SENIOR ML ENGINEER"
+    assert "Chennai, India" in paragraph_texts[2]
+    assert "leander@example.com" in paragraph_texts[2]
 
     # Section headings render as uppercase labels in the order asked
     # for. Names match the artifact.section_order list 1:1.
@@ -826,10 +833,11 @@ def test_export_docx_bytes_classic_ats_uses_warm_brown_palette():
     assert "221912" in colors, f"missing classic_ats ink in {colors}"
 
     fonts = _docx_run_font_names(doc)
-    # classic_ats uses Arial for body + Georgia for prose summary +
-    # headings. Both should be present.
+    # Unified typography (2026-05-21): every theme — classic_ats
+    # included — uses the single Arial sans family. No serif font
+    # should appear anywhere in the DOCX run set.
     assert "Arial" in fonts
-    assert "Georgia" in fonts
+    assert "Georgia" not in fonts, f"serif leaked into classic_ats: {fonts}"
 
 
 def test_export_docx_bytes_professional_neutral_uses_black_palette():
@@ -850,10 +858,11 @@ def test_export_docx_bytes_professional_neutral_uses_black_palette():
     assert "8F6845" not in colors, f"classic_ats accent leaked: {colors}"
 
     fonts = _docx_run_font_names(doc)
-    # professional_neutral runs Georgia throughout (body + headings +
-    # prose). Arial should not appear in run-level fonts.
-    assert "Georgia" in fonts
-    assert "Arial" not in fonts, f"Arial leaked into neutral theme: {fonts}"
+    # Unified typography (2026-05-21): professional_neutral now runs
+    # the shared Arial sans family throughout (it used to be all-serif
+    # Georgia). No serif font should appear in run-level fonts.
+    assert "Arial" in fonts
+    assert "Georgia" not in fonts, f"serif leaked into neutral theme: {fonts}"
 
 
 def test_export_docx_bytes_themes_produce_different_outputs():
@@ -888,8 +897,9 @@ def test_export_docx_bytes_unknown_theme_falls_back_to_classic_ats():
 
 
 def test_export_docx_bytes_cover_letter_respects_theme():
-    """Cover letter only varies by color in Phase 4 (both themes use
-    Georgia for prose), but the color set should still differ."""
+    """Cover letter varies by color only (all themes share the one
+    Arial sans family since the 2026-05-21 typography unification);
+    the color set should still differ per theme."""
     classic = CoverLetterArtifact(
         title="Leander - Cover Letter",
         filename_stem="leander",

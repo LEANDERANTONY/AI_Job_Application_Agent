@@ -166,11 +166,10 @@ class ThemeSpec:
             "header_border_width": f"{self.header_border_px}px",
             "header_rule_color": self.header_rule_color,
             # The letter is all prose, so it follows the theme's PROSE
-            # font (not body). For classic_ats / professional_neutral
-            # prose IS Georgia → byte-identical to the old hardcoded
-            # value (zero regression). For sans themes (modern_blue)
-            # the letter now matches its résumé instead of clashing as
-            # a lone serif document — the "matched set" guarantee.
+            # font (not body). Since the 2026-05-21 typography
+            # unification every theme's prose font is the shared Arial
+            # sans family, so the cover letter always matches its
+            # résumé — the "matched set" guarantee.
             "body_font_family": self.prose_font_family,
         }
 
@@ -186,10 +185,19 @@ class ThemeSpec:
         }
 
 
-# The registry. EXISTING two themes reproduce the pre-refactor literal
-# maps byte-for-byte (verified via golden snapshots). NEW themes are
-# added here only — the three derived maps + every renderer pick them
-# up automatically, so resume + cover letter + DOCX can never drift.
+# The registry. NEW themes are added here only — the three derived
+# maps + every renderer pick them up automatically, so resume + cover
+# letter + DOCX can never drift.
+#
+# TYPOGRAPHY (operator decision 2026-05-21): all five themes share ONE
+# font family — Arial / Helvetica sans-serif (h1, body, prose; Arial
+# for the DOCX OOXML names). Themes used to mix serif/sans for
+# identity (professional_neutral was all-Georgia, classic_ats +
+# creative_warm had serif headings); that was unified to a single sans
+# family per the operator's request. Themes now differentiate by
+# COLOR, PAPER, and HEADER TREATMENT only — not by typeface. Any new
+# theme MUST use the same Arial sans family unless that decision is
+# revisited.
 _THEME_SPECS: dict[str, "ThemeSpec"] = {
     "classic_ats": ThemeSpec(
         key="classic_ats",
@@ -202,13 +210,15 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         surface="#fffdfa",
         accent_soft="rgba(143, 104, 69, 0.10)",
         cover_strong_color="#17100b",
+        # Unified Arial/Helvetica sans family across all themes
+        # (operator decision 2026-05-21) — see the registry note above.
         body_font_family="Arial, Helvetica, sans-serif",
-        h1_font_family='Georgia, "Times New Roman", serif',
-        prose_font_family='Georgia, "Times New Roman", serif',
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
         prose_line_height="1.55",
         docx_body_font="Arial",
-        docx_heading_font="Georgia",
-        docx_prose_font="Georgia",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
         header_border_px=3,
         layout="single_column",
     ),
@@ -223,24 +233,25 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         surface="#ffffff",
         accent_soft="rgba(0, 0, 0, 0.04)",
         cover_strong_color="#0a0a0a",
-        body_font_family='Georgia, "Times New Roman", serif',
-        h1_font_family='Georgia, "Times New Roman", serif',
-        prose_font_family='Georgia, "Times New Roman", serif',
+        # Unified Arial/Helvetica sans family across all themes
+        # (operator decision 2026-05-21) — see the registry note above.
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
         prose_line_height="1.55",
-        docx_body_font="Georgia",
-        docx_heading_font="Georgia",
-        docx_prose_font="Georgia",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
         header_border_px=2,
         layout="single_column",
     ),
-    # NEW (Phase 2a) — modern all-sans + one deep professional blue.
-    # Single-column → fully ATS-safe. Differs from the two originals
-    # by being sans THROUGHOUT (classic_ats = serif headings/prose;
-    # professional_neutral = all-serif) with a cool slate ink + blue
-    # accent. Accent #1A56DB clears ~5.9:1 on white (safe for any
-    # text). Fonts stay web-safe sans so WeasyPrint renders it
-    # identically on the Linux render host (no missing-font fallback).
-    # Audience: tech / product / data / ops.
+    # NEW (Phase 2a) — modern, one deep professional blue.
+    # Single-column → fully ATS-safe. Differentiated by a cool slate
+    # ink + blue accent on a faint cool paper. Accent #1A56DB clears
+    # ~5.9:1 on white (safe for any text). Fonts are the shared
+    # Arial/Helvetica sans family (see registry note) — web-safe so
+    # WeasyPrint renders identically on the Linux render host (no
+    # missing-font fallback). Audience: tech / product / data / ops.
     "modern_blue": ThemeSpec(
         key="modern_blue",
         label="Modern Blue",
@@ -266,14 +277,13 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         header_border_px=2,
         layout="single_column",
     ),
-    # NEW (Phase 2b) — modern editorial. Serif NAME (Georgia, h1 only)
-    # for gravitas; everything else clean sans (scannable + ATS-safe);
-    # emerald accent for creative energy without leaving professional.
-    # Distinct from classic_ats (brown + serif prose, heavy cream) and
-    # from modern_blue (cool blue, all-sans). Faint near-neutral warm
-    # paper. Emerald #00a388 is the proven Awesome-CV accent; it only
-    # colors headings/rules/labels (body stays ink) so contrast is
-    # fine. Single-column → ATS-safe. Audience: marketing / comms /
+    # NEW (Phase 2b) — modern editorial. Emerald accent for creative
+    # energy without leaving professional; a soft warm "sand" header
+    # band. Distinct from classic_ats (warm brown + cream paper) and
+    # from modern_blue (cool blue). Faint near-neutral warm paper.
+    # Emerald #00a388 is the proven Awesome-CV accent; it only colors
+    # headings/rules/labels (body stays ink) so contrast is fine.
+    # Single-column → ATS-safe. Audience: marketing / comms /
     # design-adjacent that still needs to pass ATS.
     "creative_warm": ThemeSpec(
         key="creative_warm",
@@ -295,26 +305,28 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         # name/body divider reads as a deliberate anchor line rather
         # than the same bright emerald (operator request).
         header_rule_color="#0b7c5e",
-        h1_font_family='Georgia, "Times New Roman", serif',
+        # Unified Arial/Helvetica sans family across all themes
+        # (operator decision 2026-05-21) — see the registry note above.
+        h1_font_family="Arial, Helvetica, sans-serif",
         body_font_family="Arial, Helvetica, sans-serif",
         prose_font_family="Arial, Helvetica, sans-serif",
         prose_line_height="1.55",
         docx_body_font="Arial",
-        docx_heading_font="Georgia",
+        docx_heading_font="Arial",
         docx_prose_font="Arial",
         header_border_px=2,
         layout="single_column",
     ),
     # NEW (Phase 2c) — architectural minimal. Near-monochrome: deep
     # cool near-black ink AND accent (no colour — the "design" is
-    # typographic), one HAIRLINE rule (header_border_px=1), geometric
-    # sans, airier prose line-height for generous whitespace. Crisp
-    # pure white on purpose (deliberate contrast to modern_blue's
-    # tint — minimalism reads as stark, not "designed paper").
-    # Single-column → ATS-safe. Audience: architecture / design /
-    # senior-eng "confident minimal". Distinct from professional_neutral
-    # (which is the same monochrome idea but SERIF Georgia; this is
-    # SANS + hairline + airy).
+    # typographic), one HAIRLINE rule (header_border_px=1), airier
+    # prose line-height for generous whitespace, and a solid ink
+    # masthead band. Crisp pure white on purpose (deliberate contrast
+    # to modern_blue's tint — minimalism reads as stark, not "designed
+    # paper"). Single-column → ATS-safe. Audience: architecture /
+    # design / senior-eng "confident minimal". Distinct from
+    # professional_neutral (same monochrome idea, but architect_mono
+    # adds the hairline rule + ink masthead + airier spacing).
     "architect_mono": ThemeSpec(
         key="architect_mono",
         label="Architect Mono",
@@ -511,8 +523,8 @@ def _build_cover_letter_html(text, title="Cover Letter", theme="classic_ats"):
     <style>
         /* Theme-keyed palette: classic_ats keeps the warm-brown letter
            feel; professional_neutral drops to pure black/white/gray for
-           conservative recipients while keeping the same Georgia letter
-           prose. */
+           conservative recipients. Prose font is the shared Arial sans
+           family across every theme (2026-05-21 unification). */
         :root {{
             --ink: {ink};
             --muted: {muted};
@@ -1280,10 +1292,10 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
     <title>{title}</title>
     <style>
         @page {{ size: A4; margin: 0; }}
-        /* Theme-keyed palette: classic_ats ships warm-brown + Georgia
-           prose so the resume reads as a set with the cover letter;
-           professional_neutral collapses to pure black/white/gray with
-           all-Arial body for conservative recruiters / B&W printing. */
+        /* Theme-keyed palette: classic_ats ships warm-brown,
+           professional_neutral collapses to pure black/white/gray for
+           conservative recruiters / B&W printing. Typeface is the
+           shared Arial sans family for every theme (2026-05-21). */
         :root {{
             --ink: {ink};
             --muted: {muted};
@@ -1296,9 +1308,11 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
         * {{ box-sizing: border-box; }}
         html, body {{ margin: 0; padding: 0; }}
         body {{ font-family: {body_font_family}; color: var(--ink); background: var(--paper); font-size: 10.5pt; line-height: 1.5; }}
-        /* Editorial pairing: in classic_ats the prose-y parts (summary,
-           bullets) shift to Georgia so the resume harmonizes with the
-           cover letter; professional_neutral keeps Arial throughout. */
+        /* Prose-y parts (summary, bullets) use the theme's prose font.
+           Since the 2026-05-21 typography unification that is the same
+           shared Arial sans family as the body for every theme; the
+           rule is kept so a future theme could re-introduce a distinct
+           prose face without a renderer change. */
         .resume-summary, .resume-bullet-list li {{ font-family: {prose_font_family}; line-height: {prose_line_height}; }}
         /* min-height keeps short resumes filling a single A4 page;
            overflow-x: hidden prevents the negative-margin h2 trick from
@@ -1784,6 +1798,10 @@ def _resolve_docx_palette(theme: str | None) -> dict[str, str]:
 # Default page margins (in inches). Matches the ~18mm @page margin the
 # WeasyPrint renderer uses for the classic_ats resume shell.
 _DOCX_PAGE_MARGIN_INCHES = 0.7
+# US Letter page width. The résumé DOCX is always Letter; the content
+# column width = this minus both margins. Used to place the role-row
+# RIGHT tab stop at the true right edge of the text column.
+_DOCX_LETTER_WIDTH_INCHES = 8.5
 
 
 def _docx_add_bottom_border(paragraph, *, color_hex: str, size_eighths_pt: int = 6):
@@ -1899,6 +1917,26 @@ def _docx_add_resume_header(document, artifact: TailoredResumeArtifact, *, palet
         bold=True,
     )
 
+    # Mode-aware headline / role line. The HTML+PDF builders render
+    # `artifact.target_role` as an uppercase muted line between the
+    # name and the contact block (`.resume-classic-role`, added
+    # 2026-05-19). The DOCX header builder was missed in that change —
+    # so a JD-tailored résumé showed its role on the PDF but not the
+    # DOCX. Render it here too (omitted entirely when target_role is
+    # "" — a name-only header stays standard; we never fabricate one).
+    headline = str(getattr(artifact, "target_role", "") or "").strip()
+    if headline:
+        role_paragraph = document.add_paragraph()
+        role_paragraph.alignment = _docx_alignment("left")
+        role_paragraph.paragraph_format.space_after = _docx_pt(2)
+        role_run = role_paragraph.add_run(headline.upper())
+        _docx_apply_run_font(
+            role_run,
+            family=palette["body_font"],
+            size_pt=10,
+            color_hex=palette["muted"],
+        )
+
     contact_values = []
     if artifact.header.location:
         contact_values.append(artifact.header.location.strip())
@@ -1951,8 +1989,16 @@ def _docx_add_role_row(document, *, title: str, dates: str, palette: dict):
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_before = _docx_pt(4)
     paragraph.paragraph_format.space_after = _docx_pt(0)
+    # RIGHT tab stop at the right edge of the text column so the date
+    # sits flush-right (mirrors the PDF's flex `.resume-role-row`).
+    # Tab-stop positions are measured from the LEFT margin, so the
+    # right edge = content width = page width minus both margins.
+    # BUGFIX: this previously read `7.1 - 2 * margin` — but 7.1 was
+    # ALREADY the content width (8.5 - 2*0.7), so the margins were
+    # subtracted twice and every date landed 1.4in short of the
+    # margin instead of flush-right.
     paragraph.paragraph_format.tab_stops.add_tab_stop(
-        _docx_inches(7.1 - 2 * _DOCX_PAGE_MARGIN_INCHES),
+        _docx_inches(_DOCX_LETTER_WIDTH_INCHES - 2 * _DOCX_PAGE_MARGIN_INCHES),
         WD_TAB_ALIGNMENT.RIGHT,
     )
 
@@ -2025,9 +2071,9 @@ def _docx_add_paragraph_text(document, text: str, *, palette: dict, font_key: st
 
 def _docx_resume_summary_block(document, artifact: TailoredResumeArtifact, *, palette: dict):
     _docx_resume_section_heading(document, "Summary", palette=palette)
-    # Prose summary uses the prose font (Georgia in both themes) so
-    # the headline reads more like a written paragraph than a body
-    # bullet, regardless of theme.
+    # Prose summary uses the theme's prose font — the shared Arial
+    # sans family across every theme since the 2026-05-21 typography
+    # unification.
     _docx_add_paragraph_text(
         document,
         artifact.professional_summary or "No professional summary generated.",
@@ -2201,10 +2247,11 @@ def _build_resume_docx(artifact: TailoredResumeArtifact) -> bytes:
     `artifact.section_order` and falls back to
     `_DEFAULT_RESUME_SECTION_ORDER` for legacy callers.
 
-    Theme is read from `artifact.theme`; supported values are
-    `classic_ats` (warm-cream / brown accents, Arial body) and
-    `professional_neutral` (pure black / gray, Georgia body). Unknown
-    values fall back to `classic_ats`.
+    Theme is read from `artifact.theme`; supported values are the five
+    user-facing themes (`professional_neutral`, `classic_ats`,
+    `modern_blue`, `creative_warm`, `architect_mono`) — all sharing the
+    one Arial sans family, differentiated by colour / paper / header.
+    Unknown values fall back to `classic_ats`.
     """
     from docx import Document
 
@@ -2266,11 +2313,10 @@ def _build_cover_letter_docx(artifact: CoverLetterArtifact) -> bytes:
     `_split_cover_letter_title` so the heading + role-eyebrow read the
     same way as the HTML render.
 
-    Theme is read from `artifact.theme`; both classic_ats and
-    professional_neutral use the prose font (Georgia) for the body
-    because the cover letter is letter-shaped prose in either palette.
-    The theme switch only changes ink / muted / accent / line colors
-    + the small-caps eyebrow font (which is body_font).
+    Theme is read from `artifact.theme`; every theme uses the shared
+    Arial sans family (prose font) for the letter body — the cover
+    letter is letter-shaped prose in any palette. The theme switch
+    only changes ink / muted / accent / line colors.
     """
     from docx import Document
 

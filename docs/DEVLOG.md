@@ -2749,3 +2749,58 @@ architect_mono — all single-column, all ATS-safe) and to explicitly
 tell the assistant there is no two-column option today so it answers
 honestly if asked. Re-baked into both registry JSONs; byte-mirror
 tests green (33/33 prompts + registry).
+
+### Export audit: 2 DOCX bugs fixed + typography unified to one font
+
+Operator asked for a side-by-side PDF-vs-DOCX comparison of the
+résumé export across all 5 themes "to ensure DOCX is working as
+intended." Generated both formats for every theme and audited the
+DOCX XML structure directly (Word COM rendering was too flaky under
+the harness; structural XML inspection is more precise anyway).
+Content fidelity was perfect (all 5: every section, 0 empty
+paragraphs, correct theme colors) — but the audit caught two real
+PDF-vs-DOCX divergences:
+
+1. **Missing role/headline line in the DOCX.** The HTML/PDF header
+   builders render `artifact.target_role` as an uppercase muted line
+   between the name and contact (`.resume-classic-role`, added
+   2026-05-19) — but `_docx_add_resume_header` was missed in that
+   change, so a JD-tailored résumé showed its role on the PDF and
+   not the DOCX. Added the role paragraph to the DOCX header builder
+   (omitted when target_role is "", same as the PDF).
+
+2. **Dates not flush-right in the DOCX.** The role/education date
+   rows use a right-aligned tab stop. The position was computed as
+   `7.1 - 2 * margin` — but 7.1 was ALREADY the content width
+   (8.5in Letter − 2×0.7in margins), so the margins were subtracted
+   twice and every date landed at 5.70in instead of 7.1in — ~1.4in
+   short of the right margin. Added an explicit
+   `_DOCX_LETTER_WIDTH_INCHES = 8.5` and corrected the tab stop to
+   `letter_width − 2×margin = 7.1in`.
+
+Then — separate operator request, same export surface — **unified
+the typography**: all 5 themes now use ONE font family
+(Arial / Helvetica sans), the `modern_blue` family the operator
+liked. Previously professional_neutral was all-Georgia serif, and
+classic_ats + creative_warm had Georgia headings. Changed the
+`body/h1/prose` font fields (HTML + DOCX) on those three themes;
+modern_blue + architect_mono were already all-Arial. Themes now
+differentiate by COLOUR, PAPER, and HEADER TREATMENT only — not
+typeface. Cover letters were covered automatically (they read the
+same ThemeSpec `prose_font_family` / `docx_*_font` fields), so
+résumé + cover letter are now a uniform matched set on font family.
+Font SIZES deliberately left per-document (résumé body ~10.5pt,
+cover letter body 11.4pt) — only the family was unified.
+
+Stale "Georgia / serif" comments across `src/exporters.py` updated
+to match. Tests: `test_export_docx_bytes_renders_full_resume_*`
+paragraph indices bumped for the new role line; the two
+font-assertion tests (classic_ats / professional_neutral) inverted
+to expect Arial-only. 32/32 exporter tests + renderer-fidelity
+runner (OVERALL PASS) green.
+
+Noted but NOT fixed (pre-existing, unrelated):
+`test_export_docx_bytes_unknown_theme_falls_back_to_classic_ats`
+compares raw timestamped `.docx` ZIP bytes — flaky across a
+DOS-timestamp second boundary. Should compare extracted content,
+not raw bytes; worth a separate fix.
