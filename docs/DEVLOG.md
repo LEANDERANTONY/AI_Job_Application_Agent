@@ -2729,3 +2729,23 @@ stash + re-run).
 Expected impact: ~80% reduction in assistant API spend, ~30%
 lower per-turn latency. Quality holds at 1.000 per the Slice 1K
 data. No frontend changes required.
+
+### Fix: assistant product-knowledge block claimed 6 themes (only 5 ship)
+
+The `_PRODUCT_KNOWLEDGE_BLOCK` added in Slice 1J' listed six resume
+themes including `presentation_twocol` as "a two-column designer
+layout flagged non-ATS". Wrong — `presentation_twocol` is HELD from
+users: the two-column engine ships dormant in the renderer but is
+removed from every user-facing surface (`ArtifactTheme` in
+`api-types.ts`, `THEME_OPTIONS` + `THEME_HINT` in
+`ArtifactViewer.tsx`, the `workspace_models` Literal) pending the
+designer-grade rework parked in `report.md` ("Designer-grade theme
+expansion v2"). The assistant would have told users they could
+export in a two-column theme the picker doesn't offer.
+
+Corrected the block to name the FIVE themes users can actually pick
+(professional_neutral, classic_ats, modern_blue, creative_warm,
+architect_mono — all single-column, all ATS-safe) and to explicitly
+tell the assistant there is no two-column option today so it answers
+honestly if asked. Re-baked into both registry JSONs; byte-mirror
+tests green (33/33 prompts + registry).
