@@ -1,6 +1,8 @@
 import json
 import logging
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Callable, Iterable, NoReturn, Optional, Type, TypeVar
 
 from openai import OpenAI
@@ -22,6 +24,45 @@ _TModel = TypeVar("_TModel", bound=BaseModel)
 
 
 LOGGER = get_logger(__name__)
+
+
+# ── Request-scoped token-meter user context ─────────────────────────
+# The unified LLM token meter attributes every model call to a user.
+# An OpenAIService built via `build_openai_service_for_context` carries
+# an explicit `user_id`, but the deterministic `*_auto` parser path
+# constructs BARE `OpenAIService()` instances deep inside itself —
+# those have no user_id and would otherwise go un-metered.
+# `meter_user_scope` binds the active user for the duration of an
+# authenticated operation; a bare service falls back to it (see
+# `OpenAIService._record_token_meter`), so the résumé / JD sub-parses
+# are attributed without threading a user_id'd service through every
+# `*_auto` call site.
+_METER_USER_ID: ContextVar[Optional[str]] = ContextVar(
+    "llm_meter_user_id", default=None
+)
+
+
+@contextmanager
+def meter_user_scope(user_id: Optional[str]):
+    """Bind ``user_id`` as the token-meter fallback for the ``with``
+    block's dynamic extent — every bare ``OpenAIService`` call made
+    inside it is attributed to this user.
+
+    A blank / None user_id is a no-op scope (nothing bound). The reset
+    token makes the scope safe to nest and exception-safe to exit.
+    Set it INSIDE the synchronous operation so the value is visible to
+    that operation's same-thread sub-calls; do not rely on it crossing
+    a FastAPI dependency → threadpool-route boundary.
+    """
+    normalized = str(user_id or "").strip()
+    if not normalized:
+        yield
+        return
+    token = _METER_USER_ID.set(normalized)
+    try:
+        yield
+    finally:
+        _METER_USER_ID.reset(token)
 
 
 # ── Application-level retry layer ───────────────────────────────────
@@ -1762,16 +1803,21 @@ class OpenAIService:
                 )
             return
 
-        # No injected recorder: only meter when we have a user to
-        # attribute the spend to. Anonymous / eval runs no-op here.
-        if not self._user_id:
+        # No injected recorder: attribute to the service's own user_id
+        # when it has one, else fall back to the request-scoped meter
+        # context (`meter_user_scope`) — so a bare OpenAIService built
+        # inside a *_auto parser path is still metered to the
+        # authenticated user. Anonymous / eval runs have neither and
+        # no-op here.
+        effective_user_id = self._user_id or _METER_USER_ID.get()
+        if not effective_user_id:
             return
         try:
             # Local import — same circular-avoidance pattern as the
             # ``backend.run_traces`` import in ``_record_cost_trace``.
             from backend.quota import record_llm_token_usage
 
-            record_llm_token_usage(self._user_id, amount)
+            record_llm_token_usage(effective_user_id, amount)
         except Exception as exc:  # noqa: BLE001 - best-effort
             log_event(
                 LOGGER,

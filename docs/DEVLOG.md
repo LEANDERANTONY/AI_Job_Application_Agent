@@ -3085,3 +3085,39 @@ allowance is a positioning call (how to present "90K tokens/week" to
 non-technical users — "tokens" is jargon), and the Business card shows
 `$39` while report.md / this session's pricing discussion settled on
 `$29`. Both need an operator decision; flagged rather than guessed.
+Parked until the operator has the Lemon Squeezy envs.
+
+## Day 67: Token meter T7 — universal accounting via meter_user_scope
+
+Day 64 flagged an honest gap: the deterministic `*_auto` parser path
+builds bare `OpenAIService()` instances internally, so the standalone
+résumé / JD parses and the résumé / JD sub-parsers inside an analysis
+run under-counted by ~1–3K tokens each (only the dominant operations —
+the agentic run, the résumé builder — were fully metered). T7 closes
+it.
+
+`src/openai_service.py` gains a `ContextVar` + a `meter_user_scope`
+context manager. `_record_token_meter` now attributes a call to
+`self._user_id` when the service has one, else falls back to the
+contextvar — so a bare service built deep inside a `*_auto` call is
+metered to whoever the enclosing operation bound, without threading a
+user_id'd service through every `*_auto` signature.
+
+`workspace_service` wraps exactly the bare-service calls in
+`meter_user_scope(user_id)`: the résumé parse in `parse_resume_upload`,
+the JD parse + summary in `parse_job_description_upload` (which now
+also accepts the auth tokens, so it can resolve the user), and the two
+`*_auto` sub-parsers in `run_workspace_analysis`. The agentic run and
+the JD summary inside an analysis already carry a user_id'd service and
+ignore the scope — `self._user_id` wins — so there is no double-count
+and no misattribution.
+
+The scope is set INSIDE the synchronous service function, never via a
+FastAPI dependency: a contextvar set in a dependency would not survive
+the threadpool hop into a sync route, whereas a value bound inside the
+service function is visible to that operation's same-thread sub-calls.
+
+Verification: 124 tests green (cost-tracking + openai-service +
+workspace-quota-enforcement + backend-workspace), incl. 3 new
+`meter_user_scope` tests — bare-service attribution, no leak past the
+scope, and service-`user_id`-wins-over-scope.

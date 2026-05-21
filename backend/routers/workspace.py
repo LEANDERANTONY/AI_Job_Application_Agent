@@ -354,6 +354,10 @@ def upload_job_description(
             filename=payload.filename,
             mime_type=payload.mime_type,
             content_base64=payload.content_base64,
+            # Threaded through so the JD parse meters its tokens under
+            # the authenticated user (the parse builds bare services).
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
         )
     except AppError as error:
         _raise_http_error(error)

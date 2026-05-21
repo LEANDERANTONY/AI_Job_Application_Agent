@@ -459,6 +459,94 @@ def test_token_meter_skipped_when_no_user_id_and_no_recorder(monkeypatch):
 
 
 # ---------------------------------------------------------------------
+# meter_user_scope — request-scoped fallback attribution
+# ---------------------------------------------------------------------
+
+
+def test_meter_user_scope_meters_a_bare_service(monkeypatch):
+    """A bare OpenAIService (no user_id) — the shape the deterministic
+    `*_auto` parser path builds internally — is metered to the user
+    bound by `meter_user_scope`. This is what closes the resume / JD
+    sub-parser accounting under-count."""
+    from backend import quota
+    from backend.quota import read_llm_token_usage
+    from src.openai_service import meter_user_scope
+
+    monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfiguredBackend())
+    quota.reset_in_memory_backend()
+    try:
+        client = _FakeClient(
+            [
+                _build_response(
+                    json.dumps({"approved": True}),
+                    prompt_tokens=900,
+                    completion_tokens=600,
+                )
+            ]
+        )
+        service = OpenAIService(client=client)  # bare — no user_id
+        with meter_user_scope("user-scoped"):
+            service.run_json_prompt("system", "user", expected_keys=["approved"])
+        assert read_llm_token_usage("user-scoped", "free") == 1500
+    finally:
+        quota.reset_in_memory_backend()
+
+
+def test_meter_user_scope_does_not_leak_past_exit(monkeypatch):
+    """The scope is request-bounded: a bare service used AFTER the
+    `with` block exits is not metered — the reset token restores the
+    prior (empty) context."""
+    from backend import quota
+    from src.openai_service import meter_user_scope
+
+    monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfiguredBackend())
+    quota.reset_in_memory_backend()
+    try:
+        with meter_user_scope("user-inside"):
+            pass
+        client = _FakeClient([_build_response(json.dumps({"approved": True}))])
+        service = OpenAIService(client=client)  # bare
+        service.run_json_prompt("system", "user", expected_keys=["approved"])
+        assert not any(
+            key[2] == "llm_tokens"
+            for key in quota._IN_MEMORY_BACKEND._store
+        )
+    finally:
+        quota.reset_in_memory_backend()
+
+
+def test_service_user_id_wins_over_meter_scope(monkeypatch):
+    """A service built WITH a user_id meters to THAT user even inside a
+    `meter_user_scope` bound to someone else — `self._user_id` takes
+    precedence. This is why wrapping an analysis run (whose agentic
+    service already carries a user_id) in a scope can't double-count or
+    misattribute: only the bare sub-parsers pick up the scope."""
+    from backend import quota
+    from backend.quota import read_llm_token_usage
+    from src.openai_service import meter_user_scope
+
+    monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfiguredBackend())
+    quota.reset_in_memory_backend()
+    try:
+        client = _FakeClient(
+            [
+                _build_response(
+                    json.dumps({"approved": True}),
+                    prompt_tokens=500,
+                    completion_tokens=500,
+                )
+            ]
+        )
+        service = OpenAIService(client=client, user_id="service-owner")
+        with meter_user_scope("scope-user"):
+            service.run_json_prompt("system", "user", expected_keys=["approved"])
+        assert read_llm_token_usage("service-owner", "free") == 1000
+        assert read_llm_token_usage("scope-user", "free") == 0
+    finally:
+        quota.reset_in_memory_backend()
+
+
+# ---------------------------------------------------------------------
 # RLS / backend selection — documents the contract from the migration
 # ---------------------------------------------------------------------
 

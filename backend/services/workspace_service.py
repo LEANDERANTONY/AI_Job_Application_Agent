@@ -15,7 +15,7 @@ from src.logging_utils import get_logger, log_event
 from src.cover_letter_builder import build_cover_letter_artifact
 from src.config import assisted_workflow_requires_login
 from src.errors import InputValidationError
-from src.openai_service import OpenAIService
+from src.openai_service import OpenAIService, meter_user_scope
 from src.parsers.jd import parse_jd_text
 from src.parsers.resume import parse_resume_document
 from src.resume_builder import build_tailored_resume_artifact
@@ -162,9 +162,13 @@ def parse_resume_upload(
         )
         resume_document = parse_resume_document(uploaded_file, source=f"workspace:{filename}")
         resume_outage: dict = {}
-        candidate_profile = build_candidate_profile_from_resume_auto(
-            resume_document, outage_sink=resume_outage
-        )
+        # Meter the LLM résumé parse under the authenticated user — the
+        # `*_auto` path builds a bare OpenAIService internally, so
+        # without this scope its tokens would go un-attributed.
+        with meter_user_scope(quota_user_id):
+            candidate_profile = build_candidate_profile_from_resume_auto(
+                resume_document, outage_sink=resume_outage
+            )
         return {
             "resume_document": _serialize(resume_document),
             "candidate_profile": _serialize(candidate_profile),
@@ -197,21 +201,49 @@ def parse_resume_upload(
         raise
 
 
-def parse_job_description_upload(*, filename: str, mime_type: str, content_base64: str):
+def parse_job_description_upload(
+    *,
+    filename: str,
+    mime_type: str,
+    content_base64: str,
+    access_token: str = "",
+    refresh_token: str = "",
+):
     uploaded_file = _InMemoryUploadedFile(
         file_bytes=_decode_base64_content(content_base64),
         filename=filename,
         mime_type=mime_type,
     )
     job_description_text = parse_jd_text(uploaded_file)
+    # Resolve the caller so the LLM JD parse + summary below meter
+    # under the authenticated account. Best-effort: a resolution
+    # failure just leaves the meter scope empty (a small under-count),
+    # it never breaks the parse. The route already 401s anonymous
+    # callers, so in practice a user is always present here.
+    meter_user_id = ""
+    if access_token and refresh_token:
+        try:
+            _jd_auth_context = resolve_authenticated_context(
+                access_token=access_token,
+                refresh_token=refresh_token,
+            )
+            meter_user_id = str(
+                getattr(getattr(_jd_auth_context, "app_user", None), "id", "")
+                or ""
+            )
+        except Exception:  # noqa: BLE001 - meter attribution is best-effort
+            meter_user_id = ""
     # Production parsing path: LLM source-of-truth with deterministic
-    # fallback. Same architecture we use for resume parsing.
-    job_description = build_job_description_from_text_auto(job_description_text)
-    jd_summary_view = generate_job_summary_view(
-        openai_service=OpenAIService(),
-        job_description=job_description,
-        imported_job_posting=None,
-    )
+    # fallback. Same architecture we use for resume parsing. Both the
+    # `*_auto` parse and the JD summary build bare OpenAIService
+    # instances, so the scope is what attributes their tokens.
+    with meter_user_scope(meter_user_id):
+        job_description = build_job_description_from_text_auto(job_description_text)
+        jd_summary_view = generate_job_summary_view(
+            openai_service=OpenAIService(),
+            job_description=job_description,
+            imported_job_posting=None,
+        )
     return {
         "job_description_text": job_description_text,
         "job_description": _serialize(job_description),
@@ -317,15 +349,22 @@ def run_workspace_analysis(
     try:
         resume_parse_outage: dict = {}
         jd_parse_outage: dict = {}
-        candidate_profile = build_candidate_profile_from_resume_auto(
-            resume_document, outage_sink=resume_parse_outage
-        )
-        job_description = _enrich_job_description_from_imported_posting(
-            build_job_description_from_text_auto(
-                job_description_text, outage_sink=jd_parse_outage
-            ),
-            imported_job_posting,
-        )
+        # Meter the LLM résumé + JD sub-parses under the authenticated
+        # user. The agentic run and JD summary further down already
+        # carry a user_id'd OpenAIService; only these `*_auto`
+        # sub-parsers build bare ones, so the scope catches exactly the
+        # otherwise-unmetered calls — and a service that has its own
+        # user_id ignores the scope, so there is no double-count.
+        with meter_user_scope(str(quota_user_id or "")):
+            candidate_profile = build_candidate_profile_from_resume_auto(
+                resume_document, outage_sink=resume_parse_outage
+            )
+            job_description = _enrich_job_description_from_imported_posting(
+                build_job_description_from_text_auto(
+                    job_description_text, outage_sink=jd_parse_outage
+                ),
+                imported_job_posting,
+            )
         fit_analysis = build_fit_analysis(candidate_profile, job_description)
         tailored_draft = build_tailored_resume_draft(
             candidate_profile,
