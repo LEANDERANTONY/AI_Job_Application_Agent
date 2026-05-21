@@ -144,6 +144,12 @@ def test_upsert_postings_maps_jobposting_attrs_to_columns(monkeypatch):
     monkeypatch.setattr(
         "src.cached_jobs_store.create_client", lambda url, key: None
     )
+    # Pin hybrid off so this basic column-mapping test is deterministic
+    # regardless of the JOB_SEARCH_HYBRID_ENABLED env — embed-on-write
+    # would otherwise add a diff query + embedding call.
+    monkeypatch.setattr(
+        "src.cached_jobs_store.is_job_search_hybrid_enabled", lambda: False
+    )
     client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 1}])]})
     store = _make_store(client)
 
@@ -297,6 +303,12 @@ def test_search_calls_rpc_with_normalized_args(monkeypatch):
     `to_tsquery` accordingly."""
     monkeypatch.setattr(
         "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    # This test asserts the Tier 1 lexical RPC contract, so pin hybrid
+    # off — otherwise a local .env with JOB_SEARCH_HYBRID_ENABLED=true
+    # routes through search_cached_jobs_hybrid and the test is env-flaky.
+    monkeypatch.setattr(
+        "src.cached_jobs_store.is_job_search_hybrid_enabled", lambda: False
     )
     client = _FakeClient(
         responses_per_table={},
@@ -820,16 +832,26 @@ def _sample_posting(job_id="gh-1", title="Engineer", company="Acme"):
     )
 
 
-def test_upsert_embeds_rows_on_write_when_hybrid_enabled(monkeypatch):
-    """Hybrid ON → upsert_postings computes an embedding for each row
-    and includes it in the upsert payload (embed-on-write keeps the
-    corpus current without re-running the backfill)."""
+def test_upsert_embeds_new_rows_on_write_when_hybrid_enabled(monkeypatch):
+    """Hybrid ON → upsert_postings embeds rows that are NEW to the cache
+    and carries the vector in the upsert payload (embed-on-write keeps
+    the corpus current without re-running the backfill)."""
     monkeypatch.setattr(
         "src.cached_jobs_store.create_client", lambda url, key: None
     )
     _enable_hybrid(monkeypatch, enabled=True)
     fake_openai = _FakeOpenAIService()
-    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 1}, {"id": 2}])]})
+    # Diff reads: nothing exists yet → both postings are new. Then the
+    # embedded-rows upsert.
+    client = _FakeClient(
+        {
+            "cached_jobs": [
+                SimpleNamespace(data=[]),  # which job_ids exist
+                SimpleNamespace(data=[]),  # which exist with NULL embedding
+                SimpleNamespace(data=[{"id": 1}, {"id": 2}]),  # upsert
+            ]
+        }
+    )
     store = _make_store(client)
     store._openai_service = fake_openai
 
@@ -838,14 +860,56 @@ def test_upsert_embeds_rows_on_write_when_hybrid_enabled(monkeypatch):
     )
 
     assert count == 2
-    upsert_call = next(c for c in client.queries[0].calls if c[0] == "upsert")
+    upsert_call = next(c for c in client.queries[2].calls if c[0] == "upsert")
     rows = upsert_call[1]
-    # Every row carries an embedding.
+    # Both new rows carry an embedding.
     assert all(row.get("embedding") == [0.11, 0.22, 0.33] for row in rows)
-    # One batched embeddings call for both rows.
+    # One batched embeddings call for both new rows.
     assert len(fake_openai.calls) == 1
     assert len(fake_openai.calls[0]["inputs"]) == 2
     assert fake_openai.calls[0]["task_name"] == "job_embedding_on_write"
+
+
+def test_upsert_skips_reembedding_already_embedded_rows(monkeypatch):
+    """Hybrid ON → a job already in the cache WITH an embedding is not
+    re-embedded; only genuinely-new jobs are. The already-embedded row
+    upserts WITHOUT an `embedding` key so its stored vector (and the
+    HNSW index) is left untouched — the fix for the embed-on-write
+    churn that timed out the refresh (DEVLOG Day 75)."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    fake_openai = _FakeOpenAIService()
+    client = _FakeClient(
+        {
+            "cached_jobs": [
+                SimpleNamespace(data=[{"job_id": "gh-1"}]),  # gh-1 exists
+                SimpleNamespace(data=[]),  # none exist with NULL embedding
+                SimpleNamespace(data=[{"id": 1}]),  # upsert: no-embedding batch
+                SimpleNamespace(data=[{"id": 2}]),  # upsert: embedded batch
+            ]
+        }
+    )
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    count = store.upsert_postings(
+        "greenhouse", [_sample_posting("gh-1"), _sample_posting("gh-2")]
+    )
+
+    assert count == 2
+    # Only the new job (gh-2) was embedded.
+    assert len(fake_openai.calls) == 1
+    assert len(fake_openai.calls[0]["inputs"]) == 1
+    # The already-embedded row upserts WITHOUT an embedding key.
+    without_call = next(c for c in client.queries[2].calls if c[0] == "upsert")
+    assert [r["job_id"] for r in without_call[1]] == ["gh-1"]
+    assert "embedding" not in without_call[1][0]
+    # The new row upserts WITH the freshly-computed embedding.
+    with_call = next(c for c in client.queries[3].calls if c[0] == "upsert")
+    assert [r["job_id"] for r in with_call[1]] == ["gh-2"]
+    assert with_call[1][0]["embedding"] == [0.11, 0.22, 0.33]
 
 
 def test_upsert_skips_embedding_when_hybrid_disabled(monkeypatch):
@@ -877,7 +941,15 @@ def test_upsert_is_non_fatal_when_embedding_fails(monkeypatch):
     )
     _enable_hybrid(monkeypatch, enabled=True)
     fake_openai = _FakeOpenAIService(raise_on_call=True)
-    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 1}])]})
+    client = _FakeClient(
+        {
+            "cached_jobs": [
+                SimpleNamespace(data=[]),  # which job_ids exist
+                SimpleNamespace(data=[]),  # which exist with NULL embedding
+                SimpleNamespace(data=[{"id": 1}]),  # upsert
+            ]
+        }
+    )
     store = _make_store(client)
     store._openai_service = fake_openai
 
@@ -885,7 +957,7 @@ def test_upsert_is_non_fatal_when_embedding_fails(monkeypatch):
     count = store.upsert_postings("greenhouse", [_sample_posting("gh-1")])
 
     assert count == 1  # the job WAS cached
-    upsert_call = next(c for c in client.queries[0].calls if c[0] == "upsert")
+    upsert_call = next(c for c in client.queries[2].calls if c[0] == "upsert")
     rows = upsert_call[1]
     assert "embedding" not in rows[0]  # no embedding, but the row landed
     assert len(fake_openai.calls) == 1  # an attempt was made
@@ -899,9 +971,17 @@ def test_upsert_non_fatal_on_embedding_count_mismatch(monkeypatch):
         "src.cached_jobs_store.create_client", lambda url, key: None
     )
     _enable_hybrid(monkeypatch, enabled=True)
-    # Two postings, but the service returns only one vector.
+    # Two new postings, but the service returns only one vector.
     fake_openai = _FakeOpenAIService(vectors=[[0.1, 0.2, 0.3]])
-    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 1}, {"id": 2}])]})
+    client = _FakeClient(
+        {
+            "cached_jobs": [
+                SimpleNamespace(data=[]),  # which job_ids exist
+                SimpleNamespace(data=[]),  # which exist with NULL embedding
+                SimpleNamespace(data=[{"id": 1}, {"id": 2}]),  # upsert
+            ]
+        }
+    )
     store = _make_store(client)
     store._openai_service = fake_openai
 
@@ -910,7 +990,7 @@ def test_upsert_non_fatal_on_embedding_count_mismatch(monkeypatch):
     )
 
     assert count == 2
-    upsert_call = next(c for c in client.queries[0].calls if c[0] == "upsert")
+    upsert_call = next(c for c in client.queries[2].calls if c[0] == "upsert")
     rows = upsert_call[1]
     assert all("embedding" not in row for row in rows)
 

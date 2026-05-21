@@ -191,12 +191,17 @@ class CachedJobsStore:
         matching attributes — `id`, `source`, `title`, `company`, etc.).
         Conflict key is (source, job_id) so re-runs are idempotent.
 
-        Tier 2 embed-on-write: when hybrid search is enabled, each row's
-        `embedding` is computed in the same call so the corpus stays
-        current without a re-run of the backfill. This is STRICTLY
-        non-fatal — if the embeddings call fails, the jobs are still
-        upserted (without an embedding; the hybrid RPC degrades those
-        rows to lexical until the next backfill / refresh fills them).
+        Tier 2 embed-on-write: when hybrid search is enabled, rows that
+        are NEW to the cache (no embedding stored yet) get an
+        `embedding` computed in this same call. Rows already embedded
+        are NOT re-embedded — re-writing every job's vector on every
+        4-hour refresh churned the HNSW index hard enough to blow the
+        upsert statement timeout (DEVLOG Day 75). STRICTLY non-fatal:
+        if the embeddings call fails the jobs are still upserted, just
+        without an embedding. The upsert is issued as up to two batches
+        (rows without an `embedding`, then rows with one) so each
+        PostgREST request has a homogeneous column set and the HNSW
+        index is only touched for the small newly-embedded batch.
         """
         client = self._require_client()
         rows = []
@@ -233,33 +238,48 @@ class CachedJobsStore:
         if not rows:
             return 0
         # Tier 2 embed-on-write — non-fatal. Attaches an `embedding` to
-        # each row dict in place. Any failure inside leaves the rows
-        # embedding-free and the upsert proceeds regardless.
-        self._attach_embeddings_on_write(rows)
+        # the subset of `rows` that are NEW to the cache; already-
+        # embedded rows are left untouched so the upsert never rewrites
+        # their vector.
+        self._embed_new_rows(source, rows)
+        # Split by column shape: a row dict WITHOUT an `embedding` key
+        # leaves the stored vector intact on conflict; rows WITH a fresh
+        # embedding go in their own batch. Two homogeneous upserts keep
+        # each PostgREST request's column set consistent and confine the
+        # HNSW index writes to the (small) new-rows batch.
+        without_embedding = [row for row in rows if "embedding" not in row]
+        with_embedding = [row for row in rows if "embedding" in row]
+        touched = 0
         try:
-            response = (
-                client.table(self._table)
-                .upsert(rows, on_conflict="source,job_id")
-                .execute()
-            )
+            for batch in (without_embedding, with_embedding):
+                if not batch:
+                    continue
+                response = (
+                    client.table(self._table)
+                    .upsert(batch, on_conflict="source,job_id")
+                    .execute()
+                )
+                touched += len(self._extract_rows(response))
         except Exception as exc:
             raise AppError(
                 "Failed to upsert cached jobs.",
                 details=f"{type(exc).__name__}: {exc}",
             ) from exc
-        return len(self._extract_rows(response))
+        return touched
 
-    def _attach_embeddings_on_write(self, rows: list[dict]) -> None:
-        """Compute + attach an `embedding` to each upsert row in place.
+    def _embed_new_rows(self, source: str, rows: list[dict]) -> None:
+        """Attach an `embedding` to the `rows` that are new to the cache.
 
-        The Tier 2 embed-on-write path. Mutates `rows`: on success each
-        dict gains an `embedding` key (a list[float]); on ANY failure
-        the rows are left untouched and the caller upserts them without
-        embeddings. This method NEVER raises — embed-on-write must not
-        be able to break the refresh worker.
+        The Tier 2 embed-on-write path. Mutates `rows` in place: each
+        NEW row's dict gains an `embedding` key (a list[float]). Rows
+        already carrying a vector are left untouched — re-embedding the
+        whole corpus on every refresh churned the HNSW index and timed
+        out the chunk upserts (DEVLOG Day 75).
 
-        Skipped entirely when hybrid search is disabled (no point
-        spending tokens on a column nothing queries yet).
+        NEVER raises — embed-on-write must not be able to break the
+        refresh worker. Skipped entirely when hybrid search is disabled
+        or no OpenAI service is available (no point spending tokens on a
+        column nothing queries yet).
         """
         if not rows:
             return
@@ -268,6 +288,29 @@ class CachedJobsStore:
         service = self._get_openai_service()
         if service is None or not service.is_available():
             return
+        # Only NEW / un-embedded jobs need work. A failure to determine
+        # which those are degrades to "embed nothing this chunk" rather
+        # than risking a re-embed of the whole corpus.
+        try:
+            already_embedded = self._already_embedded_job_ids(
+                source, [row["job_id"] for row in rows]
+            )
+        except Exception as exc:  # noqa: BLE001 — embed-on-write is non-fatal
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                "cached_jobs_embed_diff_failed",
+                "Could not determine which jobs still need embeddings; "
+                "skipping embed-on-write for this chunk.",
+                row_count=len(rows),
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            return
+        new_rows = [
+            row for row in rows if row["job_id"] not in already_embedded
+        ]
+        if not new_rows:
+            return
         try:
             inputs = [
                 build_job_embedding_input(
@@ -275,7 +318,7 @@ class CachedJobsStore:
                     company=row.get("company", ""),
                     description=row.get("description", ""),
                 )
-                for row in rows
+                for row in new_rows
             ]
             vectors = service.create_embeddings(
                 inputs, task_name="job_embedding_on_write"
@@ -285,13 +328,13 @@ class CachedJobsStore:
                 LOGGER,
                 logging.WARNING,
                 "cached_jobs_embed_on_write_failed",
-                "Embed-on-write failed; jobs cached without embeddings "
-                "(they fall back to lexical until the next backfill).",
-                row_count=len(rows),
+                "Embed-on-write failed; new jobs cached without "
+                "embeddings (a later refresh re-embeds them).",
+                row_count=len(new_rows),
                 error=f"{type(exc).__name__}: {exc}",
             )
             return
-        if len(vectors) != len(rows):
+        if len(vectors) != len(new_rows):
             # Count mismatch — can't safely pair vectors to rows; skip
             # attaching rather than risk the wrong vector on a job.
             log_event(
@@ -299,13 +342,66 @@ class CachedJobsStore:
                 logging.WARNING,
                 "cached_jobs_embed_on_write_count_mismatch",
                 "Embed-on-write returned a mismatched vector count; "
-                "jobs cached without embeddings.",
-                row_count=len(rows),
+                "new jobs cached without embeddings.",
+                row_count=len(new_rows),
                 vector_count=len(vectors),
             )
             return
-        for row, vector in zip(rows, vectors):
+        for row, vector in zip(new_rows, vectors):
             row["embedding"] = vector
+
+    def _already_embedded_job_ids(
+        self, source: str, job_ids: list[str]
+    ) -> set[str]:
+        """job_ids (within `source`) already in cached_jobs WITH a
+        non-NULL embedding.
+
+        Embed-on-write skips these so the upsert never rewrites a stored
+        vector. Computed with two cheap (source, job_id)-indexed reads:
+        the rows that exist, and (of those) the ones whose embedding is
+        still NULL — the difference is the already-embedded set. A row
+        that exists but has a NULL embedding (e.g. a prior embed-on-
+        write failure) is therefore NOT in the set, so the next refresh
+        retries it.
+
+        Raises on a query failure — the caller treats that as "embed
+        nothing this chunk".
+        """
+        client = self._require_client()
+        ids = [jid for jid in job_ids if jid]
+        if not ids:
+            return set()
+        existing: set[str] = set()
+        null_embedding: set[str] = set()
+        # Bound the IN-list so a large chunk can't build an over-long
+        # PostgREST URL. The refresh upserts ~30 at a time, so this is
+        # normally a single pass.
+        for start in range(0, len(ids), 200):
+            batch = ids[start : start + 200]
+            existing_response = (
+                client.table(self._table)
+                .select("job_id")
+                .eq("source", source)
+                .in_("job_id", batch)
+                .execute()
+            )
+            for row in self._extract_rows(existing_response):
+                jid = str(row.get("job_id") or "").strip()
+                if jid:
+                    existing.add(jid)
+            null_response = (
+                client.table(self._table)
+                .select("job_id")
+                .eq("source", source)
+                .in_("job_id", batch)
+                .is_("embedding", "null")
+                .execute()
+            )
+            for row in self._extract_rows(null_response):
+                jid = str(row.get("job_id") or "").strip()
+                if jid:
+                    null_embedding.add(jid)
+        return existing - null_embedding
 
     def cleanup_missing(
         self,

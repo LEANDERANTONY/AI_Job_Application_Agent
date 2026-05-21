@@ -3790,3 +3790,55 @@ live corpus — fusion (query + embedding), pure-lexical (query, no
 embedding), and browse (neither) — with no timeout.
 `docs/sql/supabase-cached-jobs-hybrid.sql` now mirrors the live
 function exactly.
+
+## Day 75: Embed-on-write churn — the Tier 2 production incident
+
+Day 74 finalized the hybrid RPC and the flag went live
+(`JOB_SEARCH_HYBRID_ENABLED=true` on the VPS). A production smoke
+check of `/api/jobs/search` then found the endpoint timing out at
+the gateway — job search was effectively down. The cause was not
+the hybrid query; it was **embed-on-write**.
+
+**What broke.** Flipping the flag switched on two things, not one:
+the hybrid *search* path AND embed-on-write in the cache-refresh
+path. `CachedJobsStore.upsert_postings` was embedding and writing
+the `embedding` vector for *every* posting in *every* chunk of
+*every* 4-hour refresh — all ~14k jobs, changed or not. Each
+vector write updates the HNSW index. The refresh upserts in chunks
+of 30, already sized to fit Postgres's statement timeout for the
+`search_tsv` + GIN index work; the extra HNSW churn pushed them
+past it, and the VPS logs filled with `Failed to upsert chunk for
+greenhouse … 57014 statement timeout`.
+
+The cascade: failed upserts retried in a loop → mass dead tuples →
+a multi-minute autovacuum on `cached_jobs` → a saturated database
+→ search queries (the hybrid RPC *and* its lexical fallback) slow
+enough to trip the statement timeout too → the whole request
+exceeding the ~30s gateway timeout. One root cause, two dead
+features: the refresh and search both down.
+
+**The fix — embed only new rows.** `upsert_postings` no longer
+re-embeds the corpus. A new `_embed_new_rows` step embeds only the
+postings that are NEW to the cache (or exist with a NULL embedding
+from a prior failure); `_already_embedded_job_ids` finds the rest
+with two cheap `(source, job_id)`-indexed reads. The upsert is
+then issued as up to two batches — rows without an `embedding` key
+(the bulk; their stored vector is left intact on conflict) and
+rows with a freshly-computed one. Each PostgREST request keeps a
+homogeneous column set, and the HNSW index is written only for the
+handful of genuinely-new jobs per refresh. In steady state a chunk
+has zero new rows → a single text-only upsert, exactly the proven
+pre-Tier-2 cost.
+
+Embed-on-write keeps its non-fatality contract: any failure (the
+diff reads, the embeddings call, a vector-count mismatch) logs and
+degrades to "cache the row without an embedding" — the hybrid RPC
+treats a NULL embedding as lexical-only and the next refresh
+retries it. The fix is contained to `cached_jobs_store.py`; the
+flag stays on, so once deployed the next refresh self-corrects.
+
+Verification: 28 `test_cached_jobs_store` tests green, including a
+new `test_upsert_skips_reembedding_already_embedded_rows`. Two
+store tests that were silently env-dependent — routing through the
+hybrid RPC whenever a local `.env` had the flag on — now pin the
+flag explicitly.
