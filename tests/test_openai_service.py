@@ -622,7 +622,10 @@ def test_create_embeddings_empty_input_skips_the_api_call():
 
 def test_create_embeddings_raises_when_not_configured():
     """No client → AgentExecutionError, same posture as run_json_prompt."""
-    service = OpenAIService(api_key=None, client=None)
+    # api_key="" (empty, NOT None) forces an unconfigured service even
+    # when the environment / .env carries a real OPENAI_API_KEY —
+    # api_key=None would fall back to that ambient key and build a client.
+    service = OpenAIService(api_key="", client=None)
     assert not service.is_available()
     with pytest.raises(AgentExecutionError):
         service.create_embeddings(["x"])
