@@ -241,6 +241,14 @@ OPENAI_EMBEDDING_MODEL = os.getenv(
 OPENAI_EMBEDDING_DIMENSIONS = _load_int_env(
     "OPENAI_EMBEDDING_DIMENSIONS", 1536
 )
+# Max description characters folded into a job's embedding input. Bounds
+# per-row token cost (text-embedding-3-small's input limit is 8191
+# tokens — title + company + 2000 description chars is well under). The
+# corpus backfill and the embed-on-write path share this so a backfilled
+# vector and an embed-on-write vector for the same job are comparable.
+OPENAI_EMBEDDING_INPUT_DESCRIPTION_CHARS = _load_int_env(
+    "OPENAI_EMBEDDING_INPUT_DESCRIPTION_CHARS", 2000
+)
 # Master switch for the Tier 2 hybrid search path. Default OFF: the
 # hybrid RPC + the embedding column only exist after the operator has
 # (1) applied the pgvector schema, (2) run the backfill, and (3)

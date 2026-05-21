@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from src.cached_jobs_store import CachedJobsStore
 
 
@@ -596,3 +594,364 @@ def test_get_listing_status_map_returns_optimistic_on_cache_error(monkeypatch):
     keys = [("greenhouse", "x"), ("lever", "y")]
     result = store.get_listing_status_map(keys)
     assert result == {key: True for key in keys}
+
+
+# ---------------------------------------------------------------------------
+# Tier 2 — hybrid (lexical + semantic) search wiring + embed-on-write.
+# ---------------------------------------------------------------------------
+
+
+class _FakeOpenAIService:
+    """Mocked OpenAIService for Tier 2 store tests.
+
+    `available` toggles is_available(); `raise_on_call` makes
+    create_embeddings raise (the failure-degradation path); a custom
+    `vectors` lets a test force a count mismatch.
+    """
+
+    def __init__(self, *, available=True, raise_on_call=False, vectors=None):
+        self._available = available
+        self._raise = raise_on_call
+        self._vectors = vectors
+        self.calls = []
+
+    def is_available(self):
+        return self._available
+
+    def create_embeddings(self, inputs, *, model=None, task_name=None):
+        self.calls.append({"inputs": list(inputs), "task_name": task_name})
+        if self._raise:
+            raise RuntimeError("embeddings provider down")
+        if self._vectors is not None:
+            return self._vectors
+        # Default: one tiny deterministic vector per input.
+        return [[0.11, 0.22, 0.33] for _ in inputs]
+
+
+def _enable_hybrid(monkeypatch, enabled=True):
+    """Toggle the JOB_SEARCH_HYBRID_ENABLED gate as the store sees it."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.is_job_search_hybrid_enabled",
+        lambda: enabled,
+    )
+
+
+# -- hybrid search path -----------------------------------------------------
+
+
+def test_search_uses_lexical_rpc_when_hybrid_disabled(monkeypatch):
+    """Hybrid OFF (the safe default) → the store calls the Tier 1
+    `search_cached_jobs_ranked` RPC and never embeds anything."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=False)
+    fake_openai = _FakeOpenAIService()
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[{"id": 1}])],
+    )
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    rows = store.search(query="ml engineer", limit=10)
+
+    assert rows == [{"id": 1}]
+    assert client.rpc_calls[0].fn == "search_cached_jobs_ranked"
+    # No embedding call — hybrid is off.
+    assert fake_openai.calls == []
+
+
+def test_search_uses_hybrid_rpc_when_enabled_and_query_embeds(monkeypatch):
+    """Hybrid ON + the query embeds OK → the store calls
+    `search_cached_jobs_hybrid` and passes the query embedding as
+    `p_query_embedding` alongside the same lexical args."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    fake_openai = _FakeOpenAIService()
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[{"id": 7, "title": "ML Eng"}])],
+    )
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    rows = store.search(query="ml engineer", location="Remote", limit=15)
+
+    assert rows == [{"id": 7, "title": "ML Eng"}]
+    assert len(client.rpc_calls) == 1
+    rpc = client.rpc_calls[0]
+    assert rpc.fn == "search_cached_jobs_hybrid"
+    # The query embedding rides along; the lexical args are still here.
+    assert rpc.args["p_query_embedding"] == [0.11, 0.22, 0.33]
+    assert rpc.args["p_query"] == "(ml | machine<->learning) & (engineer | developer | dev)"
+    assert rpc.args["p_location"] == "Remote"
+    assert rpc.args["p_limit"] == 15
+    # The expanded query string is what got embedded.
+    assert fake_openai.calls[0]["inputs"] == [rpc.args["p_query"]]
+    assert fake_openai.calls[0]["task_name"] == "job_search_query"
+
+
+def test_search_falls_back_to_lexical_when_query_embedding_fails(monkeypatch):
+    """GRACEFUL DEGRADATION: hybrid ON but the embeddings call raises →
+    the store MUST fall back to the Tier 1 lexical RPC. Search never
+    hard-fails because of Tier 2."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    fake_openai = _FakeOpenAIService(raise_on_call=True)
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[{"id": 2}])],
+    )
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    rows = store.search(query="data scientist", limit=20)
+
+    # Result still returned — from the lexical RPC.
+    assert rows == [{"id": 2}]
+    assert len(client.rpc_calls) == 1
+    assert client.rpc_calls[0].fn == "search_cached_jobs_ranked"
+    # An embedding WAS attempted (and failed) before the fallback.
+    assert len(fake_openai.calls) == 1
+
+
+def test_search_falls_back_to_lexical_when_hybrid_rpc_raises(monkeypatch):
+    """If the hybrid RPC itself raises (e.g. the operator hasn't applied
+    `supabase-cached-jobs-hybrid.sql` yet), the store falls back to the
+    lexical RPC instead of surfacing an error."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    fake_openai = _FakeOpenAIService()
+
+    # First rpc() (hybrid) raises; second rpc() (lexical) succeeds.
+    class _HybridRaisesClient(_FakeClient):
+        def rpc(self, fn, args):
+            if fn == "search_cached_jobs_hybrid":
+                self.rpc_calls.append(SimpleNamespace(fn=fn, args=args))
+                raise RuntimeError("function search_cached_jobs_hybrid does not exist")
+            return super().rpc(fn, args)
+
+    client = _HybridRaisesClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[{"id": 3}])],
+    )
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    rows = store.search(query="backend engineer", limit=20)
+
+    assert rows == [{"id": 3}]
+    # Two rpc calls: the failed hybrid attempt + the lexical fallback.
+    assert [c.fn for c in client.rpc_calls] == [
+        "search_cached_jobs_hybrid",
+        "search_cached_jobs_ranked",
+    ]
+
+
+def test_search_browse_mode_skips_embedding_and_uses_lexical(monkeypatch):
+    """Empty query (browse mode) with hybrid ON: there is no semantic
+    intent to embed, so the store skips the embedding call and uses the
+    lexical RPC (the hybrid RPC would treat a NULL embedding as pure
+    lexical anyway — skipping the call saves a token spend)."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    fake_openai = _FakeOpenAIService()
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[])],
+    )
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    store.search(query="", limit=10)
+
+    assert client.rpc_calls[0].fn == "search_cached_jobs_ranked"
+    assert fake_openai.calls == []  # nothing embedded for an empty query
+
+
+def test_search_falls_back_to_lexical_when_openai_unavailable(monkeypatch):
+    """Hybrid ON but no usable OpenAI service (no key) → lexical path.
+    A deployment that flipped the flag without an OpenAI key still
+    searches fine."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    fake_openai = _FakeOpenAIService(available=False)
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[{"id": 5}])],
+    )
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    rows = store.search(query="ml", limit=20)
+
+    assert rows == [{"id": 5}]
+    assert client.rpc_calls[0].fn == "search_cached_jobs_ranked"
+    assert fake_openai.calls == []  # unavailable service is never called
+
+
+# -- embed-on-write ---------------------------------------------------------
+
+
+def _sample_posting(job_id="gh-1", title="Engineer", company="Acme"):
+    return SimpleNamespace(
+        id=job_id,
+        source="greenhouse",
+        title=title,
+        company=company,
+        location="Remote",
+        employment_type="Full-time",
+        url=f"https://example.com/{job_id}",
+        summary="",
+        description_text="Build great things.",
+        posted_at="2026-05-01T00:00:00Z",
+        metadata={},
+    )
+
+
+def test_upsert_embeds_rows_on_write_when_hybrid_enabled(monkeypatch):
+    """Hybrid ON → upsert_postings computes an embedding for each row
+    and includes it in the upsert payload (embed-on-write keeps the
+    corpus current without re-running the backfill)."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    fake_openai = _FakeOpenAIService()
+    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 1}, {"id": 2}])]})
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    count = store.upsert_postings(
+        "greenhouse", [_sample_posting("gh-1"), _sample_posting("gh-2")]
+    )
+
+    assert count == 2
+    upsert_call = next(c for c in client.queries[0].calls if c[0] == "upsert")
+    rows = upsert_call[1]
+    # Every row carries an embedding.
+    assert all(row.get("embedding") == [0.11, 0.22, 0.33] for row in rows)
+    # One batched embeddings call for both rows.
+    assert len(fake_openai.calls) == 1
+    assert len(fake_openai.calls[0]["inputs"]) == 2
+    assert fake_openai.calls[0]["task_name"] == "job_embedding_on_write"
+
+
+def test_upsert_skips_embedding_when_hybrid_disabled(monkeypatch):
+    """Hybrid OFF → upsert does NOT embed (no point spending tokens on a
+    column nothing queries yet). Rows go in without an `embedding` key."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=False)
+    fake_openai = _FakeOpenAIService()
+    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 1}])]})
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    store.upsert_postings("greenhouse", [_sample_posting("gh-1")])
+
+    upsert_call = next(c for c in client.queries[0].calls if c[0] == "upsert")
+    rows = upsert_call[1]
+    assert "embedding" not in rows[0]
+    assert fake_openai.calls == []
+
+
+def test_upsert_is_non_fatal_when_embedding_fails(monkeypatch):
+    """EMBED-ON-WRITE NON-FATALITY: the embeddings call raises → the
+    jobs are STILL upserted, just without an embedding. A flaky
+    embeddings provider must never break the refresh worker."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    fake_openai = _FakeOpenAIService(raise_on_call=True)
+    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 1}])]})
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    # Must not raise.
+    count = store.upsert_postings("greenhouse", [_sample_posting("gh-1")])
+
+    assert count == 1  # the job WAS cached
+    upsert_call = next(c for c in client.queries[0].calls if c[0] == "upsert")
+    rows = upsert_call[1]
+    assert "embedding" not in rows[0]  # no embedding, but the row landed
+    assert len(fake_openai.calls) == 1  # an attempt was made
+
+
+def test_upsert_non_fatal_on_embedding_count_mismatch(monkeypatch):
+    """If the embeddings call returns a mismatched vector count, the
+    rows are upserted without embeddings rather than risking the wrong
+    vector being written onto a job."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    # Two postings, but the service returns only one vector.
+    fake_openai = _FakeOpenAIService(vectors=[[0.1, 0.2, 0.3]])
+    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 1}, {"id": 2}])]})
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    count = store.upsert_postings(
+        "greenhouse", [_sample_posting("gh-1"), _sample_posting("gh-2")]
+    )
+
+    assert count == 2
+    upsert_call = next(c for c in client.queries[0].calls if c[0] == "upsert")
+    rows = upsert_call[1]
+    assert all("embedding" not in row for row in rows)
+
+
+def test_upsert_non_fatal_when_openai_unavailable(monkeypatch):
+    """Hybrid ON but no usable OpenAI service → upsert still caches the
+    jobs, just without embeddings."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    _enable_hybrid(monkeypatch, enabled=True)
+    fake_openai = _FakeOpenAIService(available=False)
+    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[{"id": 1}])]})
+    store = _make_store(client)
+    store._openai_service = fake_openai
+
+    count = store.upsert_postings("greenhouse", [_sample_posting("gh-1")])
+
+    assert count == 1
+    upsert_call = next(c for c in client.queries[0].calls if c[0] == "upsert")
+    assert "embedding" not in upsert_call[1][0]
+    assert fake_openai.calls == []
+
+
+def test_build_job_embedding_input_format_is_shared():
+    """The store's `build_job_embedding_input` is the single source of
+    truth for the embedding input format — title + company + capped
+    description, empty fields dropped, never empty."""
+    from src.cached_jobs_store import build_job_embedding_input
+
+    text = build_job_embedding_input(
+        title="Staff Engineer",
+        company="Globex",
+        description="Z" * 9000,
+        description_chars=2000,
+    )
+    assert "Job title: Staff Engineer" in text
+    assert "Company: Globex" in text
+    assert text.count("Z") == 2000  # description capped
+
+    # All-empty row still yields a non-empty placeholder.
+    assert build_job_embedding_input(
+        title="", company="", description=""
+    ).strip() != ""

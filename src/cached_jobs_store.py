@@ -14,6 +14,7 @@ Per-row CRUD is not exposed — this table isn't user-editable.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -25,17 +26,59 @@ except Exception:  # noqa: BLE001 — supabase is optional in dev / tests
     ClientOptions = None
 
 from src.config import (
+    OPENAI_EMBEDDING_INPUT_DESCRIPTION_CHARS,
     SUPABASE_CACHED_JOBS_TABLE,
     SUPABASE_SAVED_JOBS_TABLE,
     SUPABASE_SERVICE_ROLE_KEY,
     SUPABASE_URL,
+    is_job_search_hybrid_enabled,
 )
 from src.errors import AppError
 from src.job_search_synonyms import expand_query
+from src.logging_utils import get_logger, log_event
+
+LOGGER = get_logger(__name__)
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def build_job_embedding_input(
+    *,
+    title: str,
+    company: str,
+    description: str,
+    description_chars: int = OPENAI_EMBEDDING_INPUT_DESCRIPTION_CHARS,
+) -> str:
+    """Compose the text embedded for one job (Tier 2 semantic search).
+
+    title + company + a capped description snippet. This is the SINGLE
+    source of truth for the embedding input format — both the corpus
+    backfill (`scripts/backfill_job_embeddings.py`) and the embed-on-
+    write path (`CachedJobsStore.upsert_postings`) call it, so a
+    backfilled vector and an embed-on-write vector for the same job are
+    built identically and therefore comparable.
+
+    The description is truncated to `description_chars` to bound the
+    per-row token cost. Empty fields are dropped; a row with no usable
+    text still yields a non-empty placeholder (the embeddings API
+    rejects empty input).
+    """
+    title_clean = str(title or "").strip()
+    company_clean = str(company or "").strip()
+    description_clean = str(description or "").strip()
+    if description_chars > 0 and len(description_clean) > description_chars:
+        description_clean = description_clean[:description_chars]
+
+    parts: list[str] = []
+    if title_clean:
+        parts.append(f"Job title: {title_clean}")
+    if company_clean:
+        parts.append(f"Company: {company_clean}")
+    if description_clean:
+        parts.append(f"Description: {description_clean}")
+    return "\n".join(parts) if parts else "(no job details)"
 
 
 def _coerce_iso(value) -> str | None:
@@ -80,12 +123,18 @@ class CachedJobsStore:
         service_role_key: str = SUPABASE_SERVICE_ROLE_KEY,
         table_name: str = SUPABASE_CACHED_JOBS_TABLE,
         saved_jobs_table_name: str = SUPABASE_SAVED_JOBS_TABLE,
+        openai_service=None,
     ):
         self._url = supabase_url
         self._service_role_key = service_role_key
         self._table = table_name
         self._saved_jobs_table = saved_jobs_table_name
         self._client = None
+        # Tier 2 hybrid search needs an OpenAIService to embed the query
+        # (and to embed newly-cached jobs on write). Constructed lazily
+        # so a store built in an environment with no OpenAI key — or
+        # with hybrid disabled — never pays for it. Tests inject a fake.
+        self._openai_service = openai_service
 
     def is_configured(self) -> bool:
         return bool(
@@ -94,6 +143,32 @@ class CachedJobsStore:
             and self._table
             and create_client is not None
         )
+
+    def _get_openai_service(self):
+        """Lazily build the OpenAIService used for Tier 2 embeddings.
+
+        Imported lazily (not at module load) to avoid a heavy import on
+        the cheap-FTS-only path and to keep the import graph shallow.
+        Returns None if the service can't be constructed — every caller
+        treats a None / unavailable service as "skip embeddings", which
+        is the graceful-degradation contract.
+        """
+        if self._openai_service is None:
+            try:
+                from src.openai_service import OpenAIService
+
+                self._openai_service = OpenAIService()
+            except Exception as exc:  # noqa: BLE001 — embeddings are optional
+                log_event(
+                    LOGGER,
+                    logging.WARNING,
+                    "cached_jobs_openai_service_init_failed",
+                    "Could not build OpenAIService for job embeddings; "
+                    "Tier 2 features degrade to lexical.",
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                return None
+        return self._openai_service
 
     def _require_client(self):
         if not self.is_configured():
@@ -115,6 +190,13 @@ class CachedJobsStore:
         Each posting is a `JobPosting` dataclass (or anything with
         matching attributes — `id`, `source`, `title`, `company`, etc.).
         Conflict key is (source, job_id) so re-runs are idempotent.
+
+        Tier 2 embed-on-write: when hybrid search is enabled, each row's
+        `embedding` is computed in the same call so the corpus stays
+        current without a re-run of the backfill. This is STRICTLY
+        non-fatal — if the embeddings call fails, the jobs are still
+        upserted (without an embedding; the hybrid RPC degrades those
+        rows to lexical until the next backfill / refresh fills them).
         """
         client = self._require_client()
         rows = []
@@ -150,6 +232,10 @@ class CachedJobsStore:
             )
         if not rows:
             return 0
+        # Tier 2 embed-on-write — non-fatal. Attaches an `embedding` to
+        # each row dict in place. Any failure inside leaves the rows
+        # embedding-free and the upsert proceeds regardless.
+        self._attach_embeddings_on_write(rows)
         try:
             response = (
                 client.table(self._table)
@@ -162,6 +248,64 @@ class CachedJobsStore:
                 details=f"{type(exc).__name__}: {exc}",
             ) from exc
         return len(self._extract_rows(response))
+
+    def _attach_embeddings_on_write(self, rows: list[dict]) -> None:
+        """Compute + attach an `embedding` to each upsert row in place.
+
+        The Tier 2 embed-on-write path. Mutates `rows`: on success each
+        dict gains an `embedding` key (a list[float]); on ANY failure
+        the rows are left untouched and the caller upserts them without
+        embeddings. This method NEVER raises — embed-on-write must not
+        be able to break the refresh worker.
+
+        Skipped entirely when hybrid search is disabled (no point
+        spending tokens on a column nothing queries yet).
+        """
+        if not rows:
+            return
+        if not is_job_search_hybrid_enabled():
+            return
+        service = self._get_openai_service()
+        if service is None or not service.is_available():
+            return
+        try:
+            inputs = [
+                build_job_embedding_input(
+                    title=row.get("title", ""),
+                    company=row.get("company", ""),
+                    description=row.get("description", ""),
+                )
+                for row in rows
+            ]
+            vectors = service.create_embeddings(
+                inputs, task_name="job_embedding_on_write"
+            )
+        except Exception as exc:  # noqa: BLE001 — embed-on-write is non-fatal
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                "cached_jobs_embed_on_write_failed",
+                "Embed-on-write failed; jobs cached without embeddings "
+                "(they fall back to lexical until the next backfill).",
+                row_count=len(rows),
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            return
+        if len(vectors) != len(rows):
+            # Count mismatch — can't safely pair vectors to rows; skip
+            # attaching rather than risk the wrong vector on a job.
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                "cached_jobs_embed_on_write_count_mismatch",
+                "Embed-on-write returned a mismatched vector count; "
+                "jobs cached without embeddings.",
+                row_count=len(rows),
+                vector_count=len(vectors),
+            )
+            return
+        for row, vector in zip(rows, vectors):
+            row["embedding"] = vector
 
     def cleanup_missing(
         self,
@@ -342,6 +486,15 @@ class CachedJobsStore:
         to parse it. `expand_query` returns '' for empty / all-
         punctuation / lone-stopword input, which the RPC still treats
         as "no FTS filter" -> recent jobs.
+
+        Tier 2 hybrid search: when JOB_SEARCH_HYBRID_ENABLED is on,
+        this embeds the (expanded) query with text-embedding-3-small
+        and calls the `search_cached_jobs_hybrid` RPC, which fuses the
+        lexical ranking above with a pgvector semantic ranking via
+        Reciprocal Rank Fusion. GRACEFUL DEGRADATION is mandatory: if
+        the query-embedding call fails (or hybrid is disabled), this
+        falls back to the Tier 1 lexical `search_cached_jobs_ranked`
+        path. Search NEVER hard-fails because of Tier 2.
         """
         client = self._require_client()
         # `expand_query` handles its own trimming/lowercasing and emits
@@ -395,6 +548,14 @@ class CachedJobsStore:
             # (named-arg call simply uses the default if absent).
             "p_offset": max(0, int(offset or 0)),
         }
+        # Tier 2: try the hybrid path first when enabled. It returns
+        # None to signal "fall through to lexical" (hybrid disabled, or
+        # the query embedding couldn't be produced) — graceful
+        # degradation, search must never hard-fail because of Tier 2.
+        hybrid_rows = self._search_hybrid(client, rpc_args, normalized_query)
+        if hybrid_rows is not None:
+            return hybrid_rows
+
         try:
             response = client.rpc("search_cached_jobs_ranked", rpc_args).execute()
         except Exception as exc:
@@ -403,6 +564,89 @@ class CachedJobsStore:
                 details=f"{type(exc).__name__}: {exc}",
             ) from exc
         return self._extract_rows(response)
+
+    def _search_hybrid(
+        self, client, rpc_args: dict, normalized_query: str
+    ) -> list[dict] | None:
+        """Run the Tier 2 hybrid search RPC, or return None to fall back.
+
+        Returns the result rows on success; returns None when the
+        caller should use the Tier 1 lexical path instead — that
+        happens when:
+          * hybrid search is disabled (JOB_SEARCH_HYBRID_ENABLED off),
+          * the query embedding can't be produced (no OpenAI service,
+            service unavailable, or the embeddings call raised), or
+          * the `search_cached_jobs_hybrid` RPC call itself raises
+            (e.g. the operator hasn't applied the hybrid RPC yet).
+
+        This method NEVER raises — every failure becomes a None return
+        so `search()` degrades cleanly to lexical. That is the core
+        Tier 2 safety guarantee.
+        """
+        if not is_job_search_hybrid_enabled():
+            return None
+
+        query_embedding = self._embed_search_query(normalized_query)
+        if query_embedding is None:
+            # Couldn't embed the query — fall back to pure lexical.
+            return None
+
+        hybrid_args = dict(rpc_args)
+        hybrid_args["p_query_embedding"] = query_embedding
+        try:
+            response = client.rpc(
+                "search_cached_jobs_hybrid", hybrid_args
+            ).execute()
+        except Exception as exc:  # noqa: BLE001 — degrade to lexical
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                "cached_jobs_hybrid_rpc_failed",
+                "Hybrid search RPC failed; falling back to lexical search.",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            return None
+        return self._extract_rows(response)
+
+    def _embed_search_query(self, normalized_query: str) -> list[float] | None:
+        """Embed the (already synonym-expanded) search query for hybrid
+        search. Returns the vector, or None on ANY failure.
+
+        A None return makes `_search_hybrid` fall back to lexical — so
+        this is allowed (and expected) to fail softly: no OpenAI key,
+        provider outage, etc. all just mean "no semantic signal this
+        time".
+
+        The expanded query is a `to_tsquery`-syntax string (e.g.
+        `(ml | machine<->learning)`). Embedding that operator-decorated
+        string is fine — the embedding model reads it as text and the
+        meaningful tokens (ml, machine, learning) still dominate the
+        vector. An empty expanded query (browse mode) is not embedded:
+        there is no semantic intent to capture, and the hybrid RPC
+        treats a NULL embedding as pure-lexical anyway.
+        """
+        if not str(normalized_query or "").strip():
+            return None
+        service = self._get_openai_service()
+        if service is None or not service.is_available():
+            return None
+        try:
+            vectors = service.create_embeddings(
+                [normalized_query], task_name="job_search_query"
+            )
+        except Exception as exc:  # noqa: BLE001 — degrade to lexical
+            log_event(
+                LOGGER,
+                logging.WARNING,
+                "cached_jobs_query_embed_failed",
+                "Query embedding failed; hybrid search falls back to "
+                "lexical for this query.",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            return None
+        if not vectors or not vectors[0]:
+            return None
+        return vectors[0]
 
     def get_listing_status_map(
         self, keys: list[tuple[str, str]]

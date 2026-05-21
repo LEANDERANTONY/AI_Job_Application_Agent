@@ -74,7 +74,9 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from src.cached_jobs_store import build_job_embedding_input  # noqa: E402
 from src.config import (  # noqa: E402 — after sys.path bootstrap
+    OPENAI_EMBEDDING_INPUT_DESCRIPTION_CHARS,
     OPENAI_EMBEDDING_MODEL,
     SUPABASE_CACHED_JOBS_TABLE,
     SUPABASE_SERVICE_ROLE_KEY,
@@ -87,36 +89,26 @@ LOGGER = logging.getLogger("backfill_job_embeddings")
 # Defaults. The embeddings endpoint accepts arrays — 100 inputs/call
 # keeps round-trips low without risking an oversized request.
 DEFAULT_BATCH_SIZE = 100
-# Cap the description slice fed into the embedding input. Bounds the
-# per-row token cost; text-embedding-3-small's 8191-token limit is far
-# above title + company + 2000 description chars.
-DEFAULT_DESCRIPTION_CHARS = 2000
+# Cap the description slice fed into the embedding input. Shared with the
+# embed-on-write path via the config constant so a backfilled vector and
+# an embed-on-write vector for the same job are built identically.
+DEFAULT_DESCRIPTION_CHARS = OPENAI_EMBEDDING_INPUT_DESCRIPTION_CHARS
 
 
 def build_embedding_input(row: dict, *, description_chars: int) -> str:
     """Compose the text to embed for one cached_jobs row.
 
-    title + company + a capped description snippet. The summary column
-    is intentionally skipped — it overlaps the description and the
-    description (truncated) already carries the semantic signal. Empty
-    fields are dropped so a sparse row still produces a clean input.
+    A thin row-dict adapter over `cached_jobs_store.build_job_embedding_
+    input` — the SINGLE source of truth for the job-embedding input
+    format. Sharing it guarantees the backfill and the embed-on-write
+    path produce identical inputs (hence comparable vectors).
     """
-    title = str(row.get("title") or "").strip()
-    company = str(row.get("company") or "").strip()
-    description = str(row.get("description") or "").strip()
-    if description_chars > 0 and len(description) > description_chars:
-        description = description[:description_chars]
-
-    parts: list[str] = []
-    if title:
-        parts.append(f"Job title: {title}")
-    if company:
-        parts.append(f"Company: {company}")
-    if description:
-        parts.append(f"Description: {description}")
-    # Guarantee a non-empty string even for a row with no title /
-    # company / description — the embeddings API rejects empty input.
-    return "\n".join(parts) if parts else "(no job details)"
+    return build_job_embedding_input(
+        title=row.get("title", ""),
+        company=row.get("company", ""),
+        description=row.get("description", ""),
+        description_chars=description_chars,
+    )
 
 
 def _build_supabase_client():
