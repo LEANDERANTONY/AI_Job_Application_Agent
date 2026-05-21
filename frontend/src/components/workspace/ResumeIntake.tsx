@@ -863,7 +863,7 @@ export function ResumeIntake({
                           the main picker switched to a <select>; this
                           picker still referenced it, which is why the
                           buttons rendered with no visible selected state.
-                          Now matches main viewer; the 5 themes here mirror
+                          Now matches main viewer; the 6 themes here mirror
                           the workspace_models export Literal. */}
                       <div className="b-artifact-style-select-wrap">
                         <select
@@ -886,6 +886,7 @@ export function ResumeIntake({
                           <option value="architect_mono">
                             Architect Mono
                           </option>
+                          <option value="noir_cream">Noir Cream</option>
                         </select>
                       </div>
                       {/* Live themed preview — the resume rendered in

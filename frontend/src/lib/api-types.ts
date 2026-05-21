@@ -420,7 +420,7 @@ export type ResumeBuilderExportResponse = {
 
 /** Themed HTML render of the resume builder's generated base resume —
  *  no download, no LLM call. Powers the in-builder live theme preview
- *  (the user sees their resume in any of the 5 themes before deciding;
+ *  (the user sees their resume in any of the 6 themes before deciding;
  *  a conversion surface, since the gated themes look great but only
  *  Professional is downloadable on Free). `html` is a full standalone
  *  document meant for an `<iframe srcDoc>`. */
@@ -690,7 +690,8 @@ export type ArtifactTheme =
   | "professional_neutral"
   | "modern_blue"
   | "creative_warm"
-  | "architect_mono";
+  | "architect_mono"
+  | "noir_cream";
 // NOTE: `presentation_twocol` (the two-column engine) exists in the
 // renderer but is intentionally NOT offered yet — held from the user
 // surface pending the designer-grade rework (report.md "Designer-grade

@@ -353,6 +353,43 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         header_border_px=1,
         layout="single_column",
     ),
+    # NEW — single-column "Noir Cream": a PURE-BLACK full-bleed masthead
+    # band on warm cream paper. Colours lifted exactly from the
+    # two-column "Monochrome Black" Claude-design template
+    # (resume_builder/05-monochrome-black.html): the band is its
+    # #000000 sidebar, the page is its #f3eee3 cream. True monochrome
+    # (accent = ink). Distinct from professional_neutral (stark white,
+    # no band) and architect_mono (cool blue-ink band #131a28 on white)
+    # — this is the only theme pairing a true-black band with warm
+    # cream. Single-column → ATS-safe. Audience: design / creative /
+    # editorial roles wanting a bolder, warmer monochrome.
+    "noir_cream": ThemeSpec(
+        key="noir_cream",
+        label="Noir Cream",
+        ink="#0a0a0a",
+        muted="#6e6a63",
+        accent="#0a0a0a",
+        line="#d8d2c6",
+        paper="#f3eee3",
+        surface="#f3eee3",
+        accent_soft="#ece6d9",
+        cover_strong_color="#0a0a0a",
+        # Unified Arial/Helvetica sans family across all themes
+        # (operator decision 2026-05-21) — see the registry note above.
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.55",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=2,
+        # Pure-black full-bleed masthead band (the template's #000000
+        # sidebar) with cream text mirroring the paper.
+        header_band_bg="#000000",
+        header_band_fg="#f3eee3",
+        layout="single_column",
+    ),
     # NEW (Phase 3) — the gated, NON-ATS, two-column "presentation"
     # theme. Deedy-style asymmetric: wide main (summary / experience /
     # projects / publications) + a tinted sidebar (skills / education /

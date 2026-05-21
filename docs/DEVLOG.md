@@ -3230,3 +3230,66 @@ OPERATOR ACTION REQUIRED: at deploy time, apply
 Supabase database (it DROP+CREATEs the `search_cached_jobs_ranked`
 function) in the SAME release as this code. The migration alone,
 without the code, breaks search.
+
+## Day 69: `noir_cream` — sixth single-column résumé theme
+
+Added a sixth single-column résumé theme, `noir_cream` ("Noir
+Cream"): a pure-black full-bleed masthead band over warm cream
+paper. The operator picked the palette off the two-column
+"Monochrome Black" Claude-design inspiration template
+(`resume_builder/05-monochrome-black.html`) and wanted it as a
+single-column option too — single-column themes go 5 → 6.
+
+### Colours — lifted verbatim from the template
+
+`paper`/`surface` `#f3eee3` (the template's warm cream main
+column), `header_band_bg` `#000000` (its true-black sidebar),
+`header_band_fg` `#f3eee3` (cream text mirroring the paper), `ink`
+`#0a0a0a`, `muted` `#6e6a63`, `line` `#d8d2c6`, `accent_soft`
+`#ece6d9`. True monochrome — `accent` = `ink`. In single-column
+the template's black SIDEBAR becomes the black MASTHEAD band:
+name, role, contact, and links sit on black; the rest of the page
+is cream. Distinct from the two existing monochromes —
+`professional_neutral` (stark white, no band) and `architect_mono`
+(cool blue-ink band `#131a28` on white): `noir_cream` is the only
+theme pairing a true-black band with warm cream.
+
+### One registry entry, everything else derived
+
+The theme is a single `ThemeSpec` in `src/exporters._THEME_SPECS`.
+Per ADR-029 the résumé-HTML, cover-letter, and DOCX palette maps
+plus `SUPPORTED_THEMES` all derive from that registry, so the new
+theme reaches every export surface with no per-surface edit. The
+black masthead reuses the existing `header_band_bg`/`fg` mechanism
+(already shipped for `architect_mono` / `creative_warm`) — no
+renderer change. Entitlement is unchanged: gating is by-exclusion
+(any non-`professional_neutral` theme is Pro/Business), so
+`noir_cream` is gated automatically with no `tiers.py` edit.
+
+### The rest of the wiring
+
+`RESUME_THEMES` in `src/resume_builder.py` (kept in lockstep with
+`SUPPORTED_THEMES` by `test_resume_themes_registry_matches_*`);
+both theme `Literal`s in `backend/workspace_models.py` (export +
+preview request bodies); the `ArtifactTheme` union, `THEME_OPTIONS`,
+and the `THEME_HINT` record in the frontend; the builder export
+`<select>`. The assistant's product-knowledge block said "FIVE"
+themes — bumped to "SIX" and added `noir_cream`, synced across
+`src/prompts.py` `_PRODUCT_KNOWLEDGE_BLOCK` and the two
+hand-authored registry copies (`prompts/assistant/v1.json`,
+`prompts/assistant_text/v1.json`) so the byte-identity guard in
+`test_prompts.py` stays green.
+
+Verification: 82 tests green (prompt byte-identity, the
+`RESUME_THEMES`↔`SUPPORTED_THEMES` pact, exporters, export
+entitlement); the four backend files clean under ruff; frontend
+`tsc --noEmit` clean; and a sample résumé rendered to PDF in
+`noir_cream` — the black masthead bleeds to the page edge with
+cream name/role/contact, cream body below, as intended.
+
+Context: paired with a curation pass over the `resume_builder/`
+folder of two-column Claude-design templates — template 07
+(Forest Emerald) was dropped, leaving six two-column candidates
+(01, 02, 04, 05, 08, 10). Integrating those six as two-column
+themes is separate, larger work; this entry only adds the
+single-column `noir_cream`.

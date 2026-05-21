@@ -40,6 +40,7 @@ const THEME_OPTIONS: { value: ArtifactTheme; label: string }[] = [
   { value: "modern_blue", label: "Modern Blue" },
   { value: "creative_warm", label: "Creative Warm" },
   { value: "architect_mono", label: "Architect Mono" },
+  { value: "noir_cream", label: "Noir Cream" },
   // presentation_twocol intentionally omitted — held pending the
   // designer-grade two-column rework (report.md v2 plan).
 ];
@@ -55,6 +56,8 @@ const THEME_HINT: Record<ArtifactTheme, string> = {
     "Serif name + clean sans body, emerald accents on a warm paper. Modern-editorial; single-column and ATS-safe — marketing, comms, design-adjacent.",
   architect_mono:
     "Near-monochrome, geometric sans, a single hairline rule, generous whitespace. Confident minimal; single-column and ATS-safe — architecture, design, senior engineering.",
+  noir_cream:
+    "Pure-black masthead band on warm cream paper, true monochrome. Distinctive and editorial; single-column and ATS-safe — design, creative, brand, senior roles.",
 };
 
 const TAB_LABELS: Record<ArtifactTab, string> = {

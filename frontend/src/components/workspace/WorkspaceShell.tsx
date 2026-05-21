@@ -390,7 +390,7 @@ export function WorkspaceShell() {
   >(null);
   // In-builder live themed preview. Once a base resume is generated we
   // render it as themed HTML (the same look the final ArtifactViewer
-  // ships) so the user can browse all 5 themes before downloading — a
+  // ships) so the user can browse all 6 themes before downloading — a
   // conversion surface, since the gated themes preview freely but only
   // Professional is downloadable on Free. `resumeBuilderExportTheme`
   // doubles as the preview theme: one picker drives both.

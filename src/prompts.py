@@ -77,7 +77,7 @@ _PRODUCT_KNOWLEDGE_BLOCK = (
     "job searches 50 / unlimited / unlimited. Persistent counters: saved jobs 5 / 1000 / unlimited; saved workspaces 1 / 5 / unlimited. "
     "Resume builder sessions are LIFETIME on Free (1 total, never resets) and monthly on Pro (3) / Business (15). "
     "Saved-workspace retention: Free 7 days, Pro 30 days, Business unbounded. "
-    "Resume themes — FIVE are available to users for export, all single-column and ATS-safe: professional_neutral (the product-wide default), classic_ats, modern_blue, creative_warm, architect_mono. "
+    "Resume themes — SIX are available to users for export, all single-column and ATS-safe: professional_neutral (the product-wide default), classic_ats, modern_blue, creative_warm, architect_mono, noir_cream. "
     "There is no two-column, multi-column, or sidebar resume theme available today — if a user asks for one, say it isn't offered yet (a two-column 'presentation' layout exists in the renderer but is held from users pending a designer-grade rework; do NOT present it as selectable). "
     "Export entitlement: Free exports PDF in professional_neutral only; Pro and Business export PDF or DOCX in any theme. There is no plain-text or HTML export. "
     "Resume intake paths: users can either UPLOAD a PDF (parsed into a CandidateProfile) or use the conversational RESUME BUILDER (multi-turn chat that fills the same profile field-by-field). Both feed the same downstream pipeline. "

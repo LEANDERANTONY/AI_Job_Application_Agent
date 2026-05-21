@@ -254,6 +254,7 @@ class ResumeBuilderExportRequestModel(BaseModel):
         "modern_blue",
         "creative_warm",
         "architect_mono",
+        "noir_cream",
         # presentation_twocol intentionally excluded — the two-column
         # engine exists but the theme is held from the user surface
         # pending its designer-grade rework (report.md v2 plan).
@@ -281,6 +282,7 @@ class ResumeBuilderPreviewRequestModel(BaseModel):
         "modern_blue",
         "creative_warm",
         "architect_mono",
+        "noir_cream",
         # presentation_twocol intentionally excluded — held from the
         # user surface (report.md v2 plan), same as the export model.
     ] = "professional_neutral"

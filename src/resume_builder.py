@@ -46,6 +46,11 @@ RESUME_THEMES = {
         "label": "Architect Mono",
         "tagline": "Bold ink masthead, mono accents, structural typography.",
     },
+    # NEW — pure-black masthead band on warm cream paper (single-column).
+    "noir_cream": {
+        "label": "Noir Cream",
+        "tagline": "Pure-black masthead band on warm cream paper; monochrome.",
+    },
     # ADR-029 Phase 3 — gated two-column "presentation" layout.
     "presentation_twocol": {
         "label": "Presentation (Two-Column)",

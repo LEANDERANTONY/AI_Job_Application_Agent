@@ -2558,7 +2558,7 @@ def preview_resume_builder_artifact(*, session_id: str, theme: str = "profession
     """Render the builder's resume as themed preview HTML (no download).
 
     Powers the in-builder visual theme preview — the user sees their
-    resume rendered in any of the 5 themes before deciding, which is
+    resume rendered in any of the 6 themes before deciding, which is
     also a conversion surface (the gated themes look great but only
     Professional is downloadable on Free).
 
