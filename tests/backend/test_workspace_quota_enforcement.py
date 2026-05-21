@@ -27,7 +27,12 @@ from fastapi.testclient import TestClient
 
 from backend import quota
 from backend.app import app
-from backend.quota import current_period_key, reset_in_memory_backend
+from backend.quota import (
+    current_period_key,
+    record_llm_token_usage,
+    reset_in_memory_backend,
+    weekly_period_key,
+)
 from backend.services import workspace_service
 from backend.services.auth_session_service import AuthenticatedContext
 from backend.tiers import TIER_CAPS
@@ -480,3 +485,127 @@ def test_route_returns_429_for_free_premium_request(stub_pipeline, monkeypatch):
     assert body["counter"] == "premium_applications"
     assert body["cap"] == 0
     assert "Pro" in body["detail"]
+
+
+# ─── unified LLM token meter — enforcement at the operation entries ──────
+
+
+def test_analysis_run_blocked_when_llm_token_meter_at_cap(stub_pipeline):
+    """The unified token meter gates the analysis run independently of
+    the tailored_applications counter: once a Free user's weekly
+    llm_tokens meter is at the cap, the next run raises the canonical
+    429 BEFORE any pipeline work."""
+    user_id = "user-tok-analysis"
+    record_llm_token_usage(user_id, TIER_CAPS["free"]["llm_tokens"])
+    auth_context = _build_auth_context(user_id=user_id)
+
+    with pytest.raises(QuotaExceededError) as exc_info:
+        _run(auth_context=auth_context, premium=False)
+    err = exc_info.value
+    assert err.counter == "llm_tokens"
+    assert err.cap == TIER_CAPS["free"]["llm_tokens"] == 90_000
+    assert err.current == 90_000
+    assert err.tier == "free"
+    assert err.reset_period == weekly_period_key()
+
+
+def test_route_returns_429_when_llm_token_meter_at_cap(stub_pipeline, monkeypatch):
+    """End-to-end at the HTTP surface: an over-budget analysis request
+    comes back as a 429 carrying the llm_tokens counter, not a 500 and
+    not a generic 400."""
+    user_id = "user-tok-http"
+    record_llm_token_usage(user_id, TIER_CAPS["free"]["llm_tokens"])
+    auth_context = _build_auth_context(user_id=user_id)
+    monkeypatch.setattr(
+        workspace_service,
+        "resolve_authenticated_context",
+        lambda **_kwargs: auth_context,
+    )
+
+    response = client.post(
+        "/api/workspace/analyze",
+        json={
+            "resume_text": "Resume body",
+            "resume_filetype": "TXT",
+            "resume_source": "workspace",
+            "job_description_text": "JD body",
+            "run_assisted": False,
+            "premium": False,
+        },
+        headers={
+            "X-Auth-Access-Token": "access",
+            "X-Auth-Refresh-Token": "refresh",
+        },
+    )
+
+    assert response.status_code == 429
+    body = response.json()
+    assert body["code"] == "tier_limit_exceeded"
+    assert body["counter"] == "llm_tokens"
+    assert body["cap"] == 90_000
+
+
+def test_enforce_request_llm_budget_helper_raises_over_cap(monkeypatch):
+    """The route-level helper (resume-builder message / generate, JD
+    upload) resolves the user from auth tokens and raises the canonical
+    429 when the weekly meter is spent."""
+    from backend.routers import workspace as workspace_router
+
+    user_id = "user-tok-helper"
+    record_llm_token_usage(user_id, TIER_CAPS["free"]["llm_tokens"])
+    auth_context = _build_auth_context(user_id=user_id)
+    monkeypatch.setattr(
+        workspace_router,
+        "resolve_authenticated_context",
+        lambda **_kwargs: auth_context,
+    )
+
+    with pytest.raises(QuotaExceededError) as exc_info:
+        workspace_router._enforce_request_llm_budget("access", "refresh")
+    assert exc_info.value.counter == "llm_tokens"
+
+
+def test_enforce_request_llm_budget_helper_swallows_malformed_token():
+    """A malformed (non-JWT) token must degrade to 'anonymous,
+    unmetered' — NOT 500. The gotrue client raises IndexError deep
+    inside resolve_authenticated_context for a dotless token; the
+    helper's broad except has to swallow it (regression guard: the
+    resume-builder message tests pass dummy 'access-token' values)."""
+    from backend.routers import workspace as workspace_router
+
+    # Must not raise.
+    workspace_router._enforce_request_llm_budget("access-token", "refresh-token")
+
+
+def test_resume_builder_message_route_429_when_token_meter_at_cap(monkeypatch):
+    """The resume-builder /message route enforces the token meter at
+    the route layer (its service takes session_id, not auth). Over
+    budget → 429 before the session is even looked up."""
+    from backend.routers import workspace as workspace_router
+
+    user_id = "user-tok-builder"
+    record_llm_token_usage(user_id, TIER_CAPS["free"]["llm_tokens"])
+    auth_context = _build_auth_context(user_id=user_id)
+    monkeypatch.setattr(
+        workspace_router,
+        "resolve_authenticated_context",
+        lambda **_kwargs: auth_context,
+    )
+
+    response = client.post(
+        "/api/workspace/resume-builder/message",
+        json={
+            "session_id": "does-not-need-to-exist",
+            "message": "hello",
+            "input_mode": "text",
+        },
+        headers={
+            "X-Auth-Access-Token": "access",
+            "X-Auth-Refresh-Token": "refresh",
+        },
+    )
+
+    assert response.status_code == 429
+    body = response.json()
+    assert body["code"] == "tier_limit_exceeded"
+    assert body["counter"] == "llm_tokens"

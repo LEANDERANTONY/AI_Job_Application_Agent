@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import StreamingResponse
 
 from backend.observability import capture_event
-from backend.quota import enforce_export_entitlement
+from backend.quota import enforce_export_entitlement, enforce_llm_budget
 from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
 from backend.request_auth import get_optional_auth_tokens
 from backend.tiers import resolve_user_tier
@@ -147,6 +147,44 @@ def _resolve_openai_service(access_token: str, refresh_token: str):
     except Exception:
         return None
     return openai_service
+
+
+def _enforce_request_llm_budget(access_token: str, refresh_token: str) -> None:
+    """Token-meter entry gate for an LLM operation invoked from a route.
+
+    Resolves (user_id, tier) from the request's auth tokens and calls
+    ``enforce_llm_budget``, which raises ``QuotaExceededError`` (→ the
+    canonical 429) when the user has spent their weekly LLM token
+    allowance. Used by routes whose service layer does NOT itself
+    resolve the auth identity — resume-builder message / generate and
+    the JD upload. The workspace-service operations (resume parse,
+    analysis run, assistant) call ``enforce_llm_budget`` inline where
+    they already resolve the tier for their per-feature counter.
+
+    No-op for anonymous / unresolvable auth: there is no per-user meter
+    to read, and ``enforce_llm_budget`` also no-ops on a blank user_id.
+    The ``try`` catches BROADLY (mirrors ``_resolve_openai_service``):
+    a malformed token surfaces as an IndexError out of the gotrue
+    client, not an ``AppError``, and an unresolvable token must degrade
+    to "anonymous, unmetered" rather than 500. NOTE the ``try`` wraps
+    ONLY ``resolve_authenticated_context`` — ``QuotaExceededError`` is
+    itself an ``AppError`` subclass, so the ``enforce_llm_budget`` call
+    MUST stay outside it or the 429 would be swallowed.
+    """
+    if not (access_token and refresh_token):
+        return
+    try:
+        auth_context = resolve_authenticated_context(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+    except Exception:
+        return
+    app_user = getattr(auth_context, "app_user", None)
+    if app_user is None:
+        return
+    user_id = str(getattr(app_user, "id", "") or "")
+    enforce_llm_budget(user_id, resolve_user_tier(app_user))
 
 
 def _attach_persistence_status(
@@ -302,7 +340,15 @@ async def transcribe_voice_route(
 
 @router.post("/job-description/upload")
 @limiter.limit(LIMIT_PARSE)
-def upload_job_description(request: Request, payload: UploadedFilePayloadModel):
+def upload_job_description(
+    request: Request,
+    payload: UploadedFilePayloadModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    access_token, refresh_token = auth_tokens
+    # Token-meter gate: JD parsing is an LLM operation. Checked before
+    # the parse so an over-budget request has no side effects.
+    _enforce_request_llm_budget(access_token or "", refresh_token or "")
     try:
         return parse_job_description_upload(
             filename=payload.filename,
@@ -362,6 +408,10 @@ def answer_resume_builder_route(
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
+    # Token-meter gate — a builder chat turn is an LLM (often agentic,
+    # multi-call) operation. Checked before the session hydrate so an
+    # over-budget request has no side effects.
+    _enforce_request_llm_budget(access_token or "", refresh_token or "")
     try:
         hydrate_resume_builder_session_if_needed(
             access_token=access_token or "",
@@ -400,6 +450,9 @@ def generate_resume_builder_route(
     auth_tokens=Depends(get_optional_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
+    # Token-meter gate — résumé generation is the builder's heaviest
+    # LLM step (structuring pass). Checked before the session hydrate.
+    _enforce_request_llm_budget(access_token or "", refresh_token or "")
     try:
         hydrate_resume_builder_session_if_needed(
             access_token=access_token or "",

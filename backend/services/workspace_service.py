@@ -144,6 +144,11 @@ def parse_resume_upload(
     app_user = getattr(auth_context, "app_user", None) if auth_context is not None else None
     tier = resolve_user_tier(app_user)
     quota_user_id = str(getattr(app_user, "id", "") or "") if app_user is not None else ""
+    # Unified token meter — entry gate. Raises the canonical 429 when
+    # the weekly LLM allowance is spent; no-op for anonymous uploads.
+    # Runs BEFORE check_and_increment so a rejected request never burns
+    # a resume_parses credit (there'd be no row to refund).
+    quota.enforce_llm_budget(quota_user_id, tier)
     quota_consumed = False
     if quota_user_id:
         quota.check_and_increment("resume_parses", quota_user_id, tier)
@@ -277,6 +282,11 @@ def run_workspace_analysis(
     quota_user_id = (
         auth_context.app_user.id if auth_context is not None else ""
     )
+    # Unified token meter — entry gate for the (heaviest) LLM
+    # operation: the full agentic run. Raises the canonical 429 when
+    # the weekly allowance is spent. Runs BEFORE check_and_increment
+    # so a rejected run never burns a tailored/premium credit.
+    quota.enforce_llm_budget(str(quota_user_id or ""), tier)
     quota_consumed = False
     if quota_user_id:
         # Authenticated path: real user_id, real Supabase row. Raises
@@ -584,6 +594,9 @@ def answer_workspace_question(
     app_user = getattr(auth_context, "app_user", None) if auth_context is not None else None
     tier = resolve_user_tier(app_user)
     quota_user_id = str(getattr(app_user, "id", "") or "") if app_user is not None else ""
+    # Unified token meter — entry gate. Raises the canonical 429 when
+    # the weekly LLM allowance is spent; no-op for anonymous turns.
+    quota.enforce_llm_budget(quota_user_id, tier)
     quota_consumed = False
     if quota_user_id:
         quota.check_and_increment("assistant_turns", quota_user_id, tier)
@@ -731,6 +744,10 @@ def prepare_stream_workspace_question(
     app_user = getattr(auth_context, "app_user", None) if auth_context is not None else None
     tier = resolve_user_tier(app_user)
     quota_user_id = str(getattr(app_user, "id", "") or "") if app_user is not None else ""
+    # Unified token meter — entry gate. Like the assistant_turns gate
+    # below this runs pre-stream, so a QuotaExceededError surfaces at
+    # the route call site and the global handler builds the 429.
+    quota.enforce_llm_budget(quota_user_id, tier)
     quota_consumed = False
     if quota_user_id:
         # Raises QuotaExceededError on cap breach. Because we run BEFORE
