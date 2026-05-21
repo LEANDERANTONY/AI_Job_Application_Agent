@@ -122,9 +122,18 @@ class ThemeSpec:
     # on-band text colour (set it when the band is dark).
     header_band_bg: str = ""
     header_band_fg: str = ""
-    # Reserved (Phase 3). "single_column" | "two_column". Only the
-    # resume renderer branches on this.
+    # "single_column" | "two_column". Only the resume renderer branches
+    # on this; the cover-letter + DOCX paths read it to stay binary
+    # (a two-column theme renders single-column there).
     layout: str = "single_column"
+    # ADR-032. For a two_column theme, names the bespoke designer
+    # layout whose renderer builds the page ("timeline_tech",
+    # "editorial_minimal", "classic_slate", "monochrome_black",
+    # "plum_berry", "burgundy_champagne"). "" for single-column themes.
+    # `_build_resume_html` dispatches on this via `_TWOCOL_RENDERERS`.
+    # Kept SEPARATE from `layout` so `layout` stays the binary
+    # single/two discriminator every non-resume reader relies on.
+    twocol_layout: str = ""
 
     @staticmethod
     def _ooxml(color: str) -> str:
@@ -390,39 +399,171 @@ _THEME_SPECS: dict[str, "ThemeSpec"] = {
         header_band_fg="#f3eee3",
         layout="single_column",
     ),
-    # NEW (Phase 3) — the gated, NON-ATS, two-column "presentation"
-    # theme. Deedy-style asymmetric: wide main (summary / experience /
-    # projects / publications) + a tinted sidebar (skills / education /
-    # certifications). One page, portfolio/networking copy — NOT for
-    # ATS submissions (multi-column is the #1 documented parse-failure
-    # cause; the picker hint warns explicitly). Pro/Business by the
-    # existing by-exclusion gate + opt-in + warning IS the v1 safety
-    # model (a dedicated entitlement is deferred). DOM is authored
-    # header→main→sidebar so the PDF text layer still extracts as a
-    # coherent linear read (the realistic tolerance ceiling — report.md
-    # Phase-0 R2). PDF-first: DOCX has no layout field so a
-    # presentation_twocol DOCX renders single-column in this palette
-    # (documented; DOCX two-column deferred per ADR-015/029).
-    "presentation_twocol": ThemeSpec(
-        key="presentation_twocol",
-        label="Presentation (2-col)",
-        ink="#1f2733",
-        muted="#6a7480",
-        accent="#2f4b7c",
-        line="#dde3ea",
+    # ===================================================================
+    # ADR-032 — six bespoke, NON-ATS, two-column résumé themes. Each is a
+    # finished designer template (resume_builder/*.html) with its own
+    # `twocol_layout` renderer (see `_TWOCOL_RENDERERS`). They REPLACE the
+    # old `presentation_twocol` placeholder.
+    #
+    # The two-column renderers inline the design's own CSS (the design IS
+    # the colour), so the colour fields below do NOT drive the résumé
+    # look — they exist only so each theme's COVER LETTER + DOCX (which
+    # always render single-column) come out in a matching palette. They
+    # are lifted from each template's `:root` tokens.
+    #
+    # Gating: non-`professional_neutral` → Pro/Business by the existing
+    # by-exclusion gate (ADR-027), no tiers.py change. NON-ATS: the
+    # frontend picker hint warns explicitly. DOM is authored
+    # header→main→sidebar so the PDF text layer extracts linearly.
+    # ===================================================================
+    # 01 — Timeline / Tech. Dark navy sidebar, blue accent, dot-and-rail
+    # experience timeline. Audience: software / data / engineering.
+    "timeline_tech": ThemeSpec(
+        key="timeline_tech",
+        label="Timeline Tech (2-col)",
+        ink="#111418",
+        muted="#5b6470",
+        accent="#4f6bed",
+        line="#e4e7ec",
         paper="#ffffff",
         surface="#ffffff",
-        accent_soft="rgba(47, 75, 124, 0.06)",
-        cover_strong_color="#1f2733",
+        accent_soft="#eef1ff",
+        cover_strong_color="#111418",
         body_font_family="Arial, Helvetica, sans-serif",
         h1_font_family="Arial, Helvetica, sans-serif",
         prose_font_family="Arial, Helvetica, sans-serif",
-        prose_line_height="1.5",
+        prose_line_height="1.55",
         docx_body_font="Arial",
         docx_heading_font="Arial",
         docx_prose_font="Arial",
         header_border_px=2,
         layout="two_column",
+        twocol_layout="timeline_tech",
+    ),
+    # 02 — Editorial Minimal. Light sand sidebar, terracotta accent,
+    # hairline-rule section headers, head-row experience. Audience:
+    # design / editorial / communications / brand / product.
+    "editorial_minimal": ThemeSpec(
+        key="editorial_minimal",
+        label="Editorial Minimal (2-col)",
+        ink="#1c1a17",
+        muted="#6b6760",
+        accent="#9a4a2a",
+        line="#d9d4cb",
+        paper="#fbf7f0",
+        surface="#fbf7f0",
+        accent_soft="#f1e7df",
+        cover_strong_color="#1c1a17",
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.6",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=1,
+        layout="two_column",
+        twocol_layout="editorial_minimal",
+    ),
+    # 04 — Classic Slate. Pale slate sidebar, deep emerald accent, left
+    # date-gutter experience. Audience: consulting / finance / research /
+    # academic / policy / legal / clinical.
+    "classic_slate": ThemeSpec(
+        key="classic_slate",
+        label="Classic Slate (2-col)",
+        ink="#0f1722",
+        muted="#586374",
+        accent="#1f5d4c",
+        line="#d5dae2",
+        paper="#ffffff",
+        surface="#ffffff",
+        accent_soft="#e6efeb",
+        cover_strong_color="#0f1722",
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.55",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=2,
+        layout="two_column",
+        twocol_layout="classic_slate",
+    ),
+    # 05 — Monochrome Black. True-black sidebar, monochrome (accent =
+    # ink), heavy-rule head-row experience. Audience: creative direction /
+    # architecture / fashion / senior product.
+    "monochrome_black": ThemeSpec(
+        key="monochrome_black",
+        label="Monochrome Black (2-col)",
+        ink="#0a0a0a",
+        muted="#6e6a63",
+        accent="#0a0a0a",
+        line="#d8d2c6",
+        paper="#f3eee3",
+        surface="#f3eee3",
+        accent_soft="#ece6d9",
+        cover_strong_color="#0a0a0a",
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.6",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=2,
+        layout="two_column",
+        twocol_layout="monochrome_black",
+    ),
+    # 08 — Plum Berry. Deep plum sidebar, berry-rose accent, dusty-pink
+    # paper, head-row experience. Audience: PR / fashion comms / beauty /
+    # lifestyle media / senior marketing.
+    "plum_berry": ThemeSpec(
+        key="plum_berry",
+        label="Plum Berry (2-col)",
+        ink="#2a1d2a",
+        muted="#7a6877",
+        accent="#b94f7a",
+        line="#e3d4dd",
+        paper="#f6ecef",
+        surface="#f6ecef",
+        accent_soft="#f2dce6",
+        cover_strong_color="#2a1d2a",
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.65",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=1,
+        layout="two_column",
+        twocol_layout="plum_berry",
+    ),
+    # 10 — Burgundy & Champagne. Deep wine sidebar, champagne-gold accent,
+    # warm ivory paper, left date-gutter experience. Audience: law /
+    # banking / private wealth / hospitality / senior advisory.
+    "burgundy_champagne": ThemeSpec(
+        key="burgundy_champagne",
+        label="Burgundy Champagne (2-col)",
+        ink="#1c1311",
+        muted="#6f5e54",
+        accent="#a17a3a",
+        line="#e3d8c5",
+        paper="#faf3e3",
+        surface="#faf3e3",
+        accent_soft="#f1e5cd",
+        cover_strong_color="#1c1311",
+        body_font_family="Arial, Helvetica, sans-serif",
+        h1_font_family="Arial, Helvetica, sans-serif",
+        prose_font_family="Arial, Helvetica, sans-serif",
+        prose_line_height="1.6",
+        docx_body_font="Arial",
+        docx_heading_font="Arial",
+        docx_prose_font="Arial",
+        header_border_px=3,
+        layout="two_column",
+        twocol_layout="burgundy_champagne",
     ),
 }
 
@@ -1091,204 +1232,1242 @@ def _build_structured_resume_body_classic(
     return header_html + "\n".join(ordered_blocks)
 
 
-# Two-column ("presentation") section split. Wide MAIN = the substance
-# a reader works through; tinted SIDEBAR = scannable reference.
+# ===========================================================================
+# TWO-COLUMN RÉSUMÉ THEMES (ADR-032)
+#
+# Six bespoke designer templates (resume_builder/*.html), each rendered by its
+# own function and selected from `_TWOCOL_RENDERERS` by `ThemeSpec.twocol_layout`.
+# `_build_resume_html` dispatches here for any `layout == "two_column"` theme.
+#
+# Each renderer emits a full self-contained HTML document: the design's own
+# `<style>` block VERBATIM (the design is the colour — these are not
+# re-palettised through ThemeSpec colour fields) plus the template DOM bound
+# to artifact data. DOM order is ALWAYS header → main → sidebar so the PDF
+# text layer extracts as a coherent linear read despite the visual columns
+# (the realistic tolerance ceiling for a deliberately non-ATS layout). Every
+# user value is `html.escape`-d. Empty sections drop entirely — no orphan
+# headers, no crashes — and the templates keep `page-break-inside: avoid` so
+# long résumés paginate without splitting an entry.
+# ===========================================================================
+
+# Section split shared by every two-column theme. Wide MAIN = the substance a
+# reader works through; SIDEBAR = scannable reference.
 _TWOCOL_MAIN_SECTIONS = ("summary", "experience", "projects", "publications")
 _TWOCOL_SIDEBAR_SECTIONS = ("skills", "education", "certifications")
 
 
-def _build_structured_resume_body_twocol(artifact: TailoredResumeArtifact) -> str:
-    """Deedy-style asymmetric two-column body. The section HTML is the
-    EXACT classic builders (content + fidelity identical) — only the
-    shell differs. DOM order is header → main → sidebar so the PDF
-    text layer extracts as a coherent linear read despite the visual
-    columns (the realistic tolerance ceiling for a deliberately
-    non-ATS presentation theme — ADR-029 / report.md Phase-0 R2)."""
-    name = html.escape(artifact.header.full_name or artifact.title or "Candidate")
-    contact_values = []
-    if artifact.header.location:
-        contact_values.append(artifact.header.location)
-    contact_values.extend(
-        item for item in artifact.header.contact_lines if str(item or "").strip()
-    )
-    contact_html = _build_resume_contact_inline_html(contact_values)
+def _esc(value) -> str:
+    """html.escape on a stringified, stripped value."""
+    return html.escape(str(value or "").strip())
 
-    def _sec(title, inner):
-        return (
-            '<section class="resume-tc-section"><h2>{0}</h2>{1}</section>'.format(
-                title, inner
-            )
-        )
 
-    experience_entries = list(artifact.experience_entries or [])
-    project_entries = list(artifact.project_entries or [])
-    publication_entries = [
-        i for i in (artifact.publication_entries or []) if str(i or "").strip()
-    ]
-    certifications = [i for i in artifact.certifications if str(i or "").strip()]
+def _twocol_name_parts(artifact: TailoredResumeArtifact) -> tuple[str, str]:
+    """Split the candidate name into (first-words, last-word) for the
+    mixed-weight mastheads. A single-token name returns (name, "")."""
+    full = str(artifact.header.full_name or artifact.title or "Candidate").strip()
+    tokens = full.split()
+    if len(tokens) <= 1:
+        return _esc(full), ""
+    return _esc(" ".join(tokens[:-1])), _esc(tokens[-1])
 
-    section_blocks = {
-        "summary": _sec(
-            "Summary",
-            '<p class="resume-summary">{0}</p>'.format(
-                html.escape(
-                    artifact.professional_summary
-                    or "No professional summary generated."
-                )
-            ),
+
+def _twocol_contact_items(artifact: TailoredResumeArtifact) -> list[tuple[str, str]]:
+    """(label, value) contact rows for the sidebar. Location, then every
+    contact line. The label is a coarse type guess used by the templates
+    that show an uppercase tag above each value; templates that don't
+    show tags just use the value."""
+    items: list[tuple[str, str]] = []
+    location = str(artifact.header.location or "").strip()
+    if location:
+        items.append(("Location", location))
+    for raw in artifact.header.contact_lines:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        low = value.lower()
+        if "@" in value and "/" not in value:
+            label = "Email"
+        elif low.startswith(("http://", "https://", "www.")) or _looks_like_contact_link(value):
+            if "linkedin" in low:
+                label = "LinkedIn"
+            elif "github" in low:
+                label = "GitHub"
+            else:
+                label = "Profile"
+        elif any(ch.isdigit() for ch in value) and sum(ch.isdigit() for ch in value) >= 6:
+            label = "Phone"
+        else:
+            label = "Detail"
+        items.append((label, value))
+    return items
+
+
+def _twocol_skill_groups(artifact: TailoredResumeArtifact) -> list[tuple[str, list[str]]]:
+    """Skills as (group-label, items) pairs. Uses skill_categories when
+    present (one group per category); otherwise a single 'Skills' group
+    from highlighted_skills. Empty → []."""
+    categories = getattr(artifact, "skill_categories", None) or None
+    groups: list[tuple[str, list[str]]] = []
+    if categories:
+        for label, items in categories.items():
+            label_clean = str(label or "").strip()
+            cleaned = [str(i or "").strip() for i in items if str(i or "").strip()]
+            if label_clean and cleaned:
+                groups.append((label_clean, cleaned))
+        if groups:
+            return groups
+    flat = [str(i or "").strip() for i in artifact.highlighted_skills if str(i or "").strip()]
+    if flat:
+        groups.append(("Skills", flat))
+    return groups
+
+
+def _twocol_section_present(artifact: TailoredResumeArtifact) -> dict[str, bool]:
+    """Which optional sections have content. Summary, skills, education
+    are treated as always-present (the workflow always fills them);
+    experience / projects / publications / certifications drop when
+    empty."""
+    return {
+        "summary": True,
+        "skills": bool(_twocol_skill_groups(artifact)),
+        "experience": bool(artifact.experience_entries),
+        "projects": bool(artifact.project_entries),
+        "education": bool(artifact.education_entries),
+        "publications": bool(
+            [p for p in (artifact.publication_entries or []) if str(p or "").strip()]
         ),
-        "skills": _sec(
-            "Core Skills",
-            _build_resume_skills_inline_html(
-                artifact.highlighted_skills,
-                skill_categories=getattr(artifact, "skill_categories", None) or None,
-            ),
+        "certifications": bool(
+            [c for c in (artifact.certifications or []) if str(c or "").strip()]
         ),
-        "experience": _sec(
-            "Experience", _build_resume_experience_html(experience_entries)
-        )
-        if experience_entries
-        else "",
-        "projects": _sec("Projects", _build_resume_projects_html(project_entries))
-        if project_entries
-        else "",
-        "education": _sec(
-            "Education", _build_resume_education_html(artifact.education_entries)
-        ),
-        "publications": _sec(
-            "Publications",
-            _build_resume_section_list(
-                publication_entries, "", class_name="resume-plain-list"
-            ),
-        )
-        if publication_entries
-        else "",
-        "certifications": _sec(
-            "Certifications",
-            _build_resume_section_list(
-                certifications, "", class_name="resume-plain-list"
-            ),
-        )
-        if certifications
-        else "",
     }
 
-    order = (
-        list(artifact.section_order)
-        if artifact.section_order
-        else list(_DEFAULT_RESUME_SECTION_ORDER)
-    )
-    seen: set[str] = set()
-    full_order: list[str] = []
-    for section_name in list(order) + list(_DEFAULT_RESUME_SECTION_ORDER):
-        if section_name in seen:
-            continue
-        seen.add(section_name)
-        full_order.append(section_name)
 
-    main_html = "\n".join(
-        section_blocks[s]
-        for s in full_order
-        if s in _TWOCOL_MAIN_SECTIONS and section_blocks.get(s)
-    )
-    side_html = "\n".join(
-        section_blocks[s]
-        for s in full_order
-        if s in _TWOCOL_SIDEBAR_SECTIONS and section_blocks.get(s)
-    )
+def _twocol_entry_dates(entry) -> str:
+    parts = [p for p in [getattr(entry, "start", ""), getattr(entry, "end", "")] if p]
+    return _esc(" — ".join(parts)) if parts else ""
 
-    # Same mode-aware headline as the classic builder (omit when no
-    # target_role → byte-identical to prior two-column output).
-    headline = html.escape(str(getattr(artifact, "target_role", "") or "").strip())
-    role_block = (
-        '<p class="resume-tc-role">{0}</p>'.format(headline) if headline else ""
-    )
-    header_html = (
-        '<header class="resume-tc-header"><h1>{name}</h1>{role}{contact}</header>'.format(
-            name=name, role=role_block, contact=contact_html
+
+def _twocol_role_headline(artifact: TailoredResumeArtifact) -> str:
+    """The JD-tailored role line (target_role). "" on the no-JD path —
+    a name-only masthead is standard; the role line is never fabricated."""
+    return _esc(getattr(artifact, "target_role", "") or "")
+
+
+# --- shared EXPERIENCE structure builders -----------------------------------
+# Three structures across the six templates; each is built once and the
+# templates that share a structure reuse it. Every builder escapes user data
+# and keeps each entry in a `.entry` block (the templates' CSS pins
+# `page-break-inside: avoid` on `.entry`).
+
+
+def _twocol_bullets(entry) -> str:
+    bullets = [_esc(b) for b in (getattr(entry, "bullets", None) or []) if str(b or "").strip()]
+    if not bullets:
+        return ""
+    return "<ul>{0}</ul>".format("".join("<li>{0}</li>".format(b) for b in bullets))
+
+
+def _twocol_experience_timeline(entries) -> str:
+    """Dot-and-rail timeline (template 01). Entries wrapped in `.timeline`."""
+    rows = []
+    for entry in entries:
+        title = _esc(getattr(entry, "title", "") or "Experience")
+        org_parts = [
+            p for p in [getattr(entry, "organization", ""), getattr(entry, "location", "")] if p
+        ]
+        org = _esc(" · ".join(org_parts))
+        dates = _twocol_entry_dates(entry)
+        rows.append(
+            '<div class="entry">'
+            '<div class="entry-head"><div>'
+            '<p class="entry-title">{title}</p>'
+            '{org}'
+            '</div>{dates}</div>'
+            '{bullets}'
+            '</div>'.format(
+                title=title,
+                org='<p class="entry-org">{0}</p>'.format(org) if org else "",
+                dates='<span class="entry-dates">{0}</span>'.format(dates) if dates else "",
+                bullets=_twocol_bullets(entry),
+            )
         )
+    return '<div class="timeline">{0}</div>'.format("".join(rows))
+
+
+def _twocol_experience_headrow(entries) -> str:
+    """Head-row experience (templates 02, 05, 08): title + org on the
+    left, dates on the right, bullets below. No wrapping container."""
+    rows = []
+    for entry in entries:
+        title = _esc(getattr(entry, "title", "") or "Experience")
+        org_parts = [
+            p for p in [getattr(entry, "organization", ""), getattr(entry, "location", "")] if p
+        ]
+        org = _esc(" · ".join(org_parts))
+        dates = _twocol_entry_dates(entry)
+        rows.append(
+            '<div class="entry">'
+            '<div class="entry-head"><div>'
+            '<p class="entry-title">{title}</p>'
+            '{org}'
+            '</div>{dates}</div>'
+            '{bullets}'
+            '</div>'.format(
+                title=title,
+                org='<p class="entry-org">{0}</p>'.format(org) if org else "",
+                dates='<span class="entry-dates">{0}</span>'.format(dates) if dates else "",
+                bullets=_twocol_bullets(entry),
+            )
+        )
+    return "".join(rows)
+
+
+def _twocol_experience_gutter(entries) -> str:
+    """Left date-gutter experience (templates 04, 10): dates in a fixed
+    gutter, title/org/bullets in the body."""
+    rows = []
+    for entry in entries:
+        title = _esc(getattr(entry, "title", "") or "Experience")
+        org_parts = [
+            p for p in [getattr(entry, "organization", ""), getattr(entry, "location", "")] if p
+        ]
+        org = _esc(" · ".join(org_parts))
+        dates = _twocol_entry_dates(entry)
+        rows.append(
+            '<div class="entry">'
+            '<div class="entry-gutter"><div class="entry-dates">{dates}</div></div>'
+            '<div class="entry-body">'
+            '<p class="entry-title">{title}</p>'
+            '{org}'
+            '{bullets}'
+            '</div>'
+            '</div>'.format(
+                dates=dates,
+                title=title,
+                org='<p class="entry-org">{0}</p>'.format(org) if org else "",
+                bullets=_twocol_bullets(entry),
+            )
+        )
+    return "".join(rows)
+
+
+# --- shared SIDEBAR block builders ------------------------------------------
+
+
+def _twocol_education_blocks(artifact: TailoredResumeArtifact) -> str:
+    """`.edu-entry` blocks for the sidebar."""
+    blocks = []
+    for entry in artifact.education_entries or []:
+        degree_parts = [p for p in [getattr(entry, "degree", ""), getattr(entry, "field_of_study", "")] if p]
+        degree = _esc(" — ".join(degree_parts)) or _esc(getattr(entry, "institution", "") or "Education")
+        institution = _esc(getattr(entry, "institution", ""))
+        dates = _twocol_entry_dates(entry)
+        # If the degree line fell back to the institution, don't repeat it.
+        inst_line = (
+            '<p class="edu-inst">{0}</p>'.format(institution)
+            if institution and degree_parts
+            else ""
+        )
+        blocks.append(
+            '<div class="edu-entry">'
+            '<p class="edu-degree">{degree}</p>'
+            '{inst}'
+            '{dates}'
+            '</div>'.format(
+                degree=degree,
+                inst=inst_line,
+                dates='<p class="edu-dates">{0}</p>'.format(dates) if dates else "",
+            )
+        )
+    return "".join(blocks)
+
+
+def _twocol_skill_groups_html(artifact: TailoredResumeArtifact) -> str:
+    """`.skill-group` blocks (group heading + `.skill-list`) for the sidebar.
+
+    When skills are uncategorized there is exactly one group with the
+    generic "Skills" label — its heading is suppressed (it would just
+    repeat the section header). Real category labels always show."""
+    groups = _twocol_skill_groups(artifact)
+    suppress_heading = len(groups) == 1 and groups[0][0] == "Skills"
+    out = []
+    for label, items in groups:
+        lis = "".join("<li>{0}</li>".format(_esc(i)) for i in items)
+        heading = (
+            ""
+            if suppress_heading
+            else '<h3 class="skill-group-h">{0}</h3>'.format(_esc(label))
+        )
+        out.append(
+            '<div class="skill-group">'
+            '{heading}'
+            '<ul class="skill-list">{lis}</ul>'
+            '</div>'.format(heading=heading, lis=lis)
+        )
+    return "".join(out)
+
+
+def _twocol_cert_list_html(artifact: TailoredResumeArtifact) -> str:
+    """`.cert-list` items for the sidebar."""
+    certs = [c for c in (artifact.certifications or []) if str(c or "").strip()]
+    if not certs:
+        return ""
+    lis = "".join("<li>{0}</li>".format(_esc(c)) for c in certs)
+    return '<ul class="cert-list">{0}</ul>'.format(lis)
+
+
+def _twocol_pubs_html(artifact: TailoredResumeArtifact) -> str:
+    """`.pubs` list for the main column."""
+    pubs = [p for p in (artifact.publication_entries or []) if str(p or "").strip()]
+    if not pubs:
+        return ""
+    lis = "".join("<li>{0}</li>".format(_esc(p)) for p in pubs)
+    return '<ul class="pubs">{0}</ul>'.format(lis)
+
+
+def _twocol_summary_html(artifact: TailoredResumeArtifact) -> str:
+    return "<p>{0}</p>".format(
+        _esc(artifact.professional_summary or "No professional summary generated.")
     )
-    # DOM order: header → main → sidebar (text-extraction coherence).
+
+
+def _twocol_projects_chips(artifact: TailoredResumeArtifact) -> str:
+    """Projects rendered with a `.tech-list` of `.tech` chips (templates
+    01, 05, 08)."""
+    out = []
+    for project in artifact.project_entries or []:
+        name = _esc(getattr(project, "name", "") or "Project")
+        link = _esc(getattr(project, "link", ""))
+        description = _esc(getattr(project, "description", ""))
+        techs = [_esc(t) for t in (getattr(project, "technologies", None) or []) if str(t or "").strip()]
+        tech_html = (
+            '<div class="tech-list">{0}</div>'.format(
+                "".join('<span class="tech">{0}</span>'.format(t) for t in techs)
+            )
+            if techs
+            else ""
+        )
+        out.append(
+            '<div class="project">'
+            '<div class="project-head">'
+            '<span class="project-name">{name}</span>'
+            '{link}'
+            '</div>'
+            '{description}'
+            '{tech}'
+            '</div>'.format(
+                name=name,
+                link='<a class="project-link" href="#">{0}</a>'.format(link) if link else "",
+                description='<p class="project-desc">{0}</p>'.format(description) if description else "",
+                tech=tech_html,
+            )
+        )
+    return "".join(out)
+
+
+def _twocol_projects_split(artifact: TailoredResumeArtifact) -> str:
+    """Projects with a two-column `.project-side` (name + link) /
+    `.project-body` (desc + inline `.tech-line`) split (template 02)."""
+    out = []
+    for project in artifact.project_entries or []:
+        name = _esc(getattr(project, "name", "") or "Project")
+        link = _esc(getattr(project, "link", ""))
+        description = _esc(getattr(project, "description", ""))
+        techs = [_esc(t) for t in (getattr(project, "technologies", None) or []) if str(t or "").strip()]
+        tech_html = (
+            '<div class="tech-line"><span class="tech-label">Stack</span>{0}</div>'.format(
+                " · ".join(techs)
+            )
+            if techs
+            else ""
+        )
+        out.append(
+            '<div class="project">'
+            '<div class="project-side">'
+            '<p class="project-name">{name}</p>'
+            '{link}'
+            '</div>'
+            '<div class="project-body">'
+            '{description}'
+            '{tech}'
+            '</div>'
+            '</div>'.format(
+                name=name,
+                link='<a class="project-link" href="#">{0}</a>'.format(link) if link else "",
+                description='<p class="project-desc">{0}</p>'.format(description) if description else "",
+                tech=tech_html,
+            )
+        )
+    return "".join(out)
+
+
+def _twocol_projects_gutter(artifact: TailoredResumeArtifact) -> str:
+    """Projects with a left `.project-gutter` label + `.project-body`
+    (name with inline link, desc, inline `.tech-line`) — templates 04, 10.
+    The gutter label is the first technology, or 'Project' when none."""
+    out = []
+    for project in artifact.project_entries or []:
+        name = _esc(getattr(project, "name", "") or "Project")
+        link = _esc(getattr(project, "link", ""))
+        description = _esc(getattr(project, "description", ""))
+        techs = [_esc(t) for t in (getattr(project, "technologies", None) or []) if str(t or "").strip()]
+        gutter_label = techs[0] if techs else "Project"
+        tech_html = (
+            '<div class="tech-line"><span class="tech-label">Stack</span>{0}</div>'.format(
+                " · ".join(techs)
+            )
+            if techs
+            else ""
+        )
+        out.append(
+            '<div class="project">'
+            '<div class="project-gutter"><span class="gutter-label">{label}</span></div>'
+            '<div class="project-body">'
+            '<p class="project-name">{name}{link}</p>'
+            '{description}'
+            '{tech}'
+            '</div>'
+            '</div>'.format(
+                label=gutter_label,
+                name=name,
+                link=' <a class="project-link" href="#">{0}</a>'.format(link) if link else "",
+                description='<p class="project-desc">{0}</p>'.format(description) if description else "",
+                tech=tech_html,
+            )
+        )
+    return "".join(out)
+
+
+# --- shared section-ordering helper -----------------------------------------
+
+
+def _twocol_ordered(artifact: TailoredResumeArtifact, allowed: tuple) -> list[str]:
+    """Section keys from the artifact's order, filtered to `allowed` and
+    to sections that have content. Honors artifact.section_order, then
+    appends any forgotten sections in the default order."""
+    present = _twocol_section_present(artifact)
+    order = list(artifact.section_order) if artifact.section_order else list(_DEFAULT_RESUME_SECTION_ORDER)
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in list(order) + list(_DEFAULT_RESUME_SECTION_ORDER):
+        if name in seen:
+            continue
+        seen.add(name)
+        if name in allowed and present.get(name):
+            result.append(name)
+    return result
+
+
+def _twocol_document(title: str, style: str, body: str) -> str:
+    """Wrap a two-column theme's `<style>` + body in an A4 HTML document."""
     return (
-        '{header}'
-        '<div class="resume-tc-grid">'
-        '<div class="resume-tc-main">{main}</div>'
-        '<aside class="resume-tc-side">{side}</aside>'
+        '<!DOCTYPE html>\n<html lang="en">\n<head>\n'
+        '<meta charset="utf-8" />\n<title>{title}</title>\n'
+        '<style>{style}</style>\n</head>\n<body>\n{body}\n</body>\n</html>\n'
+    ).format(title=_esc(title or "Tailored Resume"), style=style, body=body)
+
+
+def _twocol_main_sections_html(
+    artifact: TailoredResumeArtifact,
+    section_header,
+    experience_builder,
+    projects_builder,
+) -> str:
+    """Assemble the MAIN column (summary / experience / projects /
+    publications) in artifact order, dropping empty sections.
+
+    `section_header(label)` returns the theme's `<h2 class="section-h">`
+    markup; the experience / projects builders are the structure
+    functions the template uses. Each section is a `<section
+    class="section">` so the templates' `.section` spacing applies."""
+    parts = []
+    for name in _twocol_ordered(artifact, _TWOCOL_MAIN_SECTIONS):
+        if name == "summary":
+            inner = '<div class="summary">{0}</div>'.format(_twocol_summary_html(artifact))
+            label = "Summary"
+        elif name == "experience":
+            inner = experience_builder(artifact.experience_entries or [])
+            label = "Experience"
+        elif name == "projects":
+            inner = projects_builder(artifact)
+            label = "Projects"
+        elif name == "publications":
+            inner = _twocol_pubs_html(artifact)
+            label = "Publications"
+        else:  # pragma: no cover - _twocol_ordered filters to the four
+            continue
+        parts.append(
+            '<section class="section">{header}{inner}</section>'.format(
+                header=section_header(label), inner=inner
+            )
+        )
+    return "".join(parts)
+
+
+def _twocol_sidebar_sections_html(
+    artifact: TailoredResumeArtifact, section_header
+) -> str:
+    """Assemble the SIDEBAR's content sections (skills / education /
+    certifications) in artifact order, dropping empty sections. Contact
+    is rendered separately by each template (its markup differs)."""
+    parts = []
+    for name in _twocol_ordered(artifact, _TWOCOL_SIDEBAR_SECTIONS):
+        if name == "skills":
+            inner = _twocol_skill_groups_html(artifact)
+            label = "Skills"
+        elif name == "education":
+            inner = _twocol_education_blocks(artifact)
+            label = "Education"
+        elif name == "certifications":
+            inner = _twocol_cert_list_html(artifact)
+            label = "Certifications"
+        else:  # pragma: no cover
+            continue
+        parts.append(
+            '<section class="sidebar-section">{header}{inner}</section>'.format(
+                header=section_header(label), inner=inner
+            )
+        )
+    return "".join(parts)
+
+
+# --- TEMPLATE 01 — Timeline / Tech ------------------------------------------
+_TWOCOL_STYLE_TIMELINE_TECH = """
+:root{--font-sans:Arial,"Helvetica Neue",Helvetica,sans-serif;--ink:#111418;--muted:#5b6470;--line:#e4e7ec;--accent:#4f6bed;--accent-soft:#eef1ff;--paper:#ffffff;--surface:#ffffff;--sidebar-bg:#0d1220;--sidebar-fg:#e7ebf3;--sidebar-mute:#8e96a8;--sidebar-rule:#1f273b;--sidebar-w:34%;--main-pad:16mm;--side-pad:11mm;}
+@page{size:A4;margin:0;}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--paper);}
+body{font-family:var(--font-sans);color:var(--ink);font-size:10pt;line-height:1.45;-webkit-font-smoothing:antialiased;}
+.sheet{display:flex;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);}
+.sidebar{width:var(--sidebar-w);background:var(--sidebar-bg);color:var(--sidebar-fg);padding:var(--side-pad);display:flex;flex-direction:column;order:-1;}
+.main{flex:1;background:var(--surface);padding:var(--main-pad);display:flex;flex-direction:column;}
+.masthead{padding-bottom:9mm;margin-bottom:8mm;border-bottom:1px solid var(--line);}
+.masthead .name{font-size:30pt;line-height:1.02;letter-spacing:-0.5px;margin:0 0 4pt 0;}
+.masthead .name .first{font-weight:300;color:var(--ink);}
+.masthead .name .last{font-weight:800;color:var(--ink);}
+.masthead .role{font-size:10pt;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--accent);margin-top:6pt;}
+.section{margin-bottom:7mm;}
+.section:last-child{margin-bottom:0;}
+.section-h{display:flex;align-items:center;font-size:9.5pt;font-weight:800;letter-spacing:2.4px;text-transform:uppercase;color:var(--ink);margin:0 0 4mm 0;}
+.section-h::before{content:"";display:inline-block;width:14px;height:2px;background:var(--accent);margin-right:8px;}
+.sidebar .section-h{color:var(--sidebar-fg);}
+.sidebar .section-h::before{background:var(--accent);}
+.summary p{margin:0;font-size:10pt;line-height:1.55;color:var(--ink);}
+.timeline{position:relative;padding-left:14px;border-left:1px solid var(--line);}
+.entry{position:relative;padding:0 0 5mm 10px;page-break-inside:avoid;}
+.entry:last-child{padding-bottom:0;}
+.entry::before{content:"";position:absolute;left:-19px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--paper);}
+.entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:1mm;}.entry-head>div{flex:1;min-width:0;}.entry-head .entry-dates{flex-shrink:0;}
+.entry-title{font-size:11pt;font-weight:700;color:var(--ink);margin:0;}
+.entry-org{font-size:10pt;color:var(--muted);margin:0;}
+.entry-dates{font-size:9pt;font-weight:600;color:var(--accent);white-space:nowrap;letter-spacing:0.3px;}
+.entry ul{margin:2mm 0 0 0;padding-left:14px;font-size:9.7pt;color:var(--ink);}
+.entry ul li{margin-bottom:1.2mm;line-height:1.45;}
+.project{page-break-inside:avoid;margin-bottom:4mm;}
+.project:last-child{margin-bottom:0;}
+.project-head{display:flex;align-items:baseline;gap:8px;margin-bottom:1mm;}
+.project-name{font-size:10.5pt;font-weight:700;color:var(--ink);}
+.project-link{font-size:9pt;color:var(--accent);text-decoration:none;}
+.project-desc{font-size:9.7pt;margin:0 0 1mm 0;color:var(--ink);}
+.tech-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:1mm;}
+.tech{font-size:8.5pt;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:2px 7px;border-radius:3px;}
+.pubs{margin:0;padding:0;list-style:none;}
+.pubs li{font-size:9.5pt;color:var(--ink);line-height:1.45;padding-left:12px;position:relative;margin-bottom:1.8mm;}
+.pubs li::before{content:"\\2014";position:absolute;left:0;color:var(--accent);}
+.brand{margin-bottom:9mm;padding-bottom:7mm;border-bottom:1px solid var(--sidebar-rule);}
+.brand .monogram{width:38px;height:38px;border-radius:50%;border:1.5px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:14pt;font-weight:700;color:var(--accent);letter-spacing:0.5px;}
+.contact-list{list-style:none;padding:0;margin:0;}
+.contact-list li{font-size:9pt;color:var(--sidebar-fg);margin-bottom:2.2mm;word-break:break-word;line-height:1.4;}
+.contact-list .label{display:block;font-size:7.5pt;letter-spacing:1.6px;text-transform:uppercase;color:var(--sidebar-mute);margin-bottom:1px;}
+.skill-group{margin-bottom:4mm;}
+.skill-group:last-child{margin-bottom:0;}
+.skill-group-h{font-size:7.8pt;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--accent);margin:0 0 2mm 0;}
+.skill-list{list-style:none;padding:0;margin:0;}
+.skill-list li{font-size:9.3pt;color:var(--sidebar-fg);padding:1.3mm 0;border-bottom:1px solid var(--sidebar-rule);}
+.skill-list li:last-child{border-bottom:none;}
+.edu-entry{margin-bottom:4mm;}
+.edu-entry:last-child{margin-bottom:0;}
+.edu-degree{font-size:9.7pt;font-weight:700;color:var(--sidebar-fg);margin:0;line-height:1.3;}
+.edu-inst{font-size:9pt;color:var(--sidebar-mute);margin:1px 0 0 0;}
+.edu-dates{font-size:8.4pt;color:var(--accent);font-weight:600;margin-top:2px;letter-spacing:0.3px;}
+.cert-list{list-style:none;padding:0;margin:0;}
+.cert-list li{font-size:9pt;color:var(--sidebar-fg);margin-bottom:2.5mm;line-height:1.35;padding-left:10px;position:relative;}
+.cert-list li::before{content:"";position:absolute;left:0;top:7px;width:4px;height:4px;background:var(--accent);border-radius:50%;}
+.sidebar-section{margin-bottom:8mm;}
+.sidebar-section:last-child{margin-bottom:0;}
+"""
+
+
+def _twocol_monogram(artifact: TailoredResumeArtifact) -> str:
+    """Two-letter initials for the templates with a monogram badge."""
+    first, last = _twocol_name_parts(artifact)
+    # Use raw (unescaped) name for letter extraction, then escape the result.
+    full = str(artifact.header.full_name or artifact.title or "Candidate").strip()
+    tokens = [t for t in full.split() if t]
+    if len(tokens) >= 2:
+        return _esc((tokens[0][0] + tokens[-1][0]))
+    if tokens and tokens[0]:
+        return _esc(tokens[0][:2])
+    return "CV"
+
+
+def _render_twocol_timeline_tech(
+    artifact: TailoredResumeArtifact, title: str
+) -> str:
+    """Template 01 — dark navy sidebar, dot-and-rail experience timeline."""
+
+    def section_h(label):
+        return '<h2 class="section-h">{0}</h2>'.format(_esc(label))
+
+    role = _twocol_role_headline(artifact)
+    first, last = _twocol_name_parts(artifact)
+    name_html = '<span class="first">{0}</span>'.format(first) + (
+        ' <span class="last">{0}</span>'.format(last) if last else ""
+    )
+    contact_lis = "".join(
+        '<li><span class="label">{label}</span>{value}</li>'.format(
+            label=_esc(label), value=_esc(value)
+        )
+        for label, value in _twocol_contact_items(artifact)
+    )
+    sidebar_contact = (
+        '<section class="sidebar-section">'
+        '<h2 class="section-h">Contact</h2>'
+        '<ul class="contact-list">{0}</ul>'
+        '</section>'.format(contact_lis)
+        if contact_lis
+        else ""
+    )
+    main = _twocol_main_sections_html(
+        artifact, section_h, _twocol_experience_timeline, _twocol_projects_chips
+    )
+    sidebar_body = _twocol_sidebar_sections_html(artifact, section_h)
+    body = (
+        '<div class="sheet">'
+        '<main class="main">'
+        '<header class="masthead">'
+        '<h1 class="name">{name}</h1>'
+        '{role}'
+        '</header>'
+        '{main}'
+        '</main>'
+        '<aside class="sidebar">'
+        '<div class="brand"><div class="monogram">{monogram}</div></div>'
+        '{contact}{sidebar}'
+        '</aside>'
         '</div>'
-    ).format(header=header_html, main=main_html, side=side_html)
+    ).format(
+        monogram=_twocol_monogram(artifact),
+        contact=sidebar_contact,
+        sidebar=sidebar_body,
+        name=name_html,
+        role='<div class="role">{0}</div>'.format(role) if role else "",
+        main=main,
+    )
+    return _twocol_document(title, _TWOCOL_STYLE_TIMELINE_TECH, body)
+
+
+# --- TEMPLATE 02 — Editorial Minimal ----------------------------------------
+_TWOCOL_STYLE_EDITORIAL_MINIMAL = """
+:root{--font-sans:Arial,"Helvetica Neue",Helvetica,sans-serif;--ink:#1c1a17;--muted:#6b6760;--line:#d9d4cb;--accent:#9a4a2a;--accent-soft:#f1e7df;--paper:#fbf7f0;--surface:#fbf7f0;--sidebar-bg:#efe7d8;--sidebar-fg:#1c1a17;--sidebar-mute:#7a7468;--sidebar-rule:#d4ccba;--sidebar-w:35%;--main-pad:18mm;--side-pad:13mm;}
+@page{size:A4;margin:0;}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--paper);}
+body{font-family:var(--font-sans);color:var(--ink);font-size:10pt;line-height:1.5;-webkit-font-smoothing:antialiased;}
+.sheet{display:flex;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);}
+.sidebar{width:var(--sidebar-w);background:var(--sidebar-bg);color:var(--sidebar-fg);padding:var(--side-pad);display:flex;flex-direction:column;order:-1;}
+.main{flex:1;background:var(--surface);padding:var(--main-pad);display:flex;flex-direction:column;}
+.masthead{margin-bottom:11mm;}
+.masthead .eyebrow{font-size:8.5pt;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--accent);margin-bottom:6mm;}
+.masthead .name{font-size:34pt;line-height:0.98;letter-spacing:-1px;margin:0 0 6mm 0;font-weight:300;color:var(--ink);}
+.masthead .name .last{display:block;font-weight:800;}
+.masthead .role{font-size:11pt;color:var(--ink);border-top:1px solid var(--line);padding-top:5mm;font-weight:400;}
+.section{margin-bottom:9mm;}
+.section:last-child{margin-bottom:0;}
+.section-h{font-size:9pt;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:var(--ink);margin:0 0 4mm 0;padding-bottom:2mm;border-bottom:1px solid var(--line);}
+.sidebar .section-h{color:var(--ink);border-bottom-color:var(--sidebar-rule);}
+.summary p{margin:0;font-size:10.5pt;line-height:1.6;color:var(--ink);}
+.entry{padding:0 0 5mm 0;page-break-inside:avoid;}
+.entry:last-child{padding-bottom:0;}
+.entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:1mm;}.entry-head>div{flex:1;min-width:0;}.entry-head .entry-dates{flex-shrink:0;}
+.entry-title{font-size:11pt;font-weight:700;color:var(--ink);margin:0;}
+.entry-org{font-size:10pt;color:var(--accent);margin:0;font-weight:600;}
+.entry-dates{font-size:9pt;color:var(--muted);white-space:nowrap;font-style:italic;}
+.entry ul{margin:2mm 0 0 0;padding-left:16px;font-size:10pt;color:var(--ink);}
+.entry ul li{margin-bottom:1.4mm;line-height:1.5;}
+.project{page-break-inside:avoid;margin-bottom:4mm;display:flex;gap:6mm;}
+.project:last-child{margin-bottom:0;}
+.project-side{width:32%;flex-shrink:0;}
+.project-name{font-size:10.5pt;font-weight:700;color:var(--ink);margin:0 0 1mm 0;}
+.project-link{font-size:9pt;color:var(--accent);text-decoration:none;word-break:break-word;}
+.project-body{flex:1;}
+.project-desc{font-size:9.8pt;margin:0 0 1.5mm 0;color:var(--ink);line-height:1.45;}
+.tech-line{font-size:8.8pt;color:var(--muted);letter-spacing:0.3px;}
+.tech-line .tech-label{font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-right:6px;color:var(--accent);}
+.pubs{margin:0;padding:0;list-style:none;}
+.pubs li{font-size:9.7pt;color:var(--ink);line-height:1.5;margin-bottom:2.5mm;padding-bottom:2.5mm;border-bottom:1px solid var(--line);}
+.pubs li:last-child{border-bottom:none;padding-bottom:0;}
+.sidebar-section{margin-bottom:9mm;}
+.sidebar-section:last-child{margin-bottom:0;}
+.contact-list{list-style:none;padding:0;margin:0;}
+.contact-list li{font-size:9.3pt;color:var(--sidebar-fg);margin-bottom:2.5mm;word-break:break-word;line-height:1.4;}
+.skill-group{margin-bottom:4mm;}
+.skill-group:last-child{margin-bottom:0;}
+.skill-group-h{font-size:8pt;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin:0 0 2mm 0;}
+.skill-list{list-style:none;padding:0;margin:0;}
+.skill-list li{font-size:9.5pt;color:var(--sidebar-fg);padding:1.1mm 0;line-height:1.35;}
+.edu-entry{margin-bottom:4mm;padding-bottom:4mm;border-bottom:1px solid var(--sidebar-rule);}
+.edu-entry:last-child{border-bottom:none;padding-bottom:0;margin-bottom:0;}
+.edu-degree{font-size:10pt;font-weight:700;color:var(--sidebar-fg);margin:0;line-height:1.3;}
+.edu-inst{font-size:9.3pt;color:var(--sidebar-fg);margin:1px 0 0 0;}
+.edu-dates{font-size:8.7pt;color:var(--sidebar-mute);margin-top:2px;font-style:italic;}
+.cert-list{list-style:none;padding:0;margin:0;}
+.cert-list li{font-size:9.3pt;color:var(--sidebar-fg);margin-bottom:2.5mm;line-height:1.4;}
+"""
+
+
+def _render_twocol_editorial_minimal(
+    artifact: TailoredResumeArtifact, title: str
+) -> str:
+    """Template 02 - light sand sidebar, terracotta, hairline-rule headers."""
+
+    def section_h(label):
+        return '<h2 class="section-h">{0}</h2>'.format(_esc(label))
+
+    role = _twocol_role_headline(artifact)
+    first, last = _twocol_name_parts(artifact)
+    name_html = first + (' <span class="last">{0}</span>'.format(last) if last else "")
+    contact_lis = "".join(
+        "<li>{0}</li>".format(_esc(value)) for _, value in _twocol_contact_items(artifact)
+    )
+    sidebar_contact = (
+        '<section class="sidebar-section">'
+        '<h2 class="section-h">Contact</h2>'
+        '<ul class="contact-list">{0}</ul>'
+        '</section>'.format(contact_lis)
+        if contact_lis
+        else ""
+    )
+    main = _twocol_main_sections_html(
+        artifact, section_h, _twocol_experience_headrow, _twocol_projects_split
+    )
+    sidebar_body = _twocol_sidebar_sections_html(artifact, section_h)
+    body = (
+        '<div class="sheet">'
+        '<main class="main">'
+        '<header class="masthead">'
+        '<div class="eyebrow">Curriculum Vitae</div>'
+        '<h1 class="name">{name}</h1>'
+        '{role}'
+        '</header>'
+        '{main}'
+        '</main>'
+        '<aside class="sidebar">{contact}{sidebar}</aside>'
+        '</div>'
+    ).format(
+        contact=sidebar_contact,
+        sidebar=sidebar_body,
+        name=name_html,
+        role='<div class="role">{0}</div>'.format(role) if role else "",
+        main=main,
+    )
+    return _twocol_document(title, _TWOCOL_STYLE_EDITORIAL_MINIMAL, body)
+
+
+# --- TEMPLATE 04 — Classic Slate --------------------------------------------
+_TWOCOL_STYLE_CLASSIC_SLATE = """
+:root{--font-sans:Arial,"Helvetica Neue",Helvetica,sans-serif;--ink:#0f1722;--muted:#586374;--line:#d5dae2;--accent:#1f5d4c;--accent-soft:#e6efeb;--paper:#ffffff;--surface:#ffffff;--sidebar-bg:#eef1f5;--sidebar-fg:#0f1722;--sidebar-mute:#4c5666;--sidebar-rule:#c9d0db;--sidebar-w:33%;--main-pad:17mm;--side-pad:12mm;}
+@page{size:A4;margin:0;}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--paper);}
+body{font-family:var(--font-sans);color:var(--ink);font-size:10pt;line-height:1.5;-webkit-font-smoothing:antialiased;}
+.sheet{display:flex;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);}
+.sidebar{width:var(--sidebar-w);background:var(--sidebar-bg);color:var(--sidebar-fg);padding:var(--side-pad);display:flex;flex-direction:column;border-right:2px solid var(--accent);order:-1;}
+.main{flex:1;background:var(--surface);padding:var(--main-pad);display:flex;flex-direction:column;}
+.masthead{margin-bottom:9mm;padding-bottom:6mm;border-bottom:2px solid var(--ink);display:flex;justify-content:space-between;align-items:flex-end;gap:10mm;}
+.masthead-l{flex:1;min-width:0;}
+.masthead .name{margin:0;font-size:28pt;line-height:1;font-weight:800;letter-spacing:-0.5px;color:var(--ink);text-transform:uppercase;}
+.masthead .name .last{display:block;font-weight:300;letter-spacing:4px;font-size:14pt;margin-top:2mm;color:var(--muted);}
+.masthead .role{font-size:10pt;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--accent);text-align:right;max-width:50mm;line-height:1.4;overflow-wrap:anywhere;}
+.section{margin-bottom:6.5mm;}
+.section:last-child{margin-bottom:0;}
+.section-h{display:flex;align-items:center;font-size:9.3pt;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:var(--ink);margin:0 0 4mm 0;}
+.section-h .label{white-space:nowrap;}
+.section-h::after{content:"";flex:1;height:1px;background:var(--ink);margin-left:4mm;}
+.sidebar .section-h{color:var(--accent);}
+.sidebar .section-h::after{background:var(--accent);}
+.summary p{margin:0;font-size:10.2pt;line-height:1.55;}
+.entry{display:flex;gap:5mm;page-break-inside:avoid;margin-bottom:5mm;}
+.entry:last-child{margin-bottom:0;}
+.entry-gutter{width:22mm;flex-shrink:0;padding-top:1mm;}
+.entry-dates{font-size:9pt;color:var(--accent);font-weight:700;letter-spacing:0.3px;line-height:1.3;}
+.entry-body{flex:1;}
+.entry-title{font-size:11pt;font-weight:800;color:var(--ink);margin:0;line-height:1.25;}
+.entry-org{font-size:10pt;color:var(--muted);margin:1px 0 0 0;font-style:italic;}
+.entry ul{margin:2mm 0 0 0;padding-left:16px;font-size:9.8pt;}
+.entry ul li{margin-bottom:1.2mm;line-height:1.45;}
+.project{display:flex;gap:5mm;page-break-inside:avoid;margin-bottom:4mm;}
+.project:last-child{margin-bottom:0;}
+.project-gutter{width:22mm;flex-shrink:0;padding-top:1mm;}
+.project-gutter .gutter-label{font-size:8.4pt;color:var(--accent);font-weight:700;letter-spacing:1.6px;text-transform:uppercase;}
+.project-body{flex:1;}
+.project-name{font-size:10.5pt;font-weight:800;color:var(--ink);margin:0 0 1mm 0;}
+.project-link{display:inline-block;font-size:9pt;color:var(--accent);text-decoration:none;margin-left:6px;font-weight:400;font-style:italic;}
+.project-desc{font-size:9.8pt;margin:0 0 1.5mm 0;line-height:1.45;}
+.tech-line{font-size:8.8pt;color:var(--muted);letter-spacing:0.2px;}
+.tech-line .tech-label{font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-right:6px;color:var(--ink);}
+.pubs{margin:0;padding:0;list-style:none;counter-reset:pubcount;}
+.pubs li{font-size:9.5pt;line-height:1.45;margin-bottom:2.5mm;padding-left:9mm;position:relative;counter-increment:pubcount;}
+.pubs li::before{content:"[" counter(pubcount) "]";position:absolute;left:0;top:0;font-weight:700;color:var(--accent);font-size:9pt;}
+.sidebar-section{margin-bottom:7mm;}
+.sidebar-section:last-child{margin-bottom:0;}
+.contact-list{list-style:none;padding:0;margin:0;}
+.contact-list li{font-size:9.2pt;color:var(--sidebar-fg);margin-bottom:2mm;word-break:break-word;line-height:1.4;}
+.contact-list .tag{display:block;font-size:7.5pt;letter-spacing:1.6px;text-transform:uppercase;color:var(--sidebar-mute);margin-bottom:1px;font-weight:700;}
+.skill-group{margin-bottom:3.5mm;}
+.skill-group:last-child{margin-bottom:0;}
+.skill-group-h{font-size:8pt;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--sidebar-mute);margin:0 0 1.5mm 0;padding-bottom:1mm;border-bottom:1px solid var(--sidebar-rule);}
+.skill-list{list-style:none;padding:0;margin:0;}
+.skill-list li{font-size:9.3pt;color:var(--sidebar-fg);padding:1mm 0;line-height:1.3;}
+.edu-entry{margin-bottom:4mm;}
+.edu-entry:last-child{margin-bottom:0;}
+.edu-degree{font-size:9.8pt;font-weight:800;color:var(--sidebar-fg);margin:0;line-height:1.3;}
+.edu-inst{font-size:9.2pt;color:var(--sidebar-fg);margin:1px 0 0 0;font-style:italic;}
+.edu-dates{font-size:8.6pt;color:var(--accent);font-weight:700;margin-top:1.5mm;letter-spacing:0.4px;}
+.cert-list{list-style:none;padding:0;margin:0;}
+.cert-list li{font-size:9.2pt;color:var(--sidebar-fg);margin-bottom:2.5mm;line-height:1.4;padding-left:8mm;position:relative;}
+.cert-list li::before{content:"\\2713";position:absolute;left:0;top:0;color:var(--accent);font-weight:800;font-size:10pt;line-height:1.4;}
+"""
+
+
+def _render_twocol_classic_slate(
+    artifact: TailoredResumeArtifact, title: str
+) -> str:
+    """Template 04 - pale slate sidebar, emerald, left date-gutter."""
+
+    def section_h(label):
+        return '<h2 class="section-h"><span class="label">{0}</span></h2>'.format(_esc(label))
+
+    role = _twocol_role_headline(artifact)
+    first, last = _twocol_name_parts(artifact)
+    name_html = first + (' <span class="last">{0}</span>'.format(last) if last else "")
+    contact_lis = "".join(
+        '<li><span class="tag">{tag}</span>{value}</li>'.format(
+            tag=_esc(tag), value=_esc(value)
+        )
+        for tag, value in _twocol_contact_items(artifact)
+    )
+    sidebar_contact = (
+        '<section class="sidebar-section">'
+        '<h2 class="section-h"><span class="label">Contact</span></h2>'
+        '<ul class="contact-list">{0}</ul>'
+        '</section>'.format(contact_lis)
+        if contact_lis
+        else ""
+    )
+    main = _twocol_main_sections_html(
+        artifact, section_h, _twocol_experience_gutter, _twocol_projects_gutter
+    )
+    sidebar_body = _twocol_sidebar_sections_html(artifact, section_h)
+    body = (
+        '<div class="sheet">'
+        '<main class="main">'
+        '<header class="masthead">'
+        '<div class="masthead-l"><h1 class="name">{name}</h1></div>'
+        '{role}'
+        '</header>'
+        '{main}'
+        '</main>'
+        '<aside class="sidebar">{contact}{sidebar}</aside>'
+        '</div>'
+    ).format(
+        contact=sidebar_contact,
+        sidebar=sidebar_body,
+        name=name_html,
+        role='<div class="role">{0}</div>'.format(role) if role else "",
+        main=main,
+    )
+    return _twocol_document(title, _TWOCOL_STYLE_CLASSIC_SLATE, body)
+
+
+# --- TEMPLATE 05 — Monochrome Black -----------------------------------------
+_TWOCOL_STYLE_MONOCHROME_BLACK = """
+:root{--font-sans:Arial,"Helvetica Neue",Helvetica,sans-serif;--ink:#0a0a0a;--muted:#6e6a63;--line:#d8d2c6;--accent:#0a0a0a;--accent-soft:#ece6d9;--paper:#f3eee3;--surface:#f3eee3;--sidebar-bg:#000000;--sidebar-fg:#f3eee3;--sidebar-mute:#8c8884;--sidebar-rule:#1f1f1f;--sidebar-w:34%;--main-pad:17mm;--side-pad:12mm;}
+@page{size:A4;margin:0;}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--paper);}
+body{font-family:var(--font-sans);color:var(--ink);font-size:10pt;line-height:1.5;-webkit-font-smoothing:antialiased;}
+.sheet{display:flex;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);}
+.sidebar{width:var(--sidebar-w);background:var(--sidebar-bg);color:var(--sidebar-fg);padding:var(--side-pad);display:flex;flex-direction:column;order:-1;}
+.main{flex:1;background:var(--surface);padding:var(--main-pad);display:flex;flex-direction:column;}
+.masthead{margin-bottom:11mm;}
+.masthead .index{font-size:8.5pt;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:var(--muted);margin-bottom:6mm;display:flex;justify-content:space-between;align-items:center;}
+.masthead .index::after{content:"";flex:1;height:1px;background:var(--ink);margin-left:4mm;}
+.masthead .name{margin:0 0 5mm 0;font-size:42pt;line-height:0.92;letter-spacing:-1.5px;color:var(--ink);font-weight:200;}
+.masthead .name .last{display:block;font-weight:900;}
+.masthead .role{font-size:10.5pt;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--ink);padding-top:4mm;border-top:2px solid var(--ink);display:inline-block;padding-right:12mm;}
+.section{margin-bottom:8mm;}
+.section:last-child{margin-bottom:0;}
+.section-h{font-size:9.5pt;font-weight:900;letter-spacing:3.5px;text-transform:uppercase;color:var(--ink);margin:0 0 4mm 0;padding-bottom:2.5mm;border-bottom:2px solid var(--ink);}
+.sidebar .section-h{color:var(--sidebar-fg);border-bottom:2px solid var(--sidebar-fg);}
+.summary p{margin:0;font-size:10.5pt;line-height:1.6;color:var(--ink);}
+.entry{padding:0 0 5mm 6mm;page-break-inside:avoid;border-left:2px solid var(--ink);margin-left:1mm;position:relative;}
+.entry::before{content:"";position:absolute;left:-6px;top:5px;width:10px;height:10px;background:var(--ink);}
+.entry:last-child{padding-bottom:0;}
+.entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:0.5mm;}.entry-head>div{flex:1;min-width:0;}.entry-head .entry-dates{flex-shrink:0;}
+.entry-title{font-size:11.5pt;font-weight:800;color:var(--ink);margin:0;line-height:1.25;}
+.entry-org{font-size:10pt;color:var(--muted);margin:1px 0 0 0;}
+.entry-dates{font-size:9pt;color:var(--ink);white-space:nowrap;font-weight:700;letter-spacing:0.5px;}
+.entry ul{margin:2mm 0 0 0;padding-left:14px;font-size:10pt;}
+.entry ul li{margin-bottom:1.3mm;line-height:1.5;}
+.project{page-break-inside:avoid;margin-bottom:4mm;padding-bottom:4mm;border-bottom:1px solid var(--line);}
+.project:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none;}
+.project-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:1mm;}
+.project-name{font-size:10.8pt;font-weight:800;color:var(--ink);text-transform:uppercase;letter-spacing:0.5px;}
+.project-link{font-size:9pt;color:var(--muted);text-decoration:underline;text-underline-offset:2px;}
+.project-desc{font-size:9.8pt;margin:0 0 1.5mm 0;line-height:1.5;}
+.tech-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:1.5mm;}
+.tech{font-size:8.4pt;font-weight:700;color:var(--ink);border:1px solid var(--ink);padding:1.5px 7px;letter-spacing:0.4px;text-transform:uppercase;}
+.pubs{margin:0;padding:0;list-style:none;counter-reset:pubcount;}
+.pubs li{font-size:9.5pt;line-height:1.5;margin-bottom:2.5mm;padding-left:11mm;position:relative;counter-increment:pubcount;}
+.pubs li::before{content:counter(pubcount,decimal-leading-zero);position:absolute;left:0;top:0;font-weight:900;color:var(--ink);font-size:10pt;letter-spacing:0.5px;}
+.sidebar-section{margin-bottom:8mm;}
+.sidebar-section:last-child{margin-bottom:0;}
+.brand{margin-bottom:10mm;padding-bottom:8mm;border-bottom:2px solid var(--sidebar-fg);}
+.brand .monogram{font-size:30pt;font-weight:900;letter-spacing:-1px;line-height:1;color:var(--sidebar-fg);margin-bottom:3mm;}
+.brand .tag{font-size:7.8pt;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--sidebar-mute);}
+.contact-list{list-style:none;padding:0;margin:0;}
+.contact-list li{font-size:9.3pt;color:var(--sidebar-fg);margin-bottom:3mm;word-break:break-word;line-height:1.35;}
+.contact-list .tag{display:block;font-size:7.5pt;letter-spacing:2px;text-transform:uppercase;color:var(--sidebar-mute);margin-bottom:1px;font-weight:700;}
+.skill-group{margin-bottom:4mm;}
+.skill-group:last-child{margin-bottom:0;}
+.skill-group-h{font-size:8pt;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--sidebar-mute);margin:0 0 2mm 0;}
+.skill-list{list-style:none;padding:0;margin:0;}
+.skill-list li{font-size:9.4pt;color:var(--sidebar-fg);padding:1.2mm 0;line-height:1.3;border-bottom:1px solid var(--sidebar-rule);}
+.skill-list li:last-child{border-bottom:none;}
+.edu-entry{margin-bottom:4mm;}
+.edu-entry:last-child{margin-bottom:0;}
+.edu-degree{font-size:10pt;font-weight:800;color:var(--sidebar-fg);margin:0;line-height:1.3;}
+.edu-inst{font-size:9.2pt;color:var(--sidebar-fg);margin:1px 0 0 0;}
+.edu-dates{font-size:8.5pt;color:var(--sidebar-mute);margin-top:1.5mm;font-weight:700;letter-spacing:0.5px;}
+.cert-list{list-style:none;padding:0;margin:0;counter-reset:certcount;}
+.cert-list li{font-size:9.2pt;color:var(--sidebar-fg);margin-bottom:3mm;line-height:1.4;padding-left:9mm;position:relative;counter-increment:certcount;}
+.cert-list li::before{content:counter(certcount,decimal-leading-zero);position:absolute;left:0;top:0;font-size:8.5pt;font-weight:800;color:var(--sidebar-mute);letter-spacing:0.5px;}
+"""
+
+
+def _render_twocol_monochrome_black(
+    artifact: TailoredResumeArtifact, title: str
+) -> str:
+    """Template 05 - true-black sidebar, monochrome, head-row experience."""
+
+    def section_h(label):
+        return '<h2 class="section-h">{0}</h2>'.format(_esc(label))
+
+    role = _twocol_role_headline(artifact)
+    first, last = _twocol_name_parts(artifact)
+    name_html = first + (' <span class="last">{0}</span>'.format(last) if last else "")
+    contact_lis = "".join(
+        '<li><span class="tag">{tag}</span>{value}</li>'.format(
+            tag=_esc(tag), value=_esc(value)
+        )
+        for tag, value in _twocol_contact_items(artifact)
+    )
+    sidebar_contact = (
+        '<section class="sidebar-section">'
+        '<h2 class="section-h">Contact</h2>'
+        '<ul class="contact-list">{0}</ul>'
+        '</section>'.format(contact_lis)
+        if contact_lis
+        else ""
+    )
+    main = _twocol_main_sections_html(
+        artifact, section_h, _twocol_experience_headrow, _twocol_projects_chips
+    )
+    sidebar_body = _twocol_sidebar_sections_html(artifact, section_h)
+    body = (
+        '<div class="sheet">'
+        '<main class="main">'
+        '<header class="masthead">'
+        '<div class="index"><span>Resume</span></div>'
+        '<h1 class="name">{name}</h1>'
+        '{role}'
+        '</header>'
+        '{main}'
+        '</main>'
+        '<aside class="sidebar">'
+        '<div class="brand"><div class="monogram">{monogram}</div>'
+        '<div class="tag">Curriculum Vitae</div></div>'
+        '{contact}{sidebar}'
+        '</aside>'
+        '</div>'
+    ).format(
+        monogram=_twocol_monogram(artifact),
+        contact=sidebar_contact,
+        sidebar=sidebar_body,
+        name=name_html,
+        role='<div class="role">{0}</div>'.format(role) if role else "",
+        main=main,
+    )
+    return _twocol_document(title, _TWOCOL_STYLE_MONOCHROME_BLACK, body)
+
+
+# --- TEMPLATE 08 — Plum Berry -----------------------------------------------
+_TWOCOL_STYLE_PLUM_BERRY = """
+:root{--font-sans:Arial,"Helvetica Neue",Helvetica,sans-serif;--ink:#2a1d2a;--muted:#7a6877;--line:#e3d4dd;--accent:#b94f7a;--accent-soft:#f2dce6;--paper:#f6ecef;--surface:#f6ecef;--sidebar-bg:#3b1f3a;--sidebar-fg:#f6e8ee;--sidebar-mute:#c9a8bc;--sidebar-rule:#4f2c4d;--sidebar-w:35%;--main-pad:17mm;--side-pad:12mm;}
+@page{size:A4;margin:0;}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--paper);}
+body{font-family:var(--font-sans);color:var(--ink);font-size:10pt;line-height:1.55;}
+.sheet{display:flex;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);}
+.sidebar{width:var(--sidebar-w);background:var(--sidebar-bg);color:var(--sidebar-fg);padding:var(--side-pad);display:flex;flex-direction:column;order:-1;}
+.main{flex:1;background:var(--surface);padding:var(--main-pad);display:flex;flex-direction:column;}
+.masthead{margin-bottom:10mm;}
+.masthead .eyebrow{font-size:8.5pt;letter-spacing:4px;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:6mm;}
+.masthead .name{margin:0;font-size:38pt;line-height:0.98;letter-spacing:-1px;font-weight:200;color:var(--ink);}
+.masthead .name .last{display:block;font-weight:900;color:var(--accent);}
+.masthead .role{margin-top:5mm;padding-top:4mm;border-top:1px solid var(--ink);font-size:11pt;font-style:italic;color:var(--ink);}
+.section{margin-bottom:7mm;}
+.section:last-child{margin-bottom:0;}
+.section-h{display:flex;align-items:center;gap:4mm;margin:0 0 4mm 0;font-size:9pt;font-weight:800;letter-spacing:4px;text-transform:uppercase;color:var(--ink);}
+.section-h::before,.section-h::after{content:"";flex:1;height:1px;background:var(--ink);}
+.section-h::before{flex:0 0 4mm;}
+.sidebar .section-h{color:var(--sidebar-fg);}
+.sidebar .section-h::before,.sidebar .section-h::after{background:var(--sidebar-fg);}
+.summary p{margin:0;font-size:10.4pt;line-height:1.65;}
+.entry{padding:0 0 5mm 0;page-break-inside:avoid;}
+.entry:last-child{padding-bottom:0;}
+.entry-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:0.5mm;}.entry-head>div{flex:1;min-width:0;}.entry-head .entry-dates{flex-shrink:0;}
+.entry-title{font-size:11.2pt;font-weight:800;margin:0;color:var(--ink);}
+.entry-org{font-size:10pt;color:var(--accent);margin:0;font-style:italic;font-weight:600;}
+.entry-dates{font-size:9pt;color:var(--muted);white-space:nowrap;font-weight:600;letter-spacing:0.3px;}
+.entry ul{margin:2mm 0 0 0;padding-left:14px;font-size:9.8pt;}
+.entry ul li{margin-bottom:1.3mm;line-height:1.5;}
+.entry ul li::marker{color:var(--accent);}
+.project{page-break-inside:avoid;margin-bottom:4mm;}
+.project:last-child{margin-bottom:0;}
+.project-head{display:flex;align-items:baseline;gap:8px;margin-bottom:1mm;}
+.project-name{font-size:10.5pt;font-weight:800;color:var(--ink);}
+.project-link{font-size:9pt;color:var(--accent);text-decoration:underline;text-underline-offset:2px;}
+.project-desc{font-size:9.8pt;margin:0;line-height:1.5;}
+.tech-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:1.5mm;}
+.tech{font-size:8.4pt;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:1.5px 7px;border-radius:999px;letter-spacing:0.3px;}
+.pubs{margin:0;padding:0;list-style:none;}
+.pubs li{font-size:9.5pt;line-height:1.5;margin-bottom:2.5mm;padding-bottom:2.5mm;border-bottom:1px solid var(--line);}
+.pubs li:last-child{border-bottom:none;padding-bottom:0;}
+.sidebar-section{margin-bottom:7mm;}
+.sidebar-section:last-child{margin-bottom:0;}
+.contact-list{list-style:none;padding:0;margin:0;}
+.contact-list li{font-size:9.2pt;color:var(--sidebar-fg);margin-bottom:2.2mm;word-break:break-word;line-height:1.4;}
+.contact-list .tag{display:block;font-size:7.5pt;letter-spacing:2px;text-transform:uppercase;color:var(--sidebar-mute);margin-bottom:1px;font-weight:700;}
+.skill-group{margin-bottom:3.5mm;}
+.skill-group:last-child{margin-bottom:0;}
+.skill-group-h{font-size:7.8pt;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;color:var(--sidebar-mute);margin:0 0 1.5mm 0;}
+.skill-list{list-style:none;padding:0;margin:0;}
+.skill-list li{font-size:9.3pt;color:var(--sidebar-fg);padding:1.1mm 0;line-height:1.3;}
+.skill-list li::before{content:"\\2014";margin-right:8px;color:var(--sidebar-mute);}
+.edu-entry{margin-bottom:4mm;padding-bottom:4mm;border-bottom:1px solid var(--sidebar-rule);}
+.edu-entry:last-child{border-bottom:none;padding-bottom:0;margin-bottom:0;}
+.edu-degree{font-size:9.8pt;font-weight:800;margin:0;line-height:1.3;}
+.edu-inst{font-size:9pt;color:var(--sidebar-mute);margin:1px 0 0 0;font-style:italic;}
+.edu-dates{font-size:8.5pt;color:var(--sidebar-fg);margin-top:1.5mm;font-weight:700;letter-spacing:0.4px;}
+.cert-list{list-style:none;padding:0;margin:0;}
+.cert-list li{font-size:9.1pt;color:var(--sidebar-fg);margin-bottom:2.5mm;line-height:1.4;}
+"""
+
+
+def _render_twocol_plum_berry(
+    artifact: TailoredResumeArtifact, title: str
+) -> str:
+    """Template 08 - plum sidebar, berry accent, head-row experience."""
+
+    def section_h(label):
+        return '<h2 class="section-h">{0}</h2>'.format(_esc(label))
+
+    role = _twocol_role_headline(artifact)
+    first, last = _twocol_name_parts(artifact)
+    name_html = first + ('<span class="last">{0}</span>'.format(last) if last else "")
+    contact_lis = "".join(
+        '<li><span class="tag">{tag}</span>{value}</li>'.format(
+            tag=_esc(tag), value=_esc(value)
+        )
+        for tag, value in _twocol_contact_items(artifact)
+    )
+    sidebar_contact = (
+        '<section class="sidebar-section">'
+        '<h2 class="section-h">Contact</h2>'
+        '<ul class="contact-list">{0}</ul>'
+        '</section>'.format(contact_lis)
+        if contact_lis
+        else ""
+    )
+    main = _twocol_main_sections_html(
+        artifact, section_h, _twocol_experience_headrow, _twocol_projects_chips
+    )
+    sidebar_body = _twocol_sidebar_sections_html(artifact, section_h)
+    body = (
+        '<div class="sheet">'
+        '<main class="main">'
+        '<header class="masthead">'
+        '<div class="eyebrow">Curriculum Vitae</div>'
+        '<h1 class="name">{name}</h1>'
+        '{role}'
+        '</header>'
+        '{main}'
+        '</main>'
+        '<aside class="sidebar">{contact}{sidebar}</aside>'
+        '</div>'
+    ).format(
+        contact=sidebar_contact,
+        sidebar=sidebar_body,
+        name=name_html,
+        role='<div class="role">{0}</div>'.format(role) if role else "",
+        main=main,
+    )
+    return _twocol_document(title, _TWOCOL_STYLE_PLUM_BERRY, body)
+
+
+# --- TEMPLATE 10 — Burgundy & Champagne -------------------------------------
+_TWOCOL_STYLE_BURGUNDY_CHAMPAGNE = """
+:root{--font-sans:Arial,"Helvetica Neue",Helvetica,sans-serif;--ink:#1c1311;--muted:#6f5e54;--line:#e3d8c5;--accent:#a17a3a;--accent-soft:#f1e5cd;--paper:#faf3e3;--surface:#faf3e3;--sidebar-bg:#5a121f;--sidebar-fg:#f3e6cf;--sidebar-mute:#d3b78a;--sidebar-rule:#71202c;--sidebar-w:33%;--main-pad:17mm;--side-pad:12mm;}
+@page{size:A4;margin:0;}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--paper);}
+body{font-family:var(--font-sans);color:var(--ink);font-size:10pt;line-height:1.5;}
+.sheet{display:flex;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);}
+.sidebar{width:var(--sidebar-w);background:var(--sidebar-bg);color:var(--sidebar-fg);padding:var(--side-pad);display:flex;flex-direction:column;order:-1;}
+.main{flex:1;background:var(--surface);padding:var(--main-pad);display:flex;flex-direction:column;}
+.masthead{margin-bottom:9mm;padding-bottom:5mm;border-bottom:3px double var(--ink);}
+.masthead .meta{font-size:8.5pt;letter-spacing:4px;text-transform:uppercase;color:var(--accent);font-weight:800;margin-bottom:6mm;}
+.masthead .name{margin:0;font-size:30pt;line-height:1;letter-spacing:-0.5px;color:var(--ink);font-weight:800;}
+.masthead .name .first{font-weight:200;letter-spacing:0;}
+.masthead .role{margin-top:4mm;font-size:10.5pt;font-style:italic;color:var(--accent);letter-spacing:0.3px;}
+.section{margin-bottom:7mm;}
+.section:last-child{margin-bottom:0;}
+.section-h{font-size:9.3pt;font-weight:800;letter-spacing:3.5px;text-transform:uppercase;color:var(--ink);margin:0 0 4mm 0;padding-bottom:2mm;border-bottom:1px solid var(--accent);}
+.sidebar .section-h{color:var(--accent);border-bottom-color:var(--accent);}
+.summary p{margin:0;font-size:10.3pt;line-height:1.6;}
+.entry{display:flex;gap:5mm;page-break-inside:avoid;margin-bottom:5mm;}
+.entry:last-child{margin-bottom:0;}
+.entry-gutter{width:22mm;flex-shrink:0;padding-top:1mm;}
+.entry-dates{font-size:9pt;color:var(--accent);font-weight:800;letter-spacing:0.5px;line-height:1.3;text-transform:uppercase;}
+.entry-body{flex:1;}
+.entry-title{font-size:11pt;font-weight:800;margin:0;line-height:1.25;color:var(--ink);}
+.entry-org{font-size:10pt;color:var(--muted);margin:1px 0 0 0;font-style:italic;}
+.entry ul{margin:2mm 0 0 0;padding-left:16px;font-size:9.8pt;}
+.entry ul li{margin-bottom:1.3mm;line-height:1.5;}
+.entry ul li::marker{color:var(--accent);}
+.project{display:flex;gap:5mm;page-break-inside:avoid;margin-bottom:4mm;}
+.project:last-child{margin-bottom:0;}
+.project-gutter{width:22mm;flex-shrink:0;padding-top:1mm;}
+.project-gutter .gutter-label{font-size:8.4pt;color:var(--accent);font-weight:800;letter-spacing:1.6px;text-transform:uppercase;}
+.project-body{flex:1;}
+.project-name{font-size:10.5pt;font-weight:800;color:var(--ink);margin:0 0 1mm 0;}
+.project-link{display:inline-block;font-size:9pt;color:var(--accent);text-decoration:none;margin-left:6px;font-weight:400;font-style:italic;}
+.project-desc{font-size:9.8pt;margin:0 0 1.5mm 0;line-height:1.5;}
+.tech-line{font-size:8.8pt;color:var(--muted);}
+.tech-line .tech-label{font-weight:800;text-transform:uppercase;letter-spacing:1.5px;margin-right:6px;color:var(--accent);}
+.pubs{margin:0;padding:0;list-style:none;counter-reset:pubcount;}
+.pubs li{font-size:9.5pt;line-height:1.5;margin-bottom:2.5mm;padding-left:9mm;position:relative;counter-increment:pubcount;}
+.pubs li::before{content:"\\00a7 " counter(pubcount);position:absolute;left:0;top:0;font-weight:800;color:var(--accent);font-size:9pt;letter-spacing:0.4px;}
+.sidebar-section{margin-bottom:7mm;}
+.sidebar-section:last-child{margin-bottom:0;}
+.contact-list{list-style:none;padding:0;margin:0;}
+.contact-list li{font-size:9.2pt;color:var(--sidebar-fg);margin-bottom:2.2mm;word-break:break-word;line-height:1.4;}
+.contact-list .tag{display:block;font-size:7.5pt;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin-bottom:1px;font-weight:800;}
+.skill-group{margin-bottom:3.5mm;}
+.skill-group:last-child{margin-bottom:0;}
+.skill-group-h{font-size:7.8pt;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin:0 0 1.5mm 0;}
+.skill-list{list-style:none;padding:0;margin:0;}
+.skill-list li{font-size:9.3pt;color:var(--sidebar-fg);padding:1.2mm 0;line-height:1.3;border-bottom:1px solid var(--sidebar-rule);}
+.skill-list li:last-child{border-bottom:none;}
+.edu-entry{margin-bottom:4mm;}
+.edu-entry:last-child{margin-bottom:0;}
+.edu-degree{font-size:9.8pt;font-weight:800;margin:0;line-height:1.3;}
+.edu-inst{font-size:9pt;color:var(--sidebar-mute);margin:1px 0 0 0;font-style:italic;}
+.edu-dates{font-size:8.5pt;color:var(--accent);margin-top:1.5mm;font-weight:800;letter-spacing:0.4px;}
+.cert-list{list-style:none;padding:0;margin:0;}
+.cert-list li{font-size:9.1pt;color:var(--sidebar-fg);margin-bottom:2.5mm;line-height:1.4;padding-left:9mm;position:relative;}
+.cert-list li::before{content:"\\00b7";position:absolute;left:4mm;top:-2px;font-size:16pt;color:var(--accent);}
+"""
+
+
+def _render_twocol_burgundy_champagne(
+    artifact: TailoredResumeArtifact, title: str
+) -> str:
+    """Template 10 - wine sidebar, champagne-gold accent, date-gutter."""
+
+    def section_h(label):
+        return '<h2 class="section-h">{0}</h2>'.format(_esc(label))
+
+    role = _twocol_role_headline(artifact)
+    first, last = _twocol_name_parts(artifact)
+    name_html = (
+        '<span class="first">{0}</span> {1}'.format(first, last)
+        if last
+        else first
+    )
+    contact_lis = "".join(
+        '<li><span class="tag">{tag}</span>{value}</li>'.format(
+            tag=_esc(tag), value=_esc(value)
+        )
+        for tag, value in _twocol_contact_items(artifact)
+    )
+    sidebar_contact = (
+        '<section class="sidebar-section">'
+        '<h2 class="section-h">Contact</h2>'
+        '<ul class="contact-list">{0}</ul>'
+        '</section>'.format(contact_lis)
+        if contact_lis
+        else ""
+    )
+    main = _twocol_main_sections_html(
+        artifact, section_h, _twocol_experience_gutter, _twocol_projects_gutter
+    )
+    sidebar_body = _twocol_sidebar_sections_html(artifact, section_h)
+    body = (
+        '<div class="sheet">'
+        '<main class="main">'
+        '<header class="masthead">'
+        '<div class="meta">Curriculum Vitae</div>'
+        '<h1 class="name">{name}</h1>'
+        '{role}'
+        '</header>'
+        '{main}'
+        '</main>'
+        '<aside class="sidebar">{contact}{sidebar}</aside>'
+        '</div>'
+    ).format(
+        contact=sidebar_contact,
+        sidebar=sidebar_body,
+        name=name_html,
+        role='<div class="role">{0}</div>'.format(role) if role else "",
+        main=main,
+    )
+    return _twocol_document(title, _TWOCOL_STYLE_BURGUNDY_CHAMPAGNE, body)
+
+
+# Dispatch table — `ThemeSpec.twocol_layout` → renderer. Populated by each
+# template block below as it is defined; `_build_resume_html_twocol` reads it
+# at call time so definition order does not matter.
+_TWOCOL_RENDERERS = {
+    "timeline_tech": _render_twocol_timeline_tech,
+    "editorial_minimal": _render_twocol_editorial_minimal,
+    "classic_slate": _render_twocol_classic_slate,
+    "monochrome_black": _render_twocol_monochrome_black,
+    "plum_berry": _render_twocol_plum_berry,
+    "burgundy_champagne": _render_twocol_burgundy_champagne,
+}
 
 
 def _build_resume_html_twocol(
-    artifact: TailoredResumeArtifact, title: str, palette: dict
+    artifact: TailoredResumeArtifact, title: str, spec: "ThemeSpec"
 ) -> str:
-    """Self-contained two-column template. Shares the SAME ThemeSpec
-    palette vars (single-sourced) — only the layout shell + the
-    column-safe h2 (no negative-margin full-bleed trick) differ from
-    the single-column template."""
-    return """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <title>{title}</title>
-    <style>
-        @page {{ size: A4; margin: 0; }}
-        * {{ box-sizing: border-box; }}
-        html, body {{ margin: 0; padding: 0; }}
-        :root {{
-            --ink: {ink};
-            --muted: {muted};
-            --accent: {accent};
-            --accent-soft: {accent_soft};
-            --line: {line};
-            --paper: {paper};
-            --surface: {surface};
-        }}
-        body {{ font-family: {body_font_family}; color: var(--ink); background: var(--paper); font-size: 10.25pt; line-height: 1.48; }}
-        .resume-tc-shell {{ min-height: 297mm; background: var(--surface); padding: 14mm 14mm 12mm; }}
-        .resume-tc-header {{ border-bottom: {header_border_width} solid {header_rule_color}; padding-bottom: 8px; margin-bottom: 13px; }}
-        .resume-tc-header h1 {{ font-family: {h1_font_family}; font-size: 21pt; font-weight: 700; margin: 0 0 3px; letter-spacing: -0.01em; color: var(--ink); }}
-        .resume-tc-role {{ font-size: 10pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin: 0 0 5px; }}
-        .resume-contact-inline {{ color: var(--muted); font-size: 9.4pt; line-height: 1.5; margin: 0; }}
-        .rc-item {{ white-space: nowrap; }}
-        .resume-contact-links {{ margin-top: 2px; }}
-        .resume-tc-grid {{ display: flex; gap: 16px; align-items: flex-start; }}
-        .resume-tc-main {{ flex: 1.95; min-width: 0; }}
-        .resume-tc-side {{ flex: 1; min-width: 0; background: var(--accent-soft); border-left: 1px solid var(--line); border-radius: 4px; padding: 4px 12px 10px; }}
-        .resume-tc-section {{ margin: 0 0 13px; }}
-        .resume-tc-main .resume-tc-section:first-child, .resume-tc-side .resume-tc-section:first-child {{ margin-top: 2px; }}
-        h2 {{ font-size: 9.5pt; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.15em; color: var(--accent); padding-bottom: 3px; border-bottom: 1px solid var(--line); }}
-        h3 {{ font-size: 10pt; margin: 8px 0 3px; color: var(--accent); }}
-        p {{ margin: 0 0 5px; }}
-        ul {{ margin: 0 0 7px 1rem; padding: 0; }}
-        li {{ margin: 0 0 3px; }}
-        strong {{ color: var(--ink); }}
-        em {{ color: var(--muted); }}
-        code {{ background: {code_bg}; border: 1px solid var(--line); border-radius: 4px; padding: 0.08rem 0.28rem; }}
-        .resume-summary, .resume-bullet-list li {{ font-family: {prose_font_family}; line-height: {prose_line_height}; }}
-        .resume-role-row {{ display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }}
-        .resume-role-row h3, .resume-education-card h3 {{ margin: 0 0 3px; }}
-        .resume-role-meta, .resume-role-dates, .resume-education-meta, .resume-education-dates {{ margin: 0; color: var(--muted); font-size: 9.2pt; }}
-        .resume-bullet-list, .resume-contact-list, .resume-plain-list {{ margin: 0; padding-left: 1rem; }}
-        .resume-skill-inline, .resume-skill-category {{ color: var(--ink); font-size: 9.4pt; line-height: 1.65; margin: 0 0 2px; }}
-        .resume-skill-category strong {{ color: var(--accent); font-weight: 700; }}
-        .resume-experience-card + .resume-experience-card,
-        .resume-project-card + .resume-project-card {{ margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }}
-        .resume-education-card + .resume-education-card {{ margin-top: 8px; }}
-        .resume-experience-card, .resume-education-card, .resume-project-card {{ page-break-inside: avoid; break-inside: avoid; }}
-        h2, h3 {{ page-break-after: avoid; break-after: avoid; }}
-        .resume-empty {{ color: var(--muted); font-style: italic; }}
-    </style>
-</head>
-<body>
-    <main class="resume-tc-shell">{body}</main>
-</body>
-</html>
-""".format(
-        title=html.escape(title or "Tailored Resume"),
-        body=_build_structured_resume_body_twocol(artifact),
-        **palette,
-    )
+    """Dispatch to the bespoke renderer named by `spec.twocol_layout`
+    (ADR-032). Falls back to the timeline_tech renderer if the layout
+    name is somehow unknown (defensive - the registry always sets it)."""
+    renderer = _TWOCOL_RENDERERS.get(spec.twocol_layout) or _render_twocol_timeline_tech
+    return renderer(artifact, title)
 
 
 # Derived from `_THEME_SPECS` (ADR-015 follow-up). Do NOT hand-edit —
@@ -1309,9 +2488,11 @@ def _build_resume_html(text, title="Tailored Resume", theme="classic_ats", artif
     # untouched (byte-identical for every single_column theme — the
     # branch only fires for a two_column ThemeSpec WITH a structured
     # artifact; markdown-only callers always take the classic path).
+    # ADR-032: the two-column branch dispatches to the bespoke designer
+    # renderer named by `_spec.twocol_layout`.
     _spec = resolve_theme(theme)
     if artifact is not None and _spec.layout == "two_column":
-        return _build_resume_html_twocol(artifact, title, _spec.resume_palette())
+        return _build_resume_html_twocol(artifact, title, _spec)
 
     body_html = _MARKDOWN.render(text or "")
     if artifact is not None:

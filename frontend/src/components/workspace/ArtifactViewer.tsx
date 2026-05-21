@@ -41,8 +41,15 @@ const THEME_OPTIONS: { value: ArtifactTheme; label: string }[] = [
   { value: "creative_warm", label: "Creative Warm" },
   { value: "architect_mono", label: "Architect Mono" },
   { value: "noir_cream", label: "Noir Cream" },
-  // presentation_twocol intentionally omitted — held pending the
-  // designer-grade two-column rework (report.md v2 plan).
+  // ADR-032 — six bespoke two-column designer themes. NON-ATS; the hint
+  // for each warns explicitly. They replaced the retired
+  // `presentation_twocol` placeholder.
+  { value: "timeline_tech", label: "Timeline Tech (2-col)" },
+  { value: "editorial_minimal", label: "Editorial Minimal (2-col)" },
+  { value: "classic_slate", label: "Classic Slate (2-col)" },
+  { value: "monochrome_black", label: "Monochrome Black (2-col)" },
+  { value: "plum_berry", label: "Plum Berry (2-col)" },
+  { value: "burgundy_champagne", label: "Burgundy Champagne (2-col)" },
 ];
 
 const THEME_HINT: Record<ArtifactTheme, string> = {
@@ -58,6 +65,23 @@ const THEME_HINT: Record<ArtifactTheme, string> = {
     "Near-monochrome, geometric sans, a single hairline rule, generous whitespace. Confident minimal; single-column and ATS-safe — architecture, design, senior engineering.",
   noir_cream:
     "Pure-black masthead band on warm cream paper, true monochrome. Distinctive and editorial; single-column and ATS-safe — design, creative, brand, senior roles.",
+  // ADR-032 — six bespoke two-column designer themes. Each hint opens
+  // with an explicit NOT ATS-safe warning: two-column / sidebar layouts
+  // are the #1 documented résumé-parser failure cause. Best for direct,
+  // human-read applications, portfolios, and networking — not bulk ATS
+  // submissions.
+  timeline_tech:
+    "Two-column — NOT ATS-safe; use for direct/human-read applications, not bulk ATS submissions. Dark navy sidebar, blue accent, dot-and-rail experience timeline — software, data, engineering.",
+  editorial_minimal:
+    "Two-column — NOT ATS-safe; use for direct/human-read applications, not bulk ATS submissions. Light sand sidebar, terracotta accent, hairline-rule headers — design, editorial, communications, brand.",
+  classic_slate:
+    "Two-column — NOT ATS-safe; use for direct/human-read applications, not bulk ATS submissions. Pale slate sidebar, deep emerald accent, left date-gutter — consulting, finance, research, policy, legal.",
+  monochrome_black:
+    "Two-column — NOT ATS-safe; use for direct/human-read applications, not bulk ATS submissions. True-black sidebar, monochrome restraint — creative direction, architecture, fashion, senior product.",
+  plum_berry:
+    "Two-column — NOT ATS-safe; use for direct/human-read applications, not bulk ATS submissions. Deep plum sidebar, berry-rose accent on dusty-pink paper — PR, fashion comms, beauty, senior marketing.",
+  burgundy_champagne:
+    "Two-column — NOT ATS-safe; use for direct/human-read applications, not bulk ATS submissions. Wine sidebar, champagne-gold accent on warm ivory — law, banking, private wealth, senior advisory.",
 };
 
 const TAB_LABELS: Record<ArtifactTab, string> = {

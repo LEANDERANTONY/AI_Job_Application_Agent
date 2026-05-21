@@ -51,10 +51,32 @@ RESUME_THEMES = {
         "label": "Noir Cream",
         "tagline": "Pure-black masthead band on warm cream paper; monochrome.",
     },
-    # ADR-029 Phase 3 — gated two-column "presentation" layout.
-    "presentation_twocol": {
-        "label": "Presentation (Two-Column)",
-        "tagline": "Two-column designer layout (gated; non-ATS).",
+    # ADR-032 — six bespoke two-column designer themes. NON-ATS (sidebar
+    # layout); Pro/Business-gated by the existing by-exclusion gate. These
+    # REPLACE the retired `presentation_twocol` placeholder.
+    "timeline_tech": {
+        "label": "Timeline Tech (Two-Column)",
+        "tagline": "Dark navy sidebar, dot-and-rail timeline (two-column; non-ATS).",
+    },
+    "editorial_minimal": {
+        "label": "Editorial Minimal (Two-Column)",
+        "tagline": "Light sand sidebar, terracotta hairlines (two-column; non-ATS).",
+    },
+    "classic_slate": {
+        "label": "Classic Slate (Two-Column)",
+        "tagline": "Pale slate sidebar, emerald date-gutter (two-column; non-ATS).",
+    },
+    "monochrome_black": {
+        "label": "Monochrome Black (Two-Column)",
+        "tagline": "True-black sidebar, monochrome (two-column; non-ATS).",
+    },
+    "plum_berry": {
+        "label": "Plum Berry (Two-Column)",
+        "tagline": "Deep plum sidebar, berry accent (two-column; non-ATS).",
+    },
+    "burgundy_champagne": {
+        "label": "Burgundy Champagne (Two-Column)",
+        "tagline": "Wine sidebar, champagne-gold accent (two-column; non-ATS).",
     },
 }
 

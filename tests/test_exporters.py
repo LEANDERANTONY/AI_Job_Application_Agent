@@ -967,36 +967,169 @@ def _headline_artifact(target_role, theme="classic_ats"):
 
 
 def test_resume_headline_renders_target_role_between_name_and_contact():
-    # JD-tailored path: target_role set → role line shows, ordered
-    # name → role → contact, in BOTH the classic and two-column header.
-    for theme, role_cls in (
-        ("classic_ats", "resume-classic-role"),
-        ("presentation_twocol", "resume-tc-role"),
-    ):
-        art = _headline_artifact("AI Engineer - FDE", theme=theme)
-        out = _build_resume_html(art.markdown, theme=theme, artifact=art)
-        role_el = '<p class="{0}">'.format(role_cls)
-        # Assert on the ELEMENT tag, not the bare class — the class
-        # also appears in the <style> block.
-        assert role_el + "AI Engineer - FDE</p>" in out
-        assert out.index("<h1>") < out.index(role_el) < out.index(
-            '<p class="resume-contact-inline'
-        )
+    # JD-tailored path (single-column): target_role set → role line
+    # shows, ordered name → role → contact in the classic header.
+    art = _headline_artifact("AI Engineer - FDE", theme="classic_ats")
+    out = _build_resume_html(art.markdown, theme="classic_ats", artifact=art)
+    role_el = '<p class="resume-classic-role">'
+    # Assert on the ELEMENT tag, not the bare class — the class also
+    # appears in the <style> block.
+    assert role_el + "AI Engineer - FDE</p>" in out
+    assert out.index("<h1>") < out.index(role_el) < out.index(
+        '<p class="resume-contact-inline'
+    )
 
 
 def test_resume_headline_omitted_when_no_target_role():
-    # No-JD / resume-builder path: target_role "" → NO role line at all
-    # (name-only header is standard; never fabricated), in both layouts.
-    for theme, role_cls in (
-        ("classic_ats", "resume-classic-role"),
-        ("presentation_twocol", "resume-tc-role"),
-    ):
-        art = _headline_artifact("", theme=theme)
-        out = _build_resume_html(art.markdown, theme=theme, artifact=art)
-        # The ELEMENT must be absent (the .{cls} {{}} CSS rule in the
-        # <style> block legitimately remains — assert on the tag).
-        assert '<p class="{0}">'.format(role_cls) not in out
-        assert "Leander Antony" in out and "leander@example.com" in out
+    # No-JD / resume-builder path (single-column): target_role "" → NO
+    # role line at all (name-only header is standard; never fabricated).
+    art = _headline_artifact("", theme="classic_ats")
+    out = _build_resume_html(art.markdown, theme="classic_ats", artifact=art)
+    # The ELEMENT must be absent (the .{cls} {{}} CSS rule in the
+    # <style> block legitimately remains — assert on the tag).
+    assert '<p class="resume-classic-role">' not in out
+    assert "Leander Antony" in out and "leander@example.com" in out
+
+
+# ADR-032 — the six bespoke two-column designer themes. Each carries its
+# own renderer selected by `ThemeSpec.twocol_layout`; `_build_resume_html`
+# dispatches on `layout == "two_column"`.
+_TWOCOL_THEME_KEYS = (
+    "timeline_tech",
+    "editorial_minimal",
+    "classic_slate",
+    "monochrome_black",
+    "plum_berry",
+    "burgundy_champagne",
+)
+
+
+def test_twocol_themes_render_every_section_bound_to_artifact_data():
+    # Each two-column theme must bind ALL artifact sections — header,
+    # summary, experience, projects, education, skills, publications,
+    # certifications — into a self-contained two-column document.
+    for theme in _TWOCOL_THEME_KEYS:
+        artifact = _make_full_resume_artifact()
+        artifact.theme = theme
+        out = _build_resume_html(artifact.markdown, theme=theme, artifact=artifact)
+        # Structural shell — the bespoke designs all use the .sheet /
+        # .sidebar / .main vocabulary.
+        assert '<div class="sheet">' in out, theme
+        assert 'class="sidebar"' in out, theme
+        assert 'class="main"' in out, theme
+        # Every section's content is present and bound to the artifact.
+        # The name is split first/last across <span>s for the bespoke
+        # mixed-weight mastheads, so check the parts, not the joined name.
+        for needle in (
+            "Leander",                   # header name (first)
+            "Antony",                    # header name (last)
+            "Senior ML Engineer",        # target_role headline
+            "Senior ML engineer with 5", # summary
+            "AI Engineer",               # experience entry
+            "Example Labs",              # experience org
+            "Open-source resume parser", # project
+            "Anna University",           # education
+            "Python",                    # skills
+            "Distributed Eval at Scale", # publications
+            "AWS Certified ML Specialty",  # certifications
+        ):
+            assert needle in out, (theme, needle)
+        # DOM order (ADR-032): in the document body the <main> column
+        # (header + main sections) precedes the <aside class="sidebar">,
+        # so the PDF text layer extracts header -> main -> sidebar as a
+        # coherent linear read despite the visual columns.
+        body = out[out.index("<body>"):]
+        assert body.index('<main class="main"') < body.index(
+            '<aside class="sidebar"'
+        ), theme
+        assert body.index("Antony") < body.index('<aside class="sidebar"'), theme
+
+
+def test_twocol_themes_drop_empty_optional_sections_without_crashing():
+    # A résumé may legitimately have no projects / publications /
+    # certifications. The two-column renderers must drop those sections
+    # entirely (no orphan headers) and never crash.
+    for theme in _TWOCOL_THEME_KEYS:
+        artifact = TailoredResumeArtifact(
+            title="Jane Doe Resume",
+            filename_stem="jane",
+            summary="s",
+            markdown="# Resume",
+            plain_text="Resume",
+            theme=theme,
+            header=ResumeHeader(
+                full_name="Jane Doe",
+                location="NYC",
+                contact_lines=["jane@example.com"],
+            ),
+            professional_summary="A concise professional summary.",
+            highlighted_skills=["Python"],
+            experience_entries=[
+                ResumeExperienceEntry(
+                    title="Engineer",
+                    organization="Co",
+                    bullets=["Shipped a thing."],
+                ),
+            ],
+            education_entries=[EducationEntry(institution="MIT", degree="B.S.")],
+            project_entries=[],
+            publication_entries=[],
+            certifications=[],
+        )
+        out = _build_resume_html(artifact.markdown, theme=theme, artifact=artifact)
+        # Present sections render; absent sections leave no header.
+        assert "A concise professional summary." in out, theme
+        assert "Jane" in out and "Doe" in out, theme
+        assert ">Projects<" not in out, theme
+        assert ">Publications<" not in out, theme
+        assert ">Certifications<" not in out, theme
+
+
+def test_twocol_themes_escape_user_data_no_html_injection():
+    # Every user-supplied value must be HTML-escaped — a candidate name
+    # or bullet containing markup must never reach the document raw.
+    for theme in _TWOCOL_THEME_KEYS:
+        artifact = _make_full_resume_artifact()
+        artifact.theme = theme
+        artifact.header.full_name = "<script>alert(1)</script> Doe"
+        artifact.professional_summary = "Summary with <b>raw</b> & ampersand"
+        out = _build_resume_html(artifact.markdown, theme=theme, artifact=artifact)
+        assert "<script>alert(1)</script>" not in out, theme
+        assert "&lt;script&gt;" in out, theme
+        assert "<b>raw</b>" not in out, theme
+
+
+def test_twocol_themes_render_to_pdf():
+    # End-to-end: each two-column theme produces a valid PDF through the
+    # real WeasyPrint pipeline (the same path the product ships).
+    for theme in _TWOCOL_THEME_KEYS:
+        artifact = _make_full_resume_artifact()
+        artifact.theme = theme
+        data = export_pdf_bytes(artifact)
+        assert isinstance(data, bytes), theme
+        assert data.startswith(b"%PDF"), theme
+        assert len(data) > 5_000, theme
+
+
+def test_twocol_themes_honor_section_order():
+    # The two-column main column honors artifact.section_order — e.g.
+    # projects can be pulled ahead of experience.
+    artifact = _make_full_resume_artifact()
+    artifact.theme = "timeline_tech"
+    artifact.section_order = [
+        "summary",
+        "projects",
+        "experience",
+        "skills",
+        "education",
+        "publications",
+        "certifications",
+    ]
+    out = _build_resume_html(
+        artifact.markdown, theme="timeline_tech", artifact=artifact
+    )
+    # Projects section pulled ahead of Experience in the main column.
+    assert out.index("Open-source resume parser") < out.index("AI Engineer")
 
 
 def _contact_rows(html_str):

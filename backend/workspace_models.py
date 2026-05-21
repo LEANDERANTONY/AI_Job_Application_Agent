@@ -255,9 +255,17 @@ class ResumeBuilderExportRequestModel(BaseModel):
         "creative_warm",
         "architect_mono",
         "noir_cream",
-        # presentation_twocol intentionally excluded — the two-column
-        # engine exists but the theme is held from the user surface
-        # pending its designer-grade rework (report.md v2 plan).
+        # ADR-032 — six bespoke two-column designer themes. NON-ATS
+        # (sidebar layout) but user-selectable; Pro/Business by the
+        # existing by-exclusion gate. They replaced the retired
+        # `presentation_twocol` placeholder. DOCX of a two-column theme
+        # renders single-column (DOCX two-column deferred per ADR-015).
+        "timeline_tech",
+        "editorial_minimal",
+        "classic_slate",
+        "monochrome_black",
+        "plum_berry",
+        "burgundy_champagne",
     ] = "professional_neutral"
 
     @field_validator("session_id", mode="before")
@@ -283,8 +291,15 @@ class ResumeBuilderPreviewRequestModel(BaseModel):
         "creative_warm",
         "architect_mono",
         "noir_cream",
-        # presentation_twocol intentionally excluded — held from the
-        # user surface (report.md v2 plan), same as the export model.
+        # ADR-032 — six bespoke two-column designer themes, same set as
+        # the export model. Non-ATS but user-selectable; the preview
+        # renders them so the picker can show the two-column look.
+        "timeline_tech",
+        "editorial_minimal",
+        "classic_slate",
+        "monochrome_black",
+        "plum_berry",
+        "burgundy_champagne",
     ] = "professional_neutral"
 
     @field_validator("session_id", mode="before")

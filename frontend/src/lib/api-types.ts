@@ -691,12 +691,16 @@ export type ArtifactTheme =
   | "modern_blue"
   | "creative_warm"
   | "architect_mono"
-  | "noir_cream";
-// NOTE: `presentation_twocol` (the two-column engine) exists in the
-// renderer but is intentionally NOT offered yet — held from the user
-// surface pending the designer-grade rework (report.md "Designer-grade
-// theme expansion v2"). Re-add here + THEME_OPTIONS + the backend
-// Literal when it ships.
+  | "noir_cream"
+  // ADR-032 — six bespoke two-column designer themes. NON-ATS (sidebar
+  // layout) but user-selectable; the picker hint warns explicitly. They
+  // replaced the retired `presentation_twocol` placeholder.
+  | "timeline_tech"
+  | "editorial_minimal"
+  | "classic_slate"
+  | "monochrome_black"
+  | "plum_berry"
+  | "burgundy_champagne";
 
 export type WorkspaceArtifactExportRequest = {
   workspace_snapshot: WorkspaceAnalysisResponse;

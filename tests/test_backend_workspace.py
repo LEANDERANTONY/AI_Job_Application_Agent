@@ -574,7 +574,7 @@ def test_resume_builder_preview_route_rejects_unknown_theme():
 
     response = client.post(
         "/api/workspace/resume-builder/preview",
-        json={"session_id": session_id, "theme": "presentation_twocol"},
+        json={"session_id": session_id, "theme": "not_a_real_theme"},
     )
     assert response.status_code == 422
     assert "theme" in str(response.json())

@@ -887,6 +887,28 @@ export function ResumeIntake({
                             Architect Mono
                           </option>
                           <option value="noir_cream">Noir Cream</option>
+                          {/* ADR-032 — six bespoke two-column designer
+                              themes. NOT ATS-safe (sidebar layout); the
+                              "(2-col)" suffix flags it in the dropdown.
+                              Replaced the retired presentation_twocol. */}
+                          <option value="timeline_tech">
+                            Timeline Tech (2-col)
+                          </option>
+                          <option value="editorial_minimal">
+                            Editorial Minimal (2-col)
+                          </option>
+                          <option value="classic_slate">
+                            Classic Slate (2-col)
+                          </option>
+                          <option value="monochrome_black">
+                            Monochrome Black (2-col)
+                          </option>
+                          <option value="plum_berry">
+                            Plum Berry (2-col)
+                          </option>
+                          <option value="burgundy_champagne">
+                            Burgundy Champagne (2-col)
+                          </option>
                         </select>
                       </div>
                       {/* Live themed preview — the resume rendered in
