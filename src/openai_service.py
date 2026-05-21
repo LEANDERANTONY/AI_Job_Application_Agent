@@ -9,6 +9,7 @@ from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
 from src.config import (
+    OPENAI_EMBEDDING_MODEL,
     OPENAI_MAX_OUTPUT_TOKENS_CEILING,
     OPENAI_MODEL_DEFAULT,
     describe_openai_model_policy,
@@ -552,6 +553,119 @@ class OpenAIService:
         # iteration of a tool loop), so metering here counts ALL real
         # token spend with a single hook and nothing to forget.
         self._record_token_meter(total_tokens)
+
+    def create_embeddings(
+        self,
+        inputs: "list[str]",
+        *,
+        model: Optional[str] = None,
+        task_name: Optional[str] = None,
+    ) -> "list[list[float]]":
+        """Embed a batch of texts with an OpenAI embedding model.
+
+        Tier 2 hybrid job search (semantic retrieval) routes ALL its
+        embedding calls — both the one-time corpus backfill and the
+        per-query / embed-on-write paths — through here so token usage
+        is metered the same way `responses.create` calls are (the
+        unified LLM token meter, ``_record_usage`` → ``_record_token_
+        meter``).
+
+        Args:
+          inputs: the texts to embed. The embeddings endpoint accepts
+            an array, so a caller batches (~100 inputs/call) to respect
+            rate limits — one HTTP round-trip per batch.
+          model: embedding model override; defaults to
+            ``OPENAI_EMBEDDING_MODEL`` (``text-embedding-3-small``).
+          task_name: optional label for logging / usage attribution.
+
+        Returns one vector (list[float]) per input, in input order.
+
+        Raises ``AgentExecutionError`` if the service has no client
+        configured. Provider/transport errors propagate as the raw
+        OpenAI SDK exception — the embedding callers (backfill,
+        embed-on-write, query-embed) each decide how to degrade (the
+        backfill skips the batch and continues; the search path falls
+        back to lexical; embed-on-write stays non-fatal). The SDK's own
+        ``max_retries`` still applies to each call.
+        """
+        if not self.is_available():
+            raise AgentExecutionError(
+                "OpenAI is not configured for embedding generation."
+            )
+
+        # Empty batch → nothing to do. Skip the round-trip entirely so
+        # a resumable backfill that hits an all-skipped page is free.
+        normalized_inputs = [str(text or "") for text in (inputs or [])]
+        if not normalized_inputs:
+            return []
+
+        resolved_model = model or OPENAI_EMBEDDING_MODEL
+        started_at = time.perf_counter()
+        log_event(
+            LOGGER,
+            logging.INFO,
+            "openai_embeddings_started",
+            "Starting OpenAI embeddings request.",
+            model=resolved_model,
+            task_name=task_name,
+            input_count=len(normalized_inputs),
+        )
+
+        try:
+            response = self._client.embeddings.create(
+                model=resolved_model,
+                input=normalized_inputs,
+            )
+        except Exception as exc:
+            log_event(
+                LOGGER,
+                logging.ERROR,
+                "openai_embeddings_failed",
+                "OpenAI embeddings request failed.",
+                model=resolved_model,
+                task_name=task_name,
+                duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                error_type=type(exc).__name__,
+                details=str(exc),
+            )
+            # Re-raise as-is: each embedding caller has its own
+            # degradation strategy and inspects the SDK exception type.
+            raise
+
+        # The embeddings endpoint returns `data` ordered by an `index`
+        # field; sort by it defensively so the i-th returned vector
+        # really corresponds to the i-th input even if the API ever
+        # reorders. Each item exposes `.embedding`.
+        data = list(getattr(response, "data", None) or [])
+        data.sort(key=lambda item: getattr(item, "index", 0))
+        vectors: list[list[float]] = [
+            [float(component) for component in (getattr(item, "embedding", None) or [])]
+            for item in data
+        ]
+
+        # Meter token usage. The embeddings usage object only reports
+        # `prompt_tokens` / `total_tokens` (no completion side) — feed
+        # them through the same `_record_usage` hook so embedding spend
+        # lands in the unified token meter alongside everything else.
+        usage = getattr(response, "usage", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        total_tokens = getattr(usage, "total_tokens", 0) or prompt_tokens
+        self._record_usage(resolved_model, prompt_tokens, 0, total_tokens)
+
+        log_event(
+            LOGGER,
+            logging.INFO,
+            "openai_embeddings_completed",
+            "OpenAI embeddings request completed.",
+            model=resolved_model,
+            task_name=task_name,
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+            input_count=len(normalized_inputs),
+            vector_count=len(vectors),
+            prompt_tokens=prompt_tokens,
+            total_tokens=total_tokens,
+        )
+        return vectors
 
     def run_json_prompt(
         self,

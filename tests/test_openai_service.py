@@ -527,3 +527,114 @@ def test_reasoning_effort_override_wins_over_task_routing():
         reasoning_effort="high",
     )
     assert client.responses.calls[1]["reasoning"] == {"effort": "high"}
+
+
+# ---------------------------------------------------------------------------
+# create_embeddings — Tier 2 hybrid job search routes all its embedding
+# calls (corpus backfill + per-query + embed-on-write) through here.
+# ---------------------------------------------------------------------------
+
+
+class FakeEmbeddings:
+    """Fake `client.embeddings` — records create() calls, replays a queue."""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(dict(kwargs))
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+class FakeEmbeddingClient:
+    def __init__(self, responses):
+        self.embeddings = FakeEmbeddings(responses)
+
+
+def _build_embedding_response(vectors, *, prompt_tokens=8, shuffled=False):
+    """Build an embeddings API response. `shuffled=True` returns the data
+    items out of input order (with correct `index` fields) so the test
+    can assert create_embeddings sorts them back."""
+    items = [
+        SimpleNamespace(index=i, embedding=list(vector))
+        for i, vector in enumerate(vectors)
+    ]
+    if shuffled:
+        items = list(reversed(items))
+    return SimpleNamespace(
+        data=items,
+        usage=SimpleNamespace(
+            prompt_tokens=prompt_tokens,
+            total_tokens=prompt_tokens,
+        ),
+    )
+
+
+def test_create_embeddings_returns_vectors_and_meters_tokens():
+    """A batch of inputs → one vector per input, in input order, and the
+    token usage lands in the unified meter via _record_usage."""
+    client = FakeEmbeddingClient(
+        [_build_embedding_response([[0.1, 0.2], [0.3, 0.4]], prompt_tokens=20)]
+    )
+    service = OpenAIService(client=client)
+
+    vectors = service.create_embeddings(["job one", "job two"])
+
+    assert vectors == [[0.1, 0.2], [0.3, 0.4]]
+    # One round-trip; the inputs were passed as an array.
+    assert len(client.embeddings.calls) == 1
+    assert client.embeddings.calls[0]["input"] == ["job one", "job two"]
+    # Token usage metered.
+    usage = service.get_usage_snapshot()
+    assert usage["prompt_tokens"] == 20
+    assert usage["total_tokens"] == 20
+    assert usage["request_count"] == 1
+
+
+def test_create_embeddings_sorts_data_by_index():
+    """The embeddings endpoint returns items with an `index` field; the
+    i-th returned vector must map to the i-th input even if the API
+    reorders the `data` array."""
+    client = FakeEmbeddingClient(
+        [_build_embedding_response([[1.0], [2.0], [3.0]], shuffled=True)]
+    )
+    service = OpenAIService(client=client)
+
+    vectors = service.create_embeddings(["a", "b", "c"])
+
+    # Sorted back into input order despite the shuffled response.
+    assert vectors == [[1.0], [2.0], [3.0]]
+
+
+def test_create_embeddings_empty_input_skips_the_api_call():
+    """An empty batch is a no-op — no HTTP round-trip (a resumable
+    backfill that hits an all-skipped page must stay free)."""
+    client = FakeEmbeddingClient([])
+    service = OpenAIService(client=client)
+
+    assert service.create_embeddings([]) == []
+    assert client.embeddings.calls == []
+
+
+def test_create_embeddings_raises_when_not_configured():
+    """No client → AgentExecutionError, same posture as run_json_prompt."""
+    service = OpenAIService(api_key=None, client=None)
+    assert not service.is_available()
+    with pytest.raises(AgentExecutionError):
+        service.create_embeddings(["x"])
+
+
+def test_create_embeddings_propagates_provider_errors():
+    """Transport / provider errors propagate as the raw SDK exception so
+    each caller (backfill, embed-on-write, query-embed) can apply its
+    own degradation strategy."""
+    boom = RuntimeError("embeddings endpoint 503")
+    client = FakeEmbeddingClient([boom])
+    service = OpenAIService(client=client)
+
+    with pytest.raises(RuntimeError, match="503"):
+        service.create_embeddings(["job"])

@@ -229,6 +229,25 @@ SUPABASE_RESUME_BUILDER_SESSIONS_TABLE = os.getenv(
 SUPABASE_CACHED_JOBS_TABLE = os.getenv(
     "SUPABASE_CACHED_JOBS_TABLE", "cached_jobs"
 ).strip()
+# ── Tier 2 hybrid (lexical + semantic) job search ───────────────────
+# Tier 2 adds pgvector embedding search fused with the Tier 1 lexical
+# search via Reciprocal Rank Fusion. The embedding model + its output
+# dimensionality must agree with the `cached_jobs.embedding vector(N)`
+# column (see docs/sql/supabase-cached-jobs-pgvector.sql) and with the
+# backfill script. `text-embedding-3-small` emits 1536-dim vectors.
+OPENAI_EMBEDDING_MODEL = os.getenv(
+    "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
+).strip()
+OPENAI_EMBEDDING_DIMENSIONS = _load_int_env(
+    "OPENAI_EMBEDDING_DIMENSIONS", 1536
+)
+# Master switch for the Tier 2 hybrid search path. Default OFF: the
+# hybrid RPC + the embedding column only exist after the operator has
+# (1) applied the pgvector schema, (2) run the backfill, and (3)
+# applied the hybrid RPC — see the Day 69 DEVLOG runbook. Until then
+# the store stays on the Tier 1 lexical `search_cached_jobs_ranked`
+# path. Flip this true only AFTER the backfill completes.
+JOB_SEARCH_HYBRID_ENABLED = _load_bool_env("JOB_SEARCH_HYBRID_ENABLED", False)
 # Shared secret guarding the /admin/refresh-cache endpoint. Set BOTH
 # in the backend env (so the endpoint can verify the bearer token)
 # AND in the Supabase pg_cron job's HTTP headers (so the cron can
@@ -381,3 +400,8 @@ def is_job_search_backend_enabled():
     return ENABLE_JOB_SEARCH_BACKEND
 
 
+def is_job_search_hybrid_enabled():
+    """True when the Tier 2 hybrid (lexical + semantic) search path is
+    enabled. The store consults this; when False it stays on the Tier 1
+    lexical RPC. See JOB_SEARCH_HYBRID_ENABLED above."""
+    return JOB_SEARCH_HYBRID_ENABLED
