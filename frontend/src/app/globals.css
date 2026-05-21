@@ -7798,6 +7798,62 @@ code {
   margin: 0 0 6px;
 }
 
+/* Weekly LLM token usage meter (token-meter migration T6) — rendered
+   in the account popover. data-tone shifts the fill colour as the
+   week's allowance runs low (ok → low ≥75% → over ≥100%). */
+.b-token-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.1));
+  border-radius: 10px;
+}
+.b-token-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.b-token-meter-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-3);
+}
+.b-token-meter-count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg);
+}
+.b-token-meter-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.b-token-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #4ade80;
+  transition: width 0.3s ease;
+}
+.b-token-meter[data-tone="low"] .b-token-meter-fill {
+  background: #fbbf24;
+}
+.b-token-meter[data-tone="over"] .b-token-meter-fill {
+  background: #f87171;
+}
+.b-token-meter-foot {
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.b-token-meter[data-tone="over"] .b-token-meter-foot {
+  color: #f87171;
+}
+
 /* Workspace page wrapper (the <main> around <WorkspaceShell />) */
 .workspace-page {
   min-height: 100vh;

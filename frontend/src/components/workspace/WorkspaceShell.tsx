@@ -78,6 +78,7 @@ import {
   type AssistantStreamingTurn,
 } from "@/components/workspace/AssistantPanel";
 import { CommandPalette } from "@/components/workspace/CommandPalette";
+import { TokenUsageMeter } from "@/components/workspace/TokenUsageMeter";
 import {
   ArtifactViewer,
   type ArtifactTab,
@@ -2170,6 +2171,16 @@ export function WorkspaceShell() {
                       </div>
                     ) : null}
                   </dl>
+                  {/* Weekly LLM token meter — the primary AI-usage
+                      gate. Rendered from the live /workspace/quota
+                      snapshot so it reflects spend the moment a run
+                      finishes. */}
+                  {workspaceQuota ? (
+                    <TokenUsageMeter
+                      counter={workspaceQuota.counters.llm_tokens}
+                      resetAt={workspaceQuota.llm_tokens_reset_at}
+                    />
+                  ) : null}
                   {authError ? (
                     <div className="b-notice b-notice-warning">{authError}</div>
                   ) : null}

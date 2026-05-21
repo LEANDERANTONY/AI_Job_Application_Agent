@@ -65,6 +65,10 @@ _COUNTER_RESET_PERIODS: dict[str, str] = {
     "resume_builder_sessions": "lifetime_or_monthly",
     "assistant_turns": "monthly",
     "resume_parses": "monthly",
+    # llm_tokens is the unified token meter — an ISO-week reset for
+    # every tier. NOT period-keyed monthly; the loop below reads it
+    # via `quota.read_llm_token_usage` (weekly period key).
+    "llm_tokens": "weekly",
     "job_searches": "monthly",
     "saved_jobs": "persistent",
     "saved_workspaces": "persistent",
@@ -246,6 +250,15 @@ def get_workspace_quota_snapshot(
                 refresh_token=refresh_token,
                 cap=cap,
             )
+        elif counter_name == quota.LLM_TOKENS_COUNTER:
+            # The unified token meter lives under an ISO-WEEK period
+            # key — `read_counter` would read the monthly partition and
+            # always report 0. Use the dedicated weekly reader.
+            current = (
+                quota.read_llm_token_usage(quota_user_id, tier)
+                if quota_user_id
+                else 0
+            )
         elif quota_user_id:
             current = quota.read_counter(
                 counter_name,
@@ -271,6 +284,10 @@ def get_workspace_quota_snapshot(
         # both have non-zero caps and surface premium=True.
         "premium_available": caps["premium_applications"] > 0,
         "period_start": _period_start_iso(),
+        # ISO date the weekly llm_tokens meter next resets on (the
+        # coming Monday UTC). Drives the usage bar's "resets X" copy;
+        # `period_start` stays first-of-month for the monthly counters.
+        "llm_tokens_reset_at": _llm_token_week_reset_iso(),
         "upgrade_url": quota.UPGRADE_URL,
     }
 
@@ -287,6 +304,22 @@ def _period_start_iso() -> str:
 
     now = datetime.now(timezone.utc)
     return f"{now.year:04d}-{now.month:02d}-01"
+
+
+def _llm_token_week_reset_iso() -> str:
+    """ISO date (YYYY-MM-DD, UTC) the weekly llm_tokens meter next
+    resets on — the coming Monday, since ISO weeks start Monday.
+
+    ``weekday()`` is Mon=0..Sun=6, so ``7 - weekday()`` is the days to
+    the next Monday (Mon → 7 = a full week out; Sun → 1 = tomorrow) —
+    always the FOLLOWING Monday, never today, which matches "this
+    week's allowance refills when the week rolls over."
+    """
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    reset_date = (now + timedelta(days=7 - now.weekday())).date()
+    return reset_date.isoformat()
 
 
 __all__ = [

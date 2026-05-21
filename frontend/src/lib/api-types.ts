@@ -568,7 +568,7 @@ export type WorkspaceQuotaCounter = {
   current: number;
   limit: number;
   remaining: number;
-  reset_period: "monthly" | "lifetime" | "persistent";
+  reset_period: "monthly" | "weekly" | "lifetime" | "persistent";
 };
 
 /** Full /workspace/quota response. Drives the Premium toggle's
@@ -582,6 +582,10 @@ export type WorkspaceQuotaResponse = {
     resume_builder_sessions: WorkspaceQuotaCounter;
     assistant_turns: WorkspaceQuotaCounter;
     resume_parses: WorkspaceQuotaCounter;
+    /** Unified weekly LLM token meter — the primary LLM gate
+     *  (report.md "Unified LLM token meter"). `current` is tokens
+     *  spent this ISO week, `limit` the tier's weekly cap. */
+    llm_tokens: WorkspaceQuotaCounter;
     job_searches: WorkspaceQuotaCounter;
     saved_jobs: WorkspaceQuotaCounter;
     saved_workspaces: WorkspaceQuotaCounter;
@@ -593,6 +597,9 @@ export type WorkspaceQuotaResponse = {
   /** First-of-month UTC date in YYYY-MM-DD; UI uses this for
    *  "resets on X" copy. */
   period_start: string;
+  /** ISO date (YYYY-MM-DD, UTC) the weekly llm_tokens meter next
+   *  resets on — the coming Monday. Drives the token usage bar. */
+  llm_tokens_reset_at: string;
   /** Upgrade page URL; the 429 toast and the disabled-toggle tooltip
    *  both deep-link here. */
   upgrade_url: string;

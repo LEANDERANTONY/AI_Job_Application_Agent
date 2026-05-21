@@ -267,3 +267,24 @@ def test_snapshot_resume_builder_session_reset_period_for_free_is_lifetime(
         snapshot["counters"]["resume_builder_sessions"]["reset_period"]
         == "lifetime"
     )
+
+
+def test_snapshot_reflects_weekly_llm_token_usage(fake_auth):
+    """The unified token meter (`llm_tokens`) lives under an ISO-week
+    period key — `read_counter` would read the monthly partition and
+    report 0. The snapshot must use the weekly reader so the UI usage
+    bar shows the real spend, with reset_period 'weekly'."""
+    quota.record_llm_token_usage(fake_auth.app_user.id, 24_000)
+
+    snapshot = workspace_quota_service.get_workspace_quota_snapshot(
+        access_token="access",
+        refresh_token="refresh",
+    )
+    llm = snapshot["counters"]["llm_tokens"]
+    assert llm["current"] == 24_000
+    assert llm["limit"] == TIER_CAPS["free"]["llm_tokens"] == 90_000
+    assert llm["remaining"] == 66_000
+    assert llm["reset_period"] == "weekly"
+    # Top-level reset date drives the usage bar's "resets X" copy.
+    reset_at = snapshot["llm_tokens_reset_at"]
+    assert isinstance(reset_at, str) and reset_at.count("-") == 2

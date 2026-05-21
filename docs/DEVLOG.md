@@ -3013,11 +3013,9 @@ search/saved suites green. ~13 new token-meter tests.
 
 ### Still ahead
 
-T6 — surface the weekly token usage in `/workspace/quota` (it
-currently reads `llm_tokens` under the wrong *monthly* period key) + a
-usage bar in the workspace UI; refresh the landing-page pricing copy
-off the per-feature caps. gpt-5.5 premium is already gated off Free by
-the surviving `premium_applications` cap-0, so it needs no new logic.
+T6 — surface the weekly token usage in the workspace UI. gpt-5.5
+premium is already gated off Free by the surviving
+`premium_applications` cap-0, so it needs no new logic.
 
 ## Day 65: Token meter T5 — login required for the LLM routes
 
@@ -3052,3 +3050,38 @@ dedicated gate coverage: every gated route 401s an anonymous caller;
 an LLM-free route still doesn't. frontend tsc + eslint clean; 199
 backend tests green across the workspace / stream / quota / auth
 suites.
+
+## Day 66: Token meter T6 — weekly usage bar
+
+The meter has run server-side since T1–T5; T6 makes it visible.
+
+Backend: the `/workspace/quota` snapshot iterates `TIER_CAPS`, so it
+already *listed* `llm_tokens` — but read it through `read_counter`,
+which uses the monthly period key, so `current` was always 0 (the
+meter writes under the ISO-week key). Fixed: the snapshot special-cases
+`llm_tokens` to `quota.read_llm_token_usage` (weekly), labels its
+`reset_period` "weekly", and adds a top-level `llm_tokens_reset_at`
+(the coming Monday, UTC) for the bar's "resets X" copy. Enforcement was
+never affected — `enforce_llm_budget` always read the correct weekly
+key; this was a display-only bug.
+
+Frontend: a new `TokenUsageMeter` component — a labelled progress bar
+(used / weekly cap, % used, reset date) whose fill shifts ok → amber
+(≥75%) → red (at/over cap), so a Free user *feels* the wall building.
+Rendered in the workspace account popover off the live
+`/workspace/quota` snapshot, which already refreshes after every run.
+`WorkspaceQuotaResponse` gains the `llm_tokens` counter +
+`llm_tokens_reset_at`; `reset_period` gains `"weekly"`.
+
+Verification: frontend tsc + eslint clean; 10/10 quota-snapshot tests
+(incl. a new one asserting the weekly read + reset date).
+
+### Follow-up — landing-page pricing copy (NOT done, needs operator input)
+
+`landing-page.tsx`'s `PRICING_TIERS` still advertises the per-feature
+caps that T4 removed ("3 tailored applications / month", "20 assistant
+chat turns / month", etc.) — now inaccurate. Rewriting it to the token
+allowance is a positioning call (how to present "90K tokens/week" to
+non-technical users — "tokens" is jargon), and the Business card shows
+`$39` while report.md / this session's pricing discussion settled on
+`$29`. Both need an operator decision; flagged rather than guessed.
