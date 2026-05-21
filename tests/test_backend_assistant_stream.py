@@ -27,10 +27,26 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import app
+from backend.request_auth import get_optional_auth_tokens, get_required_auth_tokens
 from backend.services import workspace_service
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _satisfy_llm_route_auth():
+    """T5 of the token-meter migration requires login on the streaming
+    assistant route. These tests exercise the SSE machinery, not the
+    gate — some run anonymously, one passes dummy headers and
+    monkeypatches the auth resolution to reach the OpenAI-backed path.
+    Overriding ``get_required_auth_tokens`` with ``get_optional_auth_
+    tokens`` restores the exact pre-T5 dependency behaviour (tokens
+    when present, ``(None, None)`` when absent, no 401). The gate's own
+    401 is covered in test_llm_route_login_required.py."""
+    app.dependency_overrides[get_required_auth_tokens] = get_optional_auth_tokens
+    yield
+    app.dependency_overrides.pop(get_required_auth_tokens, None)
 
 
 def _parse_sse(body: str) -> list[tuple[str, dict]]:

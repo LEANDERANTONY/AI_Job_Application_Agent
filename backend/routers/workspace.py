@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from backend.observability import capture_event
 from backend.quota import enforce_export_entitlement, enforce_llm_budget
 from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
-from backend.request_auth import get_optional_auth_tokens
+from backend.request_auth import get_optional_auth_tokens, get_required_auth_tokens
 from backend.tiers import resolve_user_tier
 from backend.services.auth_session_service import (
     build_openai_service_for_context,
@@ -232,7 +232,7 @@ def _attach_persistence_status(
 def upload_resume(
     request: Request,
     payload: UploadedFilePayloadModel,
-    auth_tokens=Depends(get_optional_auth_tokens),
+    auth_tokens=Depends(get_required_auth_tokens),
 ):
     """Parse an uploaded resume into a CandidateProfile.
 
@@ -343,7 +343,7 @@ async def transcribe_voice_route(
 def upload_job_description(
     request: Request,
     payload: UploadedFilePayloadModel,
-    auth_tokens=Depends(get_optional_auth_tokens),
+    auth_tokens=Depends(get_required_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
     # Token-meter gate: JD parsing is an LLM operation. Checked before
@@ -361,7 +361,7 @@ def upload_job_description(
 
 @router.post("/resume-builder/start")
 @limiter.limit(LIMIT_LLM)
-def start_resume_builder_route(request: Request, auth_tokens=Depends(get_optional_auth_tokens)):
+def start_resume_builder_route(request: Request, auth_tokens=Depends(get_required_auth_tokens)):
     access_token, refresh_token = auth_tokens
     try:
         # The resume_builder_sessions quota gate fires inside
@@ -405,7 +405,7 @@ def load_resume_builder_route(auth_tokens=Depends(get_optional_auth_tokens)):
 def answer_resume_builder_route(
     request: Request,
     payload: ResumeBuilderMessageRequestModel,
-    auth_tokens=Depends(get_optional_auth_tokens),
+    auth_tokens=Depends(get_required_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
     # Token-meter gate — a builder chat turn is an LLM (often agentic,
@@ -447,7 +447,7 @@ def answer_resume_builder_route(
 def generate_resume_builder_route(
     request: Request,
     payload: ResumeBuilderSessionRequestModel,
-    auth_tokens=Depends(get_optional_auth_tokens),
+    auth_tokens=Depends(get_required_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
     # Token-meter gate — résumé generation is the builder's heaviest
@@ -665,7 +665,7 @@ def preview_resume_builder_route(
 def analyze_workspace(
     request: Request,
     payload: WorkspaceAnalyzeRequestModel,
-    auth_tokens=Depends(get_optional_auth_tokens),
+    auth_tokens=Depends(get_required_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
     try:
@@ -692,7 +692,7 @@ def analyze_workspace(
 def start_workspace_analysis_job_route(
     request: Request,
     payload: WorkspaceAnalyzeRequestModel,
-    auth_tokens=Depends(get_optional_auth_tokens),
+    auth_tokens=Depends(get_required_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
     try:
@@ -927,7 +927,7 @@ def cancel_workspace_analysis_job_route(job_id: str):
 def answer_assistant_question(
     request: Request,
     payload: WorkspaceAssistantRequestModel,
-    auth_tokens=Depends(get_optional_auth_tokens),
+    auth_tokens=Depends(get_required_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
     try:
@@ -953,7 +953,7 @@ def answer_assistant_question(
 def stream_assistant_answer(
     request: Request,
     payload: WorkspaceAssistantRequestModel,
-    auth_tokens=Depends(get_optional_auth_tokens),
+    auth_tokens=Depends(get_required_auth_tokens),
 ):
     """Server-Sent Events sibling of ``/assistant/answer``.
 

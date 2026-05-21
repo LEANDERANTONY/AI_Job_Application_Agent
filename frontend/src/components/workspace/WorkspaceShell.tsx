@@ -2015,6 +2015,50 @@ export function WorkspaceShell() {
     [assistantTurns],
   );
 
+  // ── Auth gate ───────────────────────────────────────────────────
+  // The AI workspace requires login (token-meter migration, T5): every
+  // LLM operation has to be attributable to a user_id for the weekly
+  // token meter, so an anonymous session has nothing to meter and is
+  // an un-capped abuse vector. The backend independently 401s every
+  // LLM route (defence in depth); this gate is the matching UX, so an
+  // anonymous visitor sees one clear sign-in prompt instead of hitting
+  // a 401 the moment they try anything. Placed after all hooks above
+  // so the early return never changes hook order.
+  if (authStatus !== "signed_in") {
+    return (
+      <div className="b-shell">
+        <div className="b-auth-gate">
+          {authStatus === "restoring" ? (
+            <div className="b-auth-gate-card">
+              <p className="b-auth-gate-text">Restoring your session…</p>
+            </div>
+          ) : (
+            <div className="b-auth-gate-card">
+              <div className="b-section-label">AI Workspace</div>
+              <h1 className="b-auth-gate-title">Sign in to continue</h1>
+              <p className="b-auth-gate-text">
+                The AI workspace — résumé builder, JD tailoring, and the
+                assistant — runs on your account, so your drafts and your
+                weekly AI usage stay tied to you. Sign in with Google to
+                get started.
+              </p>
+              <button
+                className="rd-btn rd-btn-primary"
+                disabled={authActionLoading}
+                onClick={() => void handleGoogleSignIn()}
+                type="button"
+              >
+                {authActionLoading
+                  ? "Redirecting…"
+                  : "Sign in with Google"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ── Render ──────────────────────────────────────────────────────
   return (
     <div className="b-shell">

@@ -4,9 +4,31 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import app
+from backend.request_auth import get_optional_auth_tokens, get_required_auth_tokens
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _satisfy_llm_route_auth():
+    """T5 of the token-meter migration requires login on every LLM
+    route — resume / JD parse, analyze, assistant, and résumé-builder
+    start / message / generate (anonymous = no user_id = un-metered).
+
+    These tests exercise that route FUNCTIONALITY, not the gate, and
+    predate it: most run anonymously, a few pass dummy auth headers and
+    monkeypatch the auth resolution. Overriding ``get_required_auth_
+    tokens`` with ``get_optional_auth_tokens`` restores the EXACT
+    pre-T5 dependency behaviour — real tokens when headers are present,
+    ``(None, None)`` when absent, never a 401 — so every existing
+    assertion in this file holds unchanged.
+
+    Dedicated 401 coverage for the gate itself lives in
+    ``tests/backend/test_llm_route_login_required.py`` (no override)."""
+    app.dependency_overrides[get_required_auth_tokens] = get_optional_auth_tokens
+    yield
+    app.dependency_overrides.pop(get_required_auth_tokens, None)
 
 
 @pytest.fixture(autouse=True)

@@ -7761,6 +7761,43 @@ code {
   overflow: auto;
 }
 
+/* Auth gate — replaces the whole workspace when the visitor is not
+   signed in (token-meter migration T5: the AI workspace requires
+   login). A centered card carrying the Google sign-in CTA. */
+.b-auth-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 68vh;
+  padding: 48px 24px;
+}
+.b-auth-gate-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 460px;
+  padding: 34px 30px;
+  text-align: center;
+  background: var(--bg-card-2, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.1));
+  border-radius: 16px;
+}
+.b-auth-gate-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  margin: 2px 0 0;
+}
+.b-auth-gate-text {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--fg-2);
+  margin: 0 0 6px;
+}
+
 /* Workspace page wrapper (the <main> around <WorkspaceShell />) */
 .workspace-page {
   min-height: 100vh;

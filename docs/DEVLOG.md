@@ -3013,10 +3013,42 @@ search/saved suites green. ~13 new token-meter tests.
 
 ### Still ahead
 
-T5 — require login for résumé-builder LLM use (close the anonymous,
-un-meterable path). T6 — surface the weekly token usage in
-`/workspace/quota` (it currently reads `llm_tokens` under the wrong
-*monthly* period key) + a usage bar in the workspace UI; refresh the
-landing-page pricing copy off the per-feature caps. gpt-5.5 premium is
-already gated off Free by the surviving `premium_applications` cap-0,
-so it needs no new logic.
+T6 — surface the weekly token usage in `/workspace/quota` (it
+currently reads `llm_tokens` under the wrong *monthly* period key) + a
+usage bar in the workspace UI; refresh the landing-page pricing copy
+off the per-feature caps. gpt-5.5 premium is already gated off Free by
+the surviving `premium_applications` cap-0, so it needs no new logic.
+
+## Day 65: Token meter T5 — login required for the LLM routes
+
+The meter can only cap a user it can name: an anonymous request has no
+`user_id`, so it is un-metered and an un-capped abuse vector. T5 closes
+that — every token-spending route now requires login.
+
+Backend: a new `get_required_auth_tokens` dependency
+(`backend/request_auth.py`) — same token extraction as
+`get_optional_auth_tokens`, but a missing pair raises 401 instead of
+returning `(None, None)`. Nine routes switch to it: resume upload, JD
+upload, `/analyze`, `/analyze-jobs`, assistant answer + stream, and
+résumé-builder start / message / generate. Raising from a dependency
+means the 401 is committed before the route body — which also makes it
+correct for the streaming assistant, where a mid-stream status change
+is impossible. Non-LLM routes (saved jobs, quota snapshot, the
+LLM-free résumé-builder preview, etc.) stay open.
+
+Frontend: `WorkspaceShell` early-returns a sign-in gate when
+`authStatus` is not `signed_in` — so an anonymous visitor sees one
+clear "Sign in to continue" card instead of hitting a 401 the moment
+they touch the résumé builder. `restoring` shows a brief placeholder
+so a returning user never flashes the gate. The backend 401s remain
+the real security boundary; the gate is the matching UX.
+
+Tests: `test_backend_workspace.py` and `test_backend_assistant_stream.py`
+gained an autouse fixture that overrides `get_required_auth_tokens`
+with `get_optional_auth_tokens` — restoring the exact pre-T5 dependency
+behaviour so their ~60 functional tests (which predate the gate) hold
+unchanged. New `tests/backend/test_llm_route_login_required.py` is the
+dedicated gate coverage: every gated route 401s an anonymous caller;
+an LLM-free route still doesn't. frontend tsc + eslint clean; 199
+backend tests green across the workspace / stream / quota / auth
+suites.
