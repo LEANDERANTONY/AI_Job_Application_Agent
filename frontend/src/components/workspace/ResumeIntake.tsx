@@ -19,6 +19,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type ChangeEvent,
   type Dispatch,
   type SetStateAction,
@@ -171,6 +172,10 @@ export type ResumeIntakeProps = {
   onBuilderGenerate: () => void;
   onBuilderCommit: () => void;
   onBuilderDraftSave: () => void;
+  /** "Start over" — clear the session back to the fresh assistant
+   *  chat. Reuses the same session_id server-side, so no new
+   *  resume-builder quota credit is spent. */
+  onBuilderReset: () => void;
   /**
    * Surface a voice-input error (mic permission denied, transcription
    * failed, browser not supported). Parent renders it as a notice or
@@ -215,9 +220,14 @@ export function ResumeIntake({
   onBuilderProactiveOfferAccept,
   onBuilderGenerate,
   onBuilderCommit,
+  onBuilderReset,
   onBuilderDraftSave,
   onBuilderVoiceError,
 }: ResumeIntakeProps) {
+  // "Start over" is destructive — wipes the whole draft + chat. Guard
+  // it with an inline two-click confirm rather than a browser dialog.
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
   function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     onSelectedResumeFileChange(file);
@@ -524,8 +534,52 @@ export function ResumeIntake({
                 gap: 8,
                 alignItems: "center",
                 justifyContent: "flex-end",
+                flexWrap: "wrap",
               }}
             >
+              {/* "Start over" — available whenever a builder session
+                  exists, including AFTER a resume is generated (the
+                  user may dislike the result and want to rebuild from
+                  scratch). Two-click confirm so a stray click can't
+                  wipe the whole draft. */}
+              {builderSession ? (
+                confirmingReset ? (
+                  <>
+                    <span
+                      style={{ fontSize: 12, color: "var(--fg-3)" }}
+                    >
+                      Clear everything and start fresh?
+                    </span>
+                    <button
+                      className="rd-btn rd-btn-ghost rd-btn-sm"
+                      disabled={builderLoading}
+                      onClick={() => {
+                        setConfirmingReset(false);
+                        onBuilderReset();
+                      }}
+                      type="button"
+                    >
+                      Yes, start over
+                    </button>
+                    <button
+                      className="rd-btn rd-btn-ghost rd-btn-sm"
+                      onClick={() => setConfirmingReset(false)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="rd-btn rd-btn-ghost rd-btn-sm"
+                    disabled={builderLoading}
+                    onClick={() => setConfirmingReset(true)}
+                    type="button"
+                  >
+                    Start over
+                  </button>
+                )
+              ) : null}
               <button
                 className="rd-btn rd-btn-ghost rd-btn-sm"
                 onClick={onToggleBuilderCollapsed}
@@ -546,41 +600,65 @@ export function ResumeIntake({
                       paddingBottom: 4,
                     }}
                   >
-                    {builderChatLog.map((turn, index) => (
-                      <div
-                        key={index}
-                        className={`workspace-chat-turn ${
-                          turn.role === "user"
-                            ? "workspace-chat-user"
-                            : "workspace-chat-assistant"
-                        }`}
-                      >
-                        <span
-                          style={{
-                            fontSize: 11,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.04em",
-                            color: "var(--fg-3)",
-                          }}
-                        >
-                          {turn.role === "user" ? "You" : "Assistant"}
-                        </span>
+                    {builderChatLog.map((turn, index) => {
+                      // User vs assistant turns must be unmistakable in
+                      // a long transcript. User = blue-tinted bubble,
+                      // right-aligned, blue "You" label. Assistant =
+                      // card-grey bubble, left-aligned, muted label.
+                      // Differentiation by colour + alignment + bubble
+                      // fill — not a faint text-shade (the prior
+                      // styling leaned on an undefined --fg-1 token, so
+                      // the two roles read nearly identically).
+                      const isUser = turn.role === "user";
+                      return (
                         <div
-                          className="workspace-chat-bubble"
+                          key={index}
                           style={{
-                            fontSize: 13.5,
-                            lineHeight: 1.65,
-                            color:
-                              turn.role === "user"
-                                ? "var(--fg-1)"
-                                : "var(--fg-2)",
-                            whiteSpace: "pre-wrap",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                            alignSelf: isUser ? "flex-end" : "flex-start",
+                            alignItems: isUser ? "flex-end" : "flex-start",
+                            width: "fit-content",
+                            maxWidth: "92%",
                           }}
                         >
-                          {turn.content}
+                          <span
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.06em",
+                              color: isUser
+                                ? "var(--accent-strong)"
+                                : "var(--fg-3)",
+                              padding: "0 2px",
+                            }}
+                          >
+                            {isUser ? "You" : "Assistant"}
+                          </span>
+                          <div
+                            style={{
+                              fontSize: 13.5,
+                              lineHeight: 1.65,
+                              color: "var(--fg)",
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                              background: isUser
+                                ? "var(--accent-soft)"
+                                : "var(--bg-card-2)",
+                              border: isUser
+                                ? "1px solid var(--accent-tint)"
+                                : "1px solid var(--border)",
+                              borderRadius: 12,
+                              padding: "9px 13px",
+                            }}
+                          >
+                            {turn.content}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p
@@ -642,7 +720,19 @@ export function ResumeIntake({
                   </div>
                 ) : null}
 
-                {builderSession && !builderSession.ready_to_generate ? (
+                {/* The chat input stays available for the WHOLE
+                    conversation — i.e. until a resume is actually
+                    generated. It used to be hidden the moment
+                    `ready_to_generate` flipped true, which stranded
+                    the user mid-question: the assistant could ask
+                    "want to add certifications?" and there'd be no
+                    textarea to answer in, only the Generate button.
+                    `ready_to_generate` is a "you CAN generate now"
+                    signal, not "the conversation is over" — so the
+                    Generate button below is shown ALONGSIDE the input,
+                    never instead of it. There is no turn limit. */}
+                {builderSession &&
+                !builderSession.generated_resume_markdown ? (
                   <>
                     <textarea
                       className="rd-textarea"
@@ -691,13 +781,41 @@ export function ResumeIntake({
                   </>
                 ) : null}
 
+                {/* Generate is an ADDITIONAL affordance shown once the
+                    draft has enough to produce a resume — it sits
+                    below the still-active chat input. The hint makes
+                    the choice explicit so the user knows the
+                    conversation isn't over: keep replying to add more,
+                    or generate now. */}
                 {builderSession?.ready_to_generate &&
                 !builderSession.generated_resume_markdown ? (
-                  <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      marginTop: 4,
+                      paddingTop: 10,
+                      borderTop: "1px solid var(--hairline)",
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 12,
+                        lineHeight: 1.55,
+                        color: "var(--fg-3)",
+                      }}
+                    >
+                      Enough captured to build a resume. Keep replying
+                      above to add more (certifications, projects,
+                      links) — or generate now.
+                    </p>
                     <button
                       className="rd-btn rd-btn-primary rd-btn-sm"
                       disabled={builderGenerating}
                       onClick={onBuilderGenerate}
+                      style={{ alignSelf: "flex-start" }}
                       type="button"
                     >
                       {builderGenerating

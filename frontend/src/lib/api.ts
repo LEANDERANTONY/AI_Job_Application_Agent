@@ -336,6 +336,21 @@ export async function updateResumeBuilderDraft(
   });
 }
 
+// "Start over" — clears the session back to the fresh assistant-chat
+// state. Reuses the same session_id server-side, so no new
+// resume_builder_sessions quota credit is charged.
+export async function resetResumeBuilderSession(sessionId: string) {
+  return request<ResumeBuilderSessionResponse>("/workspace/resume-builder/reset", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+    }),
+  });
+}
+
 export async function commitResumeBuilderResume(sessionId: string) {
   return request<ResumeBuilderCommitResponse>("/workspace/resume-builder/commit", {
     method: "POST",

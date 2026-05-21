@@ -37,6 +37,7 @@ import {
   generateResumeBuilderResume,
   getCustomerPortalUrl,
   loadLatestResumeBuilderSession,
+  resetResumeBuilderSession,
   resolveJobUrl,
   searchJobs,
   sendResumeBuilderMessage,
@@ -1382,6 +1383,48 @@ export function WorkspaceShell() {
     }
   }
 
+  // "Start over" — clears the current builder session back to the
+  // fresh assistant-chat state. The backend reuses the same
+  // session_id so no new resume_builder_sessions quota credit is
+  // charged (important: Free tier has a lifetime cap of 1).
+  async function handleResumeBuilderReset() {
+    if (!resumeBuilderSession) return;
+
+    setResumeBuilderLoading(true);
+    setResumeBuilderNotice({
+      level: "info",
+      message: "Clearing your resume draft…",
+    });
+
+    try {
+      const response = await resetResumeBuilderSession(
+        resumeBuilderSession.session_id,
+      );
+      setResumeBuilderSession(response);
+      setResumeBuilderAnswer("");
+      setResumeBuilderChatLog(
+        response.assistant_message
+          ? [{ role: "assistant", content: response.assistant_message }]
+          : [],
+      );
+      setResumeBuilderNotice({
+        level: "success",
+        message:
+          "Cleared — you're back at the start. Chat with the assistant to build a fresh resume.",
+      });
+    } catch (error) {
+      setResumeBuilderNotice({
+        level: "warning",
+        message: humanizeApiError(
+          error,
+          "The resume builder could not be cleared.",
+        ),
+      });
+    } finally {
+      setResumeBuilderLoading(false);
+    }
+  }
+
   async function handleResumeBuilderDraftSave() {
     if (!resumeBuilderSession) return;
 
@@ -2249,6 +2292,7 @@ export function WorkspaceShell() {
             }
             onBuilderExportThemeChange={setResumeBuilderExportTheme}
             onBuilderGenerate={() => void handleResumeBuilderGenerate()}
+            onBuilderReset={() => void handleResumeBuilderReset()}
             onBuilderVoiceError={(message) =>
               setResumeBuilderNotice({ level: "warning", message })
             }

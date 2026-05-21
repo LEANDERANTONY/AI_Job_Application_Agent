@@ -2332,10 +2332,58 @@ def update_resume_builder_session(*, session_id: str, draft_updates: dict):
     normalized_updates = dict(draft_updates or {})
     _apply_draft_updates(session, normalized_updates)
 
+    # A draft edit makes any already-generated resume stale: the
+    # on-screen preview holds the markdown frozen at the previous
+    # generate, while a fresh export re-synthesizes from the (now
+    # edited) draft — so "what you see" would silently diverge from
+    # "what you download". Clear the generated resume so the UI drops
+    # back to the "Generate base resume" affordance; regenerating then
+    # keeps the preview and the download in lockstep. (The structuring
+    # cache is signature-keyed and self-invalidates, so the next
+    # generate/export already re-runs on the edited draft — this just
+    # makes the UI honest about it.)
+    session.generated_resume_markdown = ""
+    session.generated_resume_plain_text = ""
+    # "ready" means "a generated resume exists"; once it's cleared the
+    # session is back to review state (still ready_to_generate=True so
+    # the Generate button shows).
+    if session.status == "ready":
+        session.status = "reviewing"
+
     return _serialize_session(
         session,
-        assistant_message="Draft updated. Keep answering prompts or generate the base resume when you are ready.",
+        assistant_message=(
+            "Draft updated — the resume preview was cleared so it can't "
+            "drift from your edits. Click Generate base resume to refresh "
+            "it (and the download) with these changes."
+        ),
     )
+
+
+def reset_resume_builder_session(*, session_id: str):
+    """Clear a resume-builder session back to its first state — the
+    initial assistant greeting, an empty draft, no generated resume.
+
+    Reuses the SAME ``session_id`` on purpose. ``resume_builder_sessions``
+    is a quota-gated counter: Free tier gets a LIFETIME cap of 1 ("one
+    onboarding ever"); Pro / Business consume from a monthly pool. That
+    credit is charged once per session CREATION inside
+    ``start_resume_builder_session``. "Start over" must NOT spend
+    another credit — it is a clear/restart of the session the user
+    already has, not a new one. So we overwrite the in-memory session
+    in place under the same id with a fresh dataclass: empty draft, no
+    conversation, no generated resume, back to the "basics" step.
+
+    The route persists the cleared session afterwards (same id), so a
+    signed-in user's stored draft is overwritten too — a page reload
+    won't resurrect the old content.
+    """
+    sid = str(session_id or "").strip()
+    if sid not in _SESSIONS:
+        raise ValueError("Resume builder session not found.")
+    fresh = ResumeBuilderSession(session_id=sid)
+    _SESSIONS[sid] = fresh
+    return _serialize_session(fresh)
 
 
 def commit_resume_builder_session(*, session_id: str, openai_service=None):

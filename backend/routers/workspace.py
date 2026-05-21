@@ -40,6 +40,7 @@ from backend.services.resume_builder_service import (
     commit_resume_builder_session,
     export_resume_builder_artifact,
     generate_resume_builder_resume,
+    reset_resume_builder_session,
     start_resume_builder_session,
     update_resume_builder_session,
 )
@@ -459,6 +460,43 @@ def update_resume_builder_route(
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.post("/resume-builder/reset")
+@limiter.limit(LIMIT_LLM)
+def reset_resume_builder_route(
+    request: Request,
+    payload: ResumeBuilderSessionRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    """Clear a resume-builder session back to the fresh assistant-chat
+    state ("Start over"). Reuses the same session_id — no new
+    `resume_builder_sessions` quota credit is charged (see
+    `reset_resume_builder_session`). The cleared session is persisted
+    so a signed-in user's stored draft is overwritten too."""
+    access_token, refresh_token = auth_tokens
+    try:
+        hydrate_resume_builder_session_if_needed(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        response = reset_resume_builder_session(session_id=payload.session_id)
+        persist_result = persist_resume_builder_session(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        return _attach_persistence_status(
+            response,
+            persist_result,
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except AppError as error:
+        _raise_http_error(error)
 
 
 @router.post("/resume-builder/commit")

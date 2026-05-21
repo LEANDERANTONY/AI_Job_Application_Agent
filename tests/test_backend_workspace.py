@@ -194,6 +194,97 @@ def test_resume_builder_update_route_applies_draft_changes():
     assert "Docker" in payload["draft_profile"]["skills"]
 
 
+def test_resume_builder_update_clears_stale_generated_resume():
+    """A draft edit after generation must clear the generated resume so
+    the on-screen preview can't silently drift from a fresh export."""
+    start_response = client.post("/api/workspace/resume-builder/start")
+    assert start_response.status_code == 200
+    session_id = start_response.json()["session_id"]
+
+    for message in [
+        "Leander Antony\nChennai, India\nleander@example.com",
+        "Machine Learning Engineer\nAI engineer with applied ML experience.",
+        "AI Engineer at Example Labs\nJan 2023 - Present\nBuilt ML APIs.",
+        "Anna University | B.E. Computer Science",
+        "Python, FastAPI, Docker, SQL",
+    ]:
+        resp = client.post(
+            "/api/workspace/resume-builder/message",
+            json={
+                "session_id": session_id,
+                "message": message,
+                "input_mode": "text",
+            },
+        )
+        assert resp.status_code == 200
+
+    generate_response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+    assert generate_response.status_code == 200
+    assert generate_response.json()["generated_resume_markdown"]
+
+    # Editing the draft must wipe the now-stale generated resume.
+    update_response = client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {"target_role": "Senior ML Engineer"},
+        },
+    )
+    assert update_response.status_code == 200
+    update_payload = update_response.json()
+    assert update_payload["generated_resume_markdown"] == ""
+    assert update_payload["ready_to_commit"] is False
+    # Still ready_to_generate so the user can immediately regenerate.
+    assert update_payload["ready_to_generate"] is True
+
+
+def test_resume_builder_reset_route_clears_session_to_first_state():
+    """Start over: the reset route clears the draft + generated resume
+    and reuses the SAME session_id (so no new resume_builder_sessions
+    quota credit is charged)."""
+    start_response = client.post("/api/workspace/resume-builder/start")
+    assert start_response.status_code == 200
+    session_id = start_response.json()["session_id"]
+
+    client.post(
+        "/api/workspace/resume-builder/update",
+        json={
+            "session_id": session_id,
+            "draft_profile": {
+                "full_name": "Leander Antony",
+                "target_role": "Machine Learning Engineer",
+                "skills": ["Python", "FastAPI"],
+            },
+        },
+    )
+
+    reset_response = client.post(
+        "/api/workspace/resume-builder/reset",
+        json={"session_id": session_id},
+    )
+    assert reset_response.status_code == 200
+    payload = reset_response.json()
+    # Same session_id — a clear/restart, not a new quota-charged session.
+    assert payload["session_id"] == session_id
+    # Draft wiped back to empty; back at the first step.
+    assert payload["draft_profile"]["full_name"] == ""
+    assert payload["draft_profile"]["target_role"] == ""
+    assert payload["draft_profile"]["skills"] == []
+    assert payload["generated_resume_markdown"] == ""
+    assert payload["current_step"] == "basics"
+
+
+def test_resume_builder_reset_route_rejects_unknown_session():
+    response = client.post(
+        "/api/workspace/resume-builder/reset",
+        json={"session_id": "does-not-exist"},
+    )
+    assert response.status_code == 400
+
+
 def test_resume_builder_latest_endpoint_returns_saved_session(monkeypatch):
     monkeypatch.setattr(
         "backend.routers.workspace.load_latest_resume_builder_session",

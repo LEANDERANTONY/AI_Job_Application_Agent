@@ -2816,3 +2816,81 @@ helpers — `_docx_paragraph_pairs` + `_docx_run_color_hexes` +
 `_docx_run_font_names` (equal for the fallback test, color-set
 differs for the themes test). Deterministic now; confirmed stable
 5/5 consecutive runs. 32/32 exporter tests green.
+
+## Day 62: Résumé-builder UX fixes from user testing
+
+The operator drove a real build through the conversational résumé
+builder and surfaced five issues. All five fixed.
+
+### Section order — projects-led path for portfolio candidates
+
+A generated résumé came out **Summary → Education → Projects →
+Skills** — Education above Projects, Skills stranded on page 2.
+Root cause: `compute_section_order` (`src/resume_builder.py`)
+checked `exp_count == 0` BEFORE `proj_count >= 2`, so a self-taught
+engineer with four metric-heavy projects and no formal jobs was
+routed onto the "fresh student" education-first path. Fixed by
+checking the projects-led path first: 2+ projects → skills +
+projects lead, whoever you are. A genuine fresh grad (0 jobs, <2
+projects) still gets education-first. One mislabeled test
+(`..._routes_student_...` had a 3-project fixture) corrected to a
+true student; new regression test added for the portfolio case.
+
+### Chat input vanished mid-question
+
+`ResumeIntake.tsx` showed the chat textarea only while
+`!ready_to_generate` and **replaced** it with the Generate button
+once the draft had enough fields — so when the assistant asked
+"want to add certifications?" the user had no input to answer in.
+There is no turn limit (confirmed in the backend); it was purely
+this frontend mutual-exclusion. Fixed: the input persists for the
+whole conversation (until a résumé is generated); the Generate
+button shows ALONGSIDE it as an additional affordance, with a hint.
+
+### User vs assistant messages were near-identical
+
+The two roles differed only by a faint text shade — and the "user"
+colour used an undefined `--fg-1` token, so it just inherited the
+default. Replaced with proper bubbles: user = blue-tinted,
+right-aligned, blue "You" label; assistant = card-grey,
+left-aligned, muted label. Removed the now-dead `.workspace-chat-*`
+CSS the builder no longer references.
+
+### Q3 — stale preview after a draft edit
+
+Editing the draft form and clicking "Save draft edits" updated the
+draft but left `generated_resume_markdown` frozen — the on-screen
+preview showed the OLD generation while a fresh export would
+reflect the edits (what-you-see ≠ what-you-download). Fixed:
+`update_resume_builder_session` now clears the generated résumé on
+any draft edit, so the UI drops back to "Generate base resume" and
+regenerating keeps preview == download.
+
+### Q2 — "Start over"
+
+There was no way to clear a builder session and rebuild. Added a
+"Start over" button (two-click confirm) + `reset_resume_builder_
+session` + a `/resume-builder/reset` route. Critical design point:
+it reuses the SAME `session_id` so NO new `resume_builder_sessions`
+quota credit is charged — Free tier has a lifetime cap of 1, and a
+"Start over" that span up a new session would instantly lock out
+every Free user. The cleared session is persisted so a reload
+can't resurrect the old draft.
+
+Verification: frontend tsc + eslint clean; 18/18 resume_builder
+unit tests, 38/38 resume-builder backend route tests (incl. 3 new
+Q2/Q3 route tests).
+
+### Parked: unified LLM token meter + 3-day Pro trial
+
+Long design discussion this session on quota strategy. Decided to
+replace the scattered per-feature LLM gates (`assistant_turns`,
+`resume_builder_sessions`, `tailored_applications`, `resume_parses`)
+with ONE per-user weekly **token meter** — flat tokens, accounting
+universal (instrument `OpenAIService`), enforcement at ~6 operation
+entries. Calibrated real per-operation token costs (full agentic
+run measured at ~13K, native gpt-5.4). Caps: Free 90K, Pro 1M,
+Business 4M per week — sized against the $9 / $29 pricing. Plus a
+card-required 3-day Pro trial via Lemon Squeezy as the conversion
+lever. Full spec parked in `report.md` ("Unified LLM token meter +
+3-day Pro trial") — NOT built this session.

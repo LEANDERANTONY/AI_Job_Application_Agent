@@ -2241,34 +2241,11 @@ code {
   padding-right: 0;
 }
 
-.workspace-chat-turn {
-  display: grid;
-  gap: 0.55rem;
-  width: 100%;
-}
-
-.workspace-chat-bubble {
-  border-radius: 1.15rem;
-  padding: 0.2rem 0;
-  line-height: 1.7;
-  width: 100%;
-  word-break: break-word;
-}
-
-.workspace-chat-user {
-  justify-self: end;
-  max-width: 100%;
-  border: 0;
-  background: transparent;
-  color: #bcd0ff;
-  font-weight: 600;
-}
-
-.workspace-chat-assistant {
-  border: 0;
-  background: transparent;
-  color: #d7e3fb;
-}
+/* NOTE: the `.workspace-chat-turn` / `-bubble` / `-user` /
+   `-assistant` rules were removed 2026-05-21. The resume-builder
+   chat (their only consumer) now renders turns with self-contained
+   inline styles — distinct blue-tinted vs card-grey bubbles — so
+   the old near-identical transparent styling is no longer used. */
 
 /* Streaming-turn affordances — Item 3 (assistant streaming via SSE).
    The cursor is purely visual and runs while `isStreaming === true`.
