@@ -31,11 +31,16 @@ from fastapi.testclient import TestClient
 from backend import quota
 from backend.quota import (
     LIFETIME_PERIOD_KEY,
+    LLM_TOKENS_COUNTER,
     QuotaResult,
     check_and_increment,
     current_period_key,
+    enforce_llm_budget,
+    read_llm_token_usage,
+    record_llm_token_usage,
     refund,
     reset_in_memory_backend,
+    weekly_period_key,
 )
 from backend.tiers import TIER_CAPS, UNLIMITED
 from src.errors import QuotaExceededError
@@ -466,3 +471,147 @@ def test_lifetime_period_key_constant_is_stable():
     schema (composite PK column value). Changing it from "lifetime" to
     anything else is a data migration, not a refactor."""
     assert LIFETIME_PERIOD_KEY == "lifetime"
+
+
+# ─── weekly_period_key (token meter) ────────────────────────────────────
+
+
+def test_weekly_period_key_is_yyyy_www():
+    moment = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    key = weekly_period_key(moment)
+    assert key.startswith("2026-W")
+    # Shape is YYYY-Www with a zero-padded 2-digit week.
+    year, _, week = key.partition("-W")
+    assert len(year) == 4 and year.isdigit()
+    assert len(week) == 2 and week.isdigit()
+    assert 1 <= int(week) <= 53
+
+
+def test_weekly_period_key_uses_iso_year_at_jan_boundary():
+    """Jan 1 2021 is a Friday that ISO-calendar-wise belongs to the
+    LAST week of 2020 (2020 has 53 ISO weeks). A naive %Y-W%U would
+    mislabel it "2021-W00" and split one real week across two
+    partitions; isocalendar() gets it right."""
+    iso = datetime(2021, 1, 1, tzinfo=timezone.utc)
+    assert weekly_period_key(iso) == "2020-W53"
+
+
+def test_weekly_period_key_uses_utc_not_local():
+    """Same UTC-rollover concern as current_period_key: a submission
+    from UTC+5:30 just after local midnight must land in the UTC week,
+    matching the Supabase row default."""
+    # 2026-05-25 02:00 IST == 2026-05-24 20:30 UTC. May 24 2026 is a
+    # Sunday -> ISO week 21; May 25 (Mon) would be week 22. The IST
+    # clock says "Monday" but UTC says "Sunday" -> week 21.
+    iso = datetime.fromisoformat("2026-05-25T02:00:00+05:30")
+    assert weekly_period_key(iso) == weekly_period_key(
+        datetime(2026, 5, 24, 20, 30, tzinfo=timezone.utc)
+    )
+    assert weekly_period_key(iso) == "2026-W21"
+
+
+# ─── token meter: enforce / record / read ───────────────────────────────
+
+
+def test_llm_tokens_counter_constant_is_stable():
+    """LLM_TOKENS_COUNTER is the composite-PK counter_name value on
+    disk -- renaming it is a data migration. The tier matrix must carry
+    a cap for it on every tier."""
+    assert LLM_TOKENS_COUNTER == "llm_tokens"
+    assert TIER_CAPS["free"][LLM_TOKENS_COUNTER] == 90_000
+    assert TIER_CAPS["pro"][LLM_TOKENS_COUNTER] == 1_000_000
+    assert TIER_CAPS["business"][LLM_TOKENS_COUNTER] == 4_000_000
+
+
+def test_enforce_llm_budget_passes_for_fresh_user():
+    """A brand-new week (count 0) is well under every tier cap -- the
+    entry check is a no-op so the operation may run. This is the
+    '>=1 full run on a fresh week' guarantee."""
+    enforce_llm_budget("user-a", "free")  # must not raise
+
+
+def test_enforce_llm_budget_blank_user_is_noop():
+    """No user_id -> no per-user meter to read. The route's auth gate
+    enforces 'login required', not this helper."""
+    enforce_llm_budget("", "free")  # must not raise
+
+
+def test_record_llm_token_usage_accumulates_weekly():
+    assert record_llm_token_usage("user-a", 1_800) == 1_800
+    assert record_llm_token_usage("user-a", 2_300) == 4_100
+    assert read_llm_token_usage("user-a", "free") == 4_100
+
+
+def test_record_llm_token_usage_ignores_blank_user_and_nonpositive():
+    assert record_llm_token_usage("", 5_000) is None
+    assert record_llm_token_usage("user-a", 0) is None
+    assert record_llm_token_usage("user-a", -10) is None
+    assert read_llm_token_usage("user-a", "free") == 0
+
+
+def test_enforce_llm_budget_raises_when_meter_at_cap():
+    """Drive the Free meter to exactly the cap; the next entry check
+    must raise the canonical 429 with token-meter fields."""
+    cap = TIER_CAPS["free"][LLM_TOKENS_COUNTER]
+    record_llm_token_usage("user-a", cap)
+    with pytest.raises(QuotaExceededError) as exc_info:
+        enforce_llm_budget("user-a", "free")
+    err = exc_info.value
+    assert err.counter == LLM_TOKENS_COUNTER
+    assert err.cap == cap
+    assert err.current == cap
+    assert err.tier == "free"
+    assert err.reset_period == weekly_period_key()
+
+
+def test_record_llm_token_usage_allows_overshoot_past_cap():
+    """The after-call record must NEVER raise on the cap -- the op
+    already ran, its cost has to land even if it pushes the meter past
+    the limit. Overshoot-by-one-operation is the deliberate design."""
+    cap = TIER_CAPS["free"][LLM_TOKENS_COUNTER]
+    record_llm_token_usage("user-a", cap - 1_000)
+    # This single call vaults from just-under-cap to well past it.
+    new_total = record_llm_token_usage("user-a", 16_000)
+    assert new_total == cap - 1_000 + 16_000
+    assert new_total > cap
+    # ...and the NEXT entry check is what stops the user.
+    with pytest.raises(QuotaExceededError):
+        enforce_llm_budget("user-a", "free")
+
+
+def test_token_meter_check_before_increment_after_cycle():
+    """End-to-end of the meter contract: a started operation always
+    finishes (entry check passed while under cap), and the operation
+    that tips the meter over still completes -- only the FOLLOWING one
+    is blocked."""
+    # Pro cap is 1M; simulate three ~400K operations.
+    enforce_llm_budget("user-pro", "pro")  # 0 used -> ok
+    record_llm_token_usage("user-pro", 400_000)
+    enforce_llm_budget("user-pro", "pro")  # 400K used -> ok
+    record_llm_token_usage("user-pro", 400_000)
+    enforce_llm_budget("user-pro", "pro")  # 800K used -> still ok
+    record_llm_token_usage("user-pro", 400_000)  # -> 1.2M, overshoot
+    with pytest.raises(QuotaExceededError):
+        enforce_llm_budget("user-pro", "pro")  # 1.2M used -> blocked
+
+
+def test_token_meter_isolates_users_and_weeks():
+    """The meter partitions by (user, ISO week): one user's spend never
+    touches another's, and last week's spend never counts against this
+    week."""
+    week_a = datetime(2026, 5, 18, tzinfo=timezone.utc)  # Mon, W21
+    week_b = datetime(2026, 5, 25, tzinfo=timezone.utc)  # Mon, W22
+    record_llm_token_usage("user-a", 50_000, now=week_a)
+    record_llm_token_usage("user-b", 9_000, now=week_a)
+    # Different user -> independent row.
+    assert read_llm_token_usage("user-b", "free", now=week_a) == 9_000
+    # Same user, next ISO week -> fresh row at 0 (implicit reset).
+    assert read_llm_token_usage("user-a", "free", now=week_b) == 0
+    assert read_llm_token_usage("user-a", "free", now=week_a) == 50_000
+    # The fresh week passes the entry check even though last week was
+    # over half-spent.
+    enforce_llm_budget("user-a", "free", now=week_b)  # must not raise
+
+
+def test_read_llm_token_usage_blank_user_is_zero():
+    assert read_llm_token_usage("", "free") == 0

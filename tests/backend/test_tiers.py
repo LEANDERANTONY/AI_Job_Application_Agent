@@ -319,6 +319,10 @@ def test_every_tier_exposes_full_counter_set():
         "resume_builder_sessions",
         "assistant_turns",
         "resume_parses",
+        # Unified weekly LLM token meter (report.md "Unified LLM token
+        # meter"). Metered via enforce_llm_budget / record_llm_token_
+        # usage, but it still carries a per-tier cap in this matrix.
+        "llm_tokens",
         "job_searches",
         "saved_jobs",
         "saved_workspaces",
@@ -343,6 +347,8 @@ def test_free_tier_caps_match_brief():
     assert free["resume_builder_sessions"] == 1
     assert free["assistant_turns"] == 20
     assert free["resume_parses"] == 3
+    # Unified weekly LLM token meter — the primary LLM gate.
+    assert free["llm_tokens"] == 90_000
     assert free["job_searches"] == 50
     assert free["saved_jobs"] == 5
     assert free["saved_workspaces"] == 1
@@ -355,6 +361,7 @@ def test_pro_tier_caps_match_brief():
     assert pro["resume_builder_sessions"] == 3
     assert pro["assistant_turns"] == 150
     assert pro["resume_parses"] == 25
+    assert pro["llm_tokens"] == 1_000_000
     # "Unlimited" on the pricing page maps to the UNLIMITED sentinel
     # so check_and_increment short-circuits without an upsert.
     assert pro["job_searches"] == UNLIMITED
@@ -369,6 +376,7 @@ def test_business_tier_caps_match_brief():
     assert business["resume_builder_sessions"] == 15
     assert business["assistant_turns"] == 500
     assert business["resume_parses"] == 100
+    assert business["llm_tokens"] == 4_000_000
     assert business["job_searches"] == UNLIMITED
     assert business["saved_jobs"] == UNLIMITED
     assert business["saved_workspaces"] == UNLIMITED

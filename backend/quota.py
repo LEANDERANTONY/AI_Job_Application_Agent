@@ -86,6 +86,16 @@ logger = logging.getLogger(__name__)
 # call site can't desync the partition.
 LIFETIME_PERIOD_KEY = "lifetime"
 
+# Counter name for the unified weekly LLM token meter (report.md
+# "Unified LLM token meter"). Unlike the per-feature counters, this one
+# accumulates raw model tokens (prompt + completion) rather than a
+# discrete action count, and rolls over on an ISO-week boundary for
+# EVERY tier. It is NOT driven through `check_and_increment` -- see the
+# dedicated `enforce_llm_budget` / `record_llm_token_usage` /
+# `read_llm_token_usage` trio below, which split the cap check
+# (before the operation) from the usage record (after it).
+LLM_TOKENS_COUNTER = "llm_tokens"
+
 
 @dataclass(frozen=True)
 class QuotaResult:
@@ -117,6 +127,27 @@ def current_period_key(now: Optional[datetime] = None) -> str:
 
 def _period_key_for(*, lifetime: bool, now: Optional[datetime] = None) -> str:
     return LIFETIME_PERIOD_KEY if lifetime else current_period_key(now)
+
+
+def weekly_period_key(now: Optional[datetime] = None) -> str:
+    """Return the ISO-week key (``YYYY-Www``) for the current UTC week.
+
+    The period key for the unified LLM token meter. Like
+    `current_period_key` the Supabase row partitions naturally by this
+    string -- there is no scheduled reset job, the first increment of a
+    new ISO week simply lands in a fresh row at ``count = 0``.
+
+    Uses ``datetime.isocalendar()`` rather than ``strftime`` so the
+    Jan-1 boundary is correct: ISO week 1 is the week containing the
+    year's first Thursday, and the ISO *year* can differ from the
+    calendar year for the last days of December / first days of
+    January. A naive ``%Y-W%U`` would mislabel those days and split one
+    real week across two partitions. `now` exists for tests; defaults
+    to real UTC now.
+    """
+    moment = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    iso_year, iso_week, _ = moment.isocalendar()
+    return f"{iso_year:04d}-W{iso_week:02d}"
 
 
 def _cap_for(tier: Tier, counter_name: str) -> int:
@@ -589,13 +620,177 @@ def refund(
         return None
 
 
+# ─── Unified LLM token meter ─────────────────────────────────────────────
+#
+# The token meter splits a single quota gate into two halves because a
+# call's token cost is unknowable until it returns:
+#
+#   enforce_llm_budget(...)     -- the ENTRY check. Pure read + compare;
+#                                  raises the canonical 429 when the
+#                                  weekly meter is already at/over cap.
+#   record_llm_token_usage(...) -- the AFTER-call record. Adds the real
+#                                  tokens; never raises on the cap.
+#
+# "Check-before / increment-after" means a user can overshoot the cap
+# by at most one operation -- a deliberate trade so any operation that
+# clears the entry check always finishes (the "≥1 full agentic run on a
+# fresh week" guarantee). See report.md "Unified LLM token meter".
+
+
+def enforce_llm_budget(
+    user_id: str,
+    tier: Tier,
+    *,
+    now: Optional[datetime] = None,
+) -> None:
+    """Raise ``QuotaExceededError`` when the user has already spent
+    their weekly LLM token allowance; no-op otherwise.
+
+    The ENTRY check for the token meter -- call it at the start of each
+    metered operation (resume parse, JD parse, analysis run, assistant
+    turn, resume-builder message / generate). It deliberately does NOT
+    increment: the token cost is not known until the call returns, so
+    accounting happens afterwards via `record_llm_token_usage`.
+
+    Decision is "already at/over cap?":
+      * used <  cap -> return; the operation proceeds (and may push the
+        meter past the cap by its own cost -- intended).
+      * used >= cap -> raise the canonical 429.
+
+    No-ops (never raises) when:
+      * `user_id` is blank -- there is no per-user meter to read;
+        "login required for LLM features" is enforced by the route's
+        own auth gate, not here.
+      * the tier's `llm_tokens` cap is ``UNLIMITED``.
+
+    A transient backend read failure resolves to 0 (see the backends'
+    best-effort `read`), i.e. the meter fails OPEN -- a Supabase blip
+    must not lock every user out of the product. The post-call record
+    still runs, so usage is not lost.
+    """
+    normalized_user_id = str(user_id or "").strip()
+    if not normalized_user_id:
+        return
+    cap = _cap_for(tier, LLM_TOKENS_COUNTER)
+    if cap == UNLIMITED:
+        return
+    period_key = weekly_period_key(now)
+    used = _select_backend().read(
+        user_id=normalized_user_id,
+        period_key=period_key,
+        counter_name=LLM_TOKENS_COUNTER,
+    )
+    if used < cap:
+        return
+    raise QuotaExceededError(
+        "You've used your weekly AI usage allowance on this plan. "
+        "Upgrade for a higher limit, or wait for the weekly reset.",
+        counter=LLM_TOKENS_COUNTER,
+        current=used,
+        cap=cap,
+        reset_period=period_key,
+        tier=tier,
+    )
+
+
+def record_llm_token_usage(
+    user_id: str,
+    tokens: int,
+    *,
+    now: Optional[datetime] = None,
+) -> Optional[int]:
+    """Add ``tokens`` to the user's weekly LLM token meter.
+
+    The "increment-after" half of the meter -- called once per LLM call
+    with the real ``usage.total_tokens`` (see the OpenAIService
+    usage-meter recorder). Two deliberate properties:
+
+      * **Never enforces the cap.** It passes ``cap=UNLIMITED`` to the
+        backend so the increment ALWAYS lands -- the operation already
+        ran, its cost has to be recorded even when it pushes the meter
+        past the cap. A raise here would be too late to matter.
+      * **Best-effort.** A metering write failure must not break the
+        user's actual operation, so every error is logged and
+        swallowed (mirrors `refund`). Worst case one call's tokens go
+        unrecorded; the next entry check is then slightly generous --
+        never wrong against the user.
+
+    Does NOT take a `tier`: with `cap=UNLIMITED` the increment needs no
+    cap lookup, which also keeps the OpenAIService recorder callback a
+    plain ``Callable[[int], None]``.
+
+    Returns the new weekly total on success, or ``None`` when nothing
+    was recorded (blank `user_id`, non-positive / non-numeric
+    `tokens`, or a swallowed backend failure).
+    """
+    normalized_user_id = str(user_id or "").strip()
+    if not normalized_user_id:
+        return None
+    try:
+        amount = int(tokens)
+    except (TypeError, ValueError):
+        return None
+    if amount <= 0:
+        return None
+    period_key = weekly_period_key(now)
+    try:
+        return _select_backend().increment(
+            user_id=normalized_user_id,
+            period_key=period_key,
+            counter_name=LLM_TOKENS_COUNTER,
+            # UNLIMITED (-1) makes both backends skip the cap check and
+            # just upsert count += delta -- recording, not gating.
+            cap=UNLIMITED,
+            delta=amount,
+        )
+    except Exception:  # noqa: BLE001 - metering is best-effort
+        logger.exception(
+            "llm_token_metering_failed user_id=%s tokens=%s",
+            normalized_user_id,
+            amount,
+        )
+        return None
+
+
+def read_llm_token_usage(
+    user_id: str,
+    tier: Tier,
+    *,
+    now: Optional[datetime] = None,
+) -> int:
+    """Read the user's current weekly LLM token total WITHOUT changing
+    it -- powers the /workspace/quota usage bar.
+
+    Returns 0 on a blank `user_id`, an ``UNLIMITED`` cap, or a
+    transient backend read error (best-effort, same contract as
+    `read_counter`).
+    """
+    normalized_user_id = str(user_id or "").strip()
+    if not normalized_user_id:
+        return 0
+    cap = _cap_for(tier, LLM_TOKENS_COUNTER)
+    if cap == UNLIMITED:
+        return 0
+    period_key = weekly_period_key(now)
+    return _select_backend().read(
+        user_id=normalized_user_id,
+        period_key=period_key,
+        counter_name=LLM_TOKENS_COUNTER,
+    )
+
+
 __all__ = [
     "LIFETIME_PERIOD_KEY",
+    "LLM_TOKENS_COUNTER",
     "QuotaResult",
     "UPGRADE_URL",
     "check_and_increment",
     "current_period_key",
+    "enforce_llm_budget",
     "read_counter",
+    "read_llm_token_usage",
+    "record_llm_token_usage",
     "refund",
     "reset_in_memory_backend",
+    "weekly_period_key",
 ]
