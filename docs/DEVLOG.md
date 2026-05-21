@@ -3675,3 +3675,56 @@ sections still dropped cleanly. `test_exporters.py` 37 passed;
 full suite 865 passed with the same 16 pre-existing failures in
 the rate-limit / quota / error-handling suites (confirmed
 identical on a clean baseline — unrelated to rendering).
+
+## Day 73: Fix 16 stale-test failures from the token-meter migration
+
+CI was red with 16 failures across three test files — all
+test-harness staleness from the token-meter work (T4/T5), not
+production bugs. No production code changed; the fixes are scoped
+to the three test files plus this entry.
+
+**`tests/test_rate_limit.py` (5 failures).** T5 made the
+resume-upload route require login via `get_required_auth_tokens`,
+so the anonymous uploads these tests fire returned 401 before the
+rate-limiter ran (expected 200/429). This file's `_reload_app()`
+helper reloads `backend.app` and binds the client to the
+freshly-built app object, so a module-level autouse fixture would
+patch the stale pre-reload app. Fixed by installing the
+`get_required_auth_tokens → get_optional_auth_tokens` override on
+`backend.app.app` inside `_reload_app()`, right before the
+`TestClient` is returned — so the rate-limiter decides the status.
+
+**`tests/test_error_handling_scenarios.py` (4 failures).** Same
+T5 gate: scenarios hitting LLM routes anonymously got 401 instead
+of 400/422, and one failed `KeyError: 'session_id'` because a 401
+body has no `session_id`. Scanned `_SCENARIOS` first — no scenario
+expects a 401 (the admin-refresh scenarios accept 401/403 but that
+route uses `get_optional_auth_tokens`, not the gated dependency),
+so a file-wide autouse override masks nothing. Added the standard
+`_satisfy_llm_route_auth` override fixture.
+
+**`tests/backend/test_resume_quota_enforcement.py` (7 failures).**
+All `DID NOT RAISE QuotaExceededError`. The gate is driven through
+the service layer directly here, so the 401 gate is not the cause —
+the real cause is T4 loosening `resume_parses` and
+`resume_builder_sessions` to UNLIMITED (`-1`) in `TIER_CAPS`, and
+this file lacked the cap-pinning autouse fixture its siblings have.
+Pinned the pre-migration finite caps in `_fresh_quota_backend`
+(`resume_parses` free 3 / pro 25 / business 100;
+`resume_builder_sessions` free 1 / pro 3 / business 15), matching
+the `tailored_applications` / `assistant_turns` pinning in
+`test_workspace_quota_enforcement` / `test_assistant_quota_enforcement`.
+
+The T5 401 gate's own coverage
+(`tests/backend/test_llm_route_login_required.py`) is untouched —
+no suite-wide conftest override was added, so its anonymous-401
+assertions still hold.
+
+Verification: the three files green (30 passed). Full suite in a
+CI-like environment (no `.env`) — 881 passed, 0 failed. With a
+populated local `.env`, two unrelated tests
+(`test_cached_jobs_store::test_search_calls_rpc_with_normalized_args`,
+`test_workspace_retention::test_sweep_with_no_service_role_client_logs_and_returns_zero`)
+fail because the dev `.env` sets `JOB_SEARCH_HYBRID_ENABLED=true`
+and `SUPABASE_SERVICE_ROLE_KEY`; both are green on CI (which ships
+no `.env`) and out of scope for this fix.

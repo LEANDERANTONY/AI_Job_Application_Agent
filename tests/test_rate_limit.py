@@ -28,6 +28,21 @@ def _reload_app(monkeypatch: pytest.MonkeyPatch, override: str = "2/minute"):
     Returns a fresh TestClient bound to a freshly-decorated app.
     Reloads in dependency order so the decorators see the new
     LIMIT_* constants.
+
+    The token-meter migration (T5) made every LLM route — including
+    the resume-upload endpoint these rate-limit tests fire — require
+    login via the ``get_required_auth_tokens`` dependency. Anonymous
+    requests now 401 BEFORE the rate-limiter runs, which would mask
+    the 200/429 behaviour under test. Because this helper RELOADS
+    ``backend.app`` and returns a client bound to the freshly-built
+    app object, the auth-override has to be installed on THAT object
+    (a module-level autouse fixture would patch the stale pre-reload
+    app). Overriding ``get_required_auth_tokens`` with
+    ``get_optional_auth_tokens`` restores pre-T5 behaviour — real
+    tokens when auth headers/cookies are present, ``(None, None)``
+    when absent, never a 401 — so the rate-limiter is what decides
+    the status code. The 401 gate itself is covered by
+    ``tests/backend/test_llm_route_login_required.py``.
     """
     monkeypatch.setenv("RATE_LIMIT_OVERRIDE", override)
 
@@ -35,12 +50,21 @@ def _reload_app(monkeypatch: pytest.MonkeyPatch, override: str = "2/minute"):
     import backend.routers.workspace
     import backend.routers.jobs
     import backend.app
+    from backend.request_auth import (
+        get_optional_auth_tokens,
+        get_required_auth_tokens,
+    )
 
     # Reload bottom-up so decorators on routes pick up new limits.
     importlib.reload(backend.rate_limit)
     importlib.reload(backend.routers.workspace)
     importlib.reload(backend.routers.jobs)
     importlib.reload(backend.app)
+
+    # Apply the auth-override to the FRESHLY-reloaded app object.
+    backend.app.app.dependency_overrides[get_required_auth_tokens] = (
+        get_optional_auth_tokens
+    )
 
     return TestClient(backend.app.app)
 

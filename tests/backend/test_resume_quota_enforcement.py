@@ -63,6 +63,20 @@ def _fresh_quota_backend(monkeypatch):
             return False
 
     monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfigured())
+    # T4 of the token-meter migration loosened resume_parses and
+    # resume_builder_sessions to UNLIMITED in the production TIER_CAPS.
+    # The gate CODE in parse_resume_upload / start_resume_builder_session
+    # is still present and revertable ("not a hard swap"), so this file
+    # pins the pre-migration finite caps to verify that gate machinery
+    # still fires ("Nth call -> 429"). This mirrors the autouse cap-
+    # pinning in test_workspace_quota_enforcement (tailored_applications)
+    # and test_assistant_quota_enforcement (assistant_turns). The
+    # production cap POLICY (UNLIMITED) is asserted in test_tiers.py; the
+    # LIVE LLM gate for these routes is the unified llm_tokens meter.
+    for _tier, _cap in (("free", 3), ("pro", 25), ("business", 100)):
+        monkeypatch.setitem(quota.TIER_CAPS[_tier], "resume_parses", _cap)
+    for _tier, _cap in (("free", 1), ("pro", 3), ("business", 15)):
+        monkeypatch.setitem(quota.TIER_CAPS[_tier], "resume_builder_sessions", _cap)
     reset_in_memory_backend()
     yield
     reset_in_memory_backend()

@@ -22,10 +22,29 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import app
+from backend.request_auth import get_optional_auth_tokens, get_required_auth_tokens
 from src.errors import AgentExecutionError, AppError
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _satisfy_llm_route_auth():
+    """The token-meter migration (T5) made every LLM route require
+    login. These error-handling scenarios predate that gate and
+    exercise route ERROR behaviour (bad payloads, unknown sessions,
+    LLM failures), not the auth gate itself — most fire anonymously.
+    Overriding ``get_required_auth_tokens`` with
+    ``get_optional_auth_tokens`` restores pre-T5 behaviour: real
+    tokens when auth headers are present, ``(None, None)`` when
+    absent, never a 401 — so the validation/error paths under test
+    are reached. None of the scenarios in ``_SCENARIOS`` expects a
+    401, so a file-wide override masks nothing. The 401 gate itself
+    is covered by ``tests/backend/test_llm_route_login_required.py``."""
+    app.dependency_overrides[get_required_auth_tokens] = get_optional_auth_tokens
+    yield
+    app.dependency_overrides.pop(get_required_auth_tokens, None)
 
 
 # ---------------------------------------------------------------------------
