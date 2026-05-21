@@ -40,6 +40,7 @@ from backend.services.resume_builder_service import (
     commit_resume_builder_session,
     export_resume_builder_artifact,
     generate_resume_builder_resume,
+    preview_resume_builder_artifact,
     reset_resume_builder_session,
     start_resume_builder_session,
     update_resume_builder_session,
@@ -66,6 +67,7 @@ from backend.services.workspace_run_jobs import (
 from backend.workspace_models import (
     ResumeBuilderExportRequestModel,
     ResumeBuilderMessageRequestModel,
+    ResumeBuilderPreviewRequestModel,
     ResumeBuilderSessionRequestModel,
     ResumeBuilderUpdateRequestModel,
     SavedJobRequestModel,
@@ -574,6 +576,35 @@ def export_resume_builder_route(
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
+
+
+@router.post("/resume-builder/preview")
+@limiter.limit(LIMIT_PARSE)
+def preview_resume_builder_route(
+    request: Request,
+    payload: ResumeBuilderPreviewRequestModel,
+    auth_tokens=Depends(get_optional_auth_tokens),
+):
+    """Themed HTML preview of the builder's resume — no download, no
+    LLM. Powers the in-builder visual theme picker. NOT
+    entitlement-gated: every tier may PREVIEW every theme (that's the
+    conversion surface); the Free=Professional-only gate stays on the
+    /export route. LIMIT_PARSE rate limit — it's a cheap render."""
+    access_token, refresh_token = auth_tokens
+    try:
+        hydrate_resume_builder_session_if_needed(
+            access_token=access_token or "",
+            refresh_token=refresh_token or "",
+            session_id=payload.session_id,
+        )
+        return preview_resume_builder_artifact(
+            session_id=payload.session_id,
+            theme=payload.theme,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except AppError as error:
+        _raise_http_error(error)
 
 
 @router.post("/analyze")

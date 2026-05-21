@@ -2894,3 +2894,46 @@ Business 4M per week — sized against the $9 / $29 pricing. Plus a
 card-required 3-day Pro trial via Lemon Squeezy as the conversion
 lever. Full spec parked in `report.md` ("Unified LLM token meter +
 3-day Pro trial") — NOT built this session.
+
+## Day 63: Résumé-builder live themed preview
+
+The builder's post-generate preview was a plain-text `<pre>` dump of
+the markdown — accurate but ugly, and it gave the user no sense of
+what their five theme choices actually look like. The theme `<select>`
+sat right above it driving only the *download*, so picking "Modern
+Blue" changed nothing visible until after a download.
+
+Replaced that `<pre>` with a **live themed preview**: an
+`<iframe srcDoc>` rendering the résumé in the selected theme — the
+same look the final workspace `ArtifactViewer` ships. One picker now
+drives both the preview and the download; switching themes re-renders
+the iframe in place.
+
+New endpoint `POST /workspace/resume-builder/preview`
+(`preview_resume_builder_artifact`) returns themed HTML via the
+existing `build_resume_preview_html`. Two deliberate properties:
+
+- **LLM-free.** It passes `openai_service=None` into
+  `_synthesize_resume_builder_artifact`, and post-generate the
+  structuring pass is already signature-cached — so a theme switch
+  only re-renders colours/fonts, never re-structures. Zero token-meter
+  cost; the user browses all five themes freely.
+- **NOT entitlement-gated.** Every tier may *preview* every theme —
+  that is the conversion surface. The Free = Professional-only limit
+  stays exactly where it was, on `/export` (`enforce_export_
+  entitlement`): a Free user previewing "Modern Blue" sees it in full,
+  then gets the standard upgrade nudge if they hit Download. A short
+  caption under the picker states the policy up front.
+
+Frontend: `WorkspaceShell` holds `resumeBuilderPreviewHtml` +
+`...Loading`, fetched by a `useEffect` keyed on
+`[session_id, generated_resume_markdown, exportTheme]` — covers
+initial generate, theme switch, and the Q3 draft-save → regenerate
+cycle. A `cancelled` guard drops a stale theme's slow response. The
+iframe persists (dimmed) during a re-fetch so picking a theme never
+collapses the layout; the plain markdown remains the graceful
+fallback if the render errors.
+
+Verification: frontend tsc + eslint clean; 63/63
+`test_backend_workspace.py` (incl. 3 new `/resume-builder/preview`
+route tests — themed HTML, unknown-session 400, unknown-theme 422).

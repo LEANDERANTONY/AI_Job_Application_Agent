@@ -488,6 +488,76 @@ def test_resume_builder_export_rejects_unsupported_format():
     assert "export_format" in str(response.json())
 
 
+def test_resume_builder_preview_route_returns_themed_html():
+    """The themed-preview route renders the generated base resume as a
+    standalone HTML document — no download, no LLM call. Requesting a
+    Pro-gated theme (``modern_blue``) and getting a 200 also proves the
+    preview is NOT entitlement-gated: every tier may preview every
+    theme (that's the conversion surface); only /export is gated."""
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+    for answer in [
+        "Mei Chen, Singapore. mei@example.sg",
+        "Senior Data Engineer. ETL platform background.",
+        "Data Engineer at Acme (2020-2023). Owned warehouse ingestion.",
+        "NUS, B.Comp",
+        "Python, Airflow, SQL",
+    ]:
+        client.post(
+            "/api/workspace/resume-builder/message",
+            json={"session_id": session_id, "message": answer, "input_mode": "text"},
+        )
+    client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": session_id},
+    )
+
+    preview_response = client.post(
+        "/api/workspace/resume-builder/preview",
+        json={"session_id": session_id, "theme": "modern_blue"},
+    )
+
+    assert preview_response.status_code == 200
+    payload = preview_response.json()
+    assert payload["status"] == "ready"
+    # The picked theme is echoed back so the client can confirm what it
+    # is looking at; "modern_blue" is a Pro-gated download theme yet
+    # previews fine here — the gate lives only on /export.
+    assert payload["resume_theme"] == "modern_blue"
+    html = payload["html"]
+    assert "<!doctype html" in html.lower()
+    assert "Mei Chen" in html
+
+
+def test_resume_builder_preview_route_returns_400_when_session_unknown():
+    """Old / evicted session_id → friendly 400, mirroring the other
+    resume-builder routes' error contract."""
+    response = client.post(
+        "/api/workspace/resume-builder/preview",
+        json={
+            "session_id": "session-that-never-existed",
+            "theme": "professional_neutral",
+        },
+    )
+    assert response.status_code == 400
+    assert "Resume builder session" in response.json()["detail"]
+
+
+def test_resume_builder_preview_route_rejects_unknown_theme():
+    """The request model's theme Literal validates at the FastAPI
+    boundary — a theme outside the supported set is a clean 422, never
+    a fall-through to the renderer."""
+    start_response = client.post("/api/workspace/resume-builder/start")
+    session_id = start_response.json()["session_id"]
+
+    response = client.post(
+        "/api/workspace/resume-builder/preview",
+        json={"session_id": session_id, "theme": "presentation_twocol"},
+    )
+    assert response.status_code == 422
+    assert "theme" in str(response.json())
+
+
 def test_resume_builder_experience_parser_splits_multi_role_single_line():
     """Users often squash multiple roles onto one line ("X at A 2020-Present,
     prior at B 2017-2020"). The parser used to collapse this into ONE

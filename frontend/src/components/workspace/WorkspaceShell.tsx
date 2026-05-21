@@ -37,6 +37,7 @@ import {
   generateResumeBuilderResume,
   getCustomerPortalUrl,
   loadLatestResumeBuilderSession,
+  previewResumeBuilderArtifact,
   resetResumeBuilderSession,
   resolveJobUrl,
   searchJobs,
@@ -386,6 +387,17 @@ export function WorkspaceShell() {
   const [resumeBuilderExporting, setResumeBuilderExporting] = useState<
     WorkspaceArtifactExportFormat | null
   >(null);
+  // In-builder live themed preview. Once a base resume is generated we
+  // render it as themed HTML (the same look the final ArtifactViewer
+  // ships) so the user can browse all 5 themes before downloading — a
+  // conversion surface, since the gated themes preview freely but only
+  // Professional is downloadable on Free. `resumeBuilderExportTheme`
+  // doubles as the preview theme: one picker drives both.
+  const [resumeBuilderPreviewHtml, setResumeBuilderPreviewHtml] = useState<
+    string | null
+  >(null);
+  const [resumeBuilderPreviewLoading, setResumeBuilderPreviewLoading] =
+    useState(false);
   const [resumeBuilderDraftForm, setResumeBuilderDraftForm] = useState({
     full_name: "",
     location: "",
@@ -750,6 +762,47 @@ export function WorkspaceShell() {
       ).join("\n"),
     });
   }, [resumeBuilderSession]);
+
+  // Live themed preview of the builder's generated base resume.
+  // Re-fetches whenever a resume exists and the picked theme changes;
+  // LLM-free + signature-cached server-side, so a theme switch only
+  // re-renders (no token cost) and is cheap to refetch eagerly. The
+  // `cancelled` guard drops a stale theme's slow response so rapid
+  // switching always settles on the latest pick. Cleared when there's
+  // no generated resume — pre-generate, after a reset, or after a
+  // draft-save that invalidated the prior render (Q3).
+  useEffect(() => {
+    const sessionId = resumeBuilderSession?.session_id;
+    const generatedMarkdown =
+      resumeBuilderSession?.generated_resume_markdown ?? "";
+    if (!sessionId || !generatedMarkdown) {
+      setResumeBuilderPreviewHtml(null);
+      setResumeBuilderPreviewLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setResumeBuilderPreviewLoading(true);
+    void previewResumeBuilderArtifact(sessionId, resumeBuilderExportTheme)
+      .then((response) => {
+        if (!cancelled) setResumeBuilderPreviewHtml(response.html);
+      })
+      .catch(() => {
+        // Preview is non-critical chrome — the plain-text markdown
+        // fallback and the download buttons still work. Drop to null
+        // rather than surfacing an alarming notice.
+        if (!cancelled) setResumeBuilderPreviewHtml(null);
+      })
+      .finally(() => {
+        if (!cancelled) setResumeBuilderPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    resumeBuilderSession?.session_id,
+    resumeBuilderSession?.generated_resume_markdown,
+    resumeBuilderExportTheme,
+  ]);
 
   // ⌘K / Ctrl+K toggles the command palette globally.
   useEffect(() => {
@@ -2277,6 +2330,8 @@ export function WorkspaceShell() {
             builderGenerating={resumeBuilderGenerating}
             builderLoading={resumeBuilderLoading}
             builderNotice={resumeBuilderNotice}
+            builderPreviewHtml={resumeBuilderPreviewHtml}
+            builderPreviewLoading={resumeBuilderPreviewLoading}
             builderSession={resumeBuilderSession}
             currentProfile={currentProfile}
             mode={resumeIntakeMode}

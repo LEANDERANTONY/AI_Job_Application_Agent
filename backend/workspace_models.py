@@ -265,6 +265,32 @@ class ResumeBuilderExportRequestModel(BaseModel):
         return str(value or "").strip()
 
 
+class ResumeBuilderPreviewRequestModel(BaseModel):
+    """Body shape for POST /workspace/resume-builder/preview.
+
+    Renders the builder's resume as themed HTML (no download) so the
+    user can see it in any theme before deciding. LLM-free — the theme
+    only affects rendering, never re-structures."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(min_length=1, max_length=120)
+    theme: Literal[
+        "classic_ats",
+        "professional_neutral",
+        "modern_blue",
+        "creative_warm",
+        "architect_mono",
+        # presentation_twocol intentionally excluded — held from the
+        # user surface (report.md v2 plan), same as the export model.
+    ] = "professional_neutral"
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def _strip_preview_session_id(cls, value):
+        return str(value or "").strip()
+
+
 class WorkspaceFeedbackRequestModel(BaseModel):
     """Body shape for POST /workspace/feedback.
 

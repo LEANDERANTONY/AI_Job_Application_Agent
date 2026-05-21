@@ -418,6 +418,19 @@ export type ResumeBuilderExportResponse = {
   artifact_title: string;
 };
 
+/** Themed HTML render of the resume builder's generated base resume —
+ *  no download, no LLM call. Powers the in-builder live theme preview
+ *  (the user sees their resume in any of the 5 themes before deciding;
+ *  a conversion surface, since the gated themes look great but only
+ *  Professional is downloadable on Free). `html` is a full standalone
+ *  document meant for an `<iframe srcDoc>`. */
+export type ResumeBuilderPreviewResponse = {
+  status: string;
+  resume_theme: ArtifactTheme;
+  artifact_title: string;
+  html: string;
+};
+
 export type WorkspaceJobDescriptionUploadResponse = {
   job_description_text: string;
   job_description: JobDescription;

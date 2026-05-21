@@ -17,7 +17,12 @@ from backend.services.resume_builder_tools import (
 from backend.tiers import resolve_user_tier
 from src.config import get_openai_max_completion_tokens_for_task
 from src.errors import AgentExecutionError
-from src.exporters import SUPPORTED_THEMES, export_docx_bytes, export_pdf_bytes
+from src.exporters import (
+    SUPPORTED_THEMES,
+    build_resume_preview_html,
+    export_docx_bytes,
+    export_pdf_bytes,
+)
 from src.logging_utils import get_logger, log_event
 from src.prompts import build_resume_builder_prompt, build_resume_builder_structuring_prompt
 from src.resume_builder import build_tailored_resume_artifact
@@ -2546,4 +2551,41 @@ def export_resume_builder_artifact(
         "content_base64": base64.b64encode(payload).decode("ascii"),
         "theme": normalized_theme,
         "artifact_title": artifact.title,
+    }
+
+
+def preview_resume_builder_artifact(*, session_id: str, theme: str = "professional_neutral"):
+    """Render the builder's resume as themed preview HTML (no download).
+
+    Powers the in-builder visual theme preview — the user sees their
+    resume rendered in any of the 5 themes before deciding, which is
+    also a conversion surface (the gated themes look great but only
+    Professional is downloadable on Free).
+
+    Deliberately LLM-FREE: ``openai_service`` is not passed, so
+    ``_synthesize_resume_builder_artifact`` -> ``_structure_via_llm``
+    can never make a model call here. Post-generate the structuring
+    pass is already signature-cached, so the preview reuses that
+    cached structured content; switching themes only re-renders
+    (colours/fonts), never re-structures. Preview is therefore zero
+    token-meter cost — browse all themes freely.
+    """
+    session = _SESSIONS.get(str(session_id or "").strip())
+    if session is None:
+        raise ValueError("Resume builder session not found.")
+
+    normalized_theme = str(theme or "").strip()
+    if normalized_theme not in SUPPORTED_THEMES:
+        normalized_theme = "professional_neutral"
+
+    artifact = _synthesize_resume_builder_artifact(
+        session,
+        theme=normalized_theme,
+        openai_service=None,  # LLM-free — see docstring
+    )
+    return {
+        "status": "ready",
+        "resume_theme": normalized_theme,
+        "artifact_title": artifact.title,
+        "html": build_resume_preview_html(artifact),
     }

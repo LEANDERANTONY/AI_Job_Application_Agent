@@ -160,6 +160,14 @@ export type ResumeIntakeProps = {
   // export's success / failure transitions.
   builderExportTheme: ArtifactTheme;
   builderExporting: WorkspaceArtifactExportFormat | null;
+  /** Themed HTML render of the generated base resume — drives the
+   *  live in-builder theme preview. `null` before generate, while a
+   *  preview fetch is in flight, or if that fetch failed (the
+   *  plain-text markdown is the graceful fallback in that case). */
+  builderPreviewHtml: string | null;
+  /** True while the themed preview is being (re-)fetched — initial
+   *  render after generate, or a theme switch. */
+  builderPreviewLoading: boolean;
   onBuilderExportThemeChange: (theme: ArtifactTheme) => void;
   onBuilderExport: (format: WorkspaceArtifactExportFormat) => void;
   onBuilderAnswerSubmit: () => void;
@@ -214,6 +222,8 @@ export function ResumeIntake({
   setBuilderDraftForm,
   builderExportTheme,
   builderExporting,
+  builderPreviewHtml,
+  builderPreviewLoading,
   onBuilderExportThemeChange,
   onBuilderExport,
   onBuilderAnswerSubmit,
@@ -878,6 +888,53 @@ export function ResumeIntake({
                           </option>
                         </select>
                       </div>
+                      {/* Live themed preview — the resume rendered in
+                          the picked theme, the same look the final
+                          workspace artifact ships. Every tier previews
+                          every theme; only the *download* is
+                          entitlement-gated, so browsing the gated
+                          themes here doubles as a conversion surface.
+                          Falls back to the plain-text markdown if the
+                          themed render is still loading or errored. */}
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 12,
+                          color: "var(--fg-3)",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Preview any theme below. Professional downloads on
+                        every plan; the other themes are a Pro feature.
+                      </p>
+                      {builderPreviewHtml ? (
+                        // The iframe persists across theme switches: it
+                        // keeps showing the previous theme (dimmed)
+                        // while the next render is fetched, so picking a
+                        // theme never collapses the layout. Only the
+                        // very first render (no html yet) drops to the
+                        // loading placeholder below.
+                        <iframe
+                          className="b-artifact-doc-frame"
+                          srcDoc={builderPreviewHtml}
+                          style={{
+                            opacity: builderPreviewLoading ? 0.55 : 1,
+                            transition: "opacity 0.15s ease",
+                          }}
+                          title="Themed resume preview"
+                        />
+                      ) : builderPreviewLoading ? (
+                        <div
+                          className="b-twoup-empty"
+                          style={{ minHeight: 180 }}
+                        >
+                          Rendering your themed preview…
+                        </div>
+                      ) : (
+                        <pre className="b-builder-preview">
+                          {builderSession?.generated_resume_markdown}
+                        </pre>
+                      )}
                       <div style={{ display: "flex", gap: 8 }}>
                         <button
                           className="rd-btn rd-btn-primary rd-btn-sm"
@@ -1092,29 +1149,17 @@ export function ResumeIntake({
                 </div>
 
                 {builderSession.generated_resume_markdown ? (
-                  <>
-                    <pre className="b-builder-preview">
-                      {builderSession.generated_resume_markdown}
-                    </pre>
-                    {/* Online feedback for the resume-builder session.
-                        Rated AFTER the user sees the generated markdown
-                        so the rating reflects the full intake →
-                        structured-resume quality, not just a single
-                        chat turn. */}
-                    <FeedbackButtons
-                      surface="resume_builder_session"
-                      prompt="Did the generated resume capture your story?"
-                    />
-                  </>
-                ) : (
-                  <div
-                    className="b-twoup-empty"
-                    style={{ marginTop: 12 }}
-                  >
-                    Your base resume preview will appear here once the guided
-                    intake is complete.
-                  </div>
-                )}
+                  // Online feedback for the resume-builder session.
+                  // Rated AFTER generate so it reflects the full
+                  // intake → structured-resume quality, not a single
+                  // chat turn. The themed visual preview itself now
+                  // lives in the download row above — this frame stays
+                  // focused on editing the draft-profile fields.
+                  <FeedbackButtons
+                    surface="resume_builder_session"
+                    prompt="Did the generated resume capture your story?"
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>

@@ -14,6 +14,7 @@ import type {
   RemoveSavedJobResponse,
   ResumeBuilderCommitResponse,
   ResumeBuilderExportResponse,
+  ResumeBuilderPreviewResponse,
   ResumeBuilderSessionResponse,
   SavedJobsResponse,
   SaveWorkspaceResponse,
@@ -376,6 +377,29 @@ export async function exportResumeBuilderArtifact(payload: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
+    },
+  );
+}
+
+// Themed HTML preview of the builder's generated base resume. Unlike
+// the export above this is NOT entitlement-gated — every tier may
+// preview every theme (that's the conversion surface). LLM-free +
+// cheap, so the caller re-fetches freely on each theme change.
+export async function previewResumeBuilderArtifact(
+  sessionId: string,
+  theme: ArtifactTheme,
+) {
+  return request<ResumeBuilderPreviewResponse>(
+    "/workspace/resume-builder/preview",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        theme,
+      }),
     },
   );
 }
