@@ -3293,3 +3293,191 @@ folder of two-column Claude-design templates — template 07
 (01, 02, 04, 05, 08, 10). Integrating those six as two-column
 themes is separate, larger work; this entry only adds the
 single-column `noir_cream`.
+
+## Day 70: Tier 2 — hybrid lexical + semantic job search (RRF)
+
+Day 68 (Tier 1) made the cached-jobs lexical search smarter with
+deterministic synonym expansion. It is still LEXICAL — it can only
+match jobs that share keywords with the query. Tier 2 adds the
+missing half: pgvector semantic (embedding) retrieval, fused with
+the lexical ranking via Reciprocal Rank Fusion. Lexical catches
+exact keyword hits; semantic catches conceptually-related jobs that
+share no keywords; RRF combines the two so a job ranked highly by
+EITHER signal surfaces. This is the standard production "hybrid
+search" pattern. (Tier 3 — a learned ranker — is explicitly out of
+scope.)
+
+Everything in this day is delivered as code + SQL files + a script.
+NONE of it is applied to the production database — the schema
+migration, the backfill run, and the RPC migration are all operator
+actions, gated behind a config flag that defaults OFF. See the
+runbook at the end.
+
+### Phase A — pgvector schema
+
+`docs/sql/supabase-cached-jobs-pgvector.sql` (new, idempotent):
+enables the `vector` extension, adds `cached_jobs.embedding
+vector(1536)` (1536 = `text-embedding-3-small` output dim), and an
+HNSW index with `vector_cosine_ops`. HNSW (not IVFFlat) because it
+needs no training step — the index is correct the moment it is
+built even though every row is still NULL at apply time (rows get
+embeddings afterwards from the backfill). The column is nullable on
+purpose: a row is cached first and embedded second, so NULL means
+"not embedded yet" and the hybrid RPC degrades that row to
+lexical-only. Confirmed via a read-only probe that the `vector`
+extension (0.8.0) is available on the project but not yet enabled.
+
+### Phase B — embedding backfill script
+
+`scripts/backfill_job_embeddings.py` (new): the one-time corpus
+backfill. Selects `embedding IS NULL` cached_jobs rows — that NULL
+filter is what makes it idempotent + RESUMABLE (a crashed run
+leaves done rows done; re-running picks up the rest; running it
+when everything is embedded is a no-op). Builds a title + company +
+capped-description input per row (description capped at ~2000 chars
+to bound token cost — `text-embedding-3-small`'s input limit is
+8191 tokens). Calls the embeddings API in batches (~100 inputs/call
+— the endpoint accepts arrays) so ~14k rows is ~140 round-trips,
+not 14k. A failed batch is logged and SKIPPED (those rows stay NULL
+for a later re-run) — one bad batch never aborts the whole backfill.
+A `--dry-run` flag counts rows without spending a cent.
+
+COST ESTIMATE: ~14k jobs × ~800 tokens average input × $0.02 / 1M
+tokens ≈ **$0.25–0.50, one-time**.
+
+`OpenAIService.create_embeddings` (new method): a batched,
+token-metered embeddings call. Every Tier 2 embedding path — the
+backfill, the per-query embed, and embed-on-write — routes through
+it, so embedding spend lands in the unified LLM token meter
+(`_record_usage` → `_record_token_meter`) the same way
+`responses.create` calls do.
+
+### Phase C — hybrid search RPC
+
+`docs/sql/supabase-cached-jobs-hybrid.sql` (new, idempotent
+DROP+CREATE) defines `search_cached_jobs_hybrid`. Same filter
+params as `search_cached_jobs_ranked` PLUS `p_query_embedding
+vector(1536)`. It computes two rankings over the SAME filtered
+candidate pool: a lexical rank (the exact Tier 1 `to_tsquery` +
+`ts_rank` logic) and a semantic rank (`embedding <=>
+p_query_embedding` cosine distance ascending). It fuses them with
+RRF — per job, `rrf = 1.0/(k + lexical_rank) + 1.0/(k +
+semantic_rank)`, `k = 60` (the value from the original RRF paper).
+A `FULL OUTER JOIN` between the two ranked lists means a job
+present in only one list contributes only that list's term (the
+other is 0). `relevance` sort orders by the fused RRF score
+descending; the other `p_sort_by` modes behave exactly as in the
+Tier 1 RPC.
+
+Degenerate cases all still work: empty `p_query` → no lexical
+filter; NULL `p_query_embedding` → no semantic term, pure lexical;
+both → recency-ordered browse mode. Same security posture as the
+Tier 1 RPC — `SECURITY DEFINER`, `SET search_path = public`,
+`EXECUTE` granted to `service_role` only (the DROP+CREATE would
+re-introduce the implicit EXECUTE-to-PUBLIC, so the REVOKEs are
+mandatory — ADR-021).
+
+### Phase D — service wiring + graceful degradation
+
+`CachedJobsStore.search` grew a Tier 2 path: when
+`JOB_SEARCH_HYBRID_ENABLED` is on, it embeds the (Tier-1-expanded)
+query with `text-embedding-3-small` and calls
+`search_cached_jobs_hybrid`. GRACEFUL DEGRADATION is the core
+guarantee and it is mandatory — if the query embedding can't be
+produced (no OpenAI key, provider outage, the embeddings call
+raised) OR the hybrid RPC itself raises (e.g. the operator hasn't
+applied the hybrid RPC yet), the store falls back to the Tier 1
+lexical `search_cached_jobs_ranked` path. Search NEVER hard-fails
+because of Tier 2. Browse mode (empty query) skips the embedding
+call entirely — there is no semantic intent to capture and the
+hybrid RPC would treat a NULL embedding as pure-lexical anyway.
+
+`CachedJobsStore.upsert_postings` grew embed-on-write: when hybrid
+is enabled, each newly-cached job gets an embedding in the same
+call, so the corpus stays current without re-running the backfill.
+This is STRICTLY non-fatal — an embeddings failure (or a
+vector/row count mismatch) still caches the job; it just goes in
+without an embedding and falls back to lexical for that row until
+the next backfill / refresh fills it. A flaky embeddings provider
+can never break the refresh worker.
+
+`JobSearchService` needed NO change — the hybrid path is fully
+encapsulated in the store.
+
+Config: `JOB_SEARCH_HYBRID_ENABLED` (new flag, **defaults OFF** —
+the hybrid RPC and the embedding column only exist after the
+operator has done the schema + backfill + RPC steps), plus
+`OPENAI_EMBEDDING_MODEL` / `_DIMENSIONS` /
+`_INPUT_DESCRIPTION_CHARS`.
+
+### Tests
+
+28 new tests, all with a mocked OpenAI client + the `_FakeClient`
+pattern — no real API calls, no DB:
+  * `tests/test_openai_service.py` +5: `create_embeddings` returns
+    vectors in input order, sorts the response by `index`, meters
+    tokens, no-ops on empty input, raises when unconfigured,
+    propagates provider errors.
+  * `tests/test_backfill_job_embeddings.py` (new) +13: input
+    composition + description cap, the idempotent no-op re-run,
+    batching, `--dry-run` making no calls, a failed batch being
+    skipped, a vector-count mismatch being skipped, a single
+    write failure staying isolated.
+  * `tests/test_cached_jobs_store.py` +13: the hybrid RPC wiring
+    (the query embedding rides along as `p_query_embedding`), the
+    lexical fallback on embedding failure / hybrid-RPC failure /
+    unavailable service, browse mode skipping the embed,
+    embed-on-write attaching vectors, and embed-on-write
+    non-fatality on failure / count mismatch / unavailable service.
+
+Full suite: **860 passed**. (16 pre-existing failures in the
+rate-limit / resume-quota / error-handling suites are unrelated to
+job search and unchanged by this work — they fail identically on
+`main`.) `ruff` clean across every file this day touched.
+
+### What could not be verified
+
+The hybrid RPC cannot be exercised end-to-end without production
+embeddings — that is expected. `search_cached_jobs_hybrid` is
+SQL-reviewed for correctness and the RRF math, the degenerate
+branches, and the security posture, but it is not applied and not
+run against real data here. The before/after relevance numbers
+Tier 1 produced (Day 68) have no Tier 2 equivalent yet for the
+same reason; that probe is part of the post-deploy operator
+validation.
+
+### OPERATOR ACTION REQUIRED — Tier 2 deploy runbook
+
+The four steps below are OPERATOR actions. This work delivers the
+files only — it does NOT apply schema, run the backfill, or flip
+the flag. Run them strictly in order; each depends on the previous.
+
+  1. **Apply the pgvector schema.** In the Supabase SQL Editor (or
+     as a migration), run `docs/sql/supabase-cached-jobs-pgvector.sql`.
+     This enables the `vector` extension, adds the
+     `cached_jobs.embedding vector(1536)` column, and builds the
+     HNSW index. Idempotent — safe to re-run.
+
+  2. **Run the embedding backfill.** With `SUPABASE_URL`,
+     `SUPABASE_SERVICE_ROLE_KEY`, and an OpenAI key in the
+     environment, run `python scripts/backfill_job_embeddings.py`
+     (consider `--dry-run` first to confirm the row count, and
+     `--limit N` for a small canary). This embeds every
+     `embedding IS NULL` row. Cost ≈ $0.25–0.50, one-time. It is
+     resumable — if it is interrupted, just run it again. Do not
+     proceed until it reports all rows embedded.
+
+  3. **Apply the hybrid RPC.** Run
+     `docs/sql/supabase-cached-jobs-hybrid.sql`. This creates the
+     `search_cached_jobs_hybrid` function. Idempotent (DROP+CREATE).
+
+  4. **Enable hybrid search.** Set `JOB_SEARCH_HYBRID_ENABLED=true`
+     in the backend environment and redeploy. Only do this AFTER
+     steps 1–3 — the flag is what makes the store call the hybrid
+     RPC and start embed-on-write. (If something looks wrong, set
+     it back to `false`: the store reverts to the Tier 1 lexical
+     path with no other change needed.)
+
+Until step 4, the store stays entirely on the Tier 1 lexical path —
+this whole day's code is dormant behind the flag, so merging it is
+safe ahead of the operator steps.
