@@ -57,6 +57,16 @@ def _fresh_quota_backend(monkeypatch):
             return False
 
     monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfigured())
+    # T4 of the token-meter migration loosened tailored_applications to
+    # UNLIMITED in the production TIER_CAPS. The gate CODE in
+    # run_workspace_analysis is still present and revertable ("not a
+    # hard swap"), so this file pins the pre-migration finite caps to
+    # verify that gate machinery still fires correctly. The production
+    # cap POLICY (UNLIMITED) is asserted in test_tiers.py; the LIVE LLM
+    # gate for /workspace/analyze is the llm_tokens meter, covered by
+    # the test_*_llm_token_meter_* tests below.
+    for _tier, _cap in (("free", 3), ("pro", 20), ("business", 80)):
+        monkeypatch.setitem(quota.TIER_CAPS[_tier], "tailored_applications", _cap)
     reset_in_memory_backend()
     yield
     reset_in_memory_backend()

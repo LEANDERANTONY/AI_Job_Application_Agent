@@ -2937,3 +2937,86 @@ fallback if the render errors.
 Verification: frontend tsc + eslint clean; 63/63
 `test_backend_workspace.py` (incl. 3 new `/resume-builder/preview`
 route tests — themed HTML, unknown-session 400, unknown-theme 422).
+
+## Day 64: Unified LLM token meter — built + activated (T1–T4)
+
+Replaced the scattered per-feature LLM quota gates with ONE per-user
+weekly **token meter** (report.md "Unified LLM token meter"). Built as
+four slices; the meter is now the live LLM gate.
+
+### The meter (T1 — `backend/quota.py` + `backend/tiers.py`)
+
+A new `llm_tokens` counter on every tier — Free **90K** / Pro **1M** /
+Business **4M** raw model tokens (prompt + completion) per ISO week.
+Weekly reset for every tier (paid plans still *bill* monthly; the
+allowance just refills weekly). `weekly_period_key` is
+`isocalendar()`-based so the Jan-1 ISO-year boundary is correct.
+
+The meter is two-phase because a call's token cost is unknowable until
+it returns:
+- `enforce_llm_budget(user_id, tier)` — the entry check. Pure
+  read + compare; raises the canonical 429 when the meter is already
+  at/over cap. Fails OPEN on a transient backend read error.
+- `record_llm_token_usage(user_id, tokens)` — the after-call record.
+  Increments by N with `cap=UNLIMITED` so it NEVER raises (the op
+  already ran); best-effort, swallows backend errors.
+
+Check-before / increment-after means a user overshoots by at most ONE
+operation — the trade that guarantees any started operation finishes
+(the "≥1 full agentic run on a fresh week" guarantee).
+
+### Accounting (T2 — `OpenAIService`)
+
+`OpenAIService._record_usage` is the one method every
+`responses.create` round-trip funnels through (incl. each tool-loop
+iteration). Metering there — via a new `_record_token_meter`, which
+dispatches like `_record_cost_trace` (injected recorder for tests,
+else the `user_id` path → `record_llm_token_usage`) — counts all real
+token spend with a single hook. No-op without a `user_id`, so eval /
+nightly runs are never metered.
+
+Honest limitation: the two dominant operations (the agentic analysis
+run, the résumé builder) build their service through
+`build_openai_service_for_context` and ARE fully metered; the small
+`*_auto` sub-parsers build a bare `OpenAIService()` and under-count by
+~1–2K each. The under-count makes the meter slightly *generous* (safe
+direction) and the spec already calls for recalibrating the caps from
+real `run_traces` post-launch.
+
+### Enforcement (T3)
+
+`enforce_llm_budget` at each LLM operation entry — resume parse,
+analysis run, assistant (sync + stream) inline in `workspace_service`;
+résumé-builder message / generate + JD upload via a
+`_enforce_request_llm_budget` route helper. At operation entry, never
+per-call: a mid-pipeline raise would let agents silently fall back to
+the deterministic path and hide the cap.
+
+### Migration — activate over the old gates (T4)
+
+The four superseded per-feature gates — `tailored_applications`,
+`resume_builder_sessions`, `assistant_turns`, `resume_parses` — are
+loosened to `UNLIMITED` so the token meter is the single LLM gate.
+`premium_applications` STAYS (premium-model entitlement, not a usage
+count); the non-LLM caps (`job_searches`, `saved_jobs`,
+`saved_workspaces`) are untouched.
+
+"Loosen, not delete" — the `check_and_increment` call sites stay
+(UNLIMITED makes them clean no-ops), so the migration reverts by
+flipping 12 numbers. `test_tiers.py` asserts the new UNLIMITED policy;
+the per-feature gate-machinery tests pin the pre-migration finite caps
+in their fixtures (the gate code is live + revertable, so the
+machinery stays under test).
+
+Verification: 88/88 across the five quota suites; broader workspace +
+search/saved suites green. ~13 new token-meter tests.
+
+### Still ahead
+
+T5 — require login for résumé-builder LLM use (close the anonymous,
+un-meterable path). T6 — surface the weekly token usage in
+`/workspace/quota` (it currently reads `llm_tokens` under the wrong
+*monthly* period key) + a usage bar in the workspace UI; refresh the
+landing-page pricing copy off the per-feature caps. gpt-5.5 premium is
+already gated off Free by the surviving `premium_applications` cap-0,
+so it needs no new logic.

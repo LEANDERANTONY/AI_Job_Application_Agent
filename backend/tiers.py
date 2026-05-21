@@ -22,29 +22,31 @@ PR. Numbers below mirror the locked table from the
 `feat/tier-enforcement` brief:
 
     COUNTER                     PERIOD       FREE    PRO       BUSINESS
-    tailored_applications       monthly      3       20        80
+    tailored_applications       —*           ∞       ∞         ∞
     premium_applications        monthly      0       5         25
-    resume_builder_sessions     lifetime*    1       3         15
-    assistant_turns             monthly      20      150       500
-    resume_parses               monthly      3       25        100
-    llm_tokens                  weekly†      90000   1000000   4000000
+    resume_builder_sessions     —*           ∞       ∞         ∞
+    assistant_turns             —*           ∞       ∞         ∞
+    resume_parses               —*           ∞       ∞         ∞
+    llm_tokens                  weekly       90000   1000000   4000000
     job_searches                monthly      50      ∞         ∞
     saved_jobs                  persistent   5       1000      ∞
     saved_workspaces            persistent   1       5         ∞
 
-    * Free uses a lifetime counter; Pro and Business reset monthly.
-      `check_and_increment` accepts a `lifetime=` flag so the call
-      site, not this table, decides which period_key to use.
-    † `llm_tokens` is the unified LLM usage meter (report.md "Unified
-      LLM token meter") — raw model tokens (prompt + completion), with
-      an ISO-week reset for EVERY tier (paid plans still bill monthly;
-      the usage allowance just refills weekly). It is metered through
-      `backend.quota.record_llm_token_usage` / `enforce_llm_budget`,
-      NOT `check_and_increment`. It supersedes the four monthly/lifetime
-      LLM gates above (tailored_applications, resume_builder_sessions,
-      assistant_turns, resume_parses) — those are loosened to UNLIMITED
-      while the meter is confirmed, then deleted. premium_applications
-      STAYS: it is the premium-model entitlement, not a usage count.
+    * SUPERSEDED by the `llm_tokens` meter (report.md "Unified LLM
+      token meter"). `llm_tokens` accumulates raw model tokens (prompt
+      + completion) with an ISO-week reset for EVERY tier — paid plans
+      still bill monthly, the usage allowance just refills weekly — and
+      is metered through `backend.quota.record_llm_token_usage` /
+      `enforce_llm_budget`, NOT `check_and_increment`. The four gates
+      marked `—*` (tailored_applications, resume_builder_sessions,
+      assistant_turns, resume_parses) are loosened to UNLIMITED so the
+      meter is the single LLM gate; their `check_and_increment` call
+      sites are now no-ops (UNLIMITED short-circuits). They stay in the
+      matrix — revertable, "not a hard swap" — and get deleted once the
+      meter is confirmed. premium_applications STAYS: it is the
+      premium-model entitlement (Free 0 ⇒ no gpt-5.5), not a usage
+      count. saved_jobs / saved_workspaces are persistent caps and use
+      a `lifetime`-style period_key the call site supplies.
 
 `UNLIMITED` (= -1) marks "no cap"; the quota helper short-circuits
 when the cap equals this sentinel rather than performing an increment.
@@ -104,11 +106,19 @@ UNLIMITED = -1
 # to touch this table.
 TIER_CAPS: dict[Tier, dict[str, int]] = {
     "free": {
-        "tailored_applications": 3,
+        # tailored_applications / resume_builder_sessions /
+        # assistant_turns / resume_parses are SUPERSEDED by the
+        # llm_tokens meter below — loosened to UNLIMITED here (T4 of the
+        # token-meter migration; revertable, deleted once the meter is
+        # confirmed). Their check_and_increment call sites still run but
+        # short-circuit on UNLIMITED, so they no longer gate anything.
+        "tailored_applications": UNLIMITED,
+        # premium_applications STAYS — the premium-model entitlement
+        # (Free 0 ⇒ no gpt-5.5), not a usage count.
         "premium_applications": 0,
-        "resume_builder_sessions": 1,
-        "assistant_turns": 20,
-        "resume_parses": 3,
+        "resume_builder_sessions": UNLIMITED,
+        "assistant_turns": UNLIMITED,
+        "resume_parses": UNLIMITED,
         # Unified weekly LLM token meter — the primary LLM gate. 90K ≈
         # one builder-built résumé + ~2 tailored apps (or ~5 apps on an
         # uploaded résumé): enough to prove value, not run a job search.
@@ -118,11 +128,13 @@ TIER_CAPS: dict[Tier, dict[str, int]] = {
         "saved_workspaces": 1,
     },
     "pro": {
-        "tailored_applications": 20,
+        # Superseded LLM gates — see the "free" block + the matrix
+        # footnote. UNLIMITED here; llm_tokens is the live LLM gate.
+        "tailored_applications": UNLIMITED,
         "premium_applications": 5,
-        "resume_builder_sessions": 3,
-        "assistant_turns": 150,
-        "resume_parses": 25,
+        "resume_builder_sessions": UNLIMITED,
+        "assistant_turns": UNLIMITED,
+        "resume_parses": UNLIMITED,
         # 1M tokens/week ≈ $5 worst-case LLM cost against $9/mo revenue
         # (conservative blended ~$5-6/Mtok; true rate is lower since
         # most calls run on gpt-5.4-mini). Recalibrate post-launch.
@@ -132,11 +144,13 @@ TIER_CAPS: dict[Tier, dict[str, int]] = {
         "saved_workspaces": 5,
     },
     "business": {
-        "tailored_applications": 80,
+        # Superseded LLM gates — see the "free" block + the matrix
+        # footnote. UNLIMITED here; llm_tokens is the live LLM gate.
+        "tailored_applications": UNLIMITED,
         "premium_applications": 25,
-        "resume_builder_sessions": 15,
-        "assistant_turns": 500,
-        "resume_parses": 100,
+        "resume_builder_sessions": UNLIMITED,
+        "assistant_turns": UNLIMITED,
+        "resume_parses": UNLIMITED,
         # 4M tokens/week ≈ $20 worst-case against $29/mo revenue.
         "llm_tokens": 4_000_000,
         "job_searches": UNLIMITED,

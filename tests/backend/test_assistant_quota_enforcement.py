@@ -20,6 +20,14 @@ What we verify:
 
 Tests reach in past the route when they need to inject a synthetic
 authenticated context; HTTP-surface tests use the FastAPI TestClient.
+
+NOTE (token-meter migration, T4): ``assistant_turns`` has been
+SUPERSEDED by the unified weekly ``llm_tokens`` meter and loosened to
+UNLIMITED in production. The ``assistant_turns`` tests below still
+pass because the autouse fixture pins the pre-migration finite caps —
+they verify the (revertable) per-feature gate machinery. The LIVE LLM
+gate for the assistant is now the token meter, covered by
+``test_token_meter_blocks_assistant_at_cap``.
 """
 from __future__ import annotations
 
@@ -30,7 +38,11 @@ from fastapi.testclient import TestClient
 
 from backend import quota
 from backend.app import app
-from backend.quota import current_period_key, reset_in_memory_backend
+from backend.quota import (
+    current_period_key,
+    record_llm_token_usage,
+    reset_in_memory_backend,
+)
 from backend.services import workspace_service
 from backend.services.auth_session_service import AuthenticatedContext
 from backend.tiers import TIER_CAPS
@@ -56,6 +68,16 @@ def _fresh_quota_backend(monkeypatch):
             return False
 
     monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfigured())
+    # T4 of the token-meter migration loosened assistant_turns to
+    # UNLIMITED in the production TIER_CAPS. The gate CODE in
+    # answer_workspace_question / prepare_stream_workspace_question is
+    # still present and revertable ("not a hard swap"), so this file
+    # pins the pre-migration finite caps to verify that gate machinery
+    # still fires. The production cap POLICY (UNLIMITED) is asserted in
+    # test_tiers.py; the LIVE LLM gate for the assistant is the
+    # llm_tokens meter (see test_token_meter_blocks_assistant_at_cap).
+    for _tier, _cap in (("free", 20), ("pro", 150), ("business", 500)):
+        monkeypatch.setitem(quota.TIER_CAPS[_tier], "assistant_turns", _cap)
     reset_in_memory_backend()
     yield
     reset_in_memory_backend()
@@ -329,3 +351,23 @@ def test_anonymous_streaming_chat_skips_the_gate(stub_assistant):
     assert "event: meta" in joined
     assert "event: delta" in joined
     assert "event: done" in joined
+
+
+# ─── unified LLM token meter — the LIVE assistant gate ───────────────────
+
+
+def test_token_meter_blocks_assistant_at_cap(stub_assistant):
+    """The LIVE LLM gate for the assistant post-migration: once the
+    user's weekly llm_tokens meter is at cap, a sync answer raises the
+    canonical 429 with counter='llm_tokens' — independent of the
+    (superseded) assistant_turns counter."""
+    user_id = "user-assistant-token-meter"
+    record_llm_token_usage(user_id, TIER_CAPS["free"]["llm_tokens"])
+    auth_context = _build_auth_context(user_id=user_id)
+
+    with pytest.raises(QuotaExceededError) as exc_info:
+        _answer(auth_context=auth_context)
+    err = exc_info.value
+    assert err.counter == "llm_tokens"
+    assert err.cap == TIER_CAPS["free"]["llm_tokens"] == 90_000
+    assert err.tier == "free"

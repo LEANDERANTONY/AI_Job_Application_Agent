@@ -45,6 +45,13 @@ def _fresh_quota_store(monkeypatch):
             return False
 
     monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfigured())
+    # T4 of the token-meter migration loosened tailored_applications to
+    # UNLIMITED. The snapshot tests below use it as the example
+    # incremented counter to verify the read-only snapshot reflects
+    # check_and_increment writes; pin its pre-migration finite cap so
+    # the increment actually writes a countable row.
+    for _tier, _cap in (("free", 3), ("pro", 20), ("business", 80)):
+        monkeypatch.setitem(quota.TIER_CAPS[_tier], "tailored_applications", _cap)
     quota.reset_in_memory_backend()
     yield
     quota.reset_in_memory_backend()

@@ -339,14 +339,17 @@ def test_every_tier_exposes_full_counter_set():
 
 def test_free_tier_caps_match_brief():
     free = TIER_CAPS["free"]
-    assert free["tailored_applications"] == 3
-    # Premium is Pro+ only. Cap of 0 means "no premium runs allowed",
-    # which the /workspace/run handler reports as "upgrade to Pro" —
-    # an explicit, distinct UX from "quota exhausted".
+    # The four per-feature LLM gates are SUPERSEDED by the llm_tokens
+    # meter (T4 of the token-meter migration) — loosened to UNLIMITED
+    # so the weekly token meter is the single LLM gate.
+    assert free["tailored_applications"] == UNLIMITED
+    assert free["resume_builder_sessions"] == UNLIMITED
+    assert free["assistant_turns"] == UNLIMITED
+    assert free["resume_parses"] == UNLIMITED
+    # premium_applications STAYS — Pro+ only, cap 0 means "no premium
+    # runs allowed", reported as "upgrade to Pro". It is the
+    # premium-model entitlement, not a usage count.
     assert free["premium_applications"] == 0
-    assert free["resume_builder_sessions"] == 1
-    assert free["assistant_turns"] == 20
-    assert free["resume_parses"] == 3
     # Unified weekly LLM token meter — the primary LLM gate.
     assert free["llm_tokens"] == 90_000
     assert free["job_searches"] == 50
@@ -356,11 +359,13 @@ def test_free_tier_caps_match_brief():
 
 def test_pro_tier_caps_match_brief():
     pro = TIER_CAPS["pro"]
-    assert pro["tailored_applications"] == 20
+    # Superseded LLM gates — UNLIMITED post-migration (see free-tier
+    # test). premium_applications stays as the premium-model gate.
+    assert pro["tailored_applications"] == UNLIMITED
+    assert pro["resume_builder_sessions"] == UNLIMITED
+    assert pro["assistant_turns"] == UNLIMITED
+    assert pro["resume_parses"] == UNLIMITED
     assert pro["premium_applications"] == 5
-    assert pro["resume_builder_sessions"] == 3
-    assert pro["assistant_turns"] == 150
-    assert pro["resume_parses"] == 25
     assert pro["llm_tokens"] == 1_000_000
     # "Unlimited" on the pricing page maps to the UNLIMITED sentinel
     # so check_and_increment short-circuits without an upsert.
@@ -371,11 +376,13 @@ def test_pro_tier_caps_match_brief():
 
 def test_business_tier_caps_match_brief():
     business = TIER_CAPS["business"]
-    assert business["tailored_applications"] == 80
+    # Superseded LLM gates — UNLIMITED post-migration (see free-tier
+    # test). premium_applications stays as the premium-model gate.
+    assert business["tailored_applications"] == UNLIMITED
+    assert business["resume_builder_sessions"] == UNLIMITED
+    assert business["assistant_turns"] == UNLIMITED
+    assert business["resume_parses"] == UNLIMITED
     assert business["premium_applications"] == 25
-    assert business["resume_builder_sessions"] == 15
-    assert business["assistant_turns"] == 500
-    assert business["resume_parses"] == 100
     assert business["llm_tokens"] == 4_000_000
     assert business["job_searches"] == UNLIMITED
     assert business["saved_jobs"] == UNLIMITED

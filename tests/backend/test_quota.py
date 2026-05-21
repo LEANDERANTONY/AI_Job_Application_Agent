@@ -59,9 +59,30 @@ def _fresh_quota_store(monkeypatch):
     # picks the in-memory backend even when running locally with
     # production credentials in the shell.
     monkeypatch.setattr(quota, "_SUPABASE_BACKEND", _NeverConfiguredBackend())
+    # The token-meter migration (T4) loosened the four per-feature LLM
+    # gates to UNLIMITED in the production TIER_CAPS. This file
+    # unit-tests the GENERIC check_and_increment machine — increment,
+    # cap-breach, refund, period-key partitioning — which needs a
+    # finite-capped counter to exercise. We pin the pre-migration
+    # finite values for the duration of each test (auto-reverted by
+    # monkeypatch). The product's real cap POLICY is asserted in
+    # test_tiers.py; this file only cares that the machine works.
+    for counter, by_tier in _PRE_T4_FINITE_CAPS.items():
+        for tier_name, cap in by_tier.items():
+            monkeypatch.setitem(quota.TIER_CAPS[tier_name], counter, cap)
     reset_in_memory_backend()
     yield
     reset_in_memory_backend()
+
+
+# Pre-migration finite caps for the four superseded LLM counters. See
+# the `_fresh_quota_store` fixture for why this file pins them.
+_PRE_T4_FINITE_CAPS: dict[str, dict[str, int]] = {
+    "tailored_applications": {"free": 3, "pro": 20, "business": 80},
+    "assistant_turns": {"free": 20, "pro": 150, "business": 500},
+    "resume_parses": {"free": 3, "pro": 25, "business": 100},
+    "resume_builder_sessions": {"free": 1, "pro": 3, "business": 15},
+}
 
 
 class _NeverConfiguredBackend:
