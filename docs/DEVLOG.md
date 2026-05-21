@@ -3728,3 +3728,65 @@ populated local `.env`, two unrelated tests
 fail because the dev `.env` sets `JOB_SEARCH_HYBRID_ENABLED=true`
 and `SUPABASE_SERVICE_ROLE_KEY`; both are green on CI (which ships
 no `.env`) and out of scope for this fix.
+
+## Day 74: Tier 2 hybrid search — backfill + the v1→v2 RPC rewrite
+
+Day 70 shipped Tier 2 as code + SQL files with the production
+rollout left as operator actions. This day is that rollout: the
+pgvector schema applied, the embedding corpus backfilled, the
+hybrid RPC turned on — and the RPC rewritten when its first cut
+buckled against the real corpus.
+
+**Backfill — 14,319 / 14,319 embedded.** `backfill_job_embeddings.py`
+processes at most 1000 rows per invocation (the PostgREST row cap),
+so it ran in a loop until `embedding IS NULL` returned zero: 16
+invocations, the last a no-op confirming nothing was left. Two
+single-row embedding failures along the way (passes 8 and 14, one
+row each, batch otherwise clean) self-healed — the `embedding IS
+NULL` filter makes the script resumable, so a later pass re-picked
+them. One-time cost landed within the $0.25–0.50 estimate. Final
+state: every cached job carries a `text-embedding-3-small` vector.
+
+**The v1 RPC timed out.** Smoke-testing `search_cached_jobs_hybrid`
+against the full corpus returned `57014: canceling statement due to
+statement timeout`. Root cause: v1 computed both ranks with window
+functions over one shared `candidates` CTE containing every
+filtered row. The semantic `row_number() OVER (ORDER BY embedding
+<=> ...)` therefore had to compute cosine distance for all ~14k
+rows and sort them — a window-function ORDER BY cannot use an
+index, so the HNSW index built in Phase A was never touched. Pure
+sequential distance math over the whole corpus, every call.
+
+**v2 — HNSW candidate pools.** The rewrite makes each retriever its
+own top-N query reading `cached_jobs` directly: `ORDER BY
+ts_rank(...) DESC LIMIT 200` for lexical (GIN index) and `ORDER BY
+embedding <=> p_query_embedding LIMIT 200` for semantic (HNSW
+index). An `ORDER BY ... LIMIT` on a base table is exactly the
+shape an index can serve, so both indexes are back in the plan.
+RRF fusion, the FULL OUTER JOIN, the sort modes, and the
+service_role-only grants are unchanged; a `NOT has_query AND NOT
+has_embedding` early branch handles browse mode without building
+either pool. EXPLAIN ANALYZE confirms `Index Scan using
+cached_jobs_embedding_hnsw_idx`; the call that timed out now
+returns in well under a second.
+
+**hnsw.ef_search stays at the default (40).** The semantic `LIMIT
+200` is bounded by `ef_search`, so the real semantic pool is ~40
+rows. Widening it was tried and dropped. A function-level `SET
+hnsw.ef_search` clause fails at CREATE time with `42501 permission
+denied to set parameter` — the migration role lacks the privilege.
+A body-level `SET LOCAL` fails at call time with `0A000 SET is not
+allowed in a non-volatile function`: the RPC is STABLE, and only
+VOLATILE functions may run SET. And the payoff would not justify it
+anyway — EXPLAIN ANALYZE at `ef_search = 100` measured ~650ms for
+the semantic scan against ~190ms at the default, roughly 3x the
+latency for a deeper pool a 20–50 row page does not need. 40
+semantic candidates fused against 200 lexical is ample. An operator
+who ever wants deeper recall can widen it globally with `ALTER
+DATABASE postgres SET hnsw.ef_search`.
+
+Verification: all three code paths return a full page against the
+live corpus — fusion (query + embedding), pure-lexical (query, no
+embedding), and browse (neither) — with no timeout.
+`docs/sql/supabase-cached-jobs-hybrid.sql` now mirrors the live
+function exactly.
