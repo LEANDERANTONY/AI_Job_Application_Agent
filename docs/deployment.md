@@ -8,17 +8,19 @@ into `architecture.md` or an ADR lives here.
 ## Scheduled jobs — the complete inventory
 
 This is the authoritative list of everything that runs on a schedule
-in production. **Nothing here spends OpenAI tokens.** Audited 2026-05-16.
+in production. **No scheduled job runs a chat / completion model.**
+The cache refresh does spend a small amount on *embeddings* — see the
+`cached_jobs_refresh` row. Audited 2026-05-22.
 
 | Job | Where | Schedule | What it does | LLM cost |
 | --- | --- | --- | --- | --- |
-| `cached_jobs_refresh` | Supabase `pg_cron` + `pg_net` | every 4h (`0 */4 * * *`, six runs/day) | POSTs `/api/admin/refresh-cache` so the backend re-polls the Greenhouse/Lever/Ashby/Workday boards into `cached_jobs` | **\$0** — upstream job-board APIs are free; no LLM in the refresh path |
+| `cached_jobs_refresh` | Supabase `pg_cron` + `pg_net` | every 4h (`0 */4 * * *`, six runs/day) | POSTs `/api/admin/refresh-cache` so the backend re-polls the Greenhouse/Lever/Ashby/Workday boards into `cached_jobs` | **~\$0** — job-board APIs are free; embeds only *newly-cached* jobs with `text-embedding-3-small` when `JOB_SEARCH_HYBRID_ENABLED` is on (a few cents/day). No chat-model call |
 | `cleanup-expired-resume-builder-sessions` | Supabase `pg_cron` | every 5 min (`*/5 * * * *`) | Hard-deletes `resume_builder_sessions` rows past their 7-day TTL | **\$0** — plain SQL `DELETE`, no LLM |
 | `backend.nightly_eval` | VPS host crontab | **NOT INSTALLED** | Would run the LLM quality eval; deliberately not scheduled | would be ~\$0.25/run if enabled |
 
 Two things worth internalizing:
 
-1. **The only scheduled LLM-spending job that *could* exist is `nightly_eval`, and it is intentionally not on the cron.** See the next section + [ADR-026](adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md). If you ever see OpenAI spend with no user traffic, it is NOT a rogue cron — check for a stuck retry loop or a manual run left running instead.
+1. **The only scheduled job that runs a chat / completion model is `nightly_eval`, and it is intentionally not on the cron.** See the next section + [ADR-026](adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md). The cache refresh's embed-on-write spends a little on the cheap embeddings model; a *chat-model* bill with no user traffic is NOT a rogue cron — check for a stuck retry loop or a manual run left running instead.
 2. **The cache-refresh schedule drifted from its own template.** `docs/sql/job_cache_cron_setup.sql` still defaults to `*/30 * * * *` (every 30 min — the original aggressive cadence). Production was dialed back to `0 */4 * * *` (every 4h) to cut Supabase `pg_net` egress + backend churn once the job catalog stopped changing every few minutes. The SQL file is a template, not the source of truth; `SELECT jobname, schedule FROM cron.job;` in the Supabase SQL editor is. If you re-run the template verbatim it will re-pin the schedule to 30 min — edit the cron expression before pasting.
 
 ## Nightly quality eval (`backend.nightly_eval`) — manual-only
@@ -234,3 +236,15 @@ LLM-spending cron — see the inventory at the top).
    spend. The absence is deliberate and documented in
    [ADR-026](adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md);
    it stays off until revenue justifies it.
+6. **Embed-on-write must only embed NEW jobs — never re-embed the
+   corpus.** With `JOB_SEARCH_HYBRID_ENABLED=true`, the cache refresh
+   embeds newly-cached postings into the `cached_jobs.embedding`
+   pgvector column. An earlier cut re-embedded and re-wrote *every*
+   job's vector on *every* refresh; the HNSW-index churn blew the
+   chunk-upsert statement timeout (`57014`), failed the refresh in a
+   loop, piled up dead tuples, and the resulting autovacuum saturated
+   the database enough to time `/api/jobs/search` out at the gateway.
+   The fix (DEVLOG Day 75) embeds only new / un-embedded rows. If job
+   search starts timing out after a refresh, check the backend logs
+   for `Failed to upsert chunk ... 57014` — that signature means
+   embed-on-write is churning the index again.

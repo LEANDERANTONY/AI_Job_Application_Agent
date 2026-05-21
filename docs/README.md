@@ -49,7 +49,9 @@ The `docs/sql/*.sql` files are reference copies of the Supabase migrations appli
 | `docs/sql/supabase-subscriptions.sql` | `aijobagent_subscriptions` table for the Lemon Squeezy integration |
 | `docs/sql/supabase-run-traces.sql` | `aijobagent_run_traces` cost-attribution table (prompt/completion tokens + USD cost) |
 | `docs/sql/supabase-feedback.sql` | `aijobagent_feedback` artifact thumbs-up/down table + RLS |
-| `docs/sql/supabase-cached-jobs-search.sql` | `search_cached_jobs_ranked` RPC: text-search + filters + sort + `LIMIT`/`OFFSET` pagination over `cached_jobs`. Was untracked (DB-only); now the source of truth. **service_role-only** EXECUTE — the REVOKEs are part of the canonical definition |
+| `docs/sql/supabase-cached-jobs-search.sql` | `search_cached_jobs_ranked` RPC: text-search + filters + sort + `LIMIT`/`OFFSET` pagination over `cached_jobs` (Tier 1 lexical search). **service_role-only** EXECUTE — the REVOKEs are part of the canonical definition |
+| `docs/sql/supabase-cached-jobs-pgvector.sql` | Tier 2 semantic-search schema: the `vector` extension, the `cached_jobs.embedding vector(1536)` column, and the HNSW cosine index |
+| `docs/sql/supabase-cached-jobs-hybrid.sql` | `search_cached_jobs_hybrid` RPC: Reciprocal Rank Fusion of the Tier 1 lexical ranking and a pgvector semantic ranking (HNSW candidate pools). **service_role-only** EXECUTE |
 | `docs/sql/job_cache_cron_setup.sql` | **Template, not source of truth.** The `cached_jobs` refresh pg_cron schedule. Defaults to `*/30`; production runs `0 */4`. `SELECT jobname, schedule FROM cron.job;` is authoritative |
 
 Update trigger: only when a new migration lands. Old `.sql` files are append-only.

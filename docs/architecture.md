@@ -39,7 +39,7 @@ This is no longer a Streamlit runtime. The old Streamlit shell and related deplo
 8. The orchestrator runs `tailoring`, `review`, `resume_generation`, and `cover_letter`. The earlier `fit` and `strategy` stages were removed from the live workflow; the deterministic fit-scoring service in `src/services/fit_service.py` is still available as a building block for `tailoring` but is no longer a visible workflow stage.
 9. Builders assemble the tailored resume and cover letter.
 10. The workspace assistant answers grounded questions from the current workspace state.
-11. Export helpers produce DOCX and PDF files for the current document; both formats share the same theme palette (`classic_ats`, `professional_neutral`). `professional_neutral` is the product-wide default theme. Format + theme are an entitlement gate: Free is limited to PDF + `professional_neutral`, Pro/Business unlock DOCX + `classic_ats`, enforced server-side on both export routes via the shared 429 upgrade path (see [ADR-027](adr/ADR-027-tier-gated-export-entitlement.md)).
+11. Export helpers produce DOCX and PDF files for the current document; both formats share one typed `ThemeSpec` registry — 12 résumé themes (6 single-column ATS-safe + 6 two-column). `professional_neutral` is the product-wide default theme. Format + theme are an entitlement gate: Free is limited to PDF + `professional_neutral`, Pro/Business unlock DOCX + every non-default theme, enforced server-side on both export routes via the shared 429 upgrade path (see [ADR-027](adr/ADR-027-tier-gated-export-entitlement.md), [ADR-029](adr/ADR-029-themespec-single-source-and-color-theme-expansion.md), [ADR-032](adr/ADR-032-two-column-resume-themes.md)).
 12. For authenticated users, the latest workspace snapshot and saved jobs are persisted in Supabase.
 
 ## Main Modules
@@ -141,7 +141,7 @@ The user-facing workspace is now centered on two visible outputs:
 - tailored resume
 - cover letter
 
-Both ship in two themes (`classic_ats`, `professional_neutral`) and both formats (DOCX, PDF). The earlier Markdown export path was removed in 2026-05 alongside the DOCX rollout. The earlier internal report builder was removed when the FitAgent + bundle endpoint were retired.
+Both ship in 12 themes (6 single-column ATS-safe + 6 two-column, all from one typed `ThemeSpec` registry — see [ADR-029](adr/ADR-029-themespec-single-source-and-color-theme-expansion.md) and [ADR-032](adr/ADR-032-two-column-resume-themes.md)) and both formats (DOCX, PDF). The earlier Markdown export path was removed in 2026-05 alongside the DOCX rollout. The earlier internal report builder was removed when the FitAgent + bundle endpoint were retired.
 
 ### Auth and Persistence Modules
 
@@ -151,7 +151,7 @@ Both ship in two themes (`classic_ats`, `professional_neutral`) and both formats
 - `src/quota_service.py`: computes daily quota state from persisted usage
 - `src/saved_workspace_store.py`: persists and loads the latest reloadable workspace snapshot
 - `src/saved_jobs_store.py`: persists and loads shortlisted jobs
-- `src/cached_jobs_store.py`: service-role-backed access layer for the global `cached_jobs` index — bulk upsert, smart cleanup, ranked search via Postgres RPC; see [ADR-013](adr/ADR-013-cached-jobs-cache-layer-with-scheduled-refresh.md) and [ADR-014](adr/ADR-014-postgres-rpc-for-ranked-search.md)
+- `src/cached_jobs_store.py`: service-role-backed access layer for the global `cached_jobs` index — bulk upsert (with embed-on-write for newly-cached jobs when hybrid search is enabled), smart cleanup, and lexical + hybrid search via Postgres RPCs; see [ADR-013](adr/ADR-013-cached-jobs-cache-layer-with-scheduled-refresh.md) and [ADR-014](adr/ADR-014-postgres-rpc-for-ranked-search.md)
 - `src/resume_builder_store.py`: persists and loads conversational resume-builder draft sessions (`resume_builder_sessions` table) with the 7-day TTL + active-user refresh policy; see [ADR-016](adr/ADR-016-conversational-llm-resume-builder.md)
 
 ### `src/config.py`
@@ -215,7 +215,7 @@ Each `saved_jobs` row stores one shortlisted posting per user and normalized job
 
 Each `resume_builder_sessions` row stores one in-progress conversational resume-builder draft per user with a 7-day TTL refreshed on every save. A `pg_cron` job (`cleanup-expired-resume-builder-sessions`) hard-deletes expired rows every 5 min and RLS hides expired rows from per-user queries; see [ADR-016](adr/ADR-016-conversational-llm-resume-builder.md).
 
-Each `cached_jobs` row holds one upstream posting keyed on `(source, job_id)`. The table has GENERATED STORED columns (`work_mode`, `employment_type_norm`) backing the dropdown filters and `removed_at` tombstones for upstream-closed jobs the user has bookmarked. A `pg_cron` + `pg_net` schedule (`cached_jobs_refresh_4h`) POSTs to `/admin/refresh-cache` every 4 hours, six times a day (see `docs/sql/job_cache_cron_setup.sql` for the template — production runs `0 */4 * * *`); ranked search reads from this table via the `search_cached_jobs_ranked` RPC, per [ADR-014](adr/ADR-014-postgres-rpc-for-ranked-search.md).
+Each `cached_jobs` row holds one upstream posting keyed on `(source, job_id)`. The table has GENERATED STORED columns (`work_mode`, `employment_type_norm`) backing the dropdown filters, `removed_at` tombstones for upstream-closed jobs the user has bookmarked, and an `embedding vector(1536)` column (pgvector, HNSW cosine index) for semantic search. A `pg_cron` + `pg_net` schedule (`cached_jobs_refresh_4h`) POSTs to `/admin/refresh-cache` every 4 hours, six times a day (see `docs/sql/job_cache_cron_setup.sql` for the template — production runs `0 */4 * * *`). Search is two-tier: the lexical `search_cached_jobs_ranked` RPC ([ADR-014](adr/ADR-014-postgres-rpc-for-ranked-search.md)) and the hybrid `search_cached_jobs_hybrid` RPC, which fuses that lexical ranking with a pgvector semantic ranking via Reciprocal Rank Fusion. The hybrid path is gated behind the `JOB_SEARCH_HYBRID_ENABLED` flag and degrades to lexical on any failure.
 
 `aijobagent_run_traces` is an append-only cost-attribution table — one row per successful LLM call (`user_id`, `model`, `task`, `prompt_tokens`, `completion_tokens`, `cost_usd`, `created_at`). Writes are best-effort: a missing table or a write error never propagates to the user-facing path. It is the canonical answer to "what is OpenAI spend doing", separate from the Sentry/PostHog telemetry surface.
 

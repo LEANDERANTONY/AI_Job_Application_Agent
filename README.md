@@ -30,11 +30,11 @@
 
 | System | What it does |
 |--------|--------------|
-| **Live job search** | Cached index of ~12,000 open roles from Greenhouse, Lever, Ashby, and Workday — refreshed every 4 hours. Filter by company, work mode, role type, posted-within. Sort by relevance, recency, or alphabetical. |
+| **Live job search** | Cached index of ~14,000 open roles from Greenhouse, Lever, Ashby, and Workday — refreshed every 4 hours. Hybrid relevance ranking fuses Postgres full-text search (with deterministic synonym / abbreviation expansion) and pgvector semantic similarity. Filter by company, work mode, role type, posted-within. Sort by relevance, recency, or alphabetical. |
 | **Resume intake** | Upload PDF / DOCX / TXT, or chat one into existence with the conversational builder. Parsed into a normalized profile with skills, experience timeline, projects, publications, and certifications. |
 | **JD review** | LLM-first JD parser with regex fallback. Surfaces hard skills, soft skills, and must-haves; shows match score against the loaded resume. |
 | **Supervised pipeline** | Matchmaker → Forge (tailoring) → Gatekeeper (review) → Resume Generation → Cover Letter. Three-layer LLM retry stack with per-agent fallback isolation, deterministic floor on every stage. |
-| **Artifact export** | Two themes (`classic_ats` for ATS parsers, `professional_neutral` for human readers) in DOCX or PDF. The same source data feeds either pathway. |
+| **Artifact export** | 12 résumé themes — 6 single-column (ATS-safe) + 6 bespoke two-column layouts, all from one typed `ThemeSpec` registry — in DOCX or PDF, with a matching cover letter. The same source data feeds either pathway. |
 | **Grounded assistant** | Floating workspace chat with full context of the loaded resume, JD, analysis state, and saved jobs. Streams answers as they generate. |
 | **Command palette** | `⌘K` / `Ctrl+K` from anywhere — jump between steps, load a saved job, re-ask a recent assistant question, or run the analysis. |
 | **Tier enforcement** | Per-(user, period, counter) atomic quota gates on every gated action (tailored applications, premium applications, assistant turns, resume parses, resume-builder sessions, job searches, saved jobs, saved workspaces). Free / Pro / Business cap matrix. Premium opt-in routes review + resume-gen + cover-letter to `gpt-5.5` while keeping tailoring on mini for COGS reasons. Refund-on-failure so a transient workflow error doesn't burn a credit. |
@@ -45,9 +45,9 @@
 
 The cached jobs layer lives in Postgres (`cached_jobs` table) and is refreshed by a scheduled worker that fans out across all four sources. Highlights:
 
-- **~117 Greenhouse boards** + **30 Lever sites** + **36 Ashby boards** + **11 Workday Fortune-500 tenants** in the active source pool.
+- **79 Greenhouse boards** + **6 Lever sites** + **36 Ashby boards** + **11 Workday Fortune-500 tenants** in the active source pool.
 - **4-hour refresh cadence** via `pg_net` cron triggering the `/admin/refresh-cache` endpoint (6 refreshes per day at 00:00 / 04:00 / 08:00 / 12:00 / 16:00 / 20:00 UTC).
-- **Relevance-ranked search** through a Postgres RPC that combines query token coverage with recency.
+- **Hybrid relevance ranking** — a Postgres RPC fuses lexical full-text search (with deterministic synonym / abbreviation query expansion) and pgvector semantic similarity via Reciprocal Rank Fusion, so a role surfaces whether it matches on keywords or on meaning. Gracefully degrades to pure lexical if the semantic side is unavailable.
 - **Saved-jobs drawer** with a 24-hour TTL — bookmarks survive page reloads but expire if you don't act on them, with an `EXPIRED` badge so nothing silently disappears.
 
 See [ADR-013](docs/adr/ADR-013-cached-jobs-cache-layer-with-scheduled-refresh.md) and [ADR-014](docs/adr/ADR-014-postgres-rpc-for-ranked-search.md) for the load-bearing decisions.
@@ -74,10 +74,10 @@ Each agent follows the same operating shape: deterministic baseline first, LLM-a
 
 ## Engineering notes
 
-- **61 Python test files** cover parsing, normalization, fitting, tailoring, orchestration, builders, exports, auth, quotas, persistence, the Lemon Squeezy webhook, voice transcription, artifact feedback, prompt-registry byte-identity, error handling, and the four ATS adapters.
+- **74 Python test files** cover parsing, normalization, fitting, tailoring, orchestration, builders, exports, auth, quotas, persistence, the Lemon Squeezy webhook, voice transcription, artifact feedback, prompt-registry byte-identity, error handling, hybrid job search, and the four ATS adapters.
 - **Quality runners** in `tests/quality/` produce evidence for each LLM-driven stage (parser, tailoring, review, resume gen, cover letter, assistant, JD parser, latency baseline). `backend/nightly_eval.py` wraps them into a single regression-checked batch — manual-only at pre-revenue stage by design, see [ADR-026](docs/adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md).
 - **Every LLM prompt loads from a versioned JSON registry** (`prompts/<name>/v1.json`) — all 11 builders migrated off Python f-string concats, each guarded by a byte-identity test so a template can't silently drift from its original.
-- **27 ADRs** in `docs/adr/` record the architectural decisions, including the Streamlit-first → Next.js + FastAPI transition (ADR-012), DOCX-first export (ADR-015), conversational builder (ADR-016), state-aware assistant (ADR-017), three-layer retry stack (ADR-018), independent step navigation (ADR-019), tier resolution shim (ADR-020), atomic quota with refund (ADR-021), tier-aware model selection (ADR-022), Lemon Squeezy as Merchant of Record for v1 (ADR-023), the observability stack (ADR-024), the EU cookie consent banner (ADR-025), manual-only nightly eval (ADR-026), and the tier-gated export entitlement (ADR-027).
+- **31 ADRs** in `docs/adr/` record the architectural decisions, including the Streamlit-first → Next.js + FastAPI transition (ADR-012), DOCX-first export (ADR-015), conversational builder (ADR-016), state-aware assistant (ADR-017), three-layer retry stack (ADR-018), independent step navigation (ADR-019), tier resolution shim (ADR-020), atomic quota with refund (ADR-021), tier-aware model selection (ADR-022), Lemon Squeezy as Merchant of Record for v1 (ADR-023), the observability stack (ADR-024), the EU cookie consent banner (ADR-025), manual-only nightly eval (ADR-026), the tier-gated export entitlement (ADR-027), LLM provider failover + premium reasoning tier (ADR-028), the single-source `ThemeSpec` registry (ADR-029), the résumé-builder agentic architecture (ADR-031), and the six bespoke two-column résumé themes (ADR-032).
 - **Architecture details** live in [docs/architecture.md](docs/architecture.md); the day-2 operational runbook in [docs/deployment.md](docs/deployment.md).
 
 ## Deployment
