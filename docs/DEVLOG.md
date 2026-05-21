@@ -3121,3 +3121,112 @@ Verification: 124 tests green (cost-tracking + openai-service +
 workspace-quota-enforcement + backend-workspace), incl. 3 new
 `meter_user_scope` tests — bare-service attribution, no leak past the
 scope, and service-`user_id`-wins-over-scope.
+
+## Day 68: Synonym / abbreviation query expansion for job search
+
+A relevance audit of the cached-jobs search (Postgres FTS over
+~14.3k active rows) found it does ZERO synonym handling. Hard
+evidence: a search for "ml" and a search for "machine learning"
+returned sets overlapping only 28%; "swe" matched just 53 jobs
+where the software-engineer corpus is in the thousands. An
+abbreviation user and a long-form user were getting two different
+products. This day fixes that with a deterministic,
+hand-curated expansion layer — no ML, no remote calls.
+
+### `src/job_search_synonyms.py` — the expander
+
+New module. `SYNONYM_CLUSTERS` is the curated data: ~30
+bidirectional equivalence classes across role abbreviations
+({swe, sde, software engineer, software developer}, {sre, site
+reliability engineer}, {mle, machine learning engineer}, {ds,
+data scientist}, {sr, senior}, …), tech/skill terms ({ml,
+machine learning}, {ai, artificial intelligence}, {k8s,
+kubernetes}, {llm, llms, large language model}, …), hyphenation
+variants ({frontend, front-end, front end}, {devops, dev ops},
+…), and one loose generic cluster {engineer, developer, dev}.
+
+Deliberately EXCLUDED (documented in-module so a future edit
+doesn't "helpfully" re-add them): `pm` (ambiguous — product /
+project / program manager), `fe` / `be` ("be" is an English
+word → the cluster pulls in noise), `it` (English pronoun →
+noise).
+
+`expand_query(raw)` lowercases + tokenizes (splitting on
+whitespace AND hyphen, so "front-end" / "front end" / "frontend"
+tokenize identically — that token-sequence equality is the whole
+hyphen-variant mechanism), then walks tokens left-to-right with a
+LONGEST-MATCH-FIRST window: at each position it tries the widest
+cluster member first, so "machine learning engineer" matches the
+3-token {mle,…} member rather than decomposing into {ml,…} + a
+bare "engineer". A matched span becomes the cluster's OR-group
+`(a | b | c)`; multi-word members render as `<->` phrases
+(`machine<->learning`); unmatched tokens pass through; parts are
+`&`-joined. Output is a Postgres `to_tsquery`-syntax string:
+`expand_query("ml engineer")` → `(ml | machine<->learning) &
+(engineer | developer | dev)`.
+
+`to_tsquery` is STRICT (raises on malformed input), so the
+tokenizer strips every char `to_tsquery` treats as an operator
+(`& | ! ( ) < > : ' "`) out of each lexeme and drops empties.
+Degenerate inputs — empty query, all-punctuation, a lone English
+stopword — collapse to `''`, which the RPC already reads as "no
+FTS filter → recent jobs". Crucially the module does NOT
+pre-stem: `to_tsquery('english', …)` runs the english dictionary
+over each lexeme itself, so this module only builds the
+boolean/phrase OPERATOR STRUCTURE.
+
+### RPC change: `websearch_to_tsquery` → `to_tsquery`
+
+`docs/sql/supabase-cached-jobs-search.sql` now parses `p_query`
+with `to_tsquery` instead of `websearch_to_tsquery`. This is
+REQUIRED, not cosmetic: `websearch_to_tsquery` has no
+parentheses and binds OR with the wrong precedence — it simply
+cannot express the `(a|b)&c` grouping the expander emits. The
+empty-`p_query` short-circuit and the rest of the function are
+untouched; the file stays idempotent (DROP+CREATE).
+
+DEPLOY COUPLING: the RPC change and the app code MUST ship
+together. Applying the migration alone breaks production search —
+the old app code sends raw user text, and raw text with a stray
+`:` / `&` / `(` makes `to_tsquery` raise. So the SQL file is
+delivered as a file only; it is NOT applied to prod by this work.
+
+### Wiring + tests
+
+`CachedJobsStore.search` now runs the raw query through
+`expand_query` before building `rpc_args` — `p_query` carries the
+expanded `to_tsquery` string. Empty/punctuation queries still
+reach the RPC as `''` so "browse recent" is preserved.
+
+New `tests/test_job_search_synonyms.py` (37 cases): each cluster
+type, multi-word members, longest-match-first, unmatched
+passthrough, operator-char stripping, the excluded terms staying
+un-expanded, and the degenerate `''` cases. A
+`_assert_tsquery_shaped` helper checks structural validity
+(balanced parens, no stray operators, no empty groups).
+`tests/test_cached_jobs_store.py` extended with four wiring
+tests + the existing `p_query` assertion updated to the expanded
+form. 102 tests green across the synonym + store + search-service
++ job-cache + backend-app suites.
+
+### Before/after probes (read-only, against prod data)
+
+Verified with read-only `SELECT count(*)` probes on the Supabase
+project (no writes, prod function untouched):
+  * "ml engineer": before (`websearch_to_tsquery`) = 1,181;
+    after (expanded `to_tsquery`) = 2,228. The new matches are
+    exactly the jobs the old search missed — "Principal Machine
+    Learning Engineer" (Roblox), "Research Engineer, Machine
+    Learning" (Anthropic) — caught only because `ml` now expands
+    to the `machine<->learning` phrase.
+  * "swe": before = 53; expanded = 3,577.
+2,228 sits just under the raw `ml ∪ machine-learning` union
+(2,395) because the expanded query also requires an
+engineer/developer/dev term — correct, more precise behaviour for
+the query "ml *engineer*".
+
+OPERATOR ACTION REQUIRED: at deploy time, apply
+`docs/sql/supabase-cached-jobs-search.sql` to the production
+Supabase database (it DROP+CREATEs the `search_cached_jobs_ranked`
+function) in the SAME release as this code. The migration alone,
+without the code, breaks search.

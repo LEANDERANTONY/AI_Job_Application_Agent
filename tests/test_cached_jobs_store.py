@@ -290,7 +290,13 @@ def test_search_calls_rpc_with_normalized_args(monkeypatch):
     """The store delegates to the search_cached_jobs_ranked RPC.
     Verify the kwargs match the function signature exactly so a
     contract drift between Python and the migration shows up here
-    instead of as a Postgres error at runtime."""
+    instead of as a Postgres error at runtime.
+
+    Note `p_query` is no longer the raw text — the store runs the
+    query through `expand_query` (src/job_search_synonyms.py), so
+    "machine learning" reaches the RPC as the `to_tsquery`-syntax
+    OR-group `(ml | machine<->learning)`. The RPC parses it with
+    `to_tsquery` accordingly."""
     monkeypatch.setattr(
         "src.cached_jobs_store.create_client", lambda url, key: None
     )
@@ -300,7 +306,7 @@ def test_search_calls_rpc_with_normalized_args(monkeypatch):
     )
     store = _make_store(client)
     rows = store.search(
-        query="  machine learning  ",   # whitespace stripped
+        query="  machine learning  ",   # whitespace stripped + expanded
         location="San Francisco",
         sources=["GREENHOUSE", "lever"],  # lower-cased
         remote_only=True,
@@ -318,7 +324,8 @@ def test_search_calls_rpc_with_normalized_args(monkeypatch):
     # `p_offset integer DEFAULT 0`, so a named-arg call against an
     # older function revision still works (uses the default).
     assert rpc.args == {
-        "p_query": "machine learning",
+        # "machine learning" -> expanded to_tsquery OR-group.
+        "p_query": "(ml | machine<->learning)",
         "p_location": "San Francisco",
         "p_sources": ["greenhouse", "lever"],
         "p_remote_only": True,
@@ -332,9 +339,10 @@ def test_search_calls_rpc_with_normalized_args(monkeypatch):
 
 
 def test_search_passes_empty_query_to_rpc_for_browse_mode(monkeypatch):
-    """Empty query → 'browse all recent' mode. The RPC handles this
-    server-side (skips the FTS filter); the store just forwards the
-    empty string."""
+    """Empty query → 'browse all recent' mode. `expand_query("")`
+    returns '', and the RPC handles '' server-side (skips the FTS
+    filter). So the store still forwards an empty p_query for the
+    no-search case."""
     monkeypatch.setattr(
         "src.cached_jobs_store.create_client", lambda url, key: None
     )
@@ -351,6 +359,68 @@ def test_search_passes_empty_query_to_rpc_for_browse_mode(monkeypatch):
     assert rpc.args["p_work_modes"] is None
     assert rpc.args["p_employment_types"] is None
     assert rpc.args["p_sort_by"] == "relevance"
+
+
+def test_search_expands_synonyms_into_p_query(monkeypatch):
+    """The store runs the raw query through `expand_query` before it
+    becomes `p_query`. "ml engineer" must reach the RPC as the
+    expanded `to_tsquery` string, not the raw text — this is what
+    makes "ml" also match "machine learning" jobs."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[])],
+    )
+    store = _make_store(client)
+    store.search(query="ml engineer", limit=20)
+    rpc = client.rpc_calls[0]
+    assert rpc.args["p_query"] == (
+        "(ml | machine<->learning) & (engineer | developer | dev)"
+    )
+
+
+def test_search_expands_abbreviation_and_hyphenation(monkeypatch):
+    """Two more wiring checks: a role abbreviation ("swe") and a
+    hyphenation variant ("front-end") both reach the RPC expanded."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[
+            SimpleNamespace(data=[]),
+            SimpleNamespace(data=[]),
+        ],
+    )
+    store = _make_store(client)
+
+    store.search(query="swe", limit=20)
+    assert client.rpc_calls[0].args["p_query"] == (
+        "(swe | sde | software<->engineer | software<->developer)"
+    )
+
+    store.search(query="front-end", limit=20)
+    assert client.rpc_calls[1].args["p_query"] == (
+        "(frontend | front<->end | front<->end)"
+    )
+
+
+def test_search_all_punctuation_query_collapses_to_empty_p_query(monkeypatch):
+    """An all-punctuation query (no searchable lexeme) must reach the
+    RPC as '' so it short-circuits to recent jobs instead of making
+    `to_tsquery` raise on malformed input."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[])],
+    )
+    store = _make_store(client)
+    store.search(query="  !!! ()&| ", limit=5)
+    assert client.rpc_calls[0].args["p_query"] == ""
 
 
 def test_search_forwards_offset_as_p_offset_clamped_non_negative(monkeypatch):
