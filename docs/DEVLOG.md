@@ -3481,3 +3481,118 @@ the flag. Run them strictly in order; each depends on the previous.
 Until step 4, the store stays entirely on the Tier 1 lexical path —
 this whole day's code is dormant behind the flag, so merging it is
 safe ahead of the operator steps.
+
+## Day 71: Six bespoke two-column résumé themes (ADR-032)
+
+Turned the six commissioned designer templates in `resume_builder/`
+into six selectable two-column résumé themes, retiring the old
+`presentation_twocol` placeholder. Theme count goes 7 → 12: six
+single-column ATS-safe themes + six two-column designer themes.
+
+### The problem and the decision (ADR-032)
+
+The product had ONE two-column theme, `presentation_twocol` — a
+single generic builder (`_build_resume_html_twocol`) rendering a
+Deedy-style layout from the same `ThemeSpec` palette as the
+single-column themes. It was always a placeholder "held pending a
+designer-grade rework". The operator commissioned that rework: six
+finished, genuinely-distinct HTML/CSS designs (`01-timeline-tech`,
+`02-editorial-minimal`, `04-classic-slate`, `05-monochrome-black`,
+`08-plum-berry`, `10-burgundy-champagne`) — different mastheads,
+section-header treatments, sidebar styling, and THREE distinct
+experience structures (dot-and-rail timeline / left date-gutter /
+head-row).
+
+One generic builder cannot express six bespoke designs. The
+decision (ADR-032): each two-column theme carries its OWN renderer,
+selected by a new `ThemeSpec.twocol_layout` field;
+`_build_resume_html`'s existing `layout == "two_column"` branch
+dispatches by theme through a `_TWOCOL_RENDERERS` table. Each
+renderer emits a full self-contained document — the design's own
+`<style>` block verbatim (the design IS the colour; these are not
+re-palettised through `ThemeSpec` colour fields) plus the template
+DOM bound to artifact data. Three shared experience-structure
+builders (timeline / gutter / head-row) are single-sourced and
+composed by the six renderers. `twocol_layout` is kept SEPARATE
+from `layout` so `layout` stays the binary single/two
+discriminator the cover-letter + DOCX paths read.
+
+### Fits the ADR-029 single-source model
+
+`ThemeSpec` gained exactly one field (`twocol_layout`). Every
+theme is still one registry entry; the résumé-HTML, cover-letter,
+and DOCX palettes + `SUPPORTED_THEMES` still all derive from
+`_THEME_SPECS`. A two-column theme's colour fields are set to its
+design's palette so its cover letter + DOCX (always single-column)
+come out in a matching key.
+
+### Data binding, robustness
+
+Every section binds to the artifact (`_TWOCOL_MAIN_SECTIONS` in the
+wide column, `_TWOCOL_SIDEBAR_SECTIONS` + contact in the sidebar);
+`section_order` is honored. Empty optional sections (no projects /
+publications / certifications) drop entirely — no orphan headers,
+no crashes. All user data is `html.escape`-d. The templates' own
+`page-break-inside: avoid` is preserved so long résumés paginate
+without splitting an entry. Two latent flex bugs in the source
+designs were corrected with invisible robustness guards (a head-row
+title `<div>` got `flex:1;min-width:0` so a wide date range no
+longer squeezes the title mid-word; the Classic Slate masthead role
+got `overflow-wrap:anywhere` so it can't clip off-page) — these only
+act on real-data edge cases the templates' dummy data never hit.
+
+### DOM order — header → main → sidebar
+
+The source templates author the sidebar `<aside>` FIRST in the DOM.
+The renderers emit `<main>` BEFORE `<aside class="sidebar">` and add
+`order:-1` to the `.sidebar` CSS so it still renders visually on the
+left — zero visual change, but the PDF text layer now extracts
+header → main → sidebar as a coherent linear read (the realistic
+tolerance ceiling for a deliberately non-ATS layout).
+
+### `presentation_twocol` retired
+
+`presentation_twocol` was the placeholder these six are the rework
+OF. Keeping it would be a seventh, strictly-worse two-column option.
+Removed: its `ThemeSpec`, its `RESUME_THEMES` entry, and the generic
+`_build_resume_html_twocol` / `_build_structured_resume_body_twocol`
+builders. It was never on the user surface (excluded from every
+picker + both backend `Literal`s), so this is not a user-facing
+regression. `_TWOCOL_MAIN_SECTIONS` / `_TWOCOL_SIDEBAR_SECTIONS`
+are kept — the six renderers reuse them.
+
+### Product-knowledge / POLICY REVERSAL
+
+Shipping six selectable two-column themes REVERSES the standing
+policy. `src/prompts.py` `_PRODUCT_KNOWLEDGE_BLOCK` previously said
+"There is no two-column, multi-column, or sidebar resume theme
+available today". That sentence is replaced with copy that
+describes the twelve themes accurately: six single-column ATS-safe
++ six two-column designer themes, the latter explicitly NOT
+ATS-safe (sidebar layout is the top résumé-parser failure cause)
+and gated to Pro/Business. Synced byte-for-byte across all three
+copies (`src/prompts.py` + `prompts/assistant/v1.json` +
+`prompts/assistant_text/v1.json`) so the `test_prompts.py`
+byte-identity guard stays green.
+
+### Wiring + gating
+
+Each theme: one `ThemeSpec`; a `RESUME_THEMES` entry in
+`src/resume_builder.py`; BOTH theme `Literal`s in
+`backend/workspace_models.py` (they previously EXCLUDED two-column
+themes — since these six ARE user-selectable, they are added); the
+frontend `ArtifactTheme` union, `THEME_OPTIONS`, `THEME_HINT` (each
+hint opens with an explicit "two-column — NOT ATS-safe" warning),
+and the builder `<select>`. Gating is unchanged: by-exclusion (any
+non-`professional_neutral` theme is Pro/Business) — no `tiers.py`
+edit. DOCX of a two-column theme renders single-column (DOCX
+two-column stays deferred per ADR-015 / ADR-029).
+
+Verification: full suite 865 passed (16 pre-existing failures in
+the rate-limit / quota / error-handling suites, unrelated to
+résumé rendering — confirmed identical to a clean-`main` baseline);
+five new two-column tests in `test_exporters.py` (section binding,
+empty-section dropping, HTML-escaping, PDF render, section order);
+frontend `tsc --noEmit` clean; all six themes rendered to PDF via
+WeasyPrint and visually verified against their source
+`resume_builder/` templates.
