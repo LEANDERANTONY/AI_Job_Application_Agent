@@ -3331,3 +3331,110 @@ def test_workspace_artifact_preview_endpoint_forwards_snapshot(monkeypatch):
     assert payload["status"] == "ready"
     assert payload["artifact_kind"] == "tailored_resume"
     assert captured["resume_theme"] == "classic_ats"
+
+
+# ─── PostHog funnel events ──────────────────────────────────────────────
+
+
+def test_resume_upload_emits_resume_uploaded_event(monkeypatch):
+    """A successful /resume/upload emits a `resume_uploaded` PostHog
+    funnel event carrying the file type."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    response = client.post(
+        "/api/workspace/resume/upload",
+        json=_encode_text_file_payload(
+            "resume.txt",
+            "Leander Antony\nChennai\nPython SQL Docker\n"
+            "Experience\nAI Engineer, Example Labs\n",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert [e["event"] for e in events] == ["resume_uploaded"]
+    assert events[0]["properties"]["file_type"] == "txt"
+
+
+def test_analyze_emits_analysis_started_event(monkeypatch):
+    """A successful /analyze emits an `analysis_started` event tagged
+    with the sync mode."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    response = client.post(
+        "/api/workspace/analyze",
+        json={
+            "resume_text": (
+                "Leander Antony\nPython SQL Docker AWS\n"
+                "Experience\nAI Engineer, Example Labs\n"
+                "Jan 2023 - Jan 2025\nBuilt production ML APIs.\n"
+            ),
+            "resume_filetype": "TXT",
+            "resume_source": "workspace",
+            "job_description_text": (
+                "Machine Learning Engineer\n"
+                "Required: Python, SQL, Docker, AWS.\n"
+            ),
+            "run_assisted": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert [e["event"] for e in events] == ["analysis_started"]
+    assert events[0]["properties"]["mode"] == "sync"
+    assert events[0]["properties"]["run_assisted"] is False
+
+
+def test_artifact_export_emits_artifact_exported_event(monkeypatch):
+    """A successful /artifacts/export emits an `artifact_exported`
+    event with the artifact kind + format."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+
+    def fake_export_workspace_artifact(
+        *, workspace_snapshot, artifact_kind, export_format,
+        resume_theme, cover_letter_theme
+    ):
+        return {
+            "status": "ready",
+            "artifact_kind": artifact_kind,
+            "export_format": export_format,
+            "file_name": "resume.pdf",
+            "mime_type": "application/pdf",
+            "content_base64": "cGRm",
+            "resume_theme": resume_theme,
+            "cover_letter_theme": cover_letter_theme,
+            "artifact_title": "Resume",
+        }
+
+    monkeypatch.setattr(
+        "backend.routers.workspace.export_workspace_artifact",
+        fake_export_workspace_artifact,
+    )
+    response = client.post(
+        "/api/workspace/artifacts/export",
+        json={
+            "workspace_snapshot": {
+                "candidate_profile": {"full_name": "Leander Antony"},
+                "job_description": {"title": "Machine Learning Engineer"},
+                "fit_analysis": {"overall_score": 82},
+                "tailored_draft": {"target_role": "Machine Learning Engineer"},
+            },
+            "artifact_kind": "tailored_resume",
+            "export_format": "pdf",
+            "resume_theme": "classic_ats",
+        },
+    )
+
+    assert response.status_code == 200
+    assert [e["event"] for e in events] == ["artifact_exported"]
+    assert events[0]["properties"]["artifact_kind"] == "tailored_resume"
+    assert events[0]["properties"]["export_format"] == "pdf"

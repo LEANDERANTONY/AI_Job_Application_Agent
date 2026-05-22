@@ -347,3 +347,51 @@ def test_admin_refresh_healthcheck_rejects_missing_bearer(monkeypatch):
     )
     response = client.post("/api/admin/refresh-healthcheck")
     assert response.status_code == 401
+
+
+def test_job_search_emits_job_searched_funnel_event(monkeypatch):
+    """A successful /jobs/search emits a `job_searched` PostHog event
+    carrying the result count, mode, and has_query flag."""
+    from src.schemas import JobPosting, JobSearchResult
+
+    class FakeService:
+        def search_cached(self, query):
+            return JobSearchResult(
+                query=query,
+                results=[
+                    JobPosting(
+                        id="demo:1",
+                        source="demo",
+                        title="ML Engineer",
+                        company="Demo Company",
+                        location="Remote",
+                    )
+                ],
+                total_results=1,
+                source_status={"backend": "ready"},
+            )
+
+        def search(self, query):
+            return self.search_cached(query)
+
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.jobs.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    app.dependency_overrides[get_job_search_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/api/jobs/search",
+            json={"query": "ml engineer", "page_size": 10},
+        )
+    finally:
+        app.dependency_overrides.pop(get_job_search_service, None)
+
+    assert response.status_code == 200
+    assert len(events) == 1
+    event = events[0]
+    assert event["event"] == "job_searched"
+    assert event["properties"]["mode"] == "cached"
+    assert event["properties"]["result_count"] == 1
+    assert event["properties"]["has_query"] is True

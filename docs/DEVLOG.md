@@ -3908,3 +3908,52 @@ checks, both hard-failure paths, and the degraded → ERROR-log alerting
 contract; `health_stats` store tests and `/admin/refresh-healthcheck`
 endpoint tests round it out. `cached_jobs_health_stats` is applied to
 the live database.
+
+## Day 77: PostHog funnel instrumentation — five server-side events
+
+A PostHog audit (the "Job Agent — Product Health" dashboard built
+alongside this work) found the product almost entirely
+un-instrumented: the backend emitted exactly one custom event,
+`feedback_submitted`. PostHog could see feedback and browser
+autocapture and nothing else — no job searches, no analyses, no
+exports, no plan-limit friction. You cannot visualise a funnel you
+never recorded.
+
+This slice records it. Five server-side `capture_event` calls at the
+load-bearing points of the job-application funnel:
+
+- **`job_searched`** (`routers/jobs.py`) — every `/jobs/search`. Props:
+  cached-vs-live mode, result count, has-query, tier.
+- **`resume_uploaded`** (`routers/workspace.py`) — `/resume/upload`.
+  Props: file type, tier.
+- **`analysis_started`** (`routers/workspace.py`) — both the sync
+  `/analyze` and the async `/analyze-jobs` route, distinguished by a
+  `mode` property. The core product action.
+- **`artifact_exported`** (`routers/workspace.py`) —
+  `/artifacts/export`. Props: artifact kind, format, themes, tier —
+  the conversion point.
+- **`quota_blocked`** (`quota.py`) — emitted at the two
+  `QuotaExceededError` raise sites that carry a user id
+  (`check_and_increment`, covering all metered counters, and
+  `enforce_llm_budget`). The friction signal: which plan limit are
+  users hitting.
+
+Design notes. Every event is emitted from the router (or, for
+`quota_blocked`, the quota module) — never the `src/` core, which must
+not depend on `backend/`. Each fires only AFTER the operation
+succeeds, mirroring the existing `feedback_submitted` precedent;
+`capture_event` is fire-and-forget and swallows every exception, so an
+analytics failure can never break a route. A new `_event_identity`
+helper resolves `(user_id, tier)` best-effort and never raises.
+`capture_event` now maps a falsy `distinct_id` to the constant
+`"anonymous"` so an unauthenticated job search still counts toward
+funnel volume instead of silently dropping. No PII in any property —
+counts, modes, tiers, formats, themes only.
+
+Verification: 877 tests green (full suite minus the network-bound
+`nightly_eval` + quality runners; the one `.env`-only retention
+failure is unrelated and green on CI). Six new tests — `quota_blocked`
+on both raise paths, `job_searched`, `resume_uploaded`,
+`analysis_started`, `artifact_exported` — added to the existing quota,
+app, and workspace suites. Also removed a pre-existing unused `Form`
+import flagged by ruff in `routers/workspace.py`.

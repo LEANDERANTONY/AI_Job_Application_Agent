@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+from backend.observability import capture_event
 from backend.tiers import (
     TIER_CAPS,
     UNLIMITED,
@@ -512,6 +513,19 @@ def check_and_increment(
             delta=1,
         )
     except _QuotaExceededAtBackend as exc:
+        # PostHog funnel event — quota friction. Captured here rather
+        # than in the global 429 handler because this is where the
+        # user id is in scope; covers every metered TIER_CAPS counter.
+        capture_event(
+            distinct_id=user_id,
+            event="quota_blocked",
+            properties={
+                "counter": exc.counter_name,
+                "tier": tier,
+                "cap": exc.cap,
+                "current": exc.current,
+            },
+        )
         raise _build_quota_exceeded_error(
             counter_name=exc.counter_name,
             current=exc.current,
@@ -682,6 +696,17 @@ def enforce_llm_budget(
     )
     if used < cap:
         return
+    # PostHog funnel event — the weekly LLM-token budget is exhausted.
+    capture_event(
+        distinct_id=normalized_user_id,
+        event="quota_blocked",
+        properties={
+            "counter": LLM_TOKENS_COUNTER,
+            "tier": tier,
+            "cap": cap,
+            "current": used,
+        },
+    )
     raise QuotaExceededError(
         "You've used your weekly AI usage allowance on this plan. "
         "Upgrade for a higher limit, or wait for the weekly reset.",

@@ -14,6 +14,7 @@ from backend.observability import (
     CACHED_JOBS_HEALTHCHECK_MONITOR_SLUG,
     CACHED_JOBS_REFRESH_MONITOR_CONFIG,
     CACHED_JOBS_REFRESH_MONITOR_SLUG,
+    capture_event,
     sentry_cron_monitor,
 )
 from backend.rate_limit import LIMIT_LLM, limiter
@@ -94,6 +95,20 @@ def search_jobs(
 
     domain_query = payload.to_domain()
     result = service.search(domain_query) if live else service.search_cached(domain_query)
+    # PostHog funnel event — the top of the job-application funnel.
+    # Server-side capture, fire-and-forget; carries no PII (counts +
+    # tier only). `quota_user_id` is "" for anonymous callers, which
+    # capture_event maps to the "anonymous" distinct id.
+    capture_event(
+        distinct_id=quota_user_id,
+        event="job_searched",
+        properties={
+            "mode": "live" if live else "cached",
+            "result_count": len(getattr(result, "results", []) or []),
+            "has_query": bool((payload.query or "").strip()),
+            "tier": tier,
+        },
+    )
     return JobSearchResponseModel.from_domain(result)
 
 

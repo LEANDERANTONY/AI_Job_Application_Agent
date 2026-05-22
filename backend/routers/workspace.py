@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from backend.observability import capture_event
@@ -125,6 +125,35 @@ def _resolve_export_tier(access_token: str, refresh_token: str):
     return resolve_user_tier(app_user)
 
 
+def _event_identity(access_token: str, refresh_token: str) -> tuple[str, str]:
+    """Best-effort ``(user_id, tier)`` for a PostHog funnel event.
+
+    NEVER raises — analytics attribution must not be able to break a
+    route. An anonymous or unresolvable caller resolves to
+    ``("", "free")``; ``capture_event`` maps the empty id to the
+    "anonymous" distinct id, so the event is still counted.
+    """
+    if not (access_token and refresh_token):
+        return ("", "free")
+    try:
+        auth_context = resolve_authenticated_context(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+    except Exception:  # noqa: BLE001 — analytics identity is best-effort
+        return ("", "free")
+    app_user = getattr(auth_context, "app_user", None) if auth_context else None
+    if app_user is None:
+        return ("", "free")
+    return (str(getattr(app_user, "id", "") or ""), resolve_user_tier(app_user))
+
+
+def _file_extension(filename: str | None) -> str:
+    """Lower-cased file extension without the dot, or "" when absent."""
+    name = str(filename or "")
+    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+
 def _resolve_openai_service(access_token: str, refresh_token: str):
     """Best-effort OpenAIService for an authenticated request.
 
@@ -243,13 +272,24 @@ def upload_resume(
     """
     access_token, refresh_token = auth_tokens
     try:
-        return parse_resume_upload(
+        result = parse_resume_upload(
             filename=payload.filename,
             mime_type=payload.mime_type,
             content_base64=payload.content_base64,
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
+        # PostHog funnel event — resume intake (upload path).
+        user_id, tier = _event_identity(access_token or "", refresh_token or "")
+        capture_event(
+            distinct_id=user_id,
+            event="resume_uploaded",
+            properties={
+                "tier": tier,
+                "file_type": _file_extension(payload.filename),
+            },
+        )
+        return result
     except AppError as error:
         _raise_http_error(error)
 
@@ -673,7 +713,7 @@ def analyze_workspace(
 ):
     access_token, refresh_token = auth_tokens
     try:
-        return run_workspace_analysis(
+        result = run_workspace_analysis(
             resume_text=payload.resume_text,
             resume_filetype=payload.resume_filetype,
             resume_source=payload.resume_source,
@@ -684,6 +724,21 @@ def analyze_workspace(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
+        # PostHog funnel event — the core product action (supervised
+        # pipeline). `mode` distinguishes the synchronous route from
+        # the async job route below.
+        user_id, tier = _event_identity(access_token or "", refresh_token or "")
+        capture_event(
+            distinct_id=user_id,
+            event="analysis_started",
+            properties={
+                "mode": "sync",
+                "tier": tier,
+                "premium": bool(payload.premium),
+                "run_assisted": bool(payload.run_assisted),
+            },
+        )
+        return result
     except AppError as error:
         _raise_http_error(error)
 
@@ -700,7 +755,7 @@ def start_workspace_analysis_job_route(
 ):
     access_token, refresh_token = auth_tokens
     try:
-        return start_workspace_analysis_job(
+        result = start_workspace_analysis_job(
             resume_text=payload.resume_text,
             resume_filetype=payload.resume_filetype,
             resume_source=payload.resume_source,
@@ -710,6 +765,19 @@ def start_workspace_analysis_job_route(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
+        # PostHog funnel event — async variant of the supervised
+        # pipeline. Emitted once the job is accepted onto the queue.
+        user_id, tier = _event_identity(access_token or "", refresh_token or "")
+        capture_event(
+            distinct_id=user_id,
+            event="analysis_started",
+            properties={
+                "mode": "async",
+                "tier": tier,
+                "premium": bool(payload.premium),
+            },
+        )
+        return result
     except WorkspaceRunJobCapacityError:
         raise HTTPException(
             status_code=503,
@@ -1107,13 +1175,29 @@ def export_workspace_artifact_route(
         themes=(payload.resume_theme, payload.cover_letter_theme),
     )
     try:
-        return export_workspace_artifact(
+        result = export_workspace_artifact(
             workspace_snapshot=payload.workspace_snapshot,
             artifact_kind=payload.artifact_kind,
             export_format=payload.export_format,
             resume_theme=payload.resume_theme,
             cover_letter_theme=payload.cover_letter_theme,
         )
+        # PostHog funnel event — the conversion point: the user took an
+        # artifact away. Theme + format properties show which export
+        # options actually get used.
+        user_id, tier = _event_identity(access_token or "", refresh_token or "")
+        capture_event(
+            distinct_id=user_id,
+            event="artifact_exported",
+            properties={
+                "artifact_kind": payload.artifact_kind,
+                "export_format": payload.export_format,
+                "resume_theme": payload.resume_theme,
+                "cover_letter_theme": payload.cover_letter_theme,
+                "tier": tier,
+            },
+        )
+        return result
     except AppError as error:
         _raise_http_error(error)
 

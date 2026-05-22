@@ -636,3 +636,48 @@ def test_token_meter_isolates_users_and_weeks():
 
 def test_read_llm_token_usage_blank_user_is_zero():
     assert read_llm_token_usage("", "free") == 0
+
+
+# ─── PostHog quota_blocked funnel event ─────────────────────────────────
+
+
+def test_quota_blocked_event_captured_on_cap_breach(monkeypatch):
+    """A cap-breaching check_and_increment emits a `quota_blocked`
+    PostHog event (counter + tier + cap) before the 429 is raised."""
+    events = []
+    monkeypatch.setattr(
+        quota, "capture_event", lambda **kwargs: events.append(kwargs)
+    )
+    for _ in range(3):
+        check_and_increment("tailored_applications", "user-q", "free")
+    with pytest.raises(QuotaExceededError):
+        check_and_increment("tailored_applications", "user-q", "free")
+
+    # Only the rejected 4th call emits — the 3 successes do not.
+    assert len(events) == 1
+    event = events[0]
+    assert event["event"] == "quota_blocked"
+    assert event["distinct_id"] == "user-q"
+    assert event["properties"]["counter"] == "tailored_applications"
+    assert event["properties"]["tier"] == "free"
+    assert event["properties"]["cap"] == 3
+    assert event["properties"]["current"] == 3
+
+
+def test_quota_blocked_event_captured_on_llm_budget_rejection(monkeypatch):
+    """An exhausted weekly LLM-token meter emits `quota_blocked` with
+    the llm_tokens counter."""
+    monkeypatch.setitem(quota.TIER_CAPS["free"], LLM_TOKENS_COUNTER, 100)
+    events = []
+    monkeypatch.setattr(
+        quota, "capture_event", lambda **kwargs: events.append(kwargs)
+    )
+    record_llm_token_usage("user-llm", 100)
+    with pytest.raises(QuotaExceededError):
+        enforce_llm_budget("user-llm", "free")
+
+    assert len(events) == 1
+    assert events[0]["event"] == "quota_blocked"
+    assert events[0]["distinct_id"] == "user-llm"
+    assert events[0]["properties"]["counter"] == LLM_TOKENS_COUNTER
+    assert events[0]["properties"]["tier"] == "free"

@@ -266,7 +266,10 @@ def capture_event(
 
     ``distinct_id`` is the Supabase user id from the auth context on
     the request scope — never a session token or anything that could
-    leak credentials.
+    leak credentials. A falsy ``distinct_id`` (an anonymous or
+    unresolved caller) falls back to the constant ``"anonymous"`` so
+    the event is still counted — funnel volume must not silently drop
+    just because a caller wasn't signed in.
 
     All events automatically include ``product: "jobagent"`` so the
     shared PostHog project can split events by product on the
@@ -280,7 +283,7 @@ def capture_event(
         merged.update(properties)
     with suppress(Exception):
         _posthog_client.capture(
-            distinct_id=distinct_id,
+            distinct_id=distinct_id or "anonymous",
             event=event,
             properties=merged,
         )
