@@ -278,21 +278,18 @@ def test_admin_refresh_cache_returns_503_when_secret_unconfigured(monkeypatch):
     assert response.status_code == 503
 
 
-def test_admin_refresh_cache_accepts_correct_bearer_then_runs_worker(monkeypatch):
-    """Right secret + worker stub → endpoint returns the worker's
-    report. Pins that the auth → worker handoff actually works."""
+def test_admin_refresh_cache_accepts_correct_bearer_then_schedules_worker(monkeypatch):
+    """Right secret → 202 immediately, with the refresh handed to a
+    background task. The endpoint no longer blocks on the multi-minute
+    refresh (which used to time the gateway out into a 524)."""
     monkeypatch.setattr(
         "backend.routers.jobs.REFRESH_CACHE_SECRET", "test-secret"
     )
+    ran = []
 
     def _fake_refresh():
-        return {
-            "started_at": "2026-05-07T18:00:00Z",
-            "finished_at": "2026-05-07T18:00:05Z",
-            "duration_seconds": 5.0,
-            "providers": {"greenhouse": {"status": "ok"}},
-            "total_active_after": 42,
-        }
+        ran.append(True)
+        return {"total_active_after": 42}
 
     monkeypatch.setattr(
         "backend.routers.jobs.refresh_cached_jobs", _fake_refresh
@@ -302,10 +299,11 @@ def test_admin_refresh_cache_accepts_correct_bearer_then_runs_worker(monkeypatch
         "/api/admin/refresh-cache",
         headers={"Authorization": "Bearer test-secret"},
     )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["total_active_after"] == 42
-    assert payload["providers"]["greenhouse"]["status"] == "ok"
+    assert response.status_code == 202
+    assert response.json()["status"] == "accepted"
+    # Starlette's TestClient runs background tasks before returning, so
+    # the worker has executed by the time the response is in hand.
+    assert ran == [True]
 
 
 def test_admin_refresh_healthcheck_runs_service_with_correct_bearer(monkeypatch):

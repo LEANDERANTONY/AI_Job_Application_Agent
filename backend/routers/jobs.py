@@ -1,6 +1,7 @@
+import logging
 import secrets
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 
 from backend import quota
 from backend.models import (
@@ -26,7 +27,10 @@ from backend.services.refresh_healthcheck_service import run_refresh_healthcheck
 from backend.tiers import resolve_user_tier
 from src.config import REFRESH_CACHE_SECRET
 from src.errors import AppError
+from src.logging_utils import get_logger, log_event
 
+
+LOGGER = get_logger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -152,32 +156,69 @@ def _verify_refresh_secret(authorization: str | None = Header(default=None)) -> 
         raise HTTPException(status_code=401, detail="Invalid refresh-cache token.")
 
 
-@admin_router.post("/refresh-cache")
-def refresh_cache(
-    request: Request,
-    _: None = Depends(_verify_refresh_secret),
-):
-    """Refresh cached_jobs from all configured providers.
+def _run_cache_refresh_job() -> None:
+    """Background-task body for ``POST /admin/refresh-cache``.
 
-    This is what Supabase pg_cron hits every 4 hours (six times a
-    day on the `0 */4 * * *` schedule). Returns the
-    structured refresh report (see `refresh_cached_jobs`) so cron
-    output can be inspected when something goes wrong.
+    The refresh fans out across ~130 ATS boards and runs for minutes —
+    far longer than the upstream gateway will wait — so it runs here,
+    after the endpoint has already returned 202. Running it inline made
+    the gateway time the *response* out at ~100s and record a
+    misleading ``524`` in the cron logs even though the refresh
+    completed server-side.
 
-    Wrapped in a Sentry cron check-in (`cached-jobs-refresh`): a
-    missed or errored check-in is how monitoring learns the 4-hourly
-    refresh stopped firing — pg_cron failing silently is otherwise
-    invisible.
+    The Sentry ``cached-jobs-refresh`` check-in wraps THIS function,
+    not the request, so its in_progress -> ok/error window reflects the
+    real refresh duration. Never raises: a background task has no
+    caller to surface an exception to, so any failure is recorded as an
+    errored cron check-in plus an ERROR-level log (a Sentry issue via
+    the LoggingIntegration) and swallowed. ``refresh_cached_jobs`` is
+    itself crash-safe and idempotent — a failed run is recovered by the
+    next 4-hourly tick.
     """
     try:
         with sentry_cron_monitor(
             CACHED_JOBS_REFRESH_MONITOR_SLUG,
             CACHED_JOBS_REFRESH_MONITOR_CONFIG,
         ):
-            report = refresh_cached_jobs()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return report
+            refresh_cached_jobs()
+    except Exception as exc:  # noqa: BLE001 — background-task boundary
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            "cached_jobs_refresh_background_failed",
+            f"Background cached_jobs refresh failed: "
+            f"{type(exc).__name__}: {exc}",
+            error=f"{type(exc).__name__}: {exc}",
+        )
+
+
+@admin_router.post("/refresh-cache", status_code=202)
+def refresh_cache(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(_verify_refresh_secret),
+):
+    """Trigger a cached_jobs refresh from all configured providers.
+
+    Supabase pg_cron hits this every 4 hours (`0 */4 * * *`). The
+    refresh fans out across ~130 ATS boards and runs for minutes —
+    longer than the upstream gateway will wait — so the work is handed
+    to a background task and the endpoint returns **202 Accepted**
+    immediately. Running it synchronously made the gateway time the
+    response out at ~100s and record a misleading `524` in the cron
+    logs, even though the refresh completed server-side.
+
+    The refresh outcome, its structured report, and the Sentry
+    `cached-jobs-refresh` cron check-in are all produced by the
+    background job — see `_run_cache_refresh_job`. A failed run
+    surfaces as an errored Sentry check-in plus an ERROR-level issue;
+    the daily `/admin/refresh-healthcheck` is the backstop.
+    """
+    background_tasks.add_task(_run_cache_refresh_job)
+    return {
+        "status": "accepted",
+        "detail": "cached_jobs refresh started in the background.",
+    }
 
 
 @admin_router.post("/refresh-healthcheck")

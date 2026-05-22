@@ -3957,3 +3957,29 @@ on both raise paths, `job_searched`, `resume_uploaded`,
 `analysis_started`, `artifact_exported` — added to the existing quota,
 app, and workspace suites. Also removed a pre-existing unused `Form`
 import flagged by ruff in `routers/workspace.py`.
+
+## Day 78: Async cache refresh — return 202, run in the background
+
+Verifying the Day 77 cron work surfaced an incidental finding in the
+pg_net response log: the 4-hourly `/admin/refresh-cache` call returns
+`524`. The refresh fans out across ~130 ATS boards and runs for
+minutes — past the upstream gateway's ~100s timeout — so the gateway
+gave up on the *response* and logged a 524, even though the refresh
+completed server-side every time (the healthcheck confirmed the cache
+was fresh, only ~2% stale). A misleading failure signal, not a real
+failure.
+
+The fix: `/admin/refresh-cache` now hands `refresh_cached_jobs` to a
+FastAPI `BackgroundTasks` job and returns **202 Accepted**
+immediately — the same decouple-the-response shape the `/analyze-jobs`
+route already uses. The Sentry `cached-jobs-refresh` cron check-in
+moved with the work: it now wraps the background
+`_run_cache_refresh_job`, not the request, so its
+in_progress -> ok/error window still spans the real refresh duration.
+The background task never raises — a failure becomes an errored
+check-in plus an ERROR-level log (a Sentry issue via the
+LoggingIntegration), and the daily healthcheck is the backstop.
+pg_cron now records a fast 202 instead of a 524; nothing else changes.
+
+Verification: test suite green; the `/admin/refresh-cache` endpoint
+test was updated to assert 202 + a scheduled background worker.
