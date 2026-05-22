@@ -306,3 +306,44 @@ def test_admin_refresh_cache_accepts_correct_bearer_then_runs_worker(monkeypatch
     payload = response.json()
     assert payload["total_active_after"] == 42
     assert payload["providers"]["greenhouse"]["status"] == "ok"
+
+
+def test_admin_refresh_healthcheck_runs_service_with_correct_bearer(monkeypatch):
+    """Right secret + service stub → /admin/refresh-healthcheck returns
+    the healthcheck report. Pins the auth → service handoff."""
+    monkeypatch.setattr(
+        "backend.routers.jobs.REFRESH_CACHE_SECRET", "test-secret"
+    )
+
+    def _fake_healthcheck():
+        return {
+            "checked_at": "2026-05-22T06:00:00+00:00",
+            "overall": "ok",
+            "checks": [
+                {"name": "refresh_recent", "status": "pass", "detail": "ok"},
+            ],
+            "stats": {"total_active": 13500},
+        }
+
+    monkeypatch.setattr(
+        "backend.routers.jobs.run_refresh_healthcheck", _fake_healthcheck
+    )
+
+    response = client.post(
+        "/api/admin/refresh-healthcheck",
+        headers={"Authorization": "Bearer test-secret"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overall"] == "ok"
+    assert payload["checks"][0]["name"] == "refresh_recent"
+
+
+def test_admin_refresh_healthcheck_rejects_missing_bearer(monkeypatch):
+    """The healthcheck endpoint shares the refresh-cache bearer gate —
+    no token → 401 before the service runs."""
+    monkeypatch.setattr(
+        "backend.routers.jobs.REFRESH_CACHE_SECRET", "test-secret"
+    )
+    response = client.post("/api/admin/refresh-healthcheck")
+    assert response.status_code == 401

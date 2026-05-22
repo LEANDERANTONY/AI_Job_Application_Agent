@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from src.cached_jobs_store import CachedJobsStore
 
 
@@ -1035,3 +1037,72 @@ def test_build_job_embedding_input_format_is_shared():
     assert build_job_embedding_input(
         title="", company="", description=""
     ).strip() != ""
+
+
+# ---------------------------------------------------------------------------
+# health_stats — aggregate snapshot for the daily refresh healthcheck.
+# ---------------------------------------------------------------------------
+
+
+def test_health_stats_calls_rpc_and_returns_payload(monkeypatch):
+    """health_stats() delegates to the cached_jobs_health_stats RPC,
+    forwards the staleness threshold as p_stale_after_hours, and
+    returns the jsonb payload as a dict."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    payload = {
+        "checked_at": "2026-05-22T06:00:00+00:00",
+        "total_active": 13500,
+        "stale_count": 120,
+        "null_embedding_count": 4,
+        "per_source": {"greenhouse": 9000, "lever": 500},
+    }
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=payload)],
+    )
+    store = _make_store(client)
+
+    result = store.health_stats(stale_after_hours=5)
+
+    assert result == payload
+    assert len(client.rpc_calls) == 1
+    assert client.rpc_calls[0].fn == "cached_jobs_health_stats"
+    assert client.rpc_calls[0].args == {"p_stale_after_hours": 5}
+
+
+def test_health_stats_unwraps_single_row_list(monkeypatch):
+    """A scalar-returning RPC is sometimes surfaced as a one-row list
+    by the PostgREST client; health_stats() unwraps it to the dict
+    either way."""
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+    payload = {"total_active": 10, "per_source": {}}
+    client = _FakeClient(
+        responses_per_table={},
+        rpc_responses=[SimpleNamespace(data=[payload])],
+    )
+    store = _make_store(client)
+
+    assert store.health_stats() == payload
+
+
+def test_health_stats_wraps_rpc_errors_in_apperror(monkeypatch):
+    """An RPC failure is wrapped as AppError so the caller surfaces a
+    clean message instead of a raw supabase exception."""
+    from src.errors import AppError
+
+    monkeypatch.setattr(
+        "src.cached_jobs_store.create_client", lambda url, key: None
+    )
+
+    class _RpcRaisesClient(_FakeClient):
+        def rpc(self, fn, args):
+            raise RuntimeError("function cached_jobs_health_stats does not exist")
+
+    store = _make_store(_RpcRaisesClient(responses_per_table={}))
+
+    with pytest.raises(AppError):
+        store.health_stats()

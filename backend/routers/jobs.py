@@ -9,11 +9,19 @@ from backend.models import (
     JobSearchRequestModel,
     JobSearchResponseModel,
 )
+from backend.observability import (
+    CACHED_JOBS_HEALTHCHECK_MONITOR_CONFIG,
+    CACHED_JOBS_HEALTHCHECK_MONITOR_SLUG,
+    CACHED_JOBS_REFRESH_MONITOR_CONFIG,
+    CACHED_JOBS_REFRESH_MONITOR_SLUG,
+    sentry_cron_monitor,
+)
 from backend.rate_limit import LIMIT_LLM, limiter
 from backend.request_auth import get_optional_auth_tokens
 from backend.services.auth_session_service import resolve_authenticated_context
 from backend.services.job_cache_service import refresh_cached_jobs
 from backend.services.job_search_service import JobSearchService, get_job_search_service
+from backend.services.refresh_healthcheck_service import run_refresh_healthcheck
 from backend.tiers import resolve_user_tier
 from src.config import REFRESH_CACHE_SECRET
 from src.errors import AppError
@@ -140,9 +148,55 @@ def refresh_cache(
     day on the `0 */4 * * *` schedule). Returns the
     structured refresh report (see `refresh_cached_jobs`) so cron
     output can be inspected when something goes wrong.
+
+    Wrapped in a Sentry cron check-in (`cached-jobs-refresh`): a
+    missed or errored check-in is how monitoring learns the 4-hourly
+    refresh stopped firing — pg_cron failing silently is otherwise
+    invisible.
     """
     try:
-        report = refresh_cached_jobs()
+        with sentry_cron_monitor(
+            CACHED_JOBS_REFRESH_MONITOR_SLUG,
+            CACHED_JOBS_REFRESH_MONITOR_CONFIG,
+        ):
+            report = refresh_cached_jobs()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return report
+
+
+@admin_router.post("/refresh-healthcheck")
+def refresh_healthcheck(
+    request: Request,
+    _: None = Depends(_verify_refresh_secret),
+):
+    """Daily health check of the cached_jobs refresh pipeline.
+
+    Supabase pg_cron hits this once a day (`0 6 * * *`). It does NOT
+    refresh anything — it reads aggregate stats off cached_jobs and
+    asserts the 4-hourly refresh is keeping the table healthy: recent,
+    complete, every job board present, embeddings current, corpus not
+    collapsed (see `run_refresh_healthcheck`).
+
+    Two distinct signals come out of this endpoint:
+      * The Sentry cron check-in (`cached-jobs-healthcheck`) — a
+        missed / errored check-in means the healthcheck itself did not
+        run.
+      * A degraded result is logged at ERROR inside the service, which
+        the Sentry LoggingIntegration raises as an issue. The endpoint
+        still returns 200 with `overall: "degraded"` — the healthcheck
+        DID run, so its cron monitor stays green; the ERROR issue is
+        what pages the operator.
+
+    The endpoint only 5xxs when the healthcheck genuinely could not
+    run (store unconfigured, stats RPC unavailable).
+    """
+    try:
+        with sentry_cron_monitor(
+            CACHED_JOBS_HEALTHCHECK_MONITOR_SLUG,
+            CACHED_JOBS_HEALTHCHECK_MONITOR_CONFIG,
+        ):
+            report = run_refresh_healthcheck()
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return report

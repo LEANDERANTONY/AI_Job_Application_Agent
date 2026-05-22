@@ -46,7 +46,8 @@ the guard kept the issue feed clean.
 from __future__ import annotations
 
 import logging
-from contextlib import suppress
+import time
+from contextlib import contextmanager, suppress
 from typing import Any
 
 from backend.config import BackendSettings
@@ -300,3 +301,128 @@ def shutdown_observability() -> None:
     with suppress(Exception):
         _posthog_client.shutdown()
     _posthog_client = None
+
+
+# ---------------------------------------------------------------------------
+# Sentry Cron Monitors — scheduled-job check-ins
+# ---------------------------------------------------------------------------
+#
+# Sentry "Cron Monitors" track whether a scheduled job ran, ran on
+# time, and ran to completion. Two pg_cron-driven jobs use them:
+#
+#   cached-jobs-refresh      — the 4-hourly cached_jobs refresh
+#                              (/admin/refresh-cache).
+#   cached-jobs-healthcheck  — the daily refresh healthcheck
+#                              (/admin/refresh-healthcheck).
+#
+# A check-in is upsert-style: passing `monitor_config` CREATES or
+# UPDATES the monitor (slug, schedule, alert thresholds) — so the
+# monitor is defined here in code and never needs setup in the Sentry
+# UI. If a job stops calling in, Sentry raises a "missed check-in"
+# issue from the schedule alone — the signal that catches "pg_cron
+# silently stopped firing", which an in-process logger cannot see.
+
+# Monitor configs, passed as `monitor_config` to `sentry_cron_monitor`.
+# `checkin_margin` / `max_runtime` are in MINUTES.
+CACHED_JOBS_REFRESH_MONITOR_SLUG = "cached-jobs-refresh"
+CACHED_JOBS_REFRESH_MONITOR_CONFIG: dict[str, Any] = {
+    "schedule": {"type": "crontab", "value": "0 */4 * * *"},
+    "timezone": "UTC",
+    "checkin_margin": 30,   # minutes a run may start late before "missed"
+    "max_runtime": 25,      # minutes a run may take before "timed out"
+    "failure_issue_threshold": 1,
+    "recovery_threshold": 1,
+}
+
+CACHED_JOBS_HEALTHCHECK_MONITOR_SLUG = "cached-jobs-healthcheck"
+CACHED_JOBS_HEALTHCHECK_MONITOR_CONFIG: dict[str, Any] = {
+    "schedule": {"type": "crontab", "value": "0 6 * * *"},
+    "timezone": "UTC",
+    "checkin_margin": 60,
+    "max_runtime": 5,
+    "failure_issue_threshold": 1,
+    "recovery_threshold": 1,
+}
+
+
+def _sentry_active() -> bool:
+    """True when cron check-ins should actually be sent.
+
+    The hard requirement is the pytest guard — the test suite must
+    never create or ping the production cron monitors (the local
+    ``.env`` carries a real DSN). Beyond that, ``capture_checkin`` is
+    itself a no-op when Sentry has no active client, so this stays
+    deliberately small.
+    """
+    if _running_under_pytest():
+        return False
+    try:
+        import sentry_sdk
+    except Exception:  # pragma: no cover — defensive
+        return False
+    client = sentry_sdk.get_client()
+    return bool(client) and client.is_active()
+
+
+@contextmanager
+def sentry_cron_monitor(
+    monitor_slug: str,
+    monitor_config: dict[str, Any] | None = None,
+):
+    """Wrap a scheduled-job body in a Sentry cron check-in.
+
+    Emits an ``in_progress`` check-in on entry and resolves it to
+    ``ok`` on a clean exit, or ``error`` if the body raises (the
+    exception is always re-raised). A no-op when Sentry is disabled or
+    running under pytest.
+
+    ``monitor_config`` — when supplied — upserts the monitor's schedule
+    and alert thresholds, so the monitor is defined from code and never
+    needs touching in the Sentry UI.
+
+    Telemetry must never break the job it wraps: every Sentry call here
+    is defensively guarded, so a check-in failure cannot mask or
+    replace the body's own success or exception.
+    """
+    if not _sentry_active():
+        yield
+        return
+
+    try:
+        from sentry_sdk.crons import capture_checkin
+    except Exception:  # pragma: no cover — defensive; never break the job
+        yield
+        return
+
+    started = time.monotonic()
+    check_in_id = None
+    try:
+        check_in_id = capture_checkin(
+            monitor_slug=monitor_slug,
+            status="in_progress",
+            monitor_config=monitor_config,
+        )
+    except Exception:  # pragma: no cover — telemetry is best-effort
+        logger.debug("Sentry in_progress check-in failed for %s", monitor_slug)
+
+    try:
+        yield
+    except Exception:
+        with suppress(Exception):
+            capture_checkin(
+                monitor_slug=monitor_slug,
+                check_in_id=check_in_id,
+                status="error",
+                duration=time.monotonic() - started,
+                monitor_config=monitor_config,
+            )
+        raise
+    else:
+        with suppress(Exception):
+            capture_checkin(
+                monitor_slug=monitor_slug,
+                check_in_id=check_in_id,
+                status="ok",
+                duration=time.monotonic() - started,
+                monitor_config=monitor_config,
+            )

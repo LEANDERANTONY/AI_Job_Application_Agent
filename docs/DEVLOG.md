@@ -3842,3 +3842,69 @@ new `test_upsert_skips_reembedding_already_embedded_rows`. Two
 store tests that were silently env-dependent — routing through the
 hybrid RPC whenever a local `.env` had the flag on — now pin the
 flag explicitly.
+
+## Day 76: Refresh monitoring — a daily healthcheck + Sentry cron monitors
+
+The cached_jobs cache is refreshed every 4 hours by a worker built to
+be resilient: a per-board HTTP failure is caught and logged so one
+dead board never poisons a whole refresh. That resilience has a blind
+spot. A board that quietly starts returning *zero* jobs, an
+embed-on-write backlog, or a pg_cron schedule that silently stopped
+firing all leave the API healthy and the cache merely wrong. The
+existing Sentry uptime monitor catches a *crashed* backend; it cannot
+see a *stale cache* behind a healthy one. Nothing watched the refresh
+itself.
+
+**The healthcheck.** `backend/services/refresh_healthcheck_service.py`
+runs once a day and asserts five invariants over aggregate stats read
+from `cached_jobs` in a single RPC round trip: the freshest row was
+re-seen within 5h (the refresh is still firing at all), the stale
+fraction is under 20% (the recent refreshes actually covered the
+corpus), every one of the four ATS adapters still contributes rows,
+the NULL-embedding backlog is bounded (embed-on-write is keeping up —
+checked only while hybrid search is on, since with it off a growing
+NULL count is expected), and the active corpus has not collapsed below
+a 1000-row floor. A degraded result is logged at ERROR, which the
+Sentry LoggingIntegration already turns into an issue — so a
+quietly-rotting cache pages the operator the same way a crash does.
+The service never mutates anything; it is a read-only assertion over
+the table the refresh worker writes.
+
+**The stats RPC.** `cached_jobs_health_stats` — a new SECURITY
+DEFINER, service_role-only Postgres function — computes every
+aggregate the checks need (total active, newest / oldest
+`last_seen_at`, stale count, NULL-embedding count, per-source row
+counts) server-side, so the backend never ships a ~14k-row table over
+the wire just to count it. `CachedJobsStore.health_stats()` is the
+thin Python caller.
+
+**Sentry cron monitors.** Two monitors, both defined in code via
+`sentry_cron_monitor` — a context manager added to
+`backend/observability.py` that emits Sentry check-ins and *upserts*
+the monitor from a `monitor_config` on every run, so neither needs
+manual setup in the Sentry UI. `cached-jobs-refresh` wraps
+`/admin/refresh-cache` (`0 */4 * * *`); `cached-jobs-healthcheck`
+wraps the new `/admin/refresh-healthcheck` endpoint (`0 6 * * *`). The
+two signals answer different questions: a *missed check-in* means the
+job did not run at all (pg_cron down, backend unreachable); the ERROR
+*issue* from the healthcheck means the job ran and found the cache
+degraded. The healthcheck endpoint deliberately returns 200 even on a
+degraded result — the check itself ran fine, so its cron monitor stays
+green and only the separate ERROR issue fires. It 5xxs only when the
+healthcheck genuinely could not run.
+
+The daily job is one more pg_cron entry
+(`docs/sql/job_cache_healthcheck_cron_setup.sql`), scheduled for 06:00
+UTC — two hours after the 04:00 refresh, so it reads a settled cache.
+Nothing here spends an OpenAI token: the healthcheck is a single
+Postgres read, in keeping with the pre-revenue "nothing scheduled
+spends tokens" posture.
+
+Verification: 871 tests green (the full suite minus the network-bound
+`nightly_eval` + quality runners; one unrelated `.env`-only retention
+test fails locally and is green on CI). A new
+`test_refresh_healthcheck_service` adds 11 tests covering all five
+checks, both hard-failure paths, and the degraded → ERROR-log alerting
+contract; `health_stats` store tests and `/admin/refresh-healthcheck`
+endpoint tests round it out. `cached_jobs_health_stats` is applied to
+the live database.

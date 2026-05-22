@@ -814,6 +814,44 @@ class CachedJobsStore:
             return 0
         return int(getattr(response, "count", 0) or 0)
 
+    def health_stats(self, *, stale_after_hours: int = 5) -> dict:
+        """Aggregate health snapshot of cached_jobs via the
+        `cached_jobs_health_stats` RPC.
+
+        Powers the daily refresh healthcheck
+        (`backend/services/refresh_healthcheck_service.py`). The RPC
+        computes every aggregate server-side and returns one jsonb
+        object — total_active, newest / oldest last_seen_at,
+        stale_count, null_embedding_count, and a per-source row-count
+        map — so the healthcheck never ships the ~14k-row table over
+        the wire just to count it.
+
+        `stale_after_hours` sets the RPC's staleness threshold: a row
+        whose `last_seen_at` is older than that counts toward
+        `stale_count`.
+
+        Raises AppError if the store isn't configured or the RPC call
+        fails — the healthcheck treats either as a hard failure.
+        """
+        client = self._require_client()
+        try:
+            response = client.rpc(
+                "cached_jobs_health_stats",
+                {"p_stale_after_hours": int(stale_after_hours)},
+            ).execute()
+        except Exception as exc:
+            raise AppError(
+                "Failed to query cached_jobs health stats.",
+                details=f"{type(exc).__name__}: {exc}",
+            ) from exc
+        # The RPC RETURNS a scalar jsonb object. PostgREST surfaces that
+        # as `data` being the dict directly; some client / proxy paths
+        # wrap a scalar-returning RPC as a one-row list. Handle both.
+        data = getattr(response, "data", None)
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        return data if isinstance(data, dict) else {}
+
     # -- Helpers --------------------------------------------------------
 
     @staticmethod
