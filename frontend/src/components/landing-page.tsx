@@ -42,7 +42,7 @@ const WORKBENCH_STEPS = [
     eyebrow: "02 · Job Search",
     title: "Search 12,000+ open roles in one place",
     body:
-      "Live listings from Greenhouse, Lever, Ashby, and Workday — refreshed several times a day so you always see what's actually open. Filter by company, work mode, role type, or how recent the posting is. Sort by best match, newest, or alphabetically.",
+      "Live listings from Greenhouse, Lever, Ashby, and Workday, refreshed several times a day. Search understands roles, not just keywords — 'ML engineer' also surfaces 'machine learning' postings, abbreviations handled for you. Filter by company, work mode, or recency; sort by best match, newest, or alphabetical.",
     aside:
       "Saved a job that's no longer hiring? Your bookmark stays put with a clear \"Expired\" tag — nothing gets lost from your shortlist.",
   },
@@ -58,7 +58,7 @@ const WORKBENCH_STEPS = [
     eyebrow: "04 · Analysis",
     title: "Get a tailored resume and cover letter",
     body:
-      "Our AI rewrites your resume to highlight what matters most for the role, then writes a personalized cover letter to match. Pick from two clean themes and download as Word or PDF — whichever your application portal asks for.",
+      "Our AI rewrites your resume to highlight what matters most for the role, then writes a personalized cover letter to match. Pick from 12 themes — single-column ATS-safe layouts or polished two-column designs — and download as Word or PDF, whichever your application portal asks for.",
     aside:
       "Watch the AI work in real time. The first words appear in about a second, and every claim is rooted in your actual experience — no made-up details.",
   },
@@ -481,6 +481,7 @@ function LandingHero({
           >
             <li>Smart resume reader</li>
             <li>12k+ live jobs</li>
+            <li>Semantic job search</li>
             <li>Tailored Word + PDF</li>
             <li>Built-in AI assistant</li>
           </ul>
@@ -900,8 +901,9 @@ function BentoSection() {
             </h3>
             <p className="l-bento-body">
               Live listings from 130+ companies including Stripe, Pinterest,
-              Anthropic, Notion, Walmart, and Disney. Refreshed several
-              times a day so you&apos;re always seeing what&apos;s actually open.
+              Anthropic, Notion, Walmart, and Disney — refreshed several
+              times a day. Hybrid lexical + semantic search understands
+              what you mean, not just what you type.
             </p>
             <div className="l-bento-providers">
               <span className="l-bento-provider">greenhouse</span>
@@ -913,11 +915,11 @@ function BentoSection() {
 
           <article className="l-bento-tile">
             <span className="l-bento-eyebrow">Polished exports</span>
-            <h3 className="l-bento-title">Two themes, two formats</h3>
+            <h3 className="l-bento-title">Twelve themes, two formats</h3>
             <p className="l-bento-body">
-              Pick a clean ATS-safe layout or a more polished neutral look.
-              Download as Word or PDF — both are identical, so use whichever
-              your application portal asks for.
+              Pick a single-column ATS-safe layout or a polished two-column
+              design — six of each. Download as Word or PDF, both identical,
+              so use whichever your application portal asks for.
             </p>
             <div className="l-bento-format-row">
               <span className="l-bento-format">PDF</span>
@@ -925,6 +927,9 @@ function BentoSection() {
               <span className="l-bento-format-divider" />
               <span className="l-bento-format-tag">classic_ats</span>
               <span className="l-bento-format-tag">professional_neutral</span>
+              <span className="l-bento-format-tag">modern_blue</span>
+              <span className="l-bento-format-tag">noir_cream</span>
+              <span className="l-bento-format-tag">+8 more</span>
             </div>
           </article>
 
@@ -932,9 +937,10 @@ function BentoSection() {
             <span className="l-bento-eyebrow">No resume? No problem.</span>
             <h3 className="l-bento-title">Chat one into existence</h3>
             <p className="l-bento-body">
-              Don&apos;t have a resume yet? Chat with our AI — answer
-              questions naturally, change your mind whenever, and we&apos;ll
-              polish everything into a clean resume at the end. Your draft
+              Don&apos;t have a resume yet? Our AI builder asks questions,
+              reads your GitHub README to pull in projects you forgot,
+              web-searches for context when needed, and shows a live themed
+              preview as you build. Change your mind any time — your draft
               saves for 7 days.
             </p>
             <div className="l-bento-chat">
@@ -1111,7 +1117,7 @@ const PRICING_TIERS: PricingTier[] = [
       "5 premium applications with GPT-5.5",
       "Unlimited job searches, 1,000 saved jobs",
       "150 assistant chat turns / month",
-      "PDF + DOCX export, all themes",
+      "PDF + DOCX export, all 12 themes (single + two-column)",
       "30-day workspace history",
     ],
   },
