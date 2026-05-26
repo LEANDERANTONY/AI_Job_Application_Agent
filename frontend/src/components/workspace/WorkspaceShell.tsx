@@ -181,9 +181,46 @@ function formatUtcTimestamp(value: string) {
 function formatRemainingCalls(dailyQuota: DailyQuotaStatus | null) {
   if (!dailyQuota) return "Unavailable";
   if (dailyQuota.remaining_calls === null || dailyQuota.max_calls === null) {
+    // Unlimited tiers are internal/admin (no daily cost cap). Append
+    // the tier so the dev account is obviously identifiable in the
+    // popover and a paying user with `null` caps (e.g. an explicit
+    // "Unlimited" addon down the road) sees the same shape.
+    const tier = (dailyQuota.plan_tier || "").trim().toLowerCase();
+    if (tier === "internal" || tier === "admin") {
+      return `Unlimited (${formatTier(tier)})`;
+    }
     return "Unlimited";
   }
   return `${dailyQuota.remaining_calls}/${dailyQuota.max_calls}`;
+}
+
+/**
+ * Capitalize a raw plan_tier string ("internal", "business", "pro",
+ * "free", "admin") for display. Backend stores these lowercase as
+ * enum-ish strings; the UI should render them as proper nouns.
+ * Falls back to the raw value (with first letter uppercased) for
+ * any tier we haven't enumerated explicitly, so a future "enterprise"
+ * tier still renders sanely without a code change.
+ */
+function formatTier(tier: string | null | undefined): string {
+  const normalized = (tier || "").trim().toLowerCase();
+  switch (normalized) {
+    case "free":
+      return "Free";
+    case "pro":
+    case "paid":
+    case "plus":
+      return "Pro";
+    case "business":
+      return "Business";
+    case "internal":
+      return "Internal";
+    case "admin":
+      return "Admin";
+    default:
+      if (!normalized) return "Free";
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  }
 }
 
 function getInitialMainTab(): WorkspaceMainTab {
@@ -2150,7 +2187,7 @@ export function WorkspaceShell() {
                   <dl className="b-account-pop-stats">
                     <div>
                       <dt>Plan</dt>
-                      <dd>{authSession?.app_user.plan_tier || "free"}</dd>
+                      <dd>{formatTier(authSession?.app_user.plan_tier)}</dd>
                     </div>
                     <div>
                       <dt>Runs left</dt>
@@ -2271,6 +2308,32 @@ export function WorkspaceShell() {
             jd: "",
             analysis: "Need a parsed resume + job description first.",
           };
+          // When the user clicks a locked rail step we don't want a
+          // silent no-op — the UI was confusing as "is this broken?".
+          // Compute the first missing prerequisite for each gated step
+          // so the click handler can jump them there and surface a
+          // helpful notice. Today only Analysis is gated; keeping the
+          // shape per-step so future locks plug in the same way.
+          const lockedPrereqStep: Record<WorkspaceMainTab, WorkspaceMainTab | null> = {
+            resume: null,
+            jobs: null,
+            jd: null,
+            analysis: !resumeText.trim()
+              ? "resume"
+              : !manualJobText.trim()
+                ? "jd"
+                : null,
+          };
+          const lockedPrereqMessage: Record<WorkspaceMainTab, string> = {
+            resume: "",
+            jobs: "",
+            jd: "",
+            analysis: !resumeText.trim()
+              ? "Upload a résumé in Step 01 to unlock Analysis."
+              : !manualJobText.trim()
+                ? "Paste a job description in Step 03 to unlock Analysis."
+                : "Both inputs are loaded — Analysis is ready to run.",
+          };
           return (
             <div
               className="b-rail"
@@ -2299,15 +2362,32 @@ export function WorkspaceShell() {
                       : `${meta.label} · click to open`;
                 return (
                   <button
+                    aria-disabled={!ready || undefined}
                     aria-label={meta.label}
                     aria-selected={active}
                     className="b-rail-step"
                     data-done={done || undefined}
+                    data-locked={!ready || undefined}
                     data-next={isNext || undefined}
-                    disabled={!ready}
                     key={step}
                     onClick={() => {
-                      if (ready) setMainTab(step);
+                      if (ready) {
+                        setMainTab(step);
+                        return;
+                      }
+                      // Locked-step click handling: instead of a
+                      // silent no-op (the old behavior with `disabled`),
+                      // route the user to the missing prerequisite and
+                      // surface a helpful inline notice. Falls back to
+                      // a plain notice if no specific prereq is known.
+                      const prereq = lockedPrereqStep[step];
+                      const message = lockedPrereqMessage[step] || lockReason[step];
+                      if (message) {
+                        setWorkspaceNotice({ level: "warning", message });
+                      }
+                      if (prereq) {
+                        setMainTab(prereq);
+                      }
                     }}
                     role="tab"
                     title={tooltip}
