@@ -14,17 +14,76 @@ called as the primary path in ``build_job_description_from_text_auto``.
 
 from __future__ import annotations
 
-import json
+import re
 from typing import Any
 
 from src.openai_service import OpenAIService
+
+
+# Section-header strings the LLM sometimes echoes as a list item when
+# the JD's headings sit immediately above a bullet block (e.g. the
+# n8n "AI Product Builder" listing ends Must-Haves with the literal
+# label "REQUIREMENTS / MUST-HAVES"). Anything matching this pattern
+# after normalizing whitespace / punctuation is dropped from
+# must_haves / nice_to_haves.
+_SECTION_LABEL_ARTIFACT = re.compile(
+    r"^(requirements?|must[\s\-_/]?haves?|nice[\s\-_/]?to[\s\-_/]?haves?|"
+    r"qualifications?|preferred(?:\s+qualifications?)?|good\s+signals?|"
+    r"good\s+to\s+have|bonus(?:\s+points?)?|"
+    # "What you'll do" / "What we're looking for" / "What we look for" /
+    # "What we want" — heading-style phrases the LLM sometimes echoes
+    # as a list item. Accepts straight + smart apostrophes, optional
+    # contraction ('re / 'll / are / will), an operative verb, and a
+    # trailing "for" / "in" preposition.
+    r"what\s+(?:we|you)(?:['’](?:re|ll|s)|\s+(?:are|will))?"
+    r"(?:\s+(?:looking|look|need|want|do))(?:\s+(?:for|in|at))?"
+    r")[\s:.\-]*$",
+    re.IGNORECASE,
+)
+
+# Benefits / perks vocabulary the LLM sometimes swept into
+# nice_to_haves when a "Benefits" block sits adjacent to the
+# "Nice to have" block in the JD. These are compensation, not
+# job-requirement signal — they don't belong in either list because
+# matching against them produces nonsense ("candidate has 401k").
+_BENEFIT_KEYWORDS = (
+    "vacation", " pto ", "(pto)", "paid time off", "parental leave",
+    "maternity leave", "paternity leave", "health insurance",
+    "medical insurance", "dental insurance", "vision insurance",
+    "medical, dental", "dental, vision", "health, dental",
+    "health coverage", "medical coverage", " hsa ", "(hsa)",
+    "health savings", "401(k)", "401k", " 401 k ", "retirement plan",
+    "stock options", "equity grant", "rsu", " esop ",
+    "wellness stipend", "wellness benefit", "gym membership",
+    "free lunch", "snacks", "remote stipend", "home office stipend",
+    "commuter benefit", "transit benefit", "life insurance",
+    "disability insurance",
+)
+
+
+def _is_section_label_artifact(text: str) -> bool:
+    return bool(_SECTION_LABEL_ARTIFACT.match(text.strip()))
+
+
+def _looks_like_benefit(text: str) -> bool:
+    # Pad with spaces so the substring scan treats abbreviation tokens
+    # like ' pto ' / ' 401k ' as whole-word matches instead of matching
+    # inside e.g. 'computational tools'.
+    haystack = " " + text.strip().lower() + " "
+    return any(keyword in haystack for keyword in _BENEFIT_KEYWORDS)
 
 
 def _coerce_string(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _coerce_string_list(value: Any, *, limit: int = 24) -> list[str]:
+def _coerce_string_list(
+    value: Any,
+    *,
+    limit: int = 24,
+    drop_section_labels: bool = False,
+    drop_benefits: bool = False,
+) -> list[str]:
     if not isinstance(value, list):
         return []
     cleaned: list[str] = []
@@ -33,6 +92,16 @@ def _coerce_string_list(value: Any, *, limit: int = 24) -> list[str]:
         text = _coerce_string(item)
         normalized = text.lower()
         if not text or normalized in seen:
+            continue
+        if drop_section_labels and _is_section_label_artifact(text):
+            # LLM echoed a section header (e.g. "REQUIREMENTS",
+            # "MUST-HAVES") as a list item — silently drop instead of
+            # surfacing as a requirement.
+            continue
+        if drop_benefits and _looks_like_benefit(text):
+            # Compensation / perks crept into a requirements list.
+            # Drop instead of matching against the candidate's
+            # qualifications, which would produce nonsense signal.
             continue
         cleaned.append(text)
         seen.add(normalized)
@@ -61,8 +130,16 @@ def _build_jd_llm_parser_prompt(jd_text: str) -> dict[str, Any]:
                        "(e.g. 'communication', 'leadership', 'collaboration')",
         "must_haves": "array of strings — required-experience phrases the JD marks as "
                       "mandatory (e.g. '5+ years building production backend services', "
-                      "'BSc in Computer Science'). Each entry should be a distinct line.",
-        "nice_to_haves": "array of strings — preferred / bonus / nice-to-have qualifications",
+                      "'BSc in Computer Science'). Each entry should be a distinct line. "
+                      "Do NOT echo section headers like 'REQUIREMENTS', 'MUST-HAVES', "
+                      "'QUALIFICATIONS' as list items — those are headings, not requirements.",
+        "nice_to_haves": "array of strings — preferred / bonus / nice-to-have QUALIFICATIONS "
+                         "(extra skills, prior experience, certifications). Do NOT include "
+                         "benefits, perks, or compensation (vacation, PTO, parental leave, "
+                         "health / medical / dental / vision insurance, HSA, 401(k), stock "
+                         "options, RSU, wellness stipend, gym, remote stipend) — those are "
+                         "what the company offers the candidate, not what the candidate "
+                         "needs to bring.",
     }
     contract_lines = "\n".join(
         '- "{key}": {description}'.format(key=key, description=description)
@@ -152,6 +229,20 @@ class JobDescriptionLLMParserService:
             "experience_requirement": _coerce_string(payload.get("experience_requirement")),
             "hard_skills": _coerce_string_list(payload.get("hard_skills"), limit=40),
             "soft_skills": _coerce_string_list(payload.get("soft_skills"), limit=20),
-            "must_haves": _coerce_string_list(payload.get("must_haves"), limit=10),
-            "nice_to_haves": _coerce_string_list(payload.get("nice_to_haves"), limit=10),
+            # must_haves / nice_to_haves get the extra scrub passes:
+            # strip section-header artifacts the LLM occasionally echoes
+            # as list items, and drop benefit / perk vocabulary that
+            # shouldn't be matched against the candidate's skills.
+            "must_haves": _coerce_string_list(
+                payload.get("must_haves"),
+                limit=10,
+                drop_section_labels=True,
+                drop_benefits=True,
+            ),
+            "nice_to_haves": _coerce_string_list(
+                payload.get("nice_to_haves"),
+                limit=10,
+                drop_section_labels=True,
+                drop_benefits=True,
+            ),
         }

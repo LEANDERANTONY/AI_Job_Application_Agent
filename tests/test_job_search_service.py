@@ -285,6 +285,16 @@ class _FakeCacheStore:
         posted_within_days,
         limit,
         offset,
+        # JobSearchService now also threads work_modes / employment_
+        # types / sort_by through to the store after the filter-
+        # passthrough fix. The fake doesn't filter on them — the offset
+        # pagination tests don't care about facet behavior — but the
+        # signature must accept them or the service call would error
+        # with "unexpected keyword argument" the moment the fix
+        # lands.
+        work_modes=None,
+        employment_types=None,
+        sort_by="relevance",
     ):
         self.calls.append({"limit": limit, "offset": offset})
         return self._rows[offset : offset + limit]
@@ -330,3 +340,49 @@ def test_cached_search_full_final_page_still_reports_has_more():
 
     assert len(result.results) == 10
     assert result.has_more is True
+
+
+def test_search_cached_threads_work_modes_and_sort_by_to_store():
+    """Regression: `JobSearchService.search_cached` used to rebuild
+    `normalized_query` without copying the new filter / sort fields,
+    so the UI's Work-mode dropdown and Sort selector silently no-op'd
+    against the cache. This test pins the contract that those values
+    reach `store.search()` exactly as supplied.
+    """
+
+    class _CapturingStore:
+        def __init__(self):
+            self.last_kwargs = None
+
+        def is_configured(self):
+            return True
+
+        def search(self, **kwargs):
+            self.last_kwargs = kwargs
+            return []
+
+    captured = _CapturingStore()
+    service = JobSearchService(sources=[], cache_store=captured)
+    query = JobSearchQuery(
+        query="data engineer",
+        location="London",
+        page_size=15,
+        work_modes=["remote", "hybrid"],
+        employment_types=["fulltime"],
+        sort_by="newest",
+    )
+
+    result = service.search_cached(query)
+
+    assert result.source_status["cache"] == "ok"
+    assert captured.last_kwargs is not None
+    assert captured.last_kwargs["work_modes"] == ["remote", "hybrid"]
+    assert captured.last_kwargs["employment_types"] == ["fulltime"]
+    assert captured.last_kwargs["sort_by"] == "newest"
+    # Empty lists should collapse to None so the RPC's `IS NULL`
+    # short-circuit fires instead of passing an empty array filter.
+    empty_query = JobSearchQuery(query="data engineer", page_size=10)
+    service.search_cached(empty_query)
+    assert captured.last_kwargs["work_modes"] is None
+    assert captured.last_kwargs["employment_types"] is None
+    assert captured.last_kwargs["sort_by"] == "relevance"

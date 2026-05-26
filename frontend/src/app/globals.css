@@ -5464,18 +5464,33 @@ code {
   z-index: 1;
 }
 /* Hover (only on enabled steps) — pill bg + accent ring + tiny lift.
-   The ring is the strongest "I'm clickable" cue; the lift adds depth. */
-.b-rail-step:hover:not(:disabled) {
+   The ring is the strongest "I'm clickable" cue; the lift adds depth.
+   `[data-locked]` is excluded from the lift so the gated step doesn't
+   feel like a normal tab, but it still gets a faint hover tint via
+   the rule below so the user knows their click WILL do something
+   (route them to the missing prerequisite + show a notice). */
+.b-rail-step:hover:not(:disabled):not([data-locked="true"]) {
   color: var(--fg);
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(90, 134, 255, 0.30);
   transform: translateY(-1px);
 }
-/* Gated — fade out the whole chip clearly so it doesn't look like an
-   un-clicked tab. Cursor + title attribute give the user a reason. */
-.b-rail-step:disabled {
+/* Gated — fade the chip clearly so it doesn't look like an un-clicked
+   tab. Cursor: help signals "tap to learn what's missing" — earlier
+   the chip was HTML-disabled with cursor: not-allowed, which made the
+   click a silent no-op; the new behavior navigates the user to the
+   missing prereq + surfaces a notice. */
+.b-rail-step:disabled,
+.b-rail-step[data-locked="true"] {
   opacity: 0.40;
-  cursor: not-allowed;
+  cursor: help;
+}
+.b-rail-step[data-locked="true"]:hover {
+  /* Faint hover tint so the user gets a click-affordance cue without
+     the full "this is the active tab" treatment. Confirms the chip is
+     interactive even though it's gated. */
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.10);
 }
 .b-rail-step[aria-selected="true"] {
   color: var(--fg);
@@ -5906,6 +5921,24 @@ code {
   color: var(--fg-3);
   font-weight: 500;
   margin-left: 2px;
+}
+/* "Run analysis to compute" / "Re-run analysis (inputs changed)" hint
+   shown under the Match-score tile before analysisState is fresh.
+   Small, dim, and italicized so it reads as a sublabel rather than
+   competing with the metric value. */
+.b-jd-metric-hint {
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--fg-3);
+  line-height: 1.35;
+}
+/* Muted variant for placeholder tiles whose value is "—" — fades the
+   big number so the user understands it's not a real measurement
+   yet, without removing the column slot (which would cause layout
+   shift the moment analysis completes). */
+.b-jd-metric[data-tone="muted"] .b-jd-metric-value {
+  color: var(--fg-3);
 }
 
 /* ── Two-up sections (Skills + Experience, Hard + Soft skills) ── */

@@ -103,6 +103,16 @@ class JobSearchService:
             posted_within_days=query.posted_within_days,
             page_size=max(1, min(int(query.page_size or 20), 50)),
             offset=max(0, int(query.offset or 0)),
+            # Carry the dropdown / sort fields through. Earlier
+            # versions dropped them here, which silently disabled the
+            # Work-mode filter and the Sort dropdown — the chip /
+            # label would flip in the UI but the request never reached
+            # the RPC with the new value. Whitelisting + lowercasing
+            # still happens in CachedJobsStore.search() so the schema
+            # layer stays decoupled from RPC vocabulary.
+            work_modes=list(query.work_modes or []),
+            employment_types=list(query.employment_types or []),
+            sort_by=str(query.sort_by or "relevance").strip().lower() or "relevance",
         )
 
         store = self._get_cache_store()
@@ -123,6 +133,9 @@ class JobSearchService:
                 posted_within_days=normalized_query.posted_within_days,
                 limit=normalized_query.page_size,
                 offset=normalized_query.offset,
+                work_modes=list(normalized_query.work_modes) or None,
+                employment_types=list(normalized_query.employment_types) or None,
+                sort_by=normalized_query.sort_by,
             )
         except Exception as exc:  # noqa: BLE001 — cache outage shouldn't kill search
             # Fall through to the live path. The cache is a perf
@@ -153,6 +166,15 @@ class JobSearchService:
             posted_within_days=query.posted_within_days,
             page_size=max(1, min(int(query.page_size or 20), 50)),
             offset=max(0, int(query.offset or 0)),
+            # Preserve dropdown / sort fields. The live path can't push
+            # work_modes / employment_types into the upstream boards
+            # (their APIs don't accept those filters), but we keep the
+            # values on the query so any downstream in-memory sort or
+            # filter pass sees them — and so the echoed JobSearchQuery
+            # in the response matches what the UI sent.
+            work_modes=list(query.work_modes or []),
+            employment_types=list(query.employment_types or []),
+            sort_by=str(query.sort_by or "relevance").strip().lower() or "relevance",
         )
         requested_sources = {
             str(item).strip().lower()

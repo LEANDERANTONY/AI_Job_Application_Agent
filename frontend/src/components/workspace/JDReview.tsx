@@ -181,7 +181,22 @@ export function JDReview({
   // Hero metrics: prefer the parsed analysisState numbers when fresh,
   // fall back to the JobReview computed by `buildJobReview` from the
   // current manualJobText.
-  const metrics = (() => {
+  //
+  // The "Match score" tile is always rendered (even before analysis
+  // runs) with a `hint` placeholder. Earlier the score only appeared
+  // post-analysis, so the UI test reported "no match-score on Job
+  // Detail" — a user who pasted a JD but hadn't yet run Step 04 saw
+  // no fit signal at all and didn't know where it would surface.
+  // The placeholder gives a visible affordance + tells them what to
+  // do next without forcing a navigation away from this tab.
+  type HeroMetric = {
+    label: string;
+    value: string;
+    unit: string;
+    hint?: string;
+    tone?: "muted";
+  };
+  const metrics = ((): HeroMetric[] => {
     if (analysisState && !analysisIsStale) {
       const fit = analysisState.fit_analysis;
       return [
@@ -211,6 +226,19 @@ export function JDReview({
     }
     if (review) {
       return [
+        {
+          label: "Match score",
+          value: "—",
+          unit: "",
+          // Stale analysis lingering in state when the inputs have
+          // changed = a number that's no longer trustworthy. Tell the
+          // user the cause + remedy in the hint so we're not silently
+          // showing a wrong fit %.
+          hint: analysisState && analysisIsStale
+            ? "Re-run analysis (inputs changed)"
+            : "Run analysis to compute",
+          tone: "muted",
+        },
         {
           label: "Hard skills",
           value: String(review.hardSkills.length),
@@ -354,9 +382,16 @@ export function JDReview({
           {metrics.length ? (
             <div className="b-jd-metrics">
               {metrics.map((metric) => (
-                <div className="b-jd-metric" key={metric.label}>
+                <div
+                  className="b-jd-metric"
+                  data-tone={metric.tone || undefined}
+                  key={metric.label}
+                >
                   <div className="b-jd-metric-label">{metric.label}</div>
                   <JDMetricValue unit={metric.unit} value={metric.value} />
+                  {metric.hint ? (
+                    <div className="b-jd-metric-hint">{metric.hint}</div>
+                  ) : null}
                 </div>
               ))}
             </div>

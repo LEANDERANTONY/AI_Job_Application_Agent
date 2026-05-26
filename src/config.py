@@ -323,7 +323,13 @@ def get_daily_quota_for_plan(plan_tier: str):
     normalized_plan = (plan_tier or AUTH_DEFAULT_PLAN_TIER).strip().lower()
     if normalized_plan in {"admin", "internal"}:
         return {"max_calls": None, "max_total_tokens": None, "plan_tier": normalized_plan}
-    if normalized_plan in {"paid", "pro", "plus"}:
+    # Paid tiers share the same daily cost-cap regardless of monthly
+    # feature limits — the monthly TIER_CAPS in backend/tiers.py is
+    # where tier differentiation actually lives. The daily cap here
+    # is a runaway-cost safety net; Pro and Business get the same
+    # generous daily budget so a Business user isn't silently throttled
+    # mid-workflow just because they fell through to the FREE bucket.
+    if normalized_plan in {"paid", "pro", "plus", "business"}:
         return {
             "max_calls": PAID_TIER_MAX_CALLS_PER_DAY,
             "max_total_tokens": PAID_TIER_MAX_TOKENS_PER_DAY,
