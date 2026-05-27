@@ -3173,7 +3173,15 @@ code {
   flex-direction: column;
   gap: 6px;
   padding: 14px;
-  background: rgba(2, 4, 9, 0.97);
+  /* Solid background — the previous rgba(2, 4, 9, 0.97) left ~3% of
+     the hero copy bleeding through the menu panel at iPhone width
+     (caught in the 2026-05-27 jobagent mobile UI test). On the
+     bright-on-dark hero, the second "Enter workspace" CTA visibly
+     ghosted under the nav links. Solid color eliminates the bleed;
+     the backdrop-filter blur underneath is now a no-op but stays as
+     a fallback for browsers that ignore the opaque rgb layer (costs
+     nothing when the layer above is fully opaque). */
+  background: rgb(2, 4, 9);
   backdrop-filter: blur(18px) saturate(140%);
   border: 1px solid var(--l-line-strong);
   border-radius: 14px;
@@ -8468,3 +8476,95 @@ code {
     animation: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Mobile tap-target + FAB-clearance pass — 2026-05-27 launch readiness
+   ─────────────────────────────────────────────────────────────────────
+   The mobile UI test caught most-touched controls violating Apple HIG
+   (≥44px) at iPhone width: step rail tabs 33px, Search 30, Import 30,
+   in-card actions Review/Open/Save 30, Sort/Posted-within selects 26,
+   account-popover action buttons 30, assistant Send 36. It also
+   flagged the floating "Open assistant" FAB at bottom-right
+   overlapping content in the bottom-right ~50px corner on long pages.
+
+   Three patterns below, each isolated for safe revert:
+
+     1. Tap-target bumps — min-height: 44 (and min-width for icon-
+        only buttons). Scoped to ``@media (max-width: 900px)`` so
+        desktop layout is untouched.
+     2. FAB clearance — bottom padding bump on .b-canvas + right-edge
+        safe zone on the trailing content rows (.b-job-card-actions,
+        .b-skill-chips) so important chips/buttons don't sit under
+        the FAB corner. The FAB itself stays where it is (the visual
+        anchor is a known affordance); the surrounding layout makes
+        room for it.
+     3. Locked-tab CTA chip already inherits the rail bump.
+*/
+@media (max-width: 900px) {
+  /* Step rail tabs — bumped from ~33 to ≥44. The earlier mobile
+     block (line ~7932) tightens internal padding/font so the four
+     chips fit at 340px; the min-height here is on top of that so
+     the chip still hits the tap-target spec without growing the
+     fixed-grid pill. */
+  .b-shell .b-rail-step {
+    min-height: 44px;
+  }
+
+  /* All ``rd-btn-sm`` buttons used in cards, forms, and popovers.
+     Single rule catches Search, Import, Review, Open, Save,
+     Reload-saved-workspace, Manage-subscription, Sign-out. */
+  .b-shell .rd-btn-sm {
+    min-height: 44px;
+  }
+
+  /* Form selects (Sort + Posted-within) — currently 26 / 28. The
+     visual layout (a label + tight select chip) stays; only the
+     tap height grows. */
+  .b-shell .rd-select {
+    min-height: 44px;
+  }
+
+  /* Filter-popover triggers (Source / Work mode / Type) — the
+     <summary> element renders as a chip-styled disclosure. Bump its
+     min-height so the chip is comfortably tappable. */
+  .b-shell .b-filter-popover summary {
+    min-height: 44px;
+  }
+
+  /* Assistant Send icon-button — 36×36 → 44×44. Width also bumps
+     so the icon stays centered. */
+  .b-shell .rd-assistant-send {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* JD skill chips — 34 → 40. The report called these "visually
+     fine" at 34 but they were under 40; bump to 40 (just under 44
+     to keep inline density on multi-row chip lists). Combined with
+     the right-side safe zone below this is still comfortably
+     tappable on the multi-row wrap. */
+  .b-shell .b-skill-chip {
+    min-height: 40px;
+  }
+
+  /* FAB clearance — extend canvas bottom padding so end-of-scroll
+     has room above the FAB, and reserve a right-edge safe zone on
+     the rows most likely to collide with the FAB corner
+     (per-card actions, skill chip lists). The FAB itself stays at
+     its existing bottom: 18; right: 18 position — it's a known
+     visual anchor, just one with a known overlap zone we now
+     account for in the surrounding layout. */
+  .b-shell .b-canvas {
+    padding-bottom: 110px;
+  }
+  /* Right-edge safe zone for content rows that wrap to the FAB
+     corner. Without this, the last skill chip on a wrapped row OR
+     the rightmost in-card action button (Save) can sit under the
+     50×50 FAB at 18px from the corner. 64px = FAB width + offset
+     buffer. */
+  .b-shell .b-job-card:last-child .b-job-card-actions,
+  .b-shell .b-skill-chips {
+    padding-right: 64px;
+  }
+}
+
