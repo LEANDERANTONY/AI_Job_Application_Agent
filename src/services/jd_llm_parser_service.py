@@ -198,10 +198,21 @@ class JobDescriptionLLMParserService:
         # silently falls back to the lower-fidelity deterministic JD
         # parser. That degraded JD then feeds fit analysis, tailoring,
         # and the cover letter — so the truncation cascades through the
-        # whole workflow. max_output_tokens is a ceiling, not a
-        # reservation: raising it is free for ordinary JDs.
+        # whole workflow.
+        #
+        # Bumped from 4000 -> 6000 (2026-05-27) after Phase 2 of the
+        # JD unification: paste / upload / load-from-search ALL now
+        # route through this parser, so dense JDs (n8n-style with
+        # 40+ skills + 10+ must-haves + 10+ nice-to-haves + a verbose
+        # benefits block) are routine, not edge-case. 6000 absorbs
+        # those in the first call without hitting the retry path;
+        # short JDs still cost the same because this is a ceiling,
+        # not a reservation. Input is uncapped at this layer — the
+        # only real bound is the model's context window (~128k for
+        # gpt-5.4-mini), so a 5000-word JD (~7k input tokens) has
+        # plenty of headroom.
         *,
-        max_completion_tokens: int = 4000,
+        max_completion_tokens: int = 6000,
     ) -> dict[str, Any]:
         if not jd_text or not str(jd_text).strip():
             raise ValueError("Job description text must not be empty.")

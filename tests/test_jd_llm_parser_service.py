@@ -71,14 +71,21 @@ def test_jd_parser_requests_generous_budget_and_enables_retry():
     back to the lower-fidelity deterministic JD parser. That degraded
     JD then feeds fit analysis, tailoring, and the cover letter — the
     truncation cascades. The parser must request a generous ceiling
-    AND keep the auto-retry safety net."""
+    AND keep the auto-retry safety net.
+
+    Bumped to >=6000 on 2026-05-27 alongside the JD path unification:
+    paste / upload / load-from-search now ALL route through this
+    parser, so dense JDs (n8n-style with 40+ skills + verbose
+    benefits block) are routine. 6000 absorbs those in one call
+    without firing the retry path.
+    """
     recorder = _RecordingOpenAIService()
     service = JobDescriptionLLMParserService(openai_service=recorder)
 
     service.parse("Senior AI Engineer — lots of requirements ...")
 
     assert recorder.kwargs is not None
-    assert recorder.kwargs["max_completion_tokens"] >= 4000
+    assert recorder.kwargs["max_completion_tokens"] >= 6000
     assert recorder.kwargs["allow_output_budget_retry"] is True
 
 
