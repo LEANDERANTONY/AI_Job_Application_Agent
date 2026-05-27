@@ -516,6 +516,107 @@ export function WorkspaceShell() {
     }
   }, [activeJob, jobFileState]);
 
+  // ── JD auto-parse via LLM ─────────────────────────────────────────
+  // Debounced effect that pipes pasted / loaded-from-search JD text
+  // through the same /workspace/job-description/upload endpoint a
+  // file upload uses. The endpoint returns the LLM-parsed
+  // jd_summary_view + requirements; that response lands in
+  // `jobFileState`, and JDReview's precedence chain
+  // (analysisState > jobFileState > review) automatically picks it
+  // up to render the Must-Have Themes / Nice-to-Have Signals panels
+  // from LLM output instead of the brittle frontend regex.
+  //
+  // Why we route paste through the SAME endpoint as upload (instead
+  // of a new /jd/parse-text route): zero new backend surface, zero
+  // new tests, and a single LLM-quality contract for ALL three input
+  // paths (paste / upload / load-from-search). The endpoint takes
+  // any file via UploadedFilePayloadModel — sending the pasted text
+  // as a synthetic ``pasted.txt`` blob skips the file-extraction
+  // step internally (it's already text) and falls straight through
+  // to build_job_description_from_text_auto.
+  //
+  // Guards (all four required before firing):
+  //   1. authStatus === "signed_in" — the endpoint requires auth.
+  //   2. text length >= 100 chars — under that, regex is fine and
+  //      we don't want to burn token quota on placeholder text.
+  //   3. text hash differs from the last successfully-parsed text
+  //      — avoids re-parsing the same content on every render or
+  //      after the user pastes back the same JD they had before.
+  //   4. text differs from jobFileState.job_description_text — if a
+  //      file upload (or earlier paste-parse) already set
+  //      jobFileState from the same text, skip.
+  //
+  // Debounce: 1500 ms after the LAST keystroke. Cancels the prior
+  // timer + aborts the in-flight request, so a fast typist who pauses
+  // briefly + resumes never fires multiple parses.
+  const lastParsedTextRef = useRef<string>("");
+  const parseDebounceRef = useRef<number | null>(null);
+  const parseAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    if (parseDebounceRef.current !== null) {
+      window.clearTimeout(parseDebounceRef.current);
+      parseDebounceRef.current = null;
+    }
+    if (parseAbortRef.current) {
+      parseAbortRef.current.abort();
+      parseAbortRef.current = null;
+    }
+    const text = manualJobText.trim();
+    if (!text || text.length < 100) return;
+    if (authStatus !== "signed_in") return;
+    if (text === lastParsedTextRef.current) return;
+    if (jobFileState?.job_description_text?.trim() === text) {
+      // Already parsed by an upload or earlier paste — sync the cache
+      // so future renders of the same text don't re-fire.
+      lastParsedTextRef.current = text;
+      return;
+    }
+
+    parseDebounceRef.current = window.setTimeout(async () => {
+      parseDebounceRef.current = null;
+      const abort = new AbortController();
+      parseAbortRef.current = abort;
+      setJobFileUploading(true);
+      try {
+        // Use a synthetic .txt blob to reuse the existing upload path.
+        // The backend extracts text from .txt files as a no-op and
+        // routes straight into build_job_description_from_text_auto
+        // (the same LLM path the file-upload UI uses).
+        const blob = new Blob([text], { type: "text/plain" });
+        const file = new File([blob], "pasted.txt", { type: "text/plain" });
+        const response = await uploadJobDescriptionFile(file);
+        if (abort.signal.aborted) return;
+        lastParsedTextRef.current = text;
+        setJobFileState(response);
+      } catch (error) {
+        if (abort.signal.aborted) return;
+        // Don't surface a toast for transient parse failures — the
+        // regex preview in JDReview is still rendering the user's
+        // text. A quota / auth error will surface from the request
+        // wrapper's own interceptor.
+        void error;
+      } finally {
+        if (parseAbortRef.current === abort) {
+          parseAbortRef.current = null;
+        }
+        setJobFileUploading(false);
+      }
+    }, 1500);
+
+    return () => {
+      if (parseDebounceRef.current !== null) {
+        window.clearTimeout(parseDebounceRef.current);
+        parseDebounceRef.current = null;
+      }
+    };
+    // Intentionally only re-run on manualJobText / authStatus changes.
+    // jobFileState IS read inside the effect but we don't want updates
+    // to it to re-trigger the effect (the effect SETS it, which would
+    // create a loop). The "already-parsed" check above handles the
+    // stale-jobFileState case safely on the next text change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualJobText, authStatus]);
+
   const {
     savedJobs,
     savedJobsLoading,

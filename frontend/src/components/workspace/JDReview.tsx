@@ -126,13 +126,6 @@ export type JDReviewProps = {
   onClearLoadedJobDescription: () => void;
 };
 
-function summaryHeadlineFromAnalysis(
-  analysis: WorkspaceAnalysisResponse | null,
-): string | null {
-  if (!analysis) return null;
-  return analysis.jd_summary_view?.summary || null;
-}
-
 export function JDReview({
   analysisState,
   analysisIsStale,
@@ -157,10 +150,41 @@ export function JDReview({
     event.target.value = "";
   }
 
+  // Data-source precedence for every derived field below:
+  //
+  //   analysisState (Step 04 ran, !stale)  >  jobFileState (LLM parse
+  //   from upload OR debounced paste-auto-parse)  >  review (frontend
+  //   deterministic regex from buildJobReview)
+  //
+  // Before the 2026-05-27 unification, JDReview only used analysisState
+  // or review — jobFileState's LLM-parsed requirements + jd_summary_view
+  // were FETCHED but never displayed. So even after a clean upload, the
+  // Must-Have / Nice-to-Have panels showed the brittle frontend regex
+  // (which leaked section headers like "REQUIREMENTS / MUST-HAVES" and
+  // misclassified items across sections). Now the LLM parse is the
+  // primary source whenever it's available, with regex only as a true
+  // fallback when no LLM parse exists yet.
+  //
+  // The jobFileState slot is populated by three paths:
+  //   1. Explicit file upload (handleJobDescriptionUpload)
+  //   2. Debounced auto-parse of pasted text (Phase 2 in WorkspaceShell)
+  //   3. Future paths that hit the same /workspace/job-description/upload
+  //      endpoint
+  // All three produce a WorkspaceJobDescriptionUploadResponse with the
+  // same { job_description, jd_summary_view } shape, so this component
+  // doesn't need to know which path populated it.
+  const llmJobDescription =
+    analysisState && !analysisIsStale
+      ? analysisState.job_description
+      : jobFileState?.job_description ?? null;
+  const llmSummaryView =
+    analysisState && !analysisIsStale
+      ? analysisState.jd_summary_view
+      : jobFileState?.jd_summary_view ?? null;
+
   const heroTitle =
     activeJob?.title ||
-    jobFileState?.job_description.title ||
-    analysisState?.job_description.title ||
+    llmJobDescription?.title ||
     review?.summaryCards.find((card) => card.label === "Target Role")?.value ||
     "Job description";
 
@@ -171,12 +195,13 @@ export function JDReview({
 
   const heroLocation =
     activeJob?.location ||
+    llmJobDescription?.location ||
     review?.summaryCards.find((card) => card.label === "Location")?.value ||
     "";
 
   const heroSource =
     activeJob?.source ||
-    (jobFileState ? "Uploaded file" : review ? "Pasted text" : "");
+    (jobFileState ? "Parsed JD" : review ? "Pasted text" : "");
 
   // Hero metrics: prefer the parsed analysisState numbers when fresh,
   // fall back to the JobReview computed by `buildJobReview` from the
@@ -197,6 +222,10 @@ export function JDReview({
     tone?: "muted";
   };
   const metrics = ((): HeroMetric[] => {
+    // Match Score tile only populates from a fresh analysisState (it's
+    // derived from fit_analysis which doesn't exist on jobFileState).
+    // jobFileState provides the requirement counts but never a score —
+    // that requires the full Step 04 pipeline.
     if (analysisState && !analysisIsStale) {
       const fit = analysisState.fit_analysis;
       return [
@@ -220,6 +249,37 @@ export function JDReview({
                 .replace(/[^0-9+]/g, "")
                 .slice(0, 4) || "—"
             : "—",
+          unit: "",
+        },
+      ];
+    }
+    // Pre-analysis path: prefer jobFileState requirement counts (LLM-
+    // parsed, accurate) over the review regex counts when both exist.
+    // Match Score tile still placeholder until analysis runs.
+    if (llmJobDescription) {
+      const yrs = llmJobDescription.requirements.experience_requirement
+        ? llmJobDescription.requirements.experience_requirement
+            .replace(/[^0-9+]/g, "")
+            .slice(0, 4) || "—"
+        : "—";
+      return [
+        {
+          label: "Match score",
+          value: "—",
+          unit: "",
+          hint: analysisState && analysisIsStale
+            ? "Re-run analysis (inputs changed)"
+            : "Run analysis to compute",
+          tone: "muted",
+        },
+        {
+          label: "Hard skills",
+          value: String(llmJobDescription.requirements.hard_skills.length),
+          unit: "",
+        },
+        {
+          label: "Years required",
+          value: yrs,
           unit: "",
         },
       ];
@@ -259,27 +319,32 @@ export function JDReview({
     return [];
   })();
 
+  // Summary headline: jd_summary_view from LLM is preferred; regex
+  // "Role Snapshot" is the last resort.
   const summaryText =
-    (analysisState && !analysisIsStale && summaryHeadlineFromAnalysis(analysisState)) ||
+    llmSummaryView?.summary ||
     review?.summarySections.find((section) => section.title === "Role Snapshot")
       ?.items?.[0] ||
     null;
 
+  // Skill arrays follow the same precedence — LLM-parsed wins.
   const hardSkills =
-    analysisState && !analysisIsStale
-      ? analysisState.job_description.requirements.hard_skills
-      : (review?.hardSkills ?? []);
+    llmJobDescription?.requirements.hard_skills ?? review?.hardSkills ?? [];
   const softSkills =
-    analysisState && !analysisIsStale
-      ? analysisState.job_description.requirements.soft_skills
-      : (review?.softSkills ?? []);
+    llmJobDescription?.requirements.soft_skills ?? review?.softSkills ?? [];
 
+  // Body sections (Must-Have Themes / Nice-to-Have Signals / etc.)
+  // prefer the LLM-built jd_summary_view.sections — that's the source
+  // that gets the section-header scrubbing + benefits-keyword filter
+  // applied in jd_llm_parser_service.py. Falls through to regex only
+  // when no LLM parse exists yet (e.g. text was just pasted and the
+  // debounce hasn't fired yet, or the user is offline).
   const bodySections =
-    analysisState && !analysisIsStale
-      ? analysisState.jd_summary_view.sections
-      : (review?.summarySections.filter(
-          (section) => section.title !== "Role Snapshot",
-        ) ?? []);
+    llmSummaryView?.sections ??
+    review?.summarySections.filter(
+      (section) => section.title !== "Role Snapshot",
+    ) ??
+    [];
 
   const inputBodyVisible = !jobInputCollapsed;
 
