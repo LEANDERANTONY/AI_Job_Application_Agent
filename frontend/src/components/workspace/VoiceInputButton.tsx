@@ -354,20 +354,20 @@ export function VoiceInputButton({
         }}
       >
         {isRecording ? (
-          // Pulsing red dot while recording. CSS keyframes in the
-          // existing globals.css don't include a `pulse` animation yet
-          // — inline keyframes via a style tag would over-complicate
-          // the surface. We rely on a subtle scale via inline style
-          // animation so a user can't tell whether the recording is
-          // active just from a static screenshot.
+          // Pulsing red dot while recording — a subtle scale so the active
+          // state reads even on a static screenshot. The animation is driven
+          // by the `voice-input-pulsing` CLASS (review L6), not an inline
+          // `animation` style, so the prefers-reduced-motion override can
+          // target the class instead of a brittle [style*="animation"]
+          // attribute-substring match that any refactor would silently break.
           <span
+            className="voice-input-pulsing"
             style={{
               display: "inline-block",
               width: 10,
               height: 10,
               borderRadius: "50%",
               background: "#ef4444",
-              animation: "voice-pulse 1.2s ease-in-out infinite",
             }}
           />
         ) : (
@@ -375,10 +375,11 @@ export function VoiceInputButton({
         )}
         <span>{buttonLabel}</span>
       </span>
-      {/* Keyframes defined inline so the button is self-contained;
-          adding a new global rule for one component would bloat the
-          stylesheet. The animation reduces gracefully for users with
-          `prefers-reduced-motion` via the media query below. */}
+      {/* Keyframes + the pulsing class defined inline so the button is
+          self-contained; adding a new global rule for one component would
+          bloat the stylesheet. The reduced-motion override targets the
+          `.voice-input-pulsing` class (review L6) so it can't be defeated by
+          a refactor that moves the animation off an inline style. */}
       <style jsx>{`
         @keyframes voice-pulse {
           0%, 100% {
@@ -390,8 +391,11 @@ export function VoiceInputButton({
             opacity: 0.6;
           }
         }
+        .voice-input-pulsing {
+          animation: voice-pulse 1.2s ease-in-out infinite;
+        }
         @media (prefers-reduced-motion: reduce) {
-          span[style*="animation"] {
+          .voice-input-pulsing {
             animation: none !important;
           }
         }
