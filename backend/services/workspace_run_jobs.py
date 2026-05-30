@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 import uuid
@@ -91,6 +92,37 @@ _JOBS: dict[str, WorkspaceRunJob] = {}
 _LOCK = threading.Lock()
 _RUN_SEMAPHORE = threading.BoundedSemaphore(JOB_CONCURRENCY_LIMIT)
 
+# Per-user in-flight cap (review BACKEND-2 / BACKEND-4). The global
+# semaphore above is a process-MEMORY backstop, not a fairness control:
+# one account firing several concurrent /analyze-jobs could hold every
+# global slot AND slip multiple full runs past the read-before-write
+# weekly-token gate (the meter only records AFTER a run, so concurrent
+# entry checks all read the same pre-run total). This per-user
+# reservation — taken BEFORE the global slot — bounds how many runs a
+# single user can have in flight (default 1). Env-configurable so it can
+# be tuned at launch without a redeploy.
+_PER_USER_RUN_LIMIT = max(
+    1, int(os.getenv("AIJOBAGENT_PER_USER_RUN_LIMIT", "1") or "1")
+)
+_INFLIGHT_BY_USER: dict[str, int] = {}
+
+
+def _release_inflight(user_id: str) -> None:
+    """Drop one in-flight reservation for ``user_id``.
+
+    No-op when blank or already at zero, so it is safe to call more than
+    once on a failure path (the reservation is released exactly once on
+    the happy path, by ``_run_job``'s finally)."""
+    normalized = str(user_id or "").strip()
+    if not normalized:
+        return
+    with _LOCK:
+        current = _INFLIGHT_BY_USER.get(normalized, 0)
+        if current <= 1:
+            _INFLIGHT_BY_USER.pop(normalized, None)
+        else:
+            _INFLIGHT_BY_USER[normalized] = current - 1
+
 
 def _prune_jobs() -> None:
     cutoff = time.time() - JOB_TTL_SECONDS
@@ -150,6 +182,7 @@ def _run_job(
     premium: bool,
     access_token: str,
     refresh_token: str,
+    owner_user_id: str | None = None,
 ) -> None:
     try:
         try:
@@ -266,9 +299,11 @@ def _run_job(
                 job.error_message = str(error) or "The agentic workflow failed unexpectedly."
                 job.updated_at = time.time()
     finally:
-        # Release the slot regardless of how the worker exits, so a
-        # crash never permanently shrinks the cap below the limit.
+        # Release the global slot AND the per-user reservation regardless
+        # of how the worker exits, so a crash never permanently shrinks
+        # either cap below its limit.
         _RUN_SEMAPHORE.release()
+        _release_inflight(owner_user_id or "")
 
 
 def start_workspace_analysis_job(
@@ -297,43 +332,69 @@ def start_workspace_analysis_job(
     # that gate round-trips to the client via the job's `error` envelope.
     enforce_llm_budget(owner_user_id or "", tier)
 
-    # Non-blocking acquire so a saturated server fast-fails the request
-    # rather than queueing it behind an opaque thread-spawn delay. The
-    # matching release lives in `_run_job`'s finally block.
-    if not _RUN_SEMAPHORE.acquire(blocking=False):
-        raise WorkspaceRunJobCapacityError(
-            "Too many agentic workflow runs are in flight right now."
-        )
+    # Per-user in-flight RESERVATION (review BACKEND-2 / BACKEND-4): taken
+    # atomically BEFORE the global semaphore so a single account cannot
+    # hold multiple global slots or fan out concurrent runs past the
+    # read-before-write weekly-token gate. The global semaphore stays as
+    # the process-memory backstop. Released by `_run_job`'s finally on the
+    # happy path, or by this function's failure path below.
+    normalized_owner = str(owner_user_id or "").strip()
+    if normalized_owner:
+        with _LOCK:
+            if _INFLIGHT_BY_USER.get(normalized_owner, 0) >= _PER_USER_RUN_LIMIT:
+                raise WorkspaceRunJobCapacityError(
+                    "You already have an agentic workflow run in progress. "
+                    "Wait for it to finish before starting another."
+                )
+            _INFLIGHT_BY_USER[normalized_owner] = (
+                _INFLIGHT_BY_USER.get(normalized_owner, 0) + 1
+            )
 
     try:
-        with _LOCK:
-            _prune_jobs()
-            job_id = uuid.uuid4().hex
-            job = WorkspaceRunJob(job_id=job_id, owner_user_id=owner_user_id)
-            _JOBS[job_id] = job
+        # Non-blocking acquire so a saturated server fast-fails the request
+        # rather than queueing it behind an opaque thread-spawn delay. The
+        # matching release lives in `_run_job`'s finally block.
+        if not _RUN_SEMAPHORE.acquire(blocking=False):
+            raise WorkspaceRunJobCapacityError(
+                "Too many agentic workflow runs are in flight right now."
+            )
 
-        worker = threading.Thread(
-            target=_run_job,
-            kwargs={
-                "job_id": job_id,
-                "resume_text": resume_text,
-                "resume_filetype": resume_filetype,
-                "resume_source": resume_source,
-                "job_description_text": job_description_text,
-                "imported_job_posting": imported_job_posting,
-                "premium": premium,
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-            },
-            daemon=True,
-        )
-        worker.start()
+        try:
+            with _LOCK:
+                _prune_jobs()
+                job_id = uuid.uuid4().hex
+                job = WorkspaceRunJob(job_id=job_id, owner_user_id=owner_user_id)
+                _JOBS[job_id] = job
+
+            worker = threading.Thread(
+                target=_run_job,
+                kwargs={
+                    "job_id": job_id,
+                    "resume_text": resume_text,
+                    "resume_filetype": resume_filetype,
+                    "resume_source": resume_source,
+                    "job_description_text": job_description_text,
+                    "imported_job_posting": imported_job_posting,
+                    "premium": premium,
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "owner_user_id": owner_user_id,
+                },
+                daemon=True,
+            )
+            worker.start()
+        except BaseException:
+            # Thread spawn (or anything after the acquire) failed before
+            # `_run_job` could run; release the slot so capacity isn't lost.
+            _RUN_SEMAPHORE.release()
+            with _LOCK:
+                _JOBS.pop(job_id, None)
+            raise
     except BaseException:
-        # Thread spawn (or anything else above) failed before `_run_job`
-        # could run; release the slot ourselves so capacity isn't lost.
-        _RUN_SEMAPHORE.release()
-        with _LOCK:
-            _JOBS.pop(job_id, None)
+        # The per-user reservation was taken above but the run never
+        # reached a worker that would release it (global slot exhausted,
+        # or spawn failed) — release it here so it isn't leaked.
+        _release_inflight(normalized_owner)
         raise
 
     with _LOCK:
