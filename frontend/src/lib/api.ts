@@ -32,7 +32,6 @@ import type {
   WorkspaceHandoffStartResponse,
   AssistantStreamEvent,
   WorkspaceAssistantRequest,
-  WorkspaceAssistantResponse,
   WorkspaceJobDescriptionUploadResponse,
   WorkspaceQuotaResponse,
   WorkspaceResumeUploadResponse,
@@ -604,16 +603,6 @@ export function getCheckoutUrl(
 export async function getCustomerPortalUrl(): Promise<{ url: string }> {
   return request<{ url: string }>("/billing/portal", {
     method: "POST",
-  });
-}
-
-export async function askWorkspaceAssistant(payload: WorkspaceAssistantRequest) {
-  return request<WorkspaceAssistantResponse>("/workspace/assistant/answer", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
   });
 }
 

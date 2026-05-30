@@ -1110,6 +1110,17 @@ def answer_assistant_question(
     payload: WorkspaceAssistantRequestModel,
     auth_tokens=Depends(get_required_auth_tokens),
 ):
+    """Non-streaming assistant answer — retained as a tested fallback (L1/L7).
+
+    The UI talks only to the SSE sibling below; the dead client wrapper
+    (``askWorkspaceAssistant``) was removed. This route is deliberately KEPT
+    rather than deleted (review L7): it shares the SAME accounted code path
+    (``answer_workspace_question`` -> assistant_service, one monthly
+    assistant-turn counter across both routes) and is pinned by the
+    quota / login-required / error-handling suites, so it cannot silently
+    drift from the stream. If a future change makes it a true parallel
+    contract instead of a thin sync mirror, delete it and its tests then.
+    """
     access_token, refresh_token = auth_tokens
     try:
         return answer_workspace_question(
