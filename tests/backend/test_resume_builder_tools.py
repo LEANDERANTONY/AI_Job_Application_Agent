@@ -18,6 +18,7 @@ import json
 import pytest
 
 from backend.services import resume_builder_tools as tools
+from src.openai_service import OpenAIService
 
 
 # ---------------------------------------------------------------------------
@@ -322,16 +323,17 @@ class _StubOpenAIClient:
         self.responses = _ResponsesNamespace(self)
 
 
-class _StubOpenAIService:
-    def __init__(self, *, output_text="External context summary.", raise_exc=None):
-        self._client = _StubOpenAIClient(output_text=output_text, raise_exc=raise_exc)
-
-    def is_available(self):
-        return True
+def _make_stub_service(*, output_text="External context summary.", raise_exc=None):
+    """A REAL OpenAIService wrapping the stub client, so the web_search
+    dispatcher exercises the ACCOUNTED ``run_builtin_web_search`` path —
+    the raw-._client bypass it used to take is gone (review LLM-1)."""
+    return OpenAIService(
+        client=_StubOpenAIClient(output_text=output_text, raise_exc=raise_exc)
+    )
 
 
 def test_web_search_success_returns_synthesized_text():
-    svc = _StubOpenAIService(
+    svc = _make_stub_service(
         output_text="Anthropic Senior MLE roles typically expect: 1) ..."
     )
     output = tools.execute_tool(
@@ -354,8 +356,30 @@ def test_web_search_success_returns_synthesized_text():
     )
 
 
+def test_web_search_dispatcher_routes_through_accounting():
+    """The dispatcher now goes through OpenAIService.run_builtin_web_search,
+    so the search records a cost-trace (and meters tokens). Before the
+    fix it reached the raw ._client and recorded nothing (LLM-1)."""
+    captured: list[dict] = []
+    service = OpenAIService(
+        client=_StubOpenAIClient(output_text="Anthropic Senior MLE roles ..."),
+        user_id="user-ws",
+        cost_trace_recorder=captured.append,
+    )
+    output = tools.execute_tool(
+        "web_search",
+        json.dumps({"query": "Anthropic Senior MLE expectations"}),
+        openai_service=service,
+    )
+    payload = json.loads(output)
+    assert payload["ok"] is True
+    assert len(captured) == 1
+    assert captured[0]["task_name"] == "web_search"
+    assert captured[0]["user_id"] == "user-ws"
+
+
 def test_web_search_rejects_empty_query():
-    svc = _StubOpenAIService()
+    svc = _make_stub_service()
     output = tools.execute_tool(
         "web_search", json.dumps({"query": "   "}), openai_service=svc
     )
@@ -378,7 +402,7 @@ def test_web_search_requires_openai_service():
 
 
 def test_web_search_handles_dispatch_exception():
-    svc = _StubOpenAIService(raise_exc=RuntimeError("API exploded"))
+    svc = _make_stub_service(raise_exc=RuntimeError("API exploded"))
     output = tools.execute_tool(
         "web_search", json.dumps({"query": "test"}), openai_service=svc
     )
@@ -389,7 +413,7 @@ def test_web_search_handles_dispatch_exception():
 
 def test_web_search_truncates_oversize_result():
     huge = "x" * (tools.WEB_SEARCH_MAX_RESULT_CHARS + 5000)
-    svc = _StubOpenAIService(output_text=huge)
+    svc = _make_stub_service(output_text=huge)
     output = tools.execute_tool(
         "web_search", json.dumps({"query": "test"}), openai_service=svc
     )
@@ -409,7 +433,7 @@ def test_execute_tool_does_not_forward_openai_service_to_fetch():
     monkeypatch_target = tools._fetch_text
     tools._fetch_text = fake_fetch
     try:
-        svc = _StubOpenAIService()
+        svc = _make_stub_service()
         output = tools.execute_tool(
             "fetch_github_readme",
             json.dumps({"url": "https://github.com/foo/bar"}),

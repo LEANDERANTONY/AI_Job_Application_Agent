@@ -163,3 +163,36 @@ def test_run_job_real_failure_still_failed(monkeypatch):
     snap = get_workspace_analysis_job("boom")
     assert snap is not None
     assert snap["status"] == "failed"
+
+
+def test_start_binds_owner_and_get_enforces_it(monkeypatch):
+    """`start_workspace_analysis_job` stamps the caller's user_id onto
+    the job, and `get_workspace_analysis_job` refuses a non-owner — the
+    seam the status/cancel routes rely on to close the BOLA (SECURITY-1).
+
+    A no-op fake `run_workspace_analysis` keeps the spawned worker thread
+    cheap; owner binding happens synchronously at job creation, so it is
+    observable the moment `start_...` returns."""
+    monkeypatch.setattr(wrj, "run_workspace_analysis", lambda **_kwargs: {"ok": True})
+
+    handle = wrj.start_workspace_analysis_job(
+        resume_text="r",
+        resume_filetype="TXT",
+        resume_source="workspace",
+        job_description_text="jd",
+        imported_job_posting=None,
+        premium=False,
+        access_token="",
+        refresh_token="",
+        owner_user_id="user-9",
+    )
+    job_id = handle["job_id"]
+
+    with wrj._LOCK:
+        assert wrj._JOBS[job_id].owner_user_id == "user-9"
+
+    # A non-owner read is refused (None -> route 404); the owner reads it;
+    # and an owner_user_id of None (internal/legacy caller) skips the check.
+    assert get_workspace_analysis_job(job_id, owner_user_id="someone-else") is None
+    assert get_workspace_analysis_job(job_id, owner_user_id="user-9") is not None
+    assert get_workspace_analysis_job(job_id) is not None

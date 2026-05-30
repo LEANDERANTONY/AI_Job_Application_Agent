@@ -485,6 +485,11 @@ export type WorkspaceAnalysisJobStatusResponse = {
   progress_percent: number;
   result: WorkspaceAnalysisResponse | null;
   error_message: string | null;
+  /** Structured tier-limit envelope when a quota gate fired inside the
+   *  worker thread — mirrors the global 429 body so the polling hook
+   *  can render the same upgrade CTA the synchronous 429 path gives,
+   *  instead of a generic "failed" toast (review CRITICAL-2). */
+  error?: TierLimitExceededPayload | null;
 };
 
 export type WorkspaceAssistantResponse = {

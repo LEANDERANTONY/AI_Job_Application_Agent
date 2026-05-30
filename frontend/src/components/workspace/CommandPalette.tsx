@@ -24,6 +24,7 @@ import {
   SparkleIcon,
   UploadIcon,
 } from "@/components/workspace/icons";
+import { useAccessibleDialog } from "@/lib/useAccessibleDialog";
 import type { JobPosting } from "@/lib/api-types";
 
 export type CommandPaletteTab = "resume" | "jobs" | "jd" | "analysis";
@@ -87,15 +88,22 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  // Escape-to-close, initial focus into the input, the Tab focus trap, and
+  // focus-restore (to whatever was focused when ⌘K opened the palette) are
+  // owned by the shared hook (A11Y-1). The palette has no DOM trigger, so
+  // restoreFocusRef is omitted (restore to the previously-focused element).
+  useAccessibleDialog({
+    open,
+    onClose,
+    containerRef: panelRef,
+    initialFocusRef: inputRef,
+  });
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
     setActive(0);
-    // Focus the input on next tick to win against the keydown that
-    // opened the palette.
-    const id = window.setTimeout(() => inputRef.current?.focus(), 0);
-    return () => window.clearTimeout(id);
   }, [open]);
 
   const items: PaletteItem[] = useMemo(() => {
@@ -299,10 +307,8 @@ export function CommandPalette({
       }
       return;
     }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-    }
+    // Escape is handled at the document level by useAccessibleDialog so it
+    // works regardless of which element inside the panel has focus.
   }
 
   if (!open) return null;
@@ -314,13 +320,28 @@ export function CommandPalette({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="b-cmd-panel" onKeyDown={handleKeyDown}>
+      <div
+        ref={panelRef}
+        className="b-cmd-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        onKeyDown={handleKeyDown}
+      >
         <div className="b-cmd-input-wrap">
           <span className="b-cmd-input-icon">
             <SearchIcon />
           </span>
           <input
             className="b-cmd-input"
+            role="combobox"
+            aria-expanded
+            aria-controls="cmd-palette-listbox"
+            aria-activedescendant={
+              filtered[safeActive]
+                ? `cmd-opt-${filtered[safeActive].id}`
+                : undefined
+            }
             onChange={(event) => {
               setQuery(event.target.value);
               setActive(0);
@@ -349,7 +370,7 @@ export function CommandPalette({
           </button>
         </div>
 
-        <div className="b-cmd-list">
+        <div className="b-cmd-list" id="cmd-palette-listbox" role="listbox">
           {groups.length === 0 ? (
             <div className="b-cmd-empty">No results for &ldquo;{query}&rdquo;</div>
           ) : (
@@ -361,6 +382,9 @@ export function CommandPalette({
                   return (
                     <button
                       className="b-cmd-item"
+                      role="option"
+                      id={`cmd-opt-${item.id}`}
+                      aria-selected={flatIndex === safeActive}
                       data-active={flatIndex === safeActive}
                       disabled={item.disabled}
                       key={item.id}

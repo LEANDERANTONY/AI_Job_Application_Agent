@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.errors import AppError
+from src.errors import AppError, QuotaExceededError
 from src.logging_utils import get_logger, log_event
 
+from backend.quota import enforce_llm_budget
 from backend.services.workspace_service import run_workspace_analysis
 
 
@@ -61,6 +63,20 @@ class WorkspaceRunJob:
     progress_percent: int = 3
     result: dict[str, Any] | None = None
     error_message: str | None = None
+    # Structured error envelope mirroring the global 429 body
+    # (code/counter/current/cap/reset_period/tier). Populated when a
+    # QuotaExceededError fires inside the worker so the polling client
+    # renders the SAME upgrade CTA the synchronous 429 path gives,
+    # instead of a generic "failed" toast (review CRITICAL-2 / Rec #1).
+    error: dict[str, Any] | None = None
+    # Identity that created this job, captured from the authenticated
+    # request in `start_workspace_analysis_job`. The status / cancel
+    # routes pass the *caller's* resolved user_id; a mismatch is treated
+    # as 404 (never 403 — we don't confirm the job exists). The job_id is
+    # a uuid4 carried in the URL and leaks via access logs / Referer /
+    # telemetry, so it is NOT an authorization token on its own. Closes
+    # the unauthenticated BOLA (review SECURITY-1).
+    owner_user_id: str | None = None
     # Set by `cancel_workspace_analysis_job`; observed by the worker at
     # the next stage boundary (begin_stage → progress callback →
     # `_update_job_progress`). Cooperative because a Python thread
@@ -75,6 +91,37 @@ class WorkspaceRunJob:
 _JOBS: dict[str, WorkspaceRunJob] = {}
 _LOCK = threading.Lock()
 _RUN_SEMAPHORE = threading.BoundedSemaphore(JOB_CONCURRENCY_LIMIT)
+
+# Per-user in-flight cap (review BACKEND-2 / BACKEND-4). The global
+# semaphore above is a process-MEMORY backstop, not a fairness control:
+# one account firing several concurrent /analyze-jobs could hold every
+# global slot AND slip multiple full runs past the read-before-write
+# weekly-token gate (the meter only records AFTER a run, so concurrent
+# entry checks all read the same pre-run total). This per-user
+# reservation — taken BEFORE the global slot — bounds how many runs a
+# single user can have in flight (default 1). Env-configurable so it can
+# be tuned at launch without a redeploy.
+_PER_USER_RUN_LIMIT = max(
+    1, int(os.getenv("AIJOBAGENT_PER_USER_RUN_LIMIT", "1") or "1")
+)
+_INFLIGHT_BY_USER: dict[str, int] = {}
+
+
+def _release_inflight(user_id: str) -> None:
+    """Drop one in-flight reservation for ``user_id``.
+
+    No-op when blank or already at zero, so it is safe to call more than
+    once on a failure path (the reservation is released exactly once on
+    the happy path, by ``_run_job``'s finally)."""
+    normalized = str(user_id or "").strip()
+    if not normalized:
+        return
+    with _LOCK:
+        current = _INFLIGHT_BY_USER.get(normalized, 0)
+        if current <= 1:
+            _INFLIGHT_BY_USER.pop(normalized, None)
+        else:
+            _INFLIGHT_BY_USER[normalized] = current - 1
 
 
 def _prune_jobs() -> None:
@@ -93,6 +140,7 @@ def _serialize_job(job: WorkspaceRunJob) -> dict[str, Any]:
         "progress_percent": int(job.progress_percent),
         "result": job.result,
         "error_message": job.error_message,
+        "error": job.error,
     }
 
 
@@ -134,6 +182,7 @@ def _run_job(
     premium: bool,
     access_token: str,
     refresh_token: str,
+    owner_user_id: str | None = None,
 ) -> None:
     try:
         try:
@@ -189,6 +238,39 @@ def _run_job(
                 )
                 job.error_message = None
                 job.updated_at = time.time()
+        except QuotaExceededError as error:
+            # A quota gate fired on the worker thread — most often the
+            # monthly application counter (check_and_increment), or the
+            # weekly token meter racing the synchronous pre-flight under
+            # concurrency. Carry the SAME structured envelope the global
+            # 429 handler produces so the polling client renders the
+            # upgrade CTA, not a generic "failed" toast (CRITICAL-2).
+            message = error.user_message
+            log_event(
+                LOGGER,
+                30,
+                "workspace_run_job_quota_blocked",
+                "The background workspace analysis job hit a plan limit.",
+                job_id=job_id,
+                counter=error.counter,
+                tier=error.tier,
+            )
+            with _LOCK:
+                job = _JOBS.get(job_id)
+                if job is None:
+                    return
+                job.status = "failed"
+                job.error_message = message
+                job.error = {
+                    "code": "tier_limit_exceeded",
+                    "detail": message,
+                    "counter": error.counter,
+                    "current": error.current,
+                    "cap": error.cap,
+                    "reset_period": error.reset_period,
+                    "tier": error.tier,
+                }
+                job.updated_at = time.time()
         except AppError as error:
             message = error.user_message
             log_event(
@@ -217,9 +299,11 @@ def _run_job(
                 job.error_message = str(error) or "The agentic workflow failed unexpectedly."
                 job.updated_at = time.time()
     finally:
-        # Release the slot regardless of how the worker exits, so a
-        # crash never permanently shrinks the cap below the limit.
+        # Release the global slot AND the per-user reservation regardless
+        # of how the worker exits, so a crash never permanently shrinks
+        # either cap below its limit.
         _RUN_SEMAPHORE.release()
+        _release_inflight(owner_user_id or "")
 
 
 def start_workspace_analysis_job(
@@ -232,65 +316,118 @@ def start_workspace_analysis_job(
     premium: bool = False,
     access_token: str,
     refresh_token: str,
+    owner_user_id: str | None = None,
+    tier: str = "free",
 ) -> dict[str, Any]:
-    # Non-blocking acquire so a saturated server fast-fails the request
-    # rather than queueing it behind an opaque thread-spawn delay. The
-    # matching release lives in `_run_job`'s finally block.
-    if not _RUN_SEMAPHORE.acquire(blocking=False):
-        raise WorkspaceRunJobCapacityError(
-            "Too many agentic workflow runs are in flight right now."
-        )
+    # Quota PRE-FLIGHT (review CRITICAL-2 / Rec #1): enforce the weekly
+    # LLM-token budget SYNCHRONOUSLY — before acquiring a run slot or
+    # spawning the worker — so a capped user gets the canonical 429 out
+    # of the POST (which the frontend already renders as an upgrade CTA)
+    # instead of a 200 "queued" that later flips to a generic "failed"
+    # toast. enforce_llm_budget is a read-only check (it never
+    # increments), so it does NOT double-charge the meter the worker
+    # records into, and it no-ops on a blank user_id / unlimited tier.
+    # The monthly application counter stays inside the worker (it is an
+    # atomic increment that can't be pre-checked without double-billing);
+    # that gate round-trips to the client via the job's `error` envelope.
+    enforce_llm_budget(owner_user_id or "", tier)
+
+    # Per-user in-flight RESERVATION (review BACKEND-2 / BACKEND-4): taken
+    # atomically BEFORE the global semaphore so a single account cannot
+    # hold multiple global slots or fan out concurrent runs past the
+    # read-before-write weekly-token gate. The global semaphore stays as
+    # the process-memory backstop. Released by `_run_job`'s finally on the
+    # happy path, or by this function's failure path below.
+    normalized_owner = str(owner_user_id or "").strip()
+    if normalized_owner:
+        with _LOCK:
+            if _INFLIGHT_BY_USER.get(normalized_owner, 0) >= _PER_USER_RUN_LIMIT:
+                raise WorkspaceRunJobCapacityError(
+                    "You already have an agentic workflow run in progress. "
+                    "Wait for it to finish before starting another."
+                )
+            _INFLIGHT_BY_USER[normalized_owner] = (
+                _INFLIGHT_BY_USER.get(normalized_owner, 0) + 1
+            )
 
     try:
-        with _LOCK:
-            _prune_jobs()
-            job_id = uuid.uuid4().hex
-            job = WorkspaceRunJob(job_id=job_id)
-            _JOBS[job_id] = job
+        # Non-blocking acquire so a saturated server fast-fails the request
+        # rather than queueing it behind an opaque thread-spawn delay. The
+        # matching release lives in `_run_job`'s finally block.
+        if not _RUN_SEMAPHORE.acquire(blocking=False):
+            raise WorkspaceRunJobCapacityError(
+                "Too many agentic workflow runs are in flight right now."
+            )
 
-        worker = threading.Thread(
-            target=_run_job,
-            kwargs={
-                "job_id": job_id,
-                "resume_text": resume_text,
-                "resume_filetype": resume_filetype,
-                "resume_source": resume_source,
-                "job_description_text": job_description_text,
-                "imported_job_posting": imported_job_posting,
-                "premium": premium,
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-            },
-            daemon=True,
-        )
-        worker.start()
+        try:
+            with _LOCK:
+                _prune_jobs()
+                job_id = uuid.uuid4().hex
+                job = WorkspaceRunJob(job_id=job_id, owner_user_id=owner_user_id)
+                _JOBS[job_id] = job
+
+            worker = threading.Thread(
+                target=_run_job,
+                kwargs={
+                    "job_id": job_id,
+                    "resume_text": resume_text,
+                    "resume_filetype": resume_filetype,
+                    "resume_source": resume_source,
+                    "job_description_text": job_description_text,
+                    "imported_job_posting": imported_job_posting,
+                    "premium": premium,
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "owner_user_id": owner_user_id,
+                },
+                daemon=True,
+            )
+            worker.start()
+        except BaseException:
+            # Thread spawn (or anything after the acquire) failed before
+            # `_run_job` could run; release the slot so capacity isn't lost.
+            _RUN_SEMAPHORE.release()
+            with _LOCK:
+                _JOBS.pop(job_id, None)
+            raise
     except BaseException:
-        # Thread spawn (or anything else above) failed before `_run_job`
-        # could run; release the slot ourselves so capacity isn't lost.
-        _RUN_SEMAPHORE.release()
-        with _LOCK:
-            _JOBS.pop(job_id, None)
+        # The per-user reservation was taken above but the run never
+        # reached a worker that would release it (global slot exhausted,
+        # or spawn failed) — release it here so it isn't leaked.
+        _release_inflight(normalized_owner)
         raise
 
     with _LOCK:
         return _serialize_job(_JOBS[job_id])
 
 
-def get_workspace_analysis_job(job_id: str) -> dict[str, Any] | None:
+def get_workspace_analysis_job(
+    job_id: str, owner_user_id: str | None = None
+) -> dict[str, Any] | None:
     with _LOCK:
         _prune_jobs()
         job = _JOBS.get(job_id)
         if job is None:
             return None
+        if owner_user_id is not None and job.owner_user_id != owner_user_id:
+            # The caller is authenticated but is not the job's owner.
+            # Return None so the route emits the SAME 404 it gives for an
+            # unknown id — never reveal that the job exists (SECURITY-1).
+            return None
         return _serialize_job(job)
 
 
-def cancel_workspace_analysis_job(job_id: str) -> dict[str, Any] | None:
+def cancel_workspace_analysis_job(
+    job_id: str, owner_user_id: str | None = None
+) -> dict[str, Any] | None:
     """Request cooperative cancellation of an in-flight analysis job.
 
     Returns the serialized job, or ``None`` when ``job_id`` is unknown
     (pruned past TTL, wrong id, or the single-worker process restarted
     and lost the in-memory registry — the caller maps this to a 404).
+    When ``owner_user_id`` is provided and does not match the job's
+    owner, also returns ``None`` (same 404) so a non-owner can neither
+    confirm the job exists nor cancel a stranger's run (SECURITY-1).
 
     Idempotent by design: cancelling an already-terminal job
     (completed / failed / cancelled) just returns its current state. A
@@ -308,6 +445,9 @@ def cancel_workspace_analysis_job(job_id: str) -> dict[str, Any] | None:
         _prune_jobs()
         job = _JOBS.get(job_id)
         if job is None:
+            return None
+        if owner_user_id is not None and job.owner_user_id != owner_user_id:
+            # Not the owner — same 404 as an unknown id (SECURITY-1).
             return None
         if job.status not in _TERMINAL_JOB_STATUSES:
             job.cancel_requested = True

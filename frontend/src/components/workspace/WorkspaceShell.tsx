@@ -75,7 +75,7 @@ import { buildJobReview } from "@/lib/job-workspace";
 import { CheckIcon, SearchIcon } from "@/components/workspace/icons";
 import {
   AssistantPanel,
-  type AssistantStreamingTurn,
+  useAssistantStreamingStore,
 } from "@/components/workspace/AssistantPanel";
 import { CommandPalette } from "@/components/workspace/CommandPalette";
 import { TokenUsageMeter } from "@/components/workspace/TokenUsageMeter";
@@ -487,8 +487,10 @@ export function WorkspaceShell() {
 
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantSending, setAssistantSending] = useState(false);
-  const [assistantStreamingTurn, setAssistantStreamingTurn] =
-    useState<AssistantStreamingTurn | null>(null);
+  // The in-flight streaming buffer lives in a zustand store consumed
+  // only by AssistantPanel (PERF-1). The shell writes it non-reactively
+  // via getState() inside submitAssistantQuestion so token deltas no
+  // longer re-render the whole workspace tree.
   // Holds the AbortController for the in-flight stream so route changes
   // (or a clear-conversation press) can cancel the fetch and stop
   // accumulating tokens into a turn the user no longer wants.
@@ -633,9 +635,14 @@ export function WorkspaceShell() {
   const activeResumeState = resumeState ?? analysisState;
   const resumeText = activeResumeState?.resume_document.text ?? "";
   const currentProfile = activeResumeState?.candidate_profile ?? null;
-  const review = manualJobText.trim()
-    ? buildJobReview(manualJobText, activeJob)
-    : null;
+  // Memoized so the multi-pass regex in buildJobReview (job-workspace.ts)
+  // does not re-run on every shell render — most importantly on each JD
+  // keystroke (PERF-2). A stable `review` identity is ALSO what lets the
+  // React.memo on JDReview below actually skip re-renders.
+  const review = useMemo(
+    () => (manualJobText.trim() ? buildJobReview(manualJobText, activeJob) : null),
+    [manualJobText, activeJob],
+  );
 
   const analysisIsStale = Boolean(
     analysisState &&
@@ -943,19 +950,19 @@ export function WorkspaceShell() {
     resumeBuilderExportTheme,
   ]);
 
-  // ⌘K / Ctrl+K toggles the command palette globally.
+  // ⌘K / Ctrl+K toggles the command palette globally. Escape-to-close is
+  // owned by useAccessibleDialog inside CommandPalette (A11Y-1), so it is
+  // intentionally not handled here — one Escape owner, no double-close.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPaletteOpen((current) => !current);
-      } else if (event.key === "Escape" && paletteOpen) {
-        setPaletteOpen(false);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [paletteOpen]);
+  }, []);
 
   // The assistant is no longer gated on having run an analysis. Users
   // can ask product-help questions ("how do I use this?", "where do I
@@ -1865,8 +1872,14 @@ export function WorkspaceShell() {
     const abortController = new AbortController();
     assistantStreamAbortRef.current = abortController;
 
+    // Non-reactive store setters: writing through getState() means these
+    // per-token updates re-render ONLY AssistantPanel (which subscribes),
+    // never the shell tree (PERF-1).
+    const { setStreamingTurn, updateStreamingTurn } =
+      useAssistantStreamingStore.getState();
+
     setAssistantSending(true);
-    setAssistantStreamingTurn({
+    setStreamingTurn({
       question: normalizedQuestion,
       partialAnswer: "",
       sources: [],
@@ -1935,17 +1948,17 @@ export function WorkspaceShell() {
           switch (event.type) {
             case "meta":
               collectedSources = event.sources;
-              setAssistantStreamingTurn((current) =>
-                current ? { ...current, sources: event.sources } : current,
-              );
+              updateStreamingTurn((current) => ({
+                ...current,
+                sources: event.sources,
+              }));
               break;
             case "delta":
               accumulatedAnswer += event.text;
-              setAssistantStreamingTurn((current) =>
-                current
-                  ? { ...current, partialAnswer: accumulatedAnswer }
-                  : current,
-              );
+              updateStreamingTurn((current) => ({
+                ...current,
+                partialAnswer: accumulatedAnswer,
+              }));
               break;
             case "error":
               streamErrorDetail = event.detail;
@@ -1958,11 +1971,11 @@ export function WorkspaceShell() {
       );
 
       if (streamErrorDetail) {
-        setAssistantStreamingTurn((current) =>
-          current
-            ? { ...current, isStreaming: false, error: streamErrorDetail }
-            : current,
-        );
+        updateStreamingTurn((current) => ({
+          ...current,
+          isStreaming: false,
+          error: streamErrorDetail,
+        }));
         setWorkspaceNotice({
           level: "warning",
           message: streamErrorDetail,
@@ -1981,13 +1994,13 @@ export function WorkspaceShell() {
           },
         },
       ]);
-      setAssistantStreamingTurn(null);
+      setStreamingTurn(null);
       setAssistantQuestion("");
     } catch (error) {
       const isAbort =
         error instanceof DOMException && error.name === "AbortError";
       if (isAbort) {
-        setAssistantStreamingTurn(null);
+        setStreamingTurn(null);
         return;
       }
       const message = humanizeApiError(
@@ -1995,15 +2008,11 @@ export function WorkspaceShell() {
         "Assistant request failed unexpectedly.",
       );
       setWorkspaceNotice({ level: "warning", message });
-      setAssistantStreamingTurn((current) =>
-        current
-          ? {
-              ...current,
-              isStreaming: false,
-              error: message,
-            }
-          : current,
-      );
+      updateStreamingTurn((current) => ({
+        ...current,
+        isStreaming: false,
+        error: message,
+      }));
     } finally {
       setAssistantSending(false);
       if (assistantStreamAbortRef.current === abortController) {
@@ -2022,7 +2031,7 @@ export function WorkspaceShell() {
   function handleClearAssistantConversation() {
     assistantStreamAbortRef.current?.abort();
     assistantStreamAbortRef.current = null;
-    setAssistantStreamingTurn(null);
+    useAssistantStreamingStore.getState().setStreamingTurn(null);
     setAssistantTurns([]);
     setAssistantQuestion("");
     setWorkspaceNotice({
@@ -2738,7 +2747,6 @@ export function WorkspaceShell() {
         onSubmit={handleAssistantSubmit}
         question={assistantQuestion}
         sending={assistantSending}
-        streamingTurn={assistantStreamingTurn}
         turns={assistantTurns}
       />
 

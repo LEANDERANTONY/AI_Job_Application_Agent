@@ -2353,8 +2353,12 @@ def test_workspace_analyze_job_start_returns_job_handle(monkeypatch):
 
 def test_workspace_analyze_job_status_returns_completed_result(monkeypatch):
     monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "owner-1",
+    )
+    monkeypatch.setattr(
         "backend.routers.workspace.get_workspace_analysis_job",
-        lambda job_id: {
+        lambda job_id, owner_user_id=None: {
             "job_id": job_id,
             "status": "completed",
             "stage_title": "Workflow crew",
@@ -2508,13 +2512,59 @@ def test_workspace_analyze_job_start_returns_503_when_capacity_exhausted(monkeyp
     assert "busy" in response.json()["detail"].lower()
 
 
+def test_workspace_analyze_job_start_returns_429_when_quota_exhausted(monkeypatch):
+    """A capped user must get the canonical 429 upgrade payload OUT OF
+    THE POST (CRITICAL-2): the synchronous quota pre-flight raises
+    QuotaExceededError, which the global handler renders as the
+    structured tier-limit body the frontend turns into an upgrade CTA —
+    NOT a 200 'queued' that later degrades to a generic 'failed' toast."""
+    from src.errors import QuotaExceededError
+
+    def _raise_quota(**_kwargs):
+        raise QuotaExceededError(
+            "You've used your weekly AI usage allowance on this plan.",
+            counter="llm_tokens",
+            current=90_000,
+            cap=90_000,
+            reset_period="2026-W22",
+            tier="free",
+        )
+
+    monkeypatch.setattr(
+        "backend.routers.workspace.start_workspace_analysis_job",
+        _raise_quota,
+    )
+
+    response = client.post(
+        "/api/workspace/analyze-jobs",
+        json={
+            "resume_text": "Leander Antony\nPython\nExperience\nAI Engineer",
+            "resume_filetype": "TXT",
+            "resume_source": "workspace",
+            "job_description_text": "Machine Learning Engineer\nRequired: Python",
+            "run_assisted": True,
+        },
+    )
+
+    assert response.status_code == 429
+    body = response.json()
+    assert body["code"] == "tier_limit_exceeded"
+    assert body["counter"] == "llm_tokens"
+    assert body["cap"] == 90_000
+    assert body["tier"] == "free"
+
+
 def test_workspace_analyze_job_status_returns_actionable_404_when_job_missing(monkeypatch):
     """Container restart drops `_JOBS`. The poll-side response should
     explain the cause and prompt a re-run, not return a bare
     'not found' that the hook surfaces unchanged."""
     monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "owner-1",
+    )
+    monkeypatch.setattr(
         "backend.routers.workspace.get_workspace_analysis_job",
-        lambda job_id: None,
+        lambda job_id, owner_user_id=None: None,
     )
 
     response = client.get("/api/workspace/analyze-jobs/missing-job-id")
@@ -2531,8 +2581,9 @@ def test_workspace_analyze_job_cancel_route_returns_job_state(monkeypatch):
     stage boundary — so the frontend keeps polling until 'cancelled'."""
     captured = {}
 
-    def _cancel(job_id):
+    def _cancel(job_id, owner_user_id=None):
         captured["job_id"] = job_id
+        captured["owner_user_id"] = owner_user_id
         return {
             "job_id": job_id,
             "status": "running",
@@ -2544,6 +2595,10 @@ def test_workspace_analyze_job_cancel_route_returns_job_state(monkeypatch):
         }
 
     monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "owner-1",
+    )
+    monkeypatch.setattr(
         "backend.routers.workspace.cancel_workspace_analysis_job",
         _cancel,
     )
@@ -2552,6 +2607,8 @@ def test_workspace_analyze_job_cancel_route_returns_job_state(monkeypatch):
 
     assert response.status_code == 200
     assert captured["job_id"] == "job-xyz"
+    # The route resolves the caller and scopes the cancel to them.
+    assert captured["owner_user_id"] == "owner-1"
     payload = response.json()
     assert payload["job_id"] == "job-xyz"
     assert payload["status"] == "running"
@@ -2561,8 +2618,12 @@ def test_workspace_analyze_job_cancel_route_404_when_missing(monkeypatch):
     """An already-finished / pruned / wrong job id returns an
     actionable 404 the polling hook can surface verbatim."""
     monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "owner-1",
+    )
+    monkeypatch.setattr(
         "backend.routers.workspace.cancel_workspace_analysis_job",
-        lambda job_id: None,
+        lambda job_id, owner_user_id=None: None,
     )
 
     response = client.post("/api/workspace/analyze-jobs/gone/cancel")
@@ -3356,6 +3417,120 @@ def test_resume_upload_emits_resume_uploaded_event(monkeypatch):
     assert response.status_code == 200
     assert [e["event"] for e in events] == ["resume_uploaded"]
     assert events[0]["properties"]["file_type"] == "txt"
+
+
+def test_jd_upload_emits_jd_parsed_event(monkeypatch):
+    """A successful /job-description/upload emits `jd_parsed` — the
+    previously-missing funnel step between job_searched and
+    analysis_started (review OBS-2)."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    response = client.post(
+        "/api/workspace/job-description/upload",
+        json=_encode_text_file_payload(
+            "jd.txt",
+            "Machine Learning Engineer\nRequired: Python, SQL, Docker.\n",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert [e["event"] for e in events] == ["jd_parsed"]
+    assert events[0]["properties"]["source"] == "upload"
+
+
+def test_jd_paste_emits_jd_parsed_event_tagged_paste(monkeypatch):
+    """The unified paste path (synthetic `pasted.txt`, d93ddc4) is tagged
+    source=paste so the funnel can split paste vs upload."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    response = client.post(
+        "/api/workspace/job-description/upload",
+        json=_encode_text_file_payload(
+            "pasted.txt",
+            "Machine Learning Engineer\nRequired: Python, SQL, Docker.\n",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert events[0]["properties"]["source"] == "paste"
+
+
+def test_resume_builder_generate_emits_resume_built_event(monkeypatch):
+    """The agentic résumé-build (generate step) now emits `resume_built`
+    — previously only résumé *upload* was instrumented (review OBS-2)."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.hydrate_resume_builder_session_if_needed",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.generate_resume_builder_resume",
+        lambda **kwargs: {"session_id": "s1", "status": "ready"},
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.persist_resume_builder_session",
+        lambda **kwargs: {"status": "saved"},
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace._attach_persistence_status",
+        lambda response, persist_result, **kwargs: response,
+    )
+    response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": "s1"},
+    )
+
+    assert response.status_code == 200
+    assert [e["event"] for e in events] == ["resume_built"]
+    assert events[0]["properties"]["step"] == "generate"
+
+
+def test_resume_builder_commit_emits_resume_built_event(monkeypatch):
+    """The finalize step of the agentic résumé build also emits
+    `resume_built`, tagged step=commit."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.hydrate_resume_builder_session_if_needed",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.commit_resume_builder_session",
+        lambda **kwargs: {"status": "committed"},
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.clear_resume_builder_session",
+        lambda **kwargs: None,
+    )
+    response = client.post(
+        "/api/workspace/resume-builder/commit",
+        json={"session_id": "s1"},
+    )
+
+    assert response.status_code == 200
+    assert [e["event"] for e in events] == ["resume_built"]
+    assert events[0]["properties"]["step"] == "commit"
 
 
 def test_analyze_emits_analysis_started_event(monkeypatch):

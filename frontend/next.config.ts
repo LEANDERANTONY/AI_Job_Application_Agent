@@ -1,11 +1,22 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
+// Security response headers (review FE-SEC-1). Defined in src/lib/securityHeaders
+// so a unit test can import and assert them without loading this Sentry-wrapped
+// config. X-Frame-Options is enforcing; the CSP ships Report-Only (see that file).
+import { securityHeaders } from "./src/lib/securityHeaders";
+
 const apiRewriteTarget =
   process.env.API_REWRITE_TARGET ?? "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["localhost", "127.0.0.1"],
+  async headers() {
+    // Apply to every route (HTML documents, assets, and the /api rewrite
+    // alike). The HTML responses are what carry the clickjacking / XSS
+    // exposure these headers close.
+    return [{ source: "/:path*", headers: securityHeaders }];
+  },
   async rewrites() {
     return [
       {

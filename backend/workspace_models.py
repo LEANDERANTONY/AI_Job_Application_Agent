@@ -69,6 +69,10 @@ class WorkspaceAnalyzeJobStatusResponseModel(BaseModel):
     progress_percent: int = 0
     result: dict[str, Any] | None = None
     error_message: str | None = None
+    # Structured tier-limit envelope (code/counter/current/cap/
+    # reset_period/tier) when a quota gate fired inside the worker, so
+    # the polling client can render the upgrade CTA (review CRITICAL-2).
+    error: dict[str, Any] | None = None
 
 
 class WorkspaceSaveRequestModel(BaseModel):

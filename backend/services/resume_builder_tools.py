@@ -353,16 +353,16 @@ def _web_search(
                 "to describe the external context directly."
             ),
         }
-    client = getattr(openai_service, "_client", None)
-    if client is None:
-        return {
-            "ok": False,
-            "error": "no_openai_client",
-            "message": "OpenAI client is not initialized.",
-        }
-
+    # Route the inner call through the OpenAIService accounting layer
+    # (review LLM-1) instead of reaching into ._client directly. The
+    # service's run_builtin_web_search records token usage + a cost-trace
+    # row AND enforces the session budget, so web_search spend is no
+    # longer invisible to the weekly meter / COGS report. It also applies
+    # WEB_SEARCH_TIMEOUT_SECONDS to the call (previously the 30s constant
+    # was dead and the search ran at the 120s client default — LLM-2).
     try:
-        response = client.responses.create(
+        response = openai_service.run_builtin_web_search(
+            cleaned_query,
             model="gpt-5.4-mini",
             instructions=(
                 "You are a research assistant. Use the web_search tool to "
@@ -371,11 +371,8 @@ def _web_search(
                 "max. If the search returns nothing useful, say so plainly "
                 "instead of inventing."
             ),
-            input=cleaned_query,
-            store=False,
             max_output_tokens=600,
-            tools=[{"type": "web_search"}],
-            tool_choice="auto",
+            timeout=WEB_SEARCH_TIMEOUT_SECONDS,
         )
     except Exception as exc:
         LOGGER.exception("web_search dispatch failed.")

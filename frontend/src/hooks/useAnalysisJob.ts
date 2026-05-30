@@ -277,12 +277,36 @@ export function useAnalysisJob({
         }
 
         if (nextJobState.status === "failed") {
-          setNoticeRef.current({
-            level: "warning",
-            message:
-              nextJobState.error_message ||
-              "The agentic workflow failed unexpectedly.",
-          });
+          // A quota gate that fired INSIDE the worker (e.g. the monthly
+          // application counter) arrives here as a structured tier-limit
+          // envelope. Render the same upgrade CTA the synchronous 429
+          // path gives, instead of a bare warning — otherwise a capped
+          // user sees only "failed" with no path forward (CRITICAL-2).
+          const tierLimit =
+            nextJobState.error &&
+            nextJobState.error.code === "tier_limit_exceeded"
+              ? nextJobState.error
+              : null;
+          if (tierLimit) {
+            setNoticeRef.current({
+              level: "warning",
+              message:
+                tierLimit.detail ||
+                nextJobState.error_message ||
+                "You've reached a plan limit on your current tier.",
+              // Same destination as the synchronous-429 CTA in
+              // runAnalysis (the /pricing route fix is tracked
+              // separately as FLOW-2 / out of this PR's scope).
+              action: { label: "Upgrade plan", href: "/pricing" },
+            });
+          } else {
+            setNoticeRef.current({
+              level: "warning",
+              message:
+                nextJobState.error_message ||
+                "The agentic workflow failed unexpectedly.",
+            });
+          }
           setAnalysisLoading(false);
           setAnalysisRunMode(null);
           setAnalysisCancelling(false);
