@@ -22,6 +22,7 @@
 // 9138ead and is not restored here.
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { create } from "zustand";
 
 // Local notice surface for voice-input errors. The assistant panel
 // doesn't have an existing notice slot we can borrow, so we render a
@@ -59,10 +60,39 @@ export type AssistantStreamingTurn = {
   error: string | null;
 };
 
+type AssistantStreamingStore = {
+  streamingTurn: AssistantStreamingTurn | null;
+  setStreamingTurn: (turn: AssistantStreamingTurn | null) => void;
+  updateStreamingTurn: (
+    fn: (current: AssistantStreamingTurn) => AssistantStreamingTurn,
+  ) => void;
+};
+
+/**
+ * The in-flight streaming buffer lives HERE, not in WorkspaceShell, so
+ * per-token SSE writes re-render ONLY this panel — not the whole
+ * workspace tree (review PERF-1). The shell writes non-reactively via
+ * `useAssistantStreamingStore.getState()` so its own renders are not
+ * triggered per token; this panel subscribes to the slice. The
+ * `updateStreamingTurn` null-guard reproduces the shell's prior
+ * `current ? {...} : current` semantics exactly, so a late event after
+ * a clear-to-null can never resurrect a turn.
+ */
+export const useAssistantStreamingStore = create<AssistantStreamingStore>(
+  (set) => ({
+    streamingTurn: null,
+    setStreamingTurn: (streamingTurn) => set({ streamingTurn }),
+    updateStreamingTurn: (fn) =>
+      set((state) => ({
+        streamingTurn: state.streamingTurn
+          ? fn(state.streamingTurn)
+          : state.streamingTurn,
+      })),
+  }),
+);
+
 export type AssistantPanelProps = {
   turns: AssistantTurn[];
-  /** In-flight streaming turn, or null when no request is open. */
-  streamingTurn?: AssistantStreamingTurn | null;
   /**
    * `true` once the user has run an analysis (i.e. there's a workspace
    * snapshot the assistant can ground answers in). Affects only the
@@ -88,7 +118,6 @@ export type AssistantPanelProps = {
 
 export function AssistantPanel({
   turns,
-  streamingTurn = null,
   hasWorkspaceContext,
   question,
   onQuestionChange,
@@ -101,6 +130,9 @@ export function AssistantPanel({
 }: AssistantPanelProps) {
   const [open, setOpen] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  // Subscribe to the streaming buffer here (the shell writes it
+  // non-reactively) so token deltas re-render only this panel (PERF-1).
+  const streamingTurn = useAssistantStreamingStore((s) => s.streamingTurn);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   // Auto-clear the voice error after 6s so a stale message doesn't
