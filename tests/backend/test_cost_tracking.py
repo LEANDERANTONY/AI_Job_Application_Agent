@@ -23,7 +23,6 @@ import pytest
 
 from backend import run_traces
 from backend.run_traces import TraceRecord, record_trace, reset_in_memory_backend
-from src.errors import AgentExecutionError
 from src.openai_service import (
     OpenAIService,
     compute_call_cost_usd,
@@ -105,13 +104,23 @@ class _NeverConfiguredBackend:
 # ---------------------------------------------------------------------
 
 
-def test_pricing_map_carries_all_four_known_models():
+def test_pricing_map_carries_known_models():
+    # The four gpt-5.x chat models plus the embedding model (added so
+    # embed-on-write / backfill spend cost-traces to a real USD figure
+    # instead of $0 — review OBS-1).
     assert set(_MODEL_PRICING_USD_PER_MILLION.keys()) == {
         "gpt-5.4-nano",
         "gpt-5.4-mini",
         "gpt-5.4",
         "gpt-5.5",
+        "text-embedding-3-small",
     }
+
+
+def test_compute_cost_for_embedding_model():
+    """text-embedding-3-small: $0.02 / 1M prompt tokens, no output side.
+    1M prompt + 0 completion → $0.02."""
+    assert compute_call_cost_usd("text-embedding-3-small", 1_000_000, 0) == 0.02
 
 
 def test_compute_cost_for_nano_per_million_baseline():
@@ -561,3 +570,105 @@ def test_select_backend_picks_in_memory_when_supabase_unconfigured(monkeypatch):
     # The autouse fixture replaced _SUPABASE_BACKEND with a never-
     # configured stub, so the in-memory backend wins.
     assert backend is run_traces._IN_MEMORY_BACKEND
+
+
+# ---------------------------------------------------------------------
+# cost-trace ContextVar fallback + web_search + embeddings (OBS-1/LLM-1)
+# ---------------------------------------------------------------------
+
+
+class _FakeEmbeddingsClient:
+    """Minimal client whose ``.embeddings.create`` returns vectors +
+    usage, matching the shape ``create_embeddings`` consumes."""
+
+    def __init__(self, *, prompt_tokens=200, total_tokens=200):
+        outer = self
+
+        class _Embeddings:
+            def create(self, *, model, input):
+                data = [
+                    SimpleNamespace(index=i, embedding=[0.1, 0.2, 0.3])
+                    for i, _ in enumerate(input)
+                ]
+                usage = SimpleNamespace(
+                    prompt_tokens=outer._prompt_tokens,
+                    total_tokens=outer._total_tokens,
+                )
+                return SimpleNamespace(data=data, usage=usage)
+
+        self._prompt_tokens = prompt_tokens
+        self._total_tokens = total_tokens
+        self.embeddings = _Embeddings()
+
+
+def test_cost_trace_attributed_to_meter_scope_for_bare_service():
+    """A bare OpenAIService (no user_id) used inside ``meter_user_scope``
+    now writes a COST-TRACE row, not just a meter row — closing the
+    JD/résumé-parse COGS under-count (OBS-1). Before the fix
+    ``_record_cost_trace`` checked only ``self._user_id`` and wrote
+    nothing on this path, so the row count was zero."""
+    from src.openai_service import meter_user_scope
+
+    client = _FakeClient(
+        [_build_response(json.dumps({"approved": True}), prompt_tokens=900, completion_tokens=600)]
+    )
+    service = OpenAIService(client=client)  # bare — no user_id, no recorder
+    with meter_user_scope("user-scoped"):
+        service.run_json_prompt("system", "user", expected_keys=["approved"])
+
+    rows = run_traces.in_memory_rows()
+    assert len(rows) == 1
+    assert rows[0]["user_id"] == "user-scoped"
+    assert rows[0]["prompt_tokens"] == 900
+    assert rows[0]["completion_tokens"] == 600
+
+
+def test_create_embeddings_cost_traces_to_meter_scope():
+    """Embedding spend now cost-traces (OBS-1): a bare service embedding
+    inside ``meter_user_scope`` writes a row priced with the embedding
+    model's rate. Before the fix create_embeddings metered tokens but
+    never cost-traced, and the embedding model had no pricing entry."""
+    from src.openai_service import meter_user_scope
+
+    service = OpenAIService(
+        client=_FakeEmbeddingsClient(prompt_tokens=500, total_tokens=500)
+    )
+    with meter_user_scope("embed-user"):
+        vectors = service.create_embeddings(["a", "b"], task_name="embed_write")
+
+    assert len(vectors) == 2
+    rows = run_traces.in_memory_rows()
+    assert len(rows) == 1
+    assert rows[0]["task_name"] == "embed_write"
+    assert rows[0]["model_name"] == "text-embedding-3-small"
+    assert rows[0]["prompt_tokens"] == 500
+    assert rows[0]["completion_tokens"] == 0
+    assert rows[0]["user_id"] == "embed-user"
+    # 500 prompt tokens * $0.02/1M = $0.00001.
+    assert rows[0]["cost_usd"] == pytest.approx(0.00001, rel=1e-6)
+
+
+def test_run_builtin_web_search_meters_and_cost_traces():
+    """The accounted door for web_search: one call meters its tokens AND
+    writes a cost-trace row tagged ``web_search`` — closing the spend
+    that used to escape both via the raw-client path (LLM-1)."""
+    captured: list[dict] = []
+    metered: list[int] = []
+    client = _FakeClient(
+        [_build_response("answer", prompt_tokens=300, completion_tokens=120)]
+    )
+    service = OpenAIService(
+        client=client,
+        user_id="user-ws",
+        cost_trace_recorder=captured.append,
+        usage_meter_recorder=metered.append,
+    )
+    service.run_builtin_web_search("find roles", instructions="search please")
+
+    assert metered == [420]  # 300 + 120 on this call's token meter
+    assert len(captured) == 1
+    assert captured[0]["task_name"] == "web_search"
+    assert captured[0]["model_name"] == "gpt-5.4-mini"
+    assert captured[0]["prompt_tokens"] == 300
+    assert captured[0]["completion_tokens"] == 120
+    assert captured[0]["user_id"] == "user-ws"

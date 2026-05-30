@@ -214,6 +214,12 @@ _MODEL_PRICING_USD_PER_MILLION: dict[str, tuple[float, float]] = {
     "gpt-5.4-mini": (0.75, 4.50),
     "gpt-5.4": (2.00, 10.00),
     "gpt-5.5": (5.00, 30.00),
+    # Embedding model (Tier-2 hybrid job search). Embeddings have no
+    # completion side, so the output rate is 0 and only prompt tokens
+    # drive the cost. Without this entry embedding cost-trace rows
+    # compute $0 and the COGS report under-counts embed-on-write /
+    # backfill spend (review OBS-1).
+    "text-embedding-3-small": (0.02, 0.0),
 }
 
 
@@ -651,6 +657,17 @@ class OpenAIService:
         prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
         total_tokens = getattr(usage, "total_tokens", 0) or prompt_tokens
         self._record_usage(resolved_model, prompt_tokens, 0, total_tokens)
+        # Cost-trace embedding spend too (review OBS-1): _record_usage only
+        # meters tokens; without this the embed-on-write / backfill COGS is
+        # invisible to the tier-margin report. completion_tokens=0 (no
+        # output side). No-op for bare/eval services (no user_id, no scope).
+        self._record_cost_trace(
+            task_name=task_name,
+            model_name=resolved_model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=0,
+            success=True,
+        )
 
         log_event(
             LOGGER,
@@ -666,6 +683,63 @@ class OpenAIService:
             total_tokens=total_tokens,
         )
         return vectors
+
+    def run_builtin_web_search(
+        self,
+        query,
+        *,
+        model="gpt-5.4-mini",
+        instructions,
+        max_output_tokens=600,
+        timeout=None,
+    ):
+        """Fire a Responses-API call with OpenAI's built-in ``web_search``
+        tool (OUTSIDE json mode) and run the usual accounting — budget
+        enforce + token meter + cost trace.
+
+        This is the single ACCOUNTED door for the built-in search: the
+        resume-builder tool used to reach into ``._client`` directly, so
+        web_search tokens (the priciest part of an intake turn) were
+        invisible to the weekly meter AND never cost-traced (review
+        LLM-1). Routing through here makes ``metered`` and ``cost-traced``
+        the same set by construction. Returns the raw response object so
+        the caller extracts the synthesized text.
+        """
+        if not self.is_available():
+            raise AgentExecutionError("OpenAI is not configured for web search.")
+        # Enforce the session budget BEFORE spending on a search, so an
+        # exhausted budget stops it the same way it stops a normal turn.
+        self._enforce_budget()
+        client = self._client
+        if timeout is not None:
+            try:
+                client = client.with_options(timeout=timeout)
+            except Exception:  # noqa: BLE001 - stub/older clients lack with_options
+                client = self._client
+        response = client.responses.create(
+            model=model,
+            instructions=instructions,
+            input=str(query or ""),
+            store=False,
+            max_output_tokens=max_output_tokens,
+            tools=[{"type": "web_search"}],
+            tool_choice="auto",
+        )
+        # Usage is read defensively — a stub/edge response may omit it;
+        # zeros are harmless (the meter / cost-trace simply record 0).
+        usage = getattr(response, "usage", None)
+        prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+        completion_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+        total_tokens = int(getattr(usage, "total_tokens", 0) or 0)
+        self._record_usage(model, prompt_tokens, completion_tokens, total_tokens)
+        self._record_cost_trace(
+            task_name="web_search",
+            model_name=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            success=True,
+        )
+        return response
 
     def run_json_prompt(
         self,
@@ -1820,6 +1894,13 @@ class OpenAIService:
         with both unset (no usage recorder, no test recorder) → no-op,
         and with ``user_id`` set + the default recorder → Supabase row.
         """
+        # Attribute to the service's own user_id, else fall back to the
+        # request-scoped meter context (``meter_user_scope``) — the SAME
+        # fallback ``_record_token_meter`` already uses — so a bare
+        # OpenAIService built inside a parser path writes a cost-trace
+        # row, not just a meter row. Closes the JD / résumé-parse COGS
+        # under-count where metered != cost-traced (review OBS-1).
+        effective_user_id = self._user_id or _METER_USER_ID.get()
         cost_usd = compute_call_cost_usd(model_name, prompt_tokens, completion_tokens)
         payload = {
             "task_name": task_name or "",
@@ -1827,7 +1908,7 @@ class OpenAIService:
             "prompt_tokens": int(prompt_tokens or 0),
             "completion_tokens": int(completion_tokens or 0),
             "cost_usd": cost_usd,
-            "user_id": self._user_id,
+            "user_id": effective_user_id,
             "success": bool(success),
         }
         if self._cost_trace_recorder is not None:
@@ -1853,7 +1934,7 @@ class OpenAIService:
         # default. The `aijobagent_run_traces` schema permits NULL on
         # user_id for completeness, but the application opts not to
         # write that shape.
-        if not self._user_id:
+        if not effective_user_id:
             return
         try:
             from backend.run_traces import record_trace  # local import to avoid circular
@@ -1863,7 +1944,7 @@ class OpenAIService:
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 cost_usd=cost_usd,
-                user_id=self._user_id,
+                user_id=effective_user_id,
                 success=success,
             )
         except Exception as exc:  # noqa: BLE001 - best-effort
