@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -16,7 +16,11 @@ from backend.rate_limit import limiter, rate_limit_exceeded_handler
 from backend.routers.auth import router as auth_router
 from backend.routers.billing import router as billing_router
 from backend.routers.health import router as health_router
-from backend.routers.jobs import admin_router as jobs_admin_router, router as jobs_router
+from backend.routers.jobs import (
+    _verify_refresh_secret,
+    admin_router as jobs_admin_router,
+    router as jobs_router,
+)
 from backend.routers.workspace import router as workspace_router
 from src.errors import QuotaExceededError
 
@@ -119,16 +123,23 @@ def root():
 
 
 @app.get("/health/sentry-debug")
-def sentry_debug() -> None:
+def sentry_debug(_: None = Depends(_verify_refresh_secret)) -> None:
     """Raise an unhandled exception so Sentry sees the issue end-to-end.
 
     Used once at deploy time to confirm the DSN, environment, and
     release tag are wired. The route returns no JSON — Sentry's
     FastAPI integration catches the raise, ships the event, and
     FastAPI's default 500 handler returns "Internal Server Error" to
-    the caller. There is intentionally no auth on this route: it must
-    be callable from anywhere with curl. Remove or gate it behind a
-    feature flag if your threat model objects.
+    the caller.
+
+    Gated behind the admin bearer secret (``_verify_refresh_secret``,
+    review L1): previously anyone could curl this to mint 500s / Sentry
+    noise on demand. Deploy-time smoke testing still works — pass the
+    ``REFRESH_CACHE_SECRET`` bearer token — but anonymous callers now get
+    a 401 (or 503 if no secret is configured) before the body ever runs,
+    so the crash only fires for an authorized caller. The gate raises an
+    HTTPException, which FastAPI handles cleanly (not an unhandled 500),
+    so a blocked call generates no Sentry event.
 
     Path is OUTSIDE ``settings.api_prefix`` (no /api/) so it doesn't
     accidentally appear in the workspace-API surface that auth /
