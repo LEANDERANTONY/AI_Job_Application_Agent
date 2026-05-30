@@ -8,7 +8,7 @@ from backend.services.auth_session_service import resolve_authenticated_context
 from backend.tiers import TIER_CAPS, UNLIMITED, resolve_user_tier
 from src.cached_jobs_store import CachedJobsStore
 from src.errors import InputValidationError, QuotaExceededError
-from src.saved_jobs_store import SavedJobsStore
+from src.saved_jobs_store import SavedJobsCapExceeded, SavedJobsStore
 
 
 def _serialize(value: Any):
@@ -189,15 +189,34 @@ def save_saved_job(
                 tier=tier,
             )
 
-    saved_job = saved_jobs_store.save_job(
-        access_token,
-        refresh_token,
-        {
-            "user_id": context.app_user.id,
-            "job_id": job_id,
-            **normalized_job,
-        },
-    )
+    # Atomic cap-enforced write (review M2). The pre-check above is a fast
+    # path that gives a nice early 429 and keeps the common case cheap, but
+    # it is a count-then-write TOCTOU; save_job_atomic re-checks the cap
+    # under a per-user advisory lock in ONE transaction, so two concurrent
+    # saves of distinct jobs can't both slip past the cap. The race loses
+    # here and is translated to the same canonical 429.
+    try:
+        saved_job = saved_jobs_store.save_job_atomic(
+            access_token,
+            refresh_token,
+            {
+                "user_id": context.app_user.id,
+                "job_id": job_id,
+                **normalized_job,
+            },
+            cap=cap,
+        )
+    except SavedJobsCapExceeded as exc:
+        raise QuotaExceededError(
+            "You have reached the saved-jobs limit for your plan. "
+            "Remove an existing saved job to make room, or upgrade "
+            "to continue saving more.",
+            counter="saved_jobs",
+            current=cap,
+            cap=cap,
+            reset_period=current_period_key(),
+            tier=tier,
+        ) from exc
     normalized_saved_job = _normalize_saved_job(saved_job)
     return {
         "status": "saved",

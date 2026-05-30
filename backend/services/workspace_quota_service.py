@@ -184,18 +184,13 @@ def _persistent_count(
         if not store.is_configured():
             return 0
         try:
-            record, status = store.load_workspace(
-                access_token,
-                refresh_token,
-                user_id,
-            )
+            # Lightweight 0/1 read — does NOT deserialize the heavy
+            # snapshot / cover-letter / résumé blobs load_workspace pulls
+            # (review M4). This endpoint is polled on every workspace mount
+            # and after every run, so the fat read was pure overhead.
+            return store.count_active(access_token, refresh_token, user_id)
         except Exception:  # noqa: BLE001 - read is best-effort
             return 0
-        # The store currently upserts on user_id so the row count is
-        # always 0 or 1; we mirror the gate's behavior in
-        # workspace_persistence_service which checks the same
-        # "available" status.
-        return 1 if status == "available" and record is not None else 0
     return 0
 
 

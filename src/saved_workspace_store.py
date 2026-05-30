@@ -84,6 +84,46 @@ class SavedWorkspaceStore:
             return None, "expired"
         return record, "available"
 
+    def count_active(
+        self,
+        access_token: str,
+        refresh_token: str,
+        user_id: str,
+        now: Optional[datetime] = None,
+    ) -> int:
+        """Lightweight 0/1 count of the user's non-expired saved workspace.
+
+        Selects only ``user_id,expires_at`` instead of the heavy
+        ``*_json`` snapshot / cover-letter / résumé blobs ``load_workspace``
+        pulls — this runs on the hot ``/workspace/quota`` path which the UI
+        polls on every mount and after every run (review M4). Mirrors
+        ``load_workspace``'s expiry handling (purge + delete-on-expired).
+        """
+        client = self._client(access_token, refresh_token)
+        current_time = now or datetime.now(timezone.utc)
+        self._purge_expired_workspace(client, user_id, current_time)
+        try:
+            response = (
+                client.table(self.table_name)
+                .select("user_id,expires_at")
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            raise AppError(
+                "The app could not load your saved workspace.",
+                details=str(exc),
+            ) from exc
+        rows = self._extract_rows(response)
+        if not rows:
+            return 0
+        expires_at = str(rows[0].get("expires_at", "") or "")
+        if self._is_expired(expires_at, current_time):
+            self.delete_workspace(access_token, refresh_token, user_id)
+            return 0
+        return 1
+
     def delete_workspace(self, access_token: str, refresh_token: str, user_id: str):
         client = self._client(access_token, refresh_token)
         try:
