@@ -16,12 +16,14 @@ The cache refresh does spend a small amount on *embeddings* — see the
 | --- | --- | --- | --- | --- |
 | `cached_jobs_refresh` | Supabase `pg_cron` + `pg_net` | every 4h (`0 */4 * * *`, six runs/day) | POSTs `/api/admin/refresh-cache` so the backend re-polls the Greenhouse/Lever/Ashby/Workday boards into `cached_jobs` | **~\$0** — job-board APIs are free; embeds only *newly-cached* jobs with `text-embedding-3-small` when `JOB_SEARCH_HYBRID_ENABLED` is on (a few cents/day). No chat-model call |
 | `cleanup-expired-resume-builder-sessions` | Supabase `pg_cron` | every 5 min (`*/5 * * * *`) | Hard-deletes `resume_builder_sessions` rows past their 7-day TTL | **\$0** — plain SQL `DELETE`, no LLM |
+| `backend.maintenance` (saved-workspace retention sweep) | VPS host crontab — **verify against prod** | daily (`0 3 * * *` assumed) | Runs `python -m backend.maintenance` → `sweep_expired_workspaces`: deletes saved workspaces past their per-tier retention (Free > 7d, Pro > 30d). Now check-ins to the `saved-workspaces-retention` Sentry cron monitor (M22) | **\$0** — plain `DELETE`, no LLM |
 | `backend.nightly_eval` | VPS host crontab | **NOT INSTALLED** | Would run the LLM quality eval; deliberately not scheduled | would be ~\$0.25/run if enabled |
 
 Two things worth internalizing:
 
 1. **The only scheduled job that runs a chat / completion model is `nightly_eval`, and it is intentionally not on the cron.** See the next section + [ADR-026](adr/ADR-026-manual-only-nightly-eval-at-pre-revenue-stage.md). The cache refresh's embed-on-write spends a little on the cheap embeddings model; a *chat-model* bill with no user traffic is NOT a rogue cron — check for a stuck retry loop or a manual run left running instead.
 2. **The cache-refresh schedule drifted from its own template.** `docs/sql/job_cache_cron_setup.sql` still defaults to `*/30 * * * *` (every 30 min — the original aggressive cadence). Production was dialed back to `0 */4 * * *` (every 4h) to cut Supabase `pg_net` egress + backend churn once the job catalog stopped changing every few minutes. The SQL file is a template, not the source of truth; `SELECT jobname, schedule FROM cron.job;` in the Supabase SQL editor is. If you re-run the template verbatim it will re-pin the schedule to 30 min — edit the cron expression before pasting.
+3. **The saved-workspace retention sweeper was missing from this inventory (M22)** and had no cron monitor. It is now listed above and wrapped in the `saved-workspaces-retention` Sentry cron monitor. **If that monitor never receives a check-in after deploy, the sweeper is NOT actually scheduled** and Free-tier retention isn't being enforced — wire it into the host crontab, e.g. `0 3 * * * cd /app && python -m backend.maintenance`, and confirm the schedule matches the `value` in `SAVED_WORKSPACES_RETENTION_MONITOR_CONFIG`.
 
 ## Nightly quality eval (`backend.nightly_eval`) — manual-only
 

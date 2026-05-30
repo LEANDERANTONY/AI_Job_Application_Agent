@@ -262,6 +262,46 @@ def _init_posthog(settings: BackendSettings) -> None:
 # product-scoped dashboards.
 _PRODUCT_TAG = "jobagent"
 
+# Header the browser sets on anonymous calls (review M21) so a server-side
+# funnel event can be attributed to the SAME PostHog person as the client-side
+# session, instead of every anonymous visitor collapsing onto one shared
+# "anonymous" distinct id. The browser sends `posthog.get_distinct_id()`; on
+# login the client calls `posthog.identify(userId)`, which auto-aliases that
+# anonymous id to the Supabase id — so the whole pre-login → signup path
+# stitches into one person and anonymous→signup conversion is computable.
+#
+# PostHog distinct ids are client-controlled by design, so trusting this header
+# for analytics attribution carries no security weight: a signed-in caller's
+# Supabase id ALWAYS takes precedence (see `resolve_distinct_id`), and the value
+# is never used for auth, ownership, or quota — only as a PostHog person key.
+POSTHOG_DISTINCT_ID_HEADER = "X-PostHog-Distinct-Id"
+
+# Upper bound on the browser-supplied id we'll honor. PostHog's own ids are
+# short uuids; this just stops a pathological header from ballooning an event.
+_MAX_BROWSER_DISTINCT_ID_LEN = 200
+
+
+def resolve_distinct_id(
+    user_id: str | None,
+    browser_distinct_id: str | None = None,
+) -> str:
+    """Pick the best PostHog distinct id for an event (review M21).
+
+    Precedence: the authenticated Supabase id, then the browser's own anonymous
+    distinct id (so anonymous funnel events join the client-side session rather
+    than collapsing onto one shared ``"anonymous"`` person), then the
+    ``"anonymous"`` constant as a last resort for server-to-server callers with
+    neither. The browser value is length-clamped and never trusted for anything
+    but this person key.
+    """
+    resolved = (user_id or "").strip()
+    if resolved:
+        return resolved
+    browser = (browser_distinct_id or "").strip()
+    if browser:
+        return browser[:_MAX_BROWSER_DISTINCT_ID_LEN]
+    return "anonymous"
+
 
 def capture_event(
     distinct_id: str,
@@ -359,6 +399,21 @@ CACHED_JOBS_HEALTHCHECK_MONITOR_CONFIG: dict[str, Any] = {
     "recovery_threshold": 1,
 }
 
+# The tier-aware retention sweeper (backend/maintenance.py) runs daily and
+# deletes Free workspaces > 7d / Pro > 30d. Unmonitored, a stopped cron would
+# silently leave Free-tier data past its stated retention / GDPR promise with
+# nothing to page the operator (review M22). Daily at 03:00 UTC; reconcile the
+# `value` here with the actual prod crontab if it differs.
+SAVED_WORKSPACES_RETENTION_MONITOR_SLUG = "saved-workspaces-retention"
+SAVED_WORKSPACES_RETENTION_MONITOR_CONFIG: dict[str, Any] = {
+    "schedule": {"type": "crontab", "value": "0 3 * * *"},
+    "timezone": "UTC",
+    "checkin_margin": 60,
+    "max_runtime": 10,
+    "failure_issue_threshold": 1,
+    "recovery_threshold": 1,
+}
+
 
 def _sentry_active() -> bool:
     """True when cron check-ins should actually be sent.
@@ -440,4 +495,100 @@ def sentry_cron_monitor(
                 status="ok",
                 duration=time.monotonic() - started,
                 monitor_config=monitor_config,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Sentry scope-enrichment helpers (review M23)
+#
+# Analysis (POST /workspace/{id}/run) and artifact export raise into Sentry as
+# bare 5xx with no actor, no pipeline stage, and no export descriptor — every
+# issue reads identically and triage starts from zero. These thin wrappers add
+# the actor (set_user), the failing stage (set_tag + breadcrumb), and the
+# export descriptor (set_context) onto the active Sentry scope.
+#
+# Telemetry must never break the request it decorates: each helper is a no-op
+# when Sentry is inactive (or under pytest) and swallows every error. They are
+# intentionally tiny pass-throughs so callers don't import sentry_sdk directly
+# or repeat the hasattr/guard dance — and so the orchestrator's own control
+# flow (praised, left untouched) never has to learn about Sentry.
+# ---------------------------------------------------------------------------
+
+
+def _sentry_sdk_or_none():
+    """Return the ``sentry_sdk`` module when enrichment should apply, else None.
+
+    Mirrors ``_sentry_active``'s guard (pytest off, client active) and folds in
+    the import so every helper below is a one-liner that can't raise on a
+    missing/disabled SDK.
+    """
+    if not _sentry_active():
+        return None
+    try:
+        import sentry_sdk
+    except Exception:  # pragma: no cover — defensive
+        return None
+    return sentry_sdk
+
+
+def set_sentry_user(user_id: str | None) -> None:
+    """Attach the acting user's id to the Sentry scope (just the id, no PII).
+
+    Lets an analysis/export 5xx be filtered to a single account instead of
+    reading as an anonymous platform-wide failure. No-op for anonymous calls
+    (falsy ``user_id``) and when Sentry is inactive.
+    """
+    if not user_id:
+        return
+    sentry_sdk = _sentry_sdk_or_none()
+    if sentry_sdk is None:
+        return
+    with suppress(Exception):
+        if hasattr(sentry_sdk, "set_user"):
+            sentry_sdk.set_user({"id": str(user_id)})
+
+
+def set_sentry_tag(key: str, value: Any) -> None:
+    """Set an indexed Sentry tag (e.g. ``pipeline_stage``) on the active scope."""
+    sentry_sdk = _sentry_sdk_or_none()
+    if sentry_sdk is None:
+        return
+    with suppress(Exception):
+        if hasattr(sentry_sdk, "set_tag"):
+            sentry_sdk.set_tag(key, value)
+
+
+def set_sentry_context(key: str, data: dict[str, Any]) -> None:
+    """Attach a structured context block (e.g. the export descriptor)."""
+    sentry_sdk = _sentry_sdk_or_none()
+    if sentry_sdk is None:
+        return
+    with suppress(Exception):
+        if hasattr(sentry_sdk, "set_context"):
+            sentry_sdk.set_context(key, dict(data))
+
+
+def add_sentry_breadcrumb(
+    *,
+    category: str,
+    message: str,
+    data: dict[str, Any] | None = None,
+    level: str = "info",
+) -> None:
+    """Drop a breadcrumb so a later error carries the trail that led to it.
+
+    Used at orchestrator stage boundaries (``category="agent"``) so an analysis
+    failure shows which stage was entered last — without touching the
+    orchestrator's own control flow.
+    """
+    sentry_sdk = _sentry_sdk_or_none()
+    if sentry_sdk is None:
+        return
+    with suppress(Exception):
+        if hasattr(sentry_sdk, "add_breadcrumb"):
+            sentry_sdk.add_breadcrumb(
+                category=category,
+                message=message,
+                level=level,
+                data=dict(data or {}),
             )
