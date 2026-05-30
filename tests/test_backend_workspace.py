@@ -3419,6 +3419,120 @@ def test_resume_upload_emits_resume_uploaded_event(monkeypatch):
     assert events[0]["properties"]["file_type"] == "txt"
 
 
+def test_jd_upload_emits_jd_parsed_event(monkeypatch):
+    """A successful /job-description/upload emits `jd_parsed` — the
+    previously-missing funnel step between job_searched and
+    analysis_started (review OBS-2)."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    response = client.post(
+        "/api/workspace/job-description/upload",
+        json=_encode_text_file_payload(
+            "jd.txt",
+            "Machine Learning Engineer\nRequired: Python, SQL, Docker.\n",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert [e["event"] for e in events] == ["jd_parsed"]
+    assert events[0]["properties"]["source"] == "upload"
+
+
+def test_jd_paste_emits_jd_parsed_event_tagged_paste(monkeypatch):
+    """The unified paste path (synthetic `pasted.txt`, d93ddc4) is tagged
+    source=paste so the funnel can split paste vs upload."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    response = client.post(
+        "/api/workspace/job-description/upload",
+        json=_encode_text_file_payload(
+            "pasted.txt",
+            "Machine Learning Engineer\nRequired: Python, SQL, Docker.\n",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert events[0]["properties"]["source"] == "paste"
+
+
+def test_resume_builder_generate_emits_resume_built_event(monkeypatch):
+    """The agentic résumé-build (generate step) now emits `resume_built`
+    — previously only résumé *upload* was instrumented (review OBS-2)."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.hydrate_resume_builder_session_if_needed",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.generate_resume_builder_resume",
+        lambda **kwargs: {"session_id": "s1", "status": "ready"},
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.persist_resume_builder_session",
+        lambda **kwargs: {"status": "saved"},
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace._attach_persistence_status",
+        lambda response, persist_result, **kwargs: response,
+    )
+    response = client.post(
+        "/api/workspace/resume-builder/generate",
+        json={"session_id": "s1"},
+    )
+
+    assert response.status_code == 200
+    assert [e["event"] for e in events] == ["resume_built"]
+    assert events[0]["properties"]["step"] == "generate"
+
+
+def test_resume_builder_commit_emits_resume_built_event(monkeypatch):
+    """The finalize step of the agentic résumé build also emits
+    `resume_built`, tagged step=commit."""
+    events = []
+    monkeypatch.setattr(
+        "backend.routers.workspace.capture_event",
+        lambda **kwargs: events.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.hydrate_resume_builder_session_if_needed",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace._resolve_openai_service",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.commit_resume_builder_session",
+        lambda **kwargs: {"status": "committed"},
+    )
+    monkeypatch.setattr(
+        "backend.routers.workspace.clear_resume_builder_session",
+        lambda **kwargs: None,
+    )
+    response = client.post(
+        "/api/workspace/resume-builder/commit",
+        json={"session_id": "s1"},
+    )
+
+    assert response.status_code == 200
+    assert [e["event"] for e in events] == ["resume_built"]
+    assert events[0]["properties"]["step"] == "commit"
+
+
 def test_analyze_emits_analysis_started_event(monkeypatch):
     """A successful /analyze emits an `analysis_started` event tagged
     with the sync mode."""

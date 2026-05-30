@@ -430,7 +430,7 @@ def upload_job_description(
     # the parse so an over-budget request has no side effects.
     _enforce_request_llm_budget(access_token or "", refresh_token or "")
     try:
-        return parse_job_description_upload(
+        result = parse_job_description_upload(
             filename=payload.filename,
             mime_type=payload.mime_type,
             content_base64=payload.content_base64,
@@ -439,6 +439,27 @@ def upload_job_description(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
+        # PostHog funnel event (review OBS-2): JD parse sits between
+        # job_searched and analysis_started — the most failure-prone
+        # step — and previously emitted nothing, so the funnel couldn't
+        # measure drop-off there. The paste path (unified through this
+        # route in d93ddc4) sends a synthetic "pasted.txt"; everything
+        # else is a real upload.
+        user_id, tier = _event_identity(access_token or "", refresh_token or "")
+        capture_event(
+            distinct_id=user_id,
+            event="jd_parsed",
+            properties={
+                "source": (
+                    "paste"
+                    if str(payload.filename or "").lower() == "pasted.txt"
+                    else "upload"
+                ),
+                "tier": tier,
+                "file_type": _file_extension(payload.filename),
+            },
+        )
+        return result
     except AppError as error:
         _raise_http_error(error)
 
@@ -558,12 +579,23 @@ def generate_resume_builder_route(
             refresh_token=refresh_token or "",
             session_id=payload.session_id,
         )
-        return _attach_persistence_status(
+        result = _attach_persistence_status(
             response,
             persist_result,
             access_token=access_token or "",
             refresh_token=refresh_token or "",
         )
+        # PostHog funnel event (review OBS-2): the agentic résumé-build
+        # path emitted nothing, so only résumé *upload* was measurable,
+        # never a build. `step` distinguishes the structuring pass
+        # (generate) from the finalize (commit).
+        user_id, tier = _event_identity(access_token or "", refresh_token or "")
+        capture_event(
+            distinct_id=user_id,
+            event="resume_built",
+            properties={"tier": tier, "step": "generate"},
+        )
+        return result
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -663,6 +695,14 @@ def commit_resume_builder_route(
         clear_resume_builder_session(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
+        )
+        # PostHog funnel event (review OBS-2) — the finalize step of the
+        # agentic résumé build (see the generate route for the rationale).
+        user_id, tier = _event_identity(access_token or "", refresh_token or "")
+        capture_event(
+            distinct_id=user_id,
+            event="resume_built",
+            properties={"tier": tier, "step": "commit"},
         )
         return response
     except ValueError as error:
