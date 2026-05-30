@@ -134,7 +134,13 @@ def _fetch_text(url: str, *, timeout: float, max_bytes: int) -> dict:
         response = requests.get(
             url,
             timeout=timeout,
-            allow_redirects=True,
+            # Do NOT follow redirects (review L2). The caller validates the
+            # URL host up front, but a followed redirect chain isn't re-checked
+            # per hop — a residual SSRF surface if raw.githubusercontent.com
+            # ever 3xx'd off-host. The validated raw URL returns 200 with the
+            # body directly; an unexpected redirect now lands as a non-200 and
+            # is rejected as "http_status" below (fail closed).
+            allow_redirects=False,
             # raw.githubusercontent.com returns text — we don't need
             # any of the github.com auth/session cookies, and we don't
             # send a custom UA so we look like a vanilla client.

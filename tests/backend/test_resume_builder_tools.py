@@ -173,6 +173,65 @@ def test_fetch_github_readme_handles_http_404(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# _fetch_text — redirect hardening (review L2). These exercise the REAL
+# network call site (requests.get stubbed) rather than the _fetch_text stub
+# the tests above use, so they lock in the allow_redirects=False contract.
+# ---------------------------------------------------------------------------
+
+
+class _FakeRaw:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self, n, decode_content=True):
+        return self._body[:n]
+
+
+class _FakeResponse:
+    def __init__(self, status_code, content_type, body=b""):
+        self.status_code = status_code
+        self.headers = {"Content-Type": content_type}
+        self.raw = _FakeRaw(body)
+
+    def close(self):
+        pass
+
+
+def test_fetch_text_disables_redirects(monkeypatch):
+    """The GitHub raw fetch must NOT follow redirects — the host is validated
+    up front, but a followed redirect chain wouldn't be re-checked per hop."""
+    captured: dict = {}
+
+    def fake_get(url, **kwargs):
+        captured.update(kwargs)
+        return _FakeResponse(200, "text/plain; charset=utf-8", b"# hi\n")
+
+    monkeypatch.setattr(tools.requests, "get", fake_get)
+    result = tools._fetch_text(
+        "https://raw.githubusercontent.com/openai/openai-python/HEAD/README.md",
+        timeout=5.0,
+        max_bytes=1000,
+    )
+    assert result["status"] == 200
+    assert captured["allow_redirects"] is False
+
+
+def test_fetch_text_rejects_redirect_status(monkeypatch):
+    """A 3xx (a would-be redirect) lands as http_status, never a followed hop."""
+
+    def fake_get(url, **kwargs):
+        return _FakeResponse(302, "text/html", b"")
+
+    monkeypatch.setattr(tools.requests, "get", fake_get)
+    result = tools._fetch_text(
+        "https://raw.githubusercontent.com/openai/openai-python/HEAD/README.md",
+        timeout=5.0,
+        max_bytes=1000,
+    )
+    assert result["error"] == "http_status"
+
+
+# ---------------------------------------------------------------------------
 # execute_tool (dispatcher)
 # ---------------------------------------------------------------------------
 
