@@ -3983,3 +3983,192 @@ pg_cron now records a fast 202 instead of a 524; nothing else changes.
 
 Verification: test suite green; the `/admin/refresh-cache` endpoint
 test was updated to assert 202 + a scheduled background worker.
+
+## Day 79: Launch-readiness audit — 73-agent swarm, 10 fixes shipped
+
+Twitter-launch readiness pass. A 12-domain discovery swarm (security,
+correctness/concurrency, performance/DB, LLM integration, frontend
+security/correctness/perf/a11y, API-contract integrity, observability,
+testing, E2E flows) read the codebase in parallel, then every Critical
+and High finding went through a 3-lens adversarial verification —
+correctness/repro, impact/exploitability, missed-mitigation. A finding
+survived only if at least two of three skeptics could NOT refute it.
+73 agents total. Surviving counts: **2 Critical · 18 High · 24 Medium ·
+8 Low**, with all 20 Critical/High findings surviving (19 at 3/3,
+TEST-2 at 2/3).
+
+The two Criticals were the launch blockers:
+
+- **SECURITY-1** — unauthenticated BOLA on `GET
+  /workspace/analyze-jobs/{job_id}` + `POST .../cancel`. The async-job
+  dict was looked up purely by id; the returned payload included
+  `artifacts.tailored_resume` + `cover_letter` (the PII-densest object
+  in the product). Fix: `owner_user_id` bound at start,
+  `Depends(get_required_auth_tokens)` on both routes, **404** (not
+  403) when not owner so existence isn't confirmed. (`87117f5`)
+- **CRITICAL-2** — the async `/analyze-jobs` path never called the
+  quota gate; a capped Free user got *"The agentic workflow failed
+  unexpectedly"* instead of the structured 429 + upgrade nudge. Fix:
+  run `enforce_llm_budget` synchronously **before** spawning the
+  worker, plus widen `_serialize_job` to round-trip the structured
+  `{code, counter, cap, tier, reset_period}` envelope so the polling
+  hook renders the existing upgrade CTA. (`d19030b`)
+
+Eight Highs landed alongside the Criticals: theme-entitlement scope
+(FLOW-3 — Free résumé export no longer blocked by an unrelated
+cover-letter theme, `17f160f`); browser-security baseline (FE-SEC-1 —
+CSP Report-Only, X-Frame-Options DENY, HSTS, X-Content-Type-Options,
+Referrer-Policy on the Next frontend, `69e36c8`); per-user
+in-flight-runs cap (BACKEND-2 — closes the concurrent-run
+weekly-token bypass and the fairness gap where one user's 5 runs
+locked out the process-wide semaphore, `fc6a8c4`); a cost-attribution
+chokepoint (LLM-1 + OBS-1 — `web_search` routed through
+`OpenAIService` so it meters and cost-traces; `_record_cost_trace`
+falls back to the `meter_user_scope` ContextVar so JD / résumé parser
++ embedding spend finally lands in `aijobagent_run_traces`,
+`8cdbc38`); two missing PostHog funnel events (OBS-2 — `jd_parsed` +
+`resume_built`, plugging the hole between `job_searched` and
+`analysis_started`, `d064241`); two render-storm fixes (PERF-1 +
+PERF-2 — assistant streaming state moved out of `WorkspaceShell`;
+`buildJobReview` memoized; `b-canvas` children `React.memo`-d, so a
+multi-paragraph answer no longer drives hundreds of whole-tree
+reconciliations and JD keystrokes no longer re-parse the multi-KB JD
+on every character, `f870667`); a shared accessible-dialog primitive
+(A11Y-1 + A11Y-2 — `useAccessibleDialog` with focus trap, initial
+focus, Escape, focus restore, applied to the ⌘K palette + assistant
+FAB; palette also gets combobox/listbox semantics, `6b454c6`); and a
+Vitest baseline wired into CI (TEST-1 — 5 coverage cases over
+`humanizeApiError`, `auth-session`, the workspace-quota hook, the
+tier-gate render, and `JDReview` submit wiring; CI frontend job now
+runs lint + build + test, `d376aac`).
+
+Deferred from this PR by deliberate decision (parked in `report.md`):
+H1 (upgrade CTAs all point at `/pricing` which 404s — gated on
+payment going live); PERFDB-1/2/3/4 (four 1000-row time-bombs:
+`cleanup_missing` can hard-delete a bookmarked row, unpaginated
+missing-row enumeration, the workspace-retention sweeper's N+1 +
+1000-row cap, and the `cached_jobs` DDL only living in the live DB —
+acceptable pre-traction, will bite around the thousandth user);
+TEST-2 (`tests/quality/` runners aren't collected by pytest, so a
+prompt edit can silently degrade tailoring/review quality with CI
+green — defer until there's a hermetic no-live-key path).
+
+Verification: 502 backend pytest, Vitest baseline, tsc + eslint clean
+on touched files. Merge: `a868b24`. Live-API smoke after deploy
+confirmed `/workspace/analyze-jobs/<fake>` no auth → 401 (SECURITY-1
+enforced), and the security headers landed on both the app subdomain
+and the marketing site.
+
+## Day 80: Medium + Low cleanup — 24 + 8 from the same audit
+
+Cleanup PR for everything the launch PR scoped out. Three phases,
+thirteen commits on the feature branch, merge `507cb3f`. Verification:
+**980 backend pytest** (up from 502 — this PR adds substantial new
+test coverage), 33 Vitest, clean production build.
+
+Phase 1 — Tier-1 Mediums:
+
+- **M1** — users could PATCH `app_users.plan_tier` / `account_status`
+  through their own JWT because the RLS UPDATE policy was
+  `using/with check (auth.uid() = id)` with no column restriction,
+  and the legacy daily-quota path read `app_users.plan_tier`. Now a
+  BEFORE-UPDATE trigger rejects non-`service_role` writes to those
+  columns, and `get_daily_quota_for_plan` reads from
+  `resolve_user_tier` (which sources `aijobagent_subscriptions`).
+  (`36c2aa8`)
+- **M5–M10, M14, M16** — iframe `sandbox=""` on the preview surfaces;
+  session-replay PII masked via privacy-by-default;
+  `safeRedirect`/`isAllowedRedirect` allowlist on every backend-
+  supplied URL the client navigates to; JD auto-parse 429 notices
+  now surface an inline upgrade CTA; clear-then-repaste resets
+  `lastParsedTextRef` so the LLM-parsed panels return on retry;
+  `handleSignOut` resets workspace content slices so isolation holds
+  even without the hard-nav backstop; account popover restores focus
+  and ditches the wrong-widget `role="menu"` for a labelled
+  disclosure; debounced JD auto-parse threads `AbortSignal` through
+  `request()` so a superseded LLM parse actually cancels.
+  (`d42332b`)
+
+Phase 2 — Tier-2 Mediums (three sub-commits, domain-coherent):
+
+- **Backend correctness + coverage** (`c18109b`): atomic
+  `save_saved_job` RPC closes the count-then-upsert TOCTOU on the
+  persistent saved-jobs cap (M2); `/workspace/quota`'s
+  `_persistent_count()` uses a new `count_active()` head-read
+  instead of deserializing the fat saved-workspace blob on every
+  mount-and-after-every-run poll (M4); `POST /billing/portal` got
+  tests across all six outcomes (M18); `saved_workspaces` per-tier
+  cap pinned to **1/1/1** (M19 — the schema is one-row-per-user, so
+  the cap+1 case was structurally unenforceable; multi-row history
+  flagged as future enhancement).
+- **Observability + anon attribution** (`11eb8c5`): backend events
+  for unauthenticated callers now use the browser's PostHog distinct
+  id via a new `X-PostHog-Distinct-Id` request header (M21 — closes
+  the funnel hole where every anon visitor mapped to one literal
+  `"anonymous"` person and anonymous→signup conversion couldn't be
+  computed); the retention sweeper got its `sentry_cron_monitor`
+  (`saved-workspaces-retention`) so a stuck cron pages instead of
+  silently leaving Free data past its 7-day retention promise (M22);
+  Sentry breadcrumbs / tags / context / user are now set on each
+  analysis stage and on the export route, defeating the
+  AI-Agents-Monitoring blind spot ADR-024 was adopted for (M23).
+- **Frontend perf + UX** (`1a3bc69`): job-grid memoized via
+  `React.memo(JobCard)` + stabilized per-card callbacks (M11 — full
+  `JobSearch` memo benefit + virtualization deferred); session
+  replay is route-gated to marketing pages (M12 — `posthog-js` has
+  no client `session_recording` sample rate, so route gating is the
+  available knob); `--fg-4` lightened to a contrast-passing token
+  for its four text-uses (M13); dead `BackendHealth` type +
+  `getBackendHealth` deleted (M17 — no caller; better to remove than
+  fix the drift); JD paste no longer collapses the input textarea
+  ~1.5s after a paste (M24).
+
+Phase 3 — Lows, one commit per finding: `/health/sentry-debug` gated
+behind the admin bearer secret so anyone curling it stops burning
+Sentry quota (L1, `2987364`); `fetch_github_readme` sets
+`allow_redirects=False` so the SSRF-adjacent surface disappears (L2,
+`1cb5a63`); a regression test pins the `web_search` 30s timeout the
+launch PR already shipped via LLM-1 (L4, `b7f2884`); completed
+analysis jobs drop `job.result` on the first terminal get +
+`JOB_TTL_SECONDS` tightened 1800→600 (L3, `cf6f8f4`); the "Parsing
+JD…" indicator is gated on the current `AbortController` so a
+superseded request's `finally` doesn't hide the busy hint while a
+newer parse is still in flight (L5, `a4239c8`); the VoiceInputButton
+reduced-motion override is driven off a class instead of a brittle
+`[style*="animation"]` substring selector (L6, `7035d2f`); the dead
+non-streaming `askWorkspaceAssistant` client fn is gone but the
+backend `/workspace/assistant/answer` route stays as a tested
+lockstep fallback — the report's "dead" framing was inaccurate; the
+route shares the metered `answer_workspace_question` path (L7,
+`064532c`); auth-cookie tests now assert `Secure`, `SameSite`, and
+clear-scope so a config refactor dropping any of those would fail
+(L8, `3ec4b6a`).
+
+Deferred from the cleanup (parked in `report.md` alongside the launch
+PR's deferrals): **M3** (process-global run-concurrency cap with no
+per-user fairness — effectively addressed by BACKEND-2's per-user
+cap; the architectural piece is Rec #1/#3 territory); **M15, M20**
+(export + streaming-assistant 429 upgrade CTAs — blocked on the same
+`/pricing` destination that gates H1); **M19 multi-row workspaces**
+(single-slot is shipped reality; multi-row needs a schema migration
+plus un-deferring the structural-enforcement test); **M11
+follow-ups** (wrap `WorkspaceShell`'s `JobSearch` callbacks in
+`useCallback` to fully activate the memo boundary, and add grid
+virtualization — needs a windowing dep); **L3 follow-up** (an
+optional periodic prune timer; the terminal-get drop + lowered TTL
+already bound resident memory).
+
+Plus the five **Architectural Recommendations** from the audit report
+(R1 async-as-transparent-transport; R2 `OpenAIService` as the only
+door; R3 per-user authZ + HTTP security to enforced edges; R4
+paginated maintenance scans + tracked `cached_jobs` migration; R5
+shared accessible-overlay primitive + workspace shell split + CI test
+tier) — some are partially complete after the launch + cleanup PRs,
+the "architecture" half of each is parked. All five documented in
+`report.md`.
+
+Live smoke post-deploy: `GET /health/sentry-debug` no auth → **401**
+(was 500 before — proves both the L1 fix and the deploy on `507cb3f`),
+`GET /workspace/analyze-jobs/<fake>` no auth → 401 (SECURITY-1 still
+enforced), security headers still healthy on both subdomains, 31/31
+hermetic new cleanup tests pass locally.

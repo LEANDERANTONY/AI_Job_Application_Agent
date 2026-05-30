@@ -72,6 +72,8 @@ Owns the FastAPI API surface:
 - `backend/routers/billing.py` owns the HMAC-verified `POST /webhooks/lemonsqueezy` subscription-event endpoint + the customer-portal redirect; the signature-verification + event-routing logic lives in `backend/webhooks/lemonsqueezy.py`
 - `backend/prompt_registry.py` loads every LLM prompt from `prompts/<name>/<version>.json` — all 11 builders migrated off Python f-string concats; see [ADR-018](adr/ADR-018-three-layer-llm-retry-and-per-agent-fallback-isolation.md) family + the prompt-registry DEVLOG entries
 - `backend/services/job_cache_service.py` runs the per-source refresh + smart-cleanup worker invoked by the admin endpoint
+- `backend/services/workspace_run_jobs.py` owns the async `/analyze-jobs` job system. Each `WorkspaceRunJob` is bound to its `owner_user_id` at start time and the status/cancel routes check it (returning **404** — same code for "unknown" and "not yours" — so existence isn't confirmed); the quota gate runs **synchronously before** the worker is spawned, with the structured `{code, counter, cap, tier, reset_period}` envelope round-tripped through `_serialize_job` so the polling hook renders the same 429 upgrade CTA the sync path does; a per-user in-flight cap (1 run/user) sits in front of the process-global `BoundedSemaphore(5)` so one user's burst can't 503 every other account. The launch-readiness pass that introduced these guarantees is DEVLOG Day 79
+- `backend/routers/health.py` also hosts `/health/sentry-debug` — now gated behind the admin bearer secret so an unauthenticated curl gets a 401 instead of a `ZeroDivisionError` that would burn Sentry quota (DEVLOG Day 80)
 
 ### `src/services/`
 
@@ -221,6 +223,8 @@ Each `cached_jobs` row holds one upstream posting keyed on `(source, job_id)`. T
 
 `aijobagent_feedback` holds one row per artifact thumbs-up/down (`user_id`, `workspace_id`, `artifact_kind`, `rating`, `comment`, `created_at`), RLS-scoped to the owning user; admin reads go through the service role.
 
+A small set of structural reinforcements landed during the launch-readiness cleanup (DEVLOG Day 80) that are worth flagging here because they're load-bearing on the entitlement and read-fast paths: (1) a BEFORE-UPDATE trigger on `app_users` rejects non-`service_role` writes to `plan_tier` / `account_status`, so the unrestricted RLS UPDATE policy can no longer be abused to PATCH one's own tier; the legacy daily-quota path now sources tier from `resolve_user_tier` (which reads `aijobagent_subscriptions`) instead of `app_users.plan_tier`; (2) `save_saved_job` is now an atomic SECURITY DEFINER RPC that count-and-inserts in one transaction (advisory lock), closing the TOCTOU window where two concurrent saves at count=cap−1 could both pass and exceed the persistent cap; (3) `/workspace/quota`'s `_persistent_count()` no longer reads the fat `saved_workspaces` blob — a `count_active(user_id)` head-read returns 0/1 without deserializing `workflow_snapshot_json` / `cover_letter_payload_json` / `tailored_resume_payload_json`. `saved_workspaces` per-tier caps are pinned to **1/1/1** because the schema is one-row-per-user (multi-row history is flagged as a future enhancement requiring a schema migration).
+
 ## Observability And Telemetry Layer
 
 Wired Day 46. The compliance posture is enforced at the SDK-init level, not as legalese on a privacy page — see [ADR-024](adr/ADR-024-observability-stack-sentry-and-posthog.md) and [ADR-025](adr/ADR-025-eu-cookie-consent-banner-and-gdpr-analytics-gating.md).
@@ -231,6 +235,8 @@ Two vendors, one bootstrap path:
 - **PostHog** — product analytics, session replay, identify/group cohorts. The free Developer plan caps at one project per org, so the project is shared with the developer's other product; every event carries a `product: "jobagent"` super-property (frontend `posthog.register`, backend `capture_event` merge) so dashboards slice cleanly with `where properties.product = 'jobagent'`. Exception capture is off — Sentry is the source of truth for errors.
 
 Both clients are no-ops when their DSN / key is empty, so dev, CI, and the test suite run without observability wiring or network calls.
+
+The launch-readiness cleanup (DEVLOG Day 80) added three reinforcements to this surface: (1) Sentry breadcrumbs / tags / context / user are now set on each pipeline stage in `src/agents/orchestrator.py` (via the stage-boundary callback, not the orchestrator internals) and on the export route, so a mid-pipeline 5xx is localizable to the failing agent — defeating the AI-Agents-Monitoring blind spot ADR-024 was adopted for; (2) the `saved-workspaces-retention` sweeper got its `sentry_cron_monitor` wrapper so a stuck retention cron now pages instead of silently leaving Free data past its 7-day retention promise; (3) backend events emitted by unauthenticated callers now carry the browser's PostHog distinct id via a new `X-PostHog-Distinct-Id` request header — the previous `"anonymous"` constant collapsed every anon visitor onto one PostHog person and made anonymous→signup conversion uncomputable.
 
 ### Consent gating
 
@@ -244,6 +250,20 @@ A `jobagent-cookie-consent-change` custom event re-evaluates the gated integrati
 ### Uptime
 
 A Sentry Uptime monitor pings `https://api.job-application-copilot.xyz/health` every 5 minutes from the EU region. Configured in the Sentry dashboard rather than in code — a fresh-project rebuild must recreate it manually.
+
+## Browser security baseline
+
+The Next.js app sends a fixed set of response headers on every route, configured via `headers()` in `frontend/next.config.ts`. The defense-in-depth posture is the same on the marketing site and the workspace subdomain:
+
+- **`X-Frame-Options: DENY`** + **`Content-Security-Policy: frame-ancestors 'none'`** — clickjacking defense. The workspace can't be framed and overlaid to trick a signed-in user into destructive actions; SameSite=Lax cookies would otherwise ride along on top-level navigation.
+- **`Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`** — HTTPS for two years across all subdomains, preload-eligible.
+- **`X-Content-Type-Options: nosniff`** — disables MIME-type sniffing on responses (resource loaders honor the declared `Content-Type`).
+- **`Referrer-Policy: strict-origin-when-cross-origin`** — strips path + query from the Referer on cross-origin navigation while keeping it intact within the site.
+- **`Content-Security-Policy`** as Report-Only for the first weeks of public traffic — same-origin defaults plus the actual allowlist (PostHog `eu.i.posthog.com`, Sentry `*.sentry.io`, Lemon Squeezy, Supabase `*.supabase.co`). Tuning to enforce-mode tracks violation reports in Sentry.
+
+The launch-readiness pass that introduced this baseline is DEVLOG Day 79 (FE-SEC-1). Backend-side, every backend-supplied redirect URL the client navigates to passes through an explicit allowlist (`frontend/src/lib/redirectAllowlist.ts` — `safeRedirect` / `isAllowedRedirect`) so the OAuth handoff + workspace-shell redirects can't be steered to an attacker-controlled origin (DEVLOG Day 80, M7).
+
+The accessible-overlay primitive (`frontend/src/lib/useAccessibleDialog.ts`) is the shared focus-trap + initial-focus + Escape + focus-restore contract behind every modal surface in the workspace shell — the ⌘K command palette and the assistant FAB use it directly; the palette also gets combobox/listbox semantics (`role="combobox"` + `aria-expanded` + `aria-controls` + `aria-activedescendant`, list `role="listbox"`, items `role="option"` with `aria-selected`). DEVLOG Day 79 (A11Y-1/A11Y-2).
 
 ## Testing Model
 
