@@ -811,6 +811,7 @@ def start_workspace_analysis_job_route(
             access_token=access_token or "",
             refresh_token=refresh_token or "",
             owner_user_id=user_id or None,
+            tier=tier,
         )
         # PostHog funnel event — async variant of the supervised
         # pipeline. Emitted once the job is accepted onto the queue.

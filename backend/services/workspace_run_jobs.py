@@ -6,9 +6,10 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.errors import AppError
+from src.errors import AppError, QuotaExceededError
 from src.logging_utils import get_logger, log_event
 
+from backend.quota import enforce_llm_budget
 from backend.services.workspace_service import run_workspace_analysis
 
 
@@ -61,6 +62,12 @@ class WorkspaceRunJob:
     progress_percent: int = 3
     result: dict[str, Any] | None = None
     error_message: str | None = None
+    # Structured error envelope mirroring the global 429 body
+    # (code/counter/current/cap/reset_period/tier). Populated when a
+    # QuotaExceededError fires inside the worker so the polling client
+    # renders the SAME upgrade CTA the synchronous 429 path gives,
+    # instead of a generic "failed" toast (review CRITICAL-2 / Rec #1).
+    error: dict[str, Any] | None = None
     # Identity that created this job, captured from the authenticated
     # request in `start_workspace_analysis_job`. The status / cancel
     # routes pass the *caller's* resolved user_id; a mismatch is treated
@@ -101,6 +108,7 @@ def _serialize_job(job: WorkspaceRunJob) -> dict[str, Any]:
         "progress_percent": int(job.progress_percent),
         "result": job.result,
         "error_message": job.error_message,
+        "error": job.error,
     }
 
 
@@ -197,6 +205,39 @@ def _run_job(
                 )
                 job.error_message = None
                 job.updated_at = time.time()
+        except QuotaExceededError as error:
+            # A quota gate fired on the worker thread — most often the
+            # monthly application counter (check_and_increment), or the
+            # weekly token meter racing the synchronous pre-flight under
+            # concurrency. Carry the SAME structured envelope the global
+            # 429 handler produces so the polling client renders the
+            # upgrade CTA, not a generic "failed" toast (CRITICAL-2).
+            message = error.user_message
+            log_event(
+                LOGGER,
+                30,
+                "workspace_run_job_quota_blocked",
+                "The background workspace analysis job hit a plan limit.",
+                job_id=job_id,
+                counter=error.counter,
+                tier=error.tier,
+            )
+            with _LOCK:
+                job = _JOBS.get(job_id)
+                if job is None:
+                    return
+                job.status = "failed"
+                job.error_message = message
+                job.error = {
+                    "code": "tier_limit_exceeded",
+                    "detail": message,
+                    "counter": error.counter,
+                    "current": error.current,
+                    "cap": error.cap,
+                    "reset_period": error.reset_period,
+                    "tier": error.tier,
+                }
+                job.updated_at = time.time()
         except AppError as error:
             message = error.user_message
             log_event(
@@ -241,7 +282,21 @@ def start_workspace_analysis_job(
     access_token: str,
     refresh_token: str,
     owner_user_id: str | None = None,
+    tier: str = "free",
 ) -> dict[str, Any]:
+    # Quota PRE-FLIGHT (review CRITICAL-2 / Rec #1): enforce the weekly
+    # LLM-token budget SYNCHRONOUSLY — before acquiring a run slot or
+    # spawning the worker — so a capped user gets the canonical 429 out
+    # of the POST (which the frontend already renders as an upgrade CTA)
+    # instead of a 200 "queued" that later flips to a generic "failed"
+    # toast. enforce_llm_budget is a read-only check (it never
+    # increments), so it does NOT double-charge the meter the worker
+    # records into, and it no-ops on a blank user_id / unlimited tier.
+    # The monthly application counter stays inside the worker (it is an
+    # atomic increment that can't be pre-checked without double-billing);
+    # that gate round-trips to the client via the job's `error` envelope.
+    enforce_llm_budget(owner_user_id or "", tier)
+
     # Non-blocking acquire so a saturated server fast-fails the request
     # rather than queueing it behind an opaque thread-spawn delay. The
     # matching release lives in `_run_job`'s finally block.

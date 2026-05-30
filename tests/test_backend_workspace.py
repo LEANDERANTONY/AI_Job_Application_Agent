@@ -2512,6 +2512,48 @@ def test_workspace_analyze_job_start_returns_503_when_capacity_exhausted(monkeyp
     assert "busy" in response.json()["detail"].lower()
 
 
+def test_workspace_analyze_job_start_returns_429_when_quota_exhausted(monkeypatch):
+    """A capped user must get the canonical 429 upgrade payload OUT OF
+    THE POST (CRITICAL-2): the synchronous quota pre-flight raises
+    QuotaExceededError, which the global handler renders as the
+    structured tier-limit body the frontend turns into an upgrade CTA —
+    NOT a 200 'queued' that later degrades to a generic 'failed' toast."""
+    from src.errors import QuotaExceededError
+
+    def _raise_quota(**_kwargs):
+        raise QuotaExceededError(
+            "You've used your weekly AI usage allowance on this plan.",
+            counter="llm_tokens",
+            current=90_000,
+            cap=90_000,
+            reset_period="2026-W22",
+            tier="free",
+        )
+
+    monkeypatch.setattr(
+        "backend.routers.workspace.start_workspace_analysis_job",
+        _raise_quota,
+    )
+
+    response = client.post(
+        "/api/workspace/analyze-jobs",
+        json={
+            "resume_text": "Leander Antony\nPython\nExperience\nAI Engineer",
+            "resume_filetype": "TXT",
+            "resume_source": "workspace",
+            "job_description_text": "Machine Learning Engineer\nRequired: Python",
+            "run_assisted": True,
+        },
+    )
+
+    assert response.status_code == 429
+    body = response.json()
+    assert body["code"] == "tier_limit_exceeded"
+    assert body["counter"] == "llm_tokens"
+    assert body["cap"] == 90_000
+    assert body["tier"] == "free"
+
+
 def test_workspace_analyze_job_status_returns_actionable_404_when_job_missing(monkeypatch):
     """Container restart drops `_JOBS`. The poll-side response should
     explain the cause and prompt a re-run, not return a bare
