@@ -223,3 +223,77 @@ def test_workspace_handoff_exchange_sets_cookies_and_scrubs_tokens(monkeypatch):
     assert payload["session"] == {"authenticated": True}
     assert response.cookies["ja_access_token"] == "access-token"
     assert response.cookies["ja_refresh_token"] == "refresh-token"
+
+
+# ---------------------------------------------------------------------------
+# Auth-cookie security attributes (review L8)
+#
+# The endpoint tests above only assert HttpOnly, so a config/refactor that
+# dropped Secure / SameSite (or set samesite='none' without secure — which
+# browsers reject) would fail no test. These pin the full security envelope by
+# exercising the cookie helper directly with PROD-shaped settings monkeypatched
+# in, since the dev defaults leave Secure off.
+# ---------------------------------------------------------------------------
+
+
+def _prod_cookie_settings():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        auth_cookie_secure=True,
+        auth_cookie_samesite="lax",
+        auth_cookie_domain="app.example.com",
+    )
+
+
+def _set_cookie_headers(response):
+    return [
+        value.decode()
+        for (key, value) in response.raw_headers
+        if key == b"set-cookie"
+    ]
+
+
+def test_set_auth_cookies_carries_secure_samesite_and_scope(monkeypatch):
+    from fastapi import Response
+
+    from backend.services import auth_cookies
+
+    monkeypatch.setattr(
+        auth_cookies, "get_backend_settings", _prod_cookie_settings
+    )
+    response = Response()
+    auth_cookies.set_auth_cookies(response, "access-token", "refresh-token")
+
+    cookies = _set_cookie_headers(response)
+    assert len(cookies) == 2
+    for cookie in cookies:
+        lowered = cookie.lower()
+        assert "httponly" in lowered
+        assert "secure" in lowered
+        assert "samesite=lax" in lowered
+        assert "domain=app.example.com" in lowered
+        assert "path=/" in lowered
+
+
+def test_clear_auth_cookies_matches_path_and_domain(monkeypatch):
+    from fastapi import Response
+
+    from backend.services import auth_cookies
+
+    monkeypatch.setattr(
+        auth_cookies, "get_backend_settings", _prod_cookie_settings
+    )
+    response = Response()
+    auth_cookies.clear_auth_cookies(response)
+
+    cookies = _set_cookie_headers(response)
+    assert len(cookies) == 2
+    for cookie in cookies:
+        lowered = cookie.lower()
+        # Same path/domain the cookie was set with — otherwise the browser
+        # keeps the original and the user stays "signed in" indefinitely.
+        assert "domain=app.example.com" in lowered
+        assert "path=/" in lowered
+        # An actual deletion: expired (Max-Age=0 and/or a past Expires).
+        assert "max-age=0" in lowered or "expires=" in lowered

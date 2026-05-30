@@ -40,6 +40,11 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from backend.observability import (
+    SAVED_WORKSPACES_RETENTION_MONITOR_CONFIG,
+    SAVED_WORKSPACES_RETENTION_MONITOR_SLUG,
+    sentry_cron_monitor,
+)
 from backend.tiers import Tier, resolve_user_tier, retention_days_for_tier
 from src.config import (
     SUPABASE_SAVED_WORKSPACES_TABLE,
@@ -309,7 +314,16 @@ def main() -> None:
     run) invokes this with `python -m backend.maintenance`; output
     is JSON so structured-log pipelines can ingest it directly.
     """
-    summary = sweep_expired_workspaces()
+    # Wrap the sweep in a Sentry cron check-in (review M22) so a stopped or
+    # failing retention cron pages the operator instead of silently leaving
+    # Free-tier data past its retention promise. No-op when Sentry is
+    # disabled / under pytest; the monitor is upserted from the config so it
+    # never needs touching in the Sentry UI.
+    with sentry_cron_monitor(
+        SAVED_WORKSPACES_RETENTION_MONITOR_SLUG,
+        SAVED_WORKSPACES_RETENTION_MONITOR_CONFIG,
+    ):
+        summary = sweep_expired_workspaces()
     print(json.dumps(summary.to_dict(), indent=2))
 
 

@@ -37,7 +37,7 @@ from fastapi.testclient import TestClient
 
 from backend import quota
 from backend.app import app
-from backend.quota import current_period_key, reset_in_memory_backend
+from backend.quota import reset_in_memory_backend
 from backend.routers import jobs as jobs_router
 from backend.services import saved_jobs_service, workspace_persistence_service
 from backend.services.auth_session_service import AuthenticatedContext
@@ -267,6 +267,13 @@ class _FakeSavedJobsStore:
 
         return SavedJobRecord(**record)
 
+    def save_job_atomic(self, access_token, refresh_token, payload, cap):
+        # The real atomic RPC enforces the cap in Postgres; in this
+        # in-memory fake the service's pre-check already gates the over-cap
+        # case, so this just persists (mirrors save_job) for the under-cap
+        # path the existing tests exercise.
+        return self.save_job(access_token, refresh_token, payload)
+
     def delete_job(self, _access_token, _refresh_token, user_id, job_id):
         self._rows.pop((str(user_id), str(job_id)), None)
 
@@ -319,6 +326,33 @@ def test_6th_saved_job_on_free_returns_429():
     assert err.cap == TIER_CAPS["free"]["saved_jobs"] == 5
     assert err.current == 5
     assert err.tier == "free"
+
+
+def test_saved_job_atomic_cap_race_translates_to_429():
+    """The atomic-write backstop (M2): if a concurrent save fills the cap
+    between the service pre-check and the atomic RPC, the RPC's
+    SavedJobsCapExceeded is translated to the same canonical 429."""
+    from src.saved_jobs_store import SavedJobsCapExceeded
+
+    class _RacingStore(_FakeSavedJobsStore):
+        def list_jobs(self, *args, **kwargs):
+            return []  # pre-check sees room ...
+
+        def save_job_atomic(self, *args, **kwargs):
+            # ... but the atomic write loses the race to a concurrent save.
+            raise SavedJobsCapExceeded(
+                "aijobagent_quota_exceeded counter=saved_jobs cap=5 current=5"
+            )
+
+    auth_context = _build_auth_context(user_id="user-race-1")
+    with pytest.raises(QuotaExceededError) as exc_info:
+        _save_saved_job(
+            auth_context=auth_context,
+            store=_RacingStore(),
+            job_id="job-x",
+        )
+    assert exc_info.value.counter == "saved_jobs"
+    assert exc_info.value.tier == "free"
 
 
 def test_1001st_saved_job_on_pro_returns_429(monkeypatch):
@@ -537,10 +571,11 @@ def test_free_re_save_upserts_existing_workspace():
 
     The cap (1) governs the maximum number of *distinct slots* a Free
     user can occupy, not the number of write operations against their
-    existing slot. Today's one-row-per-user schema can't actually
-    produce a >1 distinct-slot state for a single user, so the
-    "(cap+1)-th distinct save" assertion lands with the multi-row
-    schema migration (see test_distinct_2nd_workspace_blocks_when_multi_slot_lands).
+    existing slot. Per the M19 decision, saved_workspaces is single-slot
+    for EVERY tier (the store is one-row-per-user), so this re-save-upserts
+    behaviour is the canonical pinned reality — not a placeholder pending a
+    multi-row migration. Multi-slot (a slot_id schema change) is a separate
+    future enhancement.
 
     Regression for Codex P1 flagged on PR #2 (May 2026).
     """
@@ -558,17 +593,10 @@ def test_free_re_save_upserts_existing_workspace():
 
 
 def test_pro_saved_workspace_with_existing_row_is_allowed(monkeypatch):
-    """Pro's saved_workspaces cap is 5, but the current store upserts
-    on user_id (one row per user). Until the schema migrates to
-    multi-row saved workspaces, Pro / Business users can only ever
-    have 1 row, so the gate's row-count check (0 or 1) is always
-    below the Pro cap. Verify that a re-save on Pro doesn't 429 --
-    the gate must NOT promote the single-row schema's overwrite into
-    a rejection just because we have a tier slot to check.
-
-    The full "6th distinct save on Pro -> 429" test will land
-    alongside the multi-row schema migration in a follow-up PR;
-    today the production code path can't reach that state.
+    """saved_workspaces is single-slot for every tier (M19) — the store
+    upserts on user_id (one row per user). A re-save on Pro is an UPDATE to
+    the same slot, so the gate must NOT 429; verify it doesn't. (Pro's cap
+    is now 1, matching the structural reality, not the old unenforceable 5.)
     """
     monkeypatch.setattr(workspace_persistence_service, "resolve_user_tier", lambda _u: "pro")
     auth_context = _build_auth_context(user_id="user-pro-workspace-1")

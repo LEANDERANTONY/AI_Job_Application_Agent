@@ -15,7 +15,9 @@ from backend.observability import (
     CACHED_JOBS_HEALTHCHECK_MONITOR_SLUG,
     CACHED_JOBS_REFRESH_MONITOR_CONFIG,
     CACHED_JOBS_REFRESH_MONITOR_SLUG,
+    POSTHOG_DISTINCT_ID_HEADER,
     capture_event,
+    resolve_distinct_id,
     sentry_cron_monitor,
 )
 from backend.rate_limit import LIMIT_LLM, limiter
@@ -101,10 +103,15 @@ def search_jobs(
     result = service.search(domain_query) if live else service.search_cached(domain_query)
     # PostHog funnel event — the top of the job-application funnel.
     # Server-side capture, fire-and-forget; carries no PII (counts +
-    # tier only). `quota_user_id` is "" for anonymous callers, which
-    # capture_event maps to the "anonymous" distinct id.
+    # tier only). For anonymous callers `quota_user_id` is "", so we fall
+    # back to the browser's own PostHog distinct id (review M21) — passed in
+    # the X-PostHog-Distinct-Id header — so this top-of-funnel event attaches
+    # to the same person the client identifies on signup, instead of every
+    # anonymous visitor collapsing onto one shared "anonymous" id.
     capture_event(
-        distinct_id=quota_user_id,
+        distinct_id=resolve_distinct_id(
+            quota_user_id, request.headers.get(POSTHOG_DISTINCT_ID_HEADER)
+        ),
         event="job_searched",
         properties={
             "mode": "live" if live else "cached",

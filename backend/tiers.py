@@ -30,7 +30,7 @@ PR. Numbers below mirror the locked table from the
     llm_tokens                  weekly       90000   1000000   4000000
     job_searches                monthly      50      ∞         ∞
     saved_jobs                  persistent   5       1000      ∞
-    saved_workspaces            persistent   1       5         ∞
+    saved_workspaces            persistent   1       1         1
 
     * SUPERSEDED by the `llm_tokens` meter (report.md "Unified LLM
       token meter"). `llm_tokens` accumulates raw model tokens (prompt
@@ -141,7 +141,12 @@ TIER_CAPS: dict[Tier, dict[str, int]] = {
         "llm_tokens": 1_000_000,
         "job_searches": UNLIMITED,
         "saved_jobs": 1000,
-        "saved_workspaces": 5,
+        # Single-slot for every tier (review M19). The saved_workspaces
+        # store upserts on user_id (one row per user), so a user can never
+        # occupy more than one slot — advertising 5 / ∞ was an unenforceable
+        # claim. Set to the structural reality; multi-slot is a future
+        # schema-migration enhancement (slot_id) tracked separately.
+        "saved_workspaces": 1,
     },
     "business": {
         # Superseded LLM gates — see the "free" block + the matrix
@@ -155,7 +160,8 @@ TIER_CAPS: dict[Tier, dict[str, int]] = {
         "llm_tokens": 4_000_000,
         "job_searches": UNLIMITED,
         "saved_jobs": UNLIMITED,
-        "saved_workspaces": UNLIMITED,
+        # Single-slot for every tier — see the "pro" note (review M19).
+        "saved_workspaces": 1,
     },
 }
 

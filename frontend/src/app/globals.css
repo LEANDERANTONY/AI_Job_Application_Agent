@@ -4790,7 +4790,11 @@ code {
   --fg:    #f5f8ff;
   --fg-2:  #c7cfdf;
   --fg-3:  #8a93a8;
-  --fg-4:  #5e6677;
+  /* --fg-4 lightened #5e6677 -> #7b8499 (review M13): the old value was
+     ~3.45:1 on the command-palette panel (#080b12) and is applied to real
+     functional text (palette footer hints, NAVIGATE/ACTIONS labels, key caps,
+     search placeholder), failing WCAG 1.4.3. #7b8499 is ~5.2:1 there. */
+  --fg-4:  #7b8499;
 
   /* Accent — emissive blue */
   --accent:         #4171ff;

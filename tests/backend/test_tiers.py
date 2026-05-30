@@ -371,7 +371,8 @@ def test_pro_tier_caps_match_brief():
     # so check_and_increment short-circuits without an upsert.
     assert pro["job_searches"] == UNLIMITED
     assert pro["saved_jobs"] == 1000
-    assert pro["saved_workspaces"] == 5
+    # Single-slot for every tier (M19): the store is one-row-per-user.
+    assert pro["saved_workspaces"] == 1
 
 
 def test_business_tier_caps_match_brief():
@@ -386,7 +387,8 @@ def test_business_tier_caps_match_brief():
     assert business["llm_tokens"] == 4_000_000
     assert business["job_searches"] == UNLIMITED
     assert business["saved_jobs"] == UNLIMITED
-    assert business["saved_workspaces"] == UNLIMITED
+    # Single-slot for every tier (M19): the store is one-row-per-user.
+    assert business["saved_workspaces"] == 1
 
 
 # ─── invariants across tiers ────────────────────────────────────────────

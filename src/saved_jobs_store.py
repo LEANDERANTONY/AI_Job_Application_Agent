@@ -7,6 +7,13 @@ from src.errors import AppError
 from src.schemas import SavedJobRecord
 
 
+class SavedJobsCapExceeded(Exception):
+    """Internal signal: the atomic save RPC rejected the save because the
+    user is at their saved-jobs cap. The service layer translates this to
+    the canonical ``QuotaExceededError`` (which needs the tier / reset-period
+    context the store doesn't carry)."""
+
+
 class SavedJobsStore:
     def __init__(
         self,
@@ -37,6 +44,55 @@ class SavedJobsStore:
                 .execute()
             )
         except Exception as exc:
+            raise AppError(
+                "The app could not save this job to your shortlist.",
+                details=str(exc),
+            ) from exc
+        rows = self._extract_rows(response)
+        if not rows:
+            return self._to_record(normalized)
+        return self._to_record(rows[0], fallback=normalized)
+
+    def save_job_atomic(
+        self,
+        access_token: str,
+        refresh_token: str,
+        payload: dict,
+        cap: int,
+    ):
+        """Cap-enforced atomic save (review M2).
+
+        Routes through the SECURITY DEFINER ``save_saved_job_atomic`` RPC,
+        which counts existing rows and inserts/updates in ONE transaction
+        under a per-user advisory lock — closing the count-then-upsert TOCTOU
+        where two concurrent saves of distinct jobs both slipped past the
+        cap. ``cap < 0`` is unlimited. Raises ``SavedJobsCapExceeded`` when
+        the RPC rejects (the service maps it to the canonical 429)."""
+        if not self.is_configured():
+            raise AppError("Saved jobs are not configured.")
+
+        client = self.auth_service.create_authenticated_client(access_token, refresh_token)
+        timestamp = datetime.now(timezone.utc).isoformat()
+        normalized = self._normalize_payload(payload, timestamp=timestamp)
+        if not normalized["user_id"]:
+            raise AppError("Saving a job requires an authenticated user id.")
+        if not normalized["job_id"]:
+            raise AppError("Saving a job requires a normalized job id.")
+        try:
+            response = client.rpc(
+                "save_saved_job_atomic",
+                {
+                    "p_user_id": normalized["user_id"],
+                    "p_job_id": normalized["job_id"],
+                    "p_cap": int(cap),
+                    "p_payload": normalized,
+                },
+            ).execute()
+        except Exception as exc:  # noqa: BLE001 - boundary translation
+            # supabase-py wraps the PostgREST/PG error; the SQL DETAIL we
+            # wrote carries the 'aijobagent_quota_exceeded' marker.
+            if "aijobagent_quota_exceeded" in str(exc):
+                raise SavedJobsCapExceeded(str(exc)) from exc
             raise AppError(
                 "The app could not save this job to your shortlist.",
                 details=str(exc),

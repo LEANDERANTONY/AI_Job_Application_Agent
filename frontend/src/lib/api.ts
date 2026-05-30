@@ -1,7 +1,6 @@
 import type {
   ArtifactTheme,
   AuthSessionResponse,
-  BackendHealth,
   FeedbackRequest,
   FeedbackResponse,
   GoogleSignInStartResponse,
@@ -33,11 +32,11 @@ import type {
   WorkspaceHandoffStartResponse,
   AssistantStreamEvent,
   WorkspaceAssistantRequest,
-  WorkspaceAssistantResponse,
   WorkspaceJobDescriptionUploadResponse,
   WorkspaceQuotaResponse,
   WorkspaceResumeUploadResponse,
 } from "@/lib/api-types";
+import posthog from "posthog-js";
 
 /** Error subclass thrown when the backend returns a 429 with the
  *  `tier_limit_exceeded` payload (Step 7b). Callers `instanceof`-check
@@ -99,15 +98,43 @@ export function downloadBase64File(
   URL.revokeObjectURL(url);
 }
 
+/** The browser's current PostHog distinct id, for the `X-PostHog-Distinct-Id`
+ *  request header (review M21). Lets the backend attribute anonymous funnel
+ *  events (e.g. `job_searched`) to the same PostHog person the client
+ *  identifies on signup — instead of every anonymous visitor collapsing onto
+ *  one shared "anonymous" id server-side. Returns null when PostHog isn't
+ *  initialized (SSR, key unset, consent pending/declined) so the header is
+ *  simply omitted. Never throws — analytics plumbing must not break an API
+ *  call. */
+function browserDistinctId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    if (!(posthog as unknown as { __loaded?: boolean }).__loaded) return null;
+    const id = posthog.get_distinct_id?.();
+    return typeof id === "string" && id ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // credentials: "include" makes the browser send and accept the
   // HttpOnly auth cookies issued by /auth/google/exchange and
   // /auth/session/restore. Required for cross-subdomain calls and
   // harmless on same-origin/proxy setups.
+  //
+  // X-PostHog-Distinct-Id (review M21): attach the browser's PostHog id so the
+  // backend can attribute anonymous funnel events to the same person the
+  // client aliases on signup. Backend prefers the authenticated Supabase id
+  // when present, so sending it on signed-in calls too is harmless.
+  const headers = new Headers(init?.headers);
+  const distinctId = browserDistinctId();
+  if (distinctId) headers.set("X-PostHog-Distinct-Id", distinctId);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     cache: "no-store",
     credentials: "include",
     ...init,
+    headers,
   });
   const payload = await response
     .json()
@@ -183,10 +210,6 @@ export async function fileToUploadPayload(file: File): Promise<UploadedFilePaylo
     mime_type: file.type || inferMimeType(file.name),
     content_base64: encodeBytesToBase64(bytes),
   };
-}
-
-export async function getBackendHealth() {
-  return request<BackendHealth>("/health");
 }
 
 export async function searchJobs(payload: JobSearchRequest) {
@@ -404,7 +427,10 @@ export async function previewResumeBuilderArtifact(
   );
 }
 
-export async function uploadJobDescriptionFile(file: File) {
+export async function uploadJobDescriptionFile(
+  file: File,
+  signal?: AbortSignal,
+) {
   const payload = await fileToUploadPayload(file);
   return request<WorkspaceJobDescriptionUploadResponse>(
     "/workspace/job-description/upload",
@@ -414,6 +440,10 @@ export async function uploadJobDescriptionFile(file: File) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
+      // Thread the debounced auto-parse's abort signal so a superseded
+      // parse actually cancels the in-flight fetch (M16) — previously the
+      // request ran to completion and still billed LLM tokens.
+      signal,
     },
   );
 }
@@ -573,16 +603,6 @@ export function getCheckoutUrl(
 export async function getCustomerPortalUrl(): Promise<{ url: string }> {
   return request<{ url: string }>("/billing/portal", {
     method: "POST",
-  });
-}
-
-export async function askWorkspaceAssistant(payload: WorkspaceAssistantRequest) {
-  return request<WorkspaceAssistantResponse>("/workspace/assistant/answer", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
   });
 }
 

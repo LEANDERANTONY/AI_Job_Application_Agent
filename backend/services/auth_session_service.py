@@ -4,13 +4,14 @@ from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
 from backend.config import get_backend_settings
+from backend.tiers import resolve_user_tier
 from src.auth_service import AuthService, AuthSession
 from src.config import (
     AUTH_DEFAULT_ACCOUNT_STATUS,
     assisted_workflow_requires_login,
     get_default_plan_tier_for_email,
 )
-from src.errors import AgentExecutionError, AppError, InputValidationError
+from src.errors import AgentExecutionError, InputValidationError
 from src.openai_service import OpenAIService
 from src.quota_service import QuotaService
 from src.saved_jobs_store import SavedJobsStore
@@ -94,11 +95,16 @@ def _load_daily_quota(
     if not usage_store.is_configured():
         return None
     quota_service = QuotaService(auth_service, usage_store)
+    # Source the tier from resolve_user_tier (subscriptions-backed), NOT
+    # app_user.plan_tier (review M1). app_users.plan_tier is client-writable
+    # via the RLS UPDATE policy, so trusting it here let a self-promoted
+    # plan_tier raise the daily allowance; resolve_user_tier reads the
+    # service-role subscriptions table the rest of the gates already use.
     return quota_service.get_daily_quota_status(
         access_token,
         refresh_token,
         app_user.id,
-        app_user.plan_tier,
+        resolve_user_tier(app_user),
     )
 
 

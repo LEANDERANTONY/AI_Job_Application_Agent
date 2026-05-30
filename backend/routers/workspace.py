@@ -1,7 +1,11 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from backend.observability import capture_event
+from backend.observability import (
+    capture_event,
+    set_sentry_context,
+    set_sentry_user,
+)
 from backend.quota import enforce_export_entitlement, enforce_llm_budget
 from backend.rate_limit import LIMIT_HEAVY, LIMIT_LLM, LIMIT_PARSE, limiter
 from backend.request_auth import get_optional_auth_tokens, get_required_auth_tokens
@@ -1106,6 +1110,17 @@ def answer_assistant_question(
     payload: WorkspaceAssistantRequestModel,
     auth_tokens=Depends(get_required_auth_tokens),
 ):
+    """Non-streaming assistant answer — retained as a tested fallback (L1/L7).
+
+    The UI talks only to the SSE sibling below; the dead client wrapper
+    (``askWorkspaceAssistant``) was removed. This route is deliberately KEPT
+    rather than deleted (review L7): it shares the SAME accounted code path
+    (``answer_workspace_question`` -> assistant_service, one monthly
+    assistant-turn counter across both routes) and is pinned by the
+    quota / login-required / error-handling suites, so it cannot silently
+    drift from the stream. If a future change makes it a true parallel
+    contract instead of a thin sync mirror, delete it and its tests then.
+    """
     access_token, refresh_token = auth_tokens
     try:
         return answer_workspace_question(
@@ -1290,6 +1305,23 @@ def export_workspace_artifact_route(
         export_format=payload.export_format,
         themes=(export_theme,),
     )
+    # Resolve the actor once and reuse it for both Sentry enrichment and the
+    # PostHog funnel event below. Enrich the Sentry scope BEFORE the render
+    # (review M23) so an export crash — captured by the request scope — carries
+    # who exported what (format / theme / artifact) instead of a bare 5xx.
+    # Both calls are no-ops when Sentry is inactive.
+    user_id, tier = _event_identity(access_token or "", refresh_token or "")
+    set_sentry_user(user_id)
+    set_sentry_context(
+        "export",
+        {
+            "artifact_kind": payload.artifact_kind,
+            "export_format": payload.export_format,
+            "resume_theme": payload.resume_theme,
+            "cover_letter_theme": payload.cover_letter_theme,
+            "tier": tier,
+        },
+    )
     try:
         result = export_workspace_artifact(
             workspace_snapshot=payload.workspace_snapshot,
@@ -1301,7 +1333,6 @@ def export_workspace_artifact_route(
         # PostHog funnel event — the conversion point: the user took an
         # artifact away. Theme + format properties show which export
         # options actually get used.
-        user_id, tier = _event_identity(access_token or "", refresh_token or "")
         capture_event(
             distinct_id=user_id,
             event="artifact_exported",

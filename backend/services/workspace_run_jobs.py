@@ -10,11 +10,22 @@ from typing import Any
 from src.errors import AppError, QuotaExceededError
 from src.logging_utils import get_logger, log_event
 
+from backend.observability import (
+    add_sentry_breadcrumb,
+    set_sentry_tag,
+    set_sentry_user,
+)
 from backend.quota import enforce_llm_budget
 from backend.services.workspace_service import run_workspace_analysis
 
 
-JOB_TTL_SECONDS = 60 * 30
+# 10 minutes (review L3). A completed job's multi-KB result dict is handed to
+# the first terminal poll and then dropped (see get_workspace_analysis_job), so
+# this TTL only bounds how long the small status envelope lingers for a client
+# that stopped polling — there's no reason to keep the old 30-minute window that
+# kept heavy payloads resident on the 1-2GB container when traffic quieted (the
+# pruner only runs on inbound requests, so a lull leaves them sitting).
+JOB_TTL_SECONDS = 60 * 10
 # One uvicorn worker per the VPS deployment; the semaphore protects that
 # single process from runaway thread spawns under burst /analyze-jobs
 # traffic. A simultaneously-running agentic workflow holds an LLM client
@@ -170,6 +181,19 @@ def _update_job_progress(job_id: str, title: str, detail: str, value: int) -> No
         # on _LOCK while this propagates.
         raise WorkspaceRunJobCancelled(job_id)
 
+    # Leave a Sentry trail at each stage boundary (review M23). The tag is the
+    # stage just entered; the breadcrumbs are the full path that led here, so a
+    # later crash (captured via LOGGER.exception in _run_job's fallback, same
+    # worker thread → same scope) shows which agent stage was last in flight
+    # instead of a bare 5xx. Both are no-ops when Sentry is inactive and cannot
+    # touch the run on failure — the orchestrator itself stays untouched.
+    set_sentry_tag("pipeline_stage", title)
+    add_sentry_breadcrumb(
+        category="agent",
+        message=title,
+        data={"job_id": job_id, "detail": detail, "progress": int(value)},
+    )
+
 
 def _run_job(
     *,
@@ -184,6 +208,11 @@ def _run_job(
     refresh_token: str,
     owner_user_id: str | None = None,
 ) -> None:
+    # Stamp the actor onto this worker thread's Sentry scope (review M23) so a
+    # crash captured below (LOGGER.exception) is filterable to one account
+    # rather than an anonymous platform-wide failure. No-op when anonymous or
+    # when Sentry is inactive.
+    set_sentry_user(owner_user_id)
     try:
         try:
             result = run_workspace_analysis(
@@ -414,7 +443,17 @@ def get_workspace_analysis_job(
             # Return None so the route emits the SAME 404 it gives for an
             # unknown id — never reveal that the job exists (SECURITY-1).
             return None
-        return _serialize_job(job)
+        serialized = _serialize_job(job)
+        # Drop the heavy result payload after it's been delivered once (review
+        # L3). The polling client reads the terminal result on this first
+        # terminal poll and stops; keeping the multi-KB dict resident for the
+        # full TTL just adds memory pressure on the single 1-2GB container the
+        # semaphore sizing assumes is tight. The serialized copy above still
+        # carries the full result to THIS caller; later polls see result=None
+        # alongside the terminal status they already acted on.
+        if job.status in _TERMINAL_JOB_STATUSES:
+            job.result = None
+        return serialized
 
 
 def cancel_workspace_analysis_job(
