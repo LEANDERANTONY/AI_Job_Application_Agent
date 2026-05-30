@@ -1234,10 +1234,21 @@ def export_workspace_artifact_route(
     # (best-effort; anon/expired -> "free") and block the DOCX /
     # non-classic_ats entitlement with the canonical 429 upgrade
     # nudge. PDF + classic_ats is unchanged for every tier incl. anon.
+    # Gate ONLY the theme that actually renders the artifact being
+    # exported. The service renders artifacts[artifact_kind] with its OWN
+    # theme, so a résumé export is unaffected by the cover-letter theme
+    # (and vice-versa). Passing BOTH themes let an unrelated custom
+    # cover-letter theme block a Free user's default-theme résumé PDF
+    # with a misleading "Pro+ feature" 429 (review HIGH / FLOW-3).
+    export_theme = (
+        payload.resume_theme
+        if payload.artifact_kind == "tailored_resume"
+        else payload.cover_letter_theme
+    )
     enforce_export_entitlement(
         _resolve_export_tier(access_token or "", refresh_token or ""),
         export_format=payload.export_format,
-        themes=(payload.resume_theme, payload.cover_letter_theme),
+        themes=(export_theme,),
     )
     try:
         result = export_workspace_artifact(
