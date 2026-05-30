@@ -17,7 +17,15 @@
 //   4. b-saved-section (collapsible drawer with saved-job cards)
 //   5. b-results-head + b-job-grid (top-match badge on the leader)
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 
 import {
   ChevronRightIcon,
@@ -242,14 +250,18 @@ type JobCardProps = {
   topMatch?: boolean;
   showSaveButton: boolean;
   showRemoveButton: boolean;
-  onPrimary: () => void;
+  // Handlers take the card's `job` so call sites can pass identity-stable
+  // functions (review M11) instead of per-render `() => fn(job)` closures —
+  // which would defeat the React.memo boundary below by changing on every
+  // parent render.
+  onPrimary: (job: JobPosting) => void;
   primaryLabel: string;
-  onSaveClick?: () => void;
-  onRemoveClick?: () => void;
+  onSaveClick?: (job: JobPosting) => void;
+  onRemoveClick?: (job: JobPosting) => void;
   savedAt?: string;
 };
 
-function JobCard({
+const JobCard = memo(function JobCard({
   job,
   isActive,
   isSaved,
@@ -263,6 +275,11 @@ function JobCard({
   onRemoveClick,
   savedAt,
 }: JobCardProps) {
+  // Per-card derived values memoized on the job identity (review M11). These
+  // ran on every render before; `job` is a stable reference across parent
+  // re-renders (same results array), so this caches across the grid's churn.
+  const preview = useMemo(() => resultPreview(job), [job]);
+  const badges = useMemo(() => buildJobResultBadges(job), [job]);
   return (
     <article
       className="b-job-card"
@@ -300,10 +317,10 @@ function JobCard({
         </div>
       </div>
 
-      <p className="b-job-card-summary">{resultPreview(job)}</p>
+      <p className="b-job-card-summary">{preview}</p>
 
       <div className="b-job-card-meta">
-        {buildJobResultBadges(job).map((badge, index) => (
+        {badges.map((badge, index) => (
           <span key={`${job.id}-${badge}-${index}`}>
             {index > 0 ? <span className="b-job-card-meta-dot" /> : null}
             {badge}
@@ -314,7 +331,7 @@ function JobCard({
       <div className="b-job-card-actions">
         <button
           className="rd-btn rd-btn-ghost rd-btn-sm"
-          onClick={onPrimary}
+          onClick={() => onPrimary(job)}
           type="button"
         >
           {primaryLabel}
@@ -329,22 +346,22 @@ function JobCard({
             <ExternalIcon /> Open
           </a>
         ) : null}
-        {showSaveButton && onSaveClick ? (
+        {showSaveButton && !isSaved && onSaveClick ? (
           <button
             aria-pressed={isSaved}
             className="rd-btn rd-btn-quiet rd-btn-sm"
-            disabled={isPending || isSaved}
-            onClick={onSaveClick}
+            disabled={isPending}
+            onClick={() => onSaveClick(job)}
             type="button"
           >
-            <PinIcon /> {isPending ? "Saving…" : isSaved ? "Saved" : "Save"}
+            <PinIcon /> {isPending ? "Saving…" : "Save"}
           </button>
         ) : null}
         {showRemoveButton && onRemoveClick ? (
           <button
             className="rd-btn rd-btn-danger rd-btn-sm"
             disabled={isPending}
-            onClick={onRemoveClick}
+            onClick={() => onRemoveClick(job)}
             type="button"
           >
             {isPending ? "Removing…" : "Remove"}
@@ -353,9 +370,15 @@ function JobCard({
       </div>
     </article>
   );
-}
+});
 
-export function JobSearch({
+// Memo boundary (review M11): keeps shell churn — every assistant token
+// (PERF-1) and JD keystroke (PERF-2) re-renders WorkspaceShell — from
+// reconciling the job grid. Fully effective once the parent passes stable
+// props; today WorkspaceShell still hands JobSearch some inline callbacks, so
+// the grid's protection rests primarily on the memoized JobCard above (whose
+// props ARE stabilized here). Documented as a follow-up in the PR.
+export const JobSearch = memo(function JobSearch({
   searchQuery,
   onSearchQueryChange,
   searchLocation,
@@ -397,6 +420,38 @@ export function JobSearch({
   const results = searchResults?.results ?? [];
   // Saved-jobs drawer is closed by default; user toggles to expand.
   const [savedDrawerOpen, setSavedDrawerOpen] = useState(false);
+
+  // Identity-stable per-action handlers so the memoized JobCards skip
+  // re-rendering when unrelated shell/search state churns (review M11).
+  // WorkspaceShell passes fresh closures every render (no useCallback there),
+  // so we keep the latest in refs and expose stable wrappers that take the
+  // card's job — the useEventCallback pattern. The wrappers never change
+  // identity, so a card whose primitive props are unchanged is skipped by
+  // React.memo even while the grid around it reconciles.
+  const onReviewRoleRef = useRef(onReviewRole);
+  onReviewRoleRef.current = onReviewRole;
+  const onSaveJobRef = useRef(onSaveJob);
+  onSaveJobRef.current = onSaveJob;
+  const onLoadSavedJobRef = useRef(onLoadSavedJob);
+  onLoadSavedJobRef.current = onLoadSavedJob;
+  const onRemoveSavedJobRef = useRef(onRemoveSavedJob);
+  onRemoveSavedJobRef.current = onRemoveSavedJob;
+  const handleReviewRole = useCallback(
+    (job: JobPosting) => onReviewRoleRef.current(job),
+    [],
+  );
+  const handleSaveJob = useCallback(
+    (job: JobPosting) => onSaveJobRef.current(job),
+    [],
+  );
+  const handleLoadSavedJob = useCallback(
+    (job: JobPosting) => onLoadSavedJobRef.current(job),
+    [],
+  );
+  const handleRemoveSavedJob = useCallback(
+    (job: JobPosting) => onRemoveSavedJobRef.current(job),
+    [],
+  );
 
   // Generic toggle helper: append the value if missing, drop it if
   // present. Reused by all four multi-select filter chips below.
@@ -598,8 +653,8 @@ export function JobSearch({
                     isSaved
                     job={job}
                     key={`saved-${job.id}`}
-                    onPrimary={() => onLoadSavedJob(job)}
-                    onRemoveClick={() => onRemoveSavedJob(job)}
+                    onPrimary={handleLoadSavedJob}
+                    onRemoveClick={handleRemoveSavedJob}
                     primaryLabel={isActive ? "Loaded" : "Load into workspace"}
                     savedAt={job.saved_at ?? latestSavedJobAt}
                     showRemoveButton
@@ -645,10 +700,8 @@ export function JobSearch({
                   isSaved={isSaved}
                   job={job}
                   key={job.id}
-                  onPrimary={() => onReviewRole(job)}
-                  onSaveClick={
-                    authSignedIn && !isSaved ? () => onSaveJob(job) : undefined
-                  }
+                  onPrimary={handleReviewRole}
+                  onSaveClick={authSignedIn ? handleSaveJob : undefined}
                   primaryLabel={isActive ? "Loaded" : "Review role"}
                   showRemoveButton={false}
                   showSaveButton={authSignedIn}
@@ -681,4 +734,4 @@ export function JobSearch({
       )}
     </div>
   );
-}
+});

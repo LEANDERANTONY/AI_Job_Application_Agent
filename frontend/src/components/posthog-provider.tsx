@@ -89,6 +89,25 @@ function PostHogPageView(): null {
     if (!(posthog as unknown as { __loaded?: boolean }).__loaded) return;
     const url = pathname + (searchParams?.toString() ? `?${searchParams.toString()}` : "");
     posthog.capture("$pageview", { $current_url: window.location.origin + url });
+
+    // Session-replay load control (review M12). posthog-js exposes no
+    // client-side `session_recording` sample rate (sampling is decided
+    // server-side via /decide), so we gate by route instead. The workspace is
+    // a heavy-DOM surface — frequent full-tree re-renders + a srcDoc iframe —
+    // where a continuous rrweb replay carries sustained main-thread/memory cost
+    // for little analytics value. Keep replay on the light marketing/landing
+    // pages (where funnel + conversion insight lives) and pause it on
+    // /workspace. start/stopSessionRecording are idempotent and dedupe
+    // internally, so toggling on every navigation is safe.
+    try {
+      if (pathname?.startsWith("/workspace")) {
+        posthog.stopSessionRecording();
+      } else {
+        posthog.startSessionRecording();
+      }
+    } catch {
+      /* older SDK without start/stopSessionRecording — best effort */
+    }
   }, [pathname, searchParams]);
   return null;
 }

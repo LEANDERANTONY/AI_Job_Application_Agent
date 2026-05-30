@@ -459,6 +459,13 @@ export function WorkspaceShell() {
   const [jobFileState, setJobFileState] =
     useState<WorkspaceJobDescriptionUploadResponse | null>(null);
   const [jobInputCollapsed, setJobInputCollapsed] = useState(false);
+  // Tracks what produced the current `jobFileState` (review M24). Only a
+  // discrete load (file upload, load-from-search, resolved URL, snapshot
+  // restore) should auto-collapse the JD textarea; the debounced paste
+  // auto-parse must NOT — collapsing the input ~1.5s after a paste yanks it
+  // out from under a user who's still reading/editing. Set immediately before
+  // each setJobFileState so the collapse effect reads the right source.
+  const jobFileSourceRef = useRef<"discrete" | "paste">("discrete");
 
   const [manualJobText, setManualJobText] = useState("");
   const [analysisState, setAnalysisState] =
@@ -516,7 +523,11 @@ export function WorkspaceShell() {
   }, [activeJob]);
 
   useEffect(() => {
-    if (activeJob || jobFileState) {
+    // Auto-collapse the JD input on a discrete load only (review M24).
+    // `activeJob` (load-from-search) always collapses; a `jobFileState` set by
+    // the paste auto-parse does NOT, so the textarea stays put while the user
+    // keeps reading/editing right after a paste.
+    if (activeJob || (jobFileState && jobFileSourceRef.current !== "paste")) {
       setJobInputCollapsed(true);
     }
   }, [activeJob, jobFileState]);
@@ -594,6 +605,8 @@ export function WorkspaceShell() {
         const response = await uploadJobDescriptionFile(file, abort.signal);
         if (abort.signal.aborted) return;
         lastParsedTextRef.current = text;
+        // Paste-originated parse — do NOT auto-collapse the input (M24).
+        jobFileSourceRef.current = "paste";
         setJobFileState(response);
       } catch (error) {
         if (abort.signal.aborted) return;
@@ -1313,6 +1326,8 @@ export function WorkspaceShell() {
 
     try {
       const response = await uploadJobDescriptionFile(file);
+      // Discrete file upload — auto-collapse the input on success (M24).
+      jobFileSourceRef.current = "discrete";
       setJobFileState(response);
       setManualJobText(response.job_description_text);
       setActiveJob(null);
@@ -1400,6 +1415,8 @@ export function WorkspaceShell() {
       resume_document: snapshot.resume_document,
       candidate_profile: snapshot.candidate_profile,
     });
+    // Discrete snapshot restore — collapse the input as for any discrete load (M24).
+    jobFileSourceRef.current = "discrete";
     setJobFileState({
       job_description_text: snapshot.job_description.raw_text,
       job_description: snapshot.job_description,

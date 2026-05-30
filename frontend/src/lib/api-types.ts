@@ -1,21 +1,3 @@
-export type BackendHealth = {
-  status: string;
-  service: string;
-  version: string;
-  frontend_url?: string;
-  health_url?: string;
-  providers: {
-    greenhouse: {
-      configured: boolean;
-      board_count: number;
-    };
-    lever: {
-      configured: boolean;
-      site_count: number;
-    };
-  };
-};
-
 /** Canonical work-mode values the backend accepts on the dropdown
  *  filter. Anything outside this union gets dropped server-side, so
  *  keep this in sync with `_ALLOWED_WORK_MODES` in cached_jobs_store.py. */

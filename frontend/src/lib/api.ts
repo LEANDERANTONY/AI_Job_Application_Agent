@@ -1,7 +1,6 @@
 import type {
   ArtifactTheme,
   AuthSessionResponse,
-  BackendHealth,
   FeedbackRequest,
   FeedbackResponse,
   GoogleSignInStartResponse,
@@ -212,10 +211,6 @@ export async function fileToUploadPayload(file: File): Promise<UploadedFilePaylo
     mime_type: file.type || inferMimeType(file.name),
     content_base64: encodeBytesToBase64(bytes),
   };
-}
-
-export async function getBackendHealth() {
-  return request<BackendHealth>("/health");
 }
 
 export async function searchJobs(payload: JobSearchRequest) {
