@@ -36,6 +36,7 @@ import {
 } from "@/components/workspace/icons";
 import { FeedbackButtons } from "@/components/workspace/FeedbackButtons";
 import { VoiceInputButton } from "@/components/workspace/VoiceInputButton";
+import { useAccessibleDialog } from "@/lib/useAccessibleDialog";
 import type { WorkspaceAssistantResponse } from "@/lib/api-types";
 
 export type AssistantTurn = {
@@ -134,6 +135,19 @@ export function AssistantPanel({
   // non-reactively) so token deltas re-render only this panel (PERF-1).
   const streamingTurn = useAssistantStreamingStore((s) => s.streamingTurn);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  // Accessible-dialog wiring for the FAB popover (A11Y-2): Escape closes,
+  // focus moves to the textarea on open, Tab is trapped inside, and focus
+  // returns to the FAB trigger on close.
+  const fabRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  useAccessibleDialog({
+    open,
+    onClose: () => setOpen(false),
+    containerRef: dialogRef,
+    initialFocusRef: inputRef,
+    restoreFocusRef: fabRef,
+  });
 
   // Auto-clear the voice error after 6s so a stale message doesn't
   // sit indefinitely under the input. Re-rendering with a fresh
@@ -178,6 +192,7 @@ export function AssistantPanel({
   return (
     <>
       <button
+        ref={fabRef}
         aria-label={open ? "Close assistant" : "Open assistant"}
         className="rd-fab"
         onClick={() => setOpen((current) => !current)}
@@ -205,7 +220,9 @@ export function AssistantPanel({
 
       {open ? (
         <div
+          ref={dialogRef}
           aria-label="Workspace assistant"
+          aria-modal="true"
           className="rd-assistant"
           role="dialog"
         >
@@ -327,6 +344,7 @@ export function AssistantPanel({
           ) : null}
           <form className="rd-assistant-form" onSubmit={handleSubmit}>
             <textarea
+              ref={inputRef}
               className="rd-assistant-input"
               disabled={sending}
               onChange={(event) => onQuestionChange(event.target.value)}

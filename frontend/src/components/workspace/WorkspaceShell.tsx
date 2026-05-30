@@ -950,19 +950,19 @@ export function WorkspaceShell() {
     resumeBuilderExportTheme,
   ]);
 
-  // ⌘K / Ctrl+K toggles the command palette globally.
+  // ⌘K / Ctrl+K toggles the command palette globally. Escape-to-close is
+  // owned by useAccessibleDialog inside CommandPalette (A11Y-1), so it is
+  // intentionally not handled here — one Escape owner, no double-close.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPaletteOpen((current) => !current);
-      } else if (event.key === "Escape" && paletteOpen) {
-        setPaletteOpen(false);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [paletteOpen]);
+  }, []);
 
   // The assistant is no longer gated on having run an analysis. Users
   // can ask product-help questions ("how do I use this?", "where do I
