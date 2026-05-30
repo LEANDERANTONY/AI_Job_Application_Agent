@@ -632,10 +632,16 @@ export function WorkspaceShell() {
           });
         }
       } finally {
+        // Only the CURRENT parse may clear the busy state (review L5). A
+        // superseded request's finally still runs (its catch `return` doesn't
+        // skip finally), and an unconditional reset here would hide the
+        // "Parsing JD…" hint while the newer parse is still in flight.
+        // parseAbortRef points at the latest abort, so this identity check is
+        // false for a stale request and the indicator stays put.
         if (parseAbortRef.current === abort) {
           parseAbortRef.current = null;
+          setJobFileUploading(false);
         }
-        setJobFileUploading(false);
       }
     }, 1500);
 
