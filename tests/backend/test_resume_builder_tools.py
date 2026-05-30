@@ -356,6 +356,11 @@ class _StubOpenAIClient:
         self._output_text = output_text
         self._raise = raise_exc
         self.last_payload = None
+        # Records the kwargs passed to with_options (review L4) — the web-search
+        # timeout is applied via client.with_options(timeout=...). The real
+        # client returns a configured copy; returning self keeps last_payload
+        # observable on the same object.
+        self.with_options_kwargs = None
 
         class _ResponsesNamespace:
             def __init__(_self, outer):
@@ -380,6 +385,10 @@ class _StubOpenAIClient:
                 return _Response()
 
         self.responses = _ResponsesNamespace(self)
+
+    def with_options(self, **kwargs):
+        self.with_options_kwargs = kwargs
+        return self
 
 
 def _make_stub_service(*, output_text="External context summary.", raise_exc=None):
@@ -468,6 +477,25 @@ def test_web_search_handles_dispatch_exception():
     payload = json.loads(output)
     assert payload["ok"] is False
     assert payload["error"] == "search_dispatch_failed"
+
+
+def test_web_search_applies_its_own_timeout(monkeypatch):
+    """L4 regression: the inner search call must run at WEB_SEARCH_TIMEOUT_SECONDS
+    (30s), not the 120s client default — a slow search shouldn't stall an
+    interactive intake turn for two minutes. The timeout reaches the client via
+    client.with_options(timeout=...); assert that propagated end-to-end through
+    _web_search -> run_builtin_web_search."""
+    svc = _make_stub_service(output_text="Search synthesis.")
+    output = tools.execute_tool(
+        "web_search",
+        json.dumps({"query": "Anthropic Senior MLE expectations"}),
+        openai_service=svc,
+    )
+    assert json.loads(output)["ok"] is True
+    assert svc._client.with_options_kwargs == {
+        "timeout": tools.WEB_SEARCH_TIMEOUT_SECONDS
+    }
+    assert tools.WEB_SEARCH_TIMEOUT_SECONDS == 30.0
 
 
 def test_web_search_truncates_oversize_result():
