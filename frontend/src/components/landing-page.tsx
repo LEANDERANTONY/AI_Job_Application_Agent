@@ -21,6 +21,7 @@ import {
   clearAuthQueryParams,
   clearLegacyAuthTokens,
 } from "@/lib/auth-session";
+import { safeRedirect } from "@/lib/redirectAllowlist";
 
 const GITHUB_URL = "https://github.com/LEANDERANTONY/AI_Job_Application_Agent";
 const LINKEDIN_URL = "https://www.linkedin.com/in/leander-antony-a-176319147";
@@ -177,7 +178,8 @@ export function LandingPage() {
     setAuthError(null);
     try {
       const response = await startGoogleSignIn(buildAuthRedirectUrl("/"));
-      window.location.href = response.url;
+      // Validate the backend-returned OAuth URL before navigating (M7).
+      safeRedirect(response.url, buildAuthRedirectUrl("/"));
     } catch (error) {
       setAuthError(
         humanizeApiError(error, "Google sign-in could not be started."),
@@ -208,7 +210,8 @@ export function LandingPage() {
       const response = await startWorkspaceHandoff(
         "https://app.job-application-copilot.xyz",
       );
-      window.location.href = response.redirect_url;
+      // Validate the backend-returned handoff URL before navigating (M7).
+      safeRedirect(response.redirect_url, buildAuthRedirectUrl("/"));
     } catch (error) {
       setAuthError(
         humanizeApiError(error, "Workspace handoff failed unexpectedly."),

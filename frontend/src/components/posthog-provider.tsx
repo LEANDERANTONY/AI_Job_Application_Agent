@@ -41,6 +41,17 @@ type PostHogProviderProps = {
   children: React.ReactNode;
 };
 
+// Session-replay privacy options (review M6). `maskAllInputs` masks only
+// form-field VALUES; the candidate's PII is rendered as ordinary DOM text
+// (parsed-JD hero, skill chips, LLM summary, fit analysis, assistant
+// bubbles). `maskTextSelector: "*"` masks ALL rendered text in the replay,
+// so résumé / JD / cover-letter content is never streamed to the replay
+// processor. Exported so the masking config can't silently regress.
+export const SESSION_RECORDING_OPTIONS = {
+  maskAllInputs: true,
+  maskTextSelector: "*",
+};
+
 function initPostHog(): void {
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
   if (!key) return;
@@ -51,9 +62,7 @@ function initPostHog(): void {
       api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://eu.i.posthog.com",
       capture_pageview: false,
       autocapture: true,
-      session_recording: {
-        maskAllInputs: true,
-      },
+      session_recording: SESSION_RECORDING_OPTIONS,
       respect_dnt: true,
       persistence: "localStorage+cookie",
     });

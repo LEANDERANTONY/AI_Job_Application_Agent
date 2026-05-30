@@ -938,6 +938,9 @@ export function ResumeIntake({
                         // very first render (no html yet) drops to the
                         // loading placeholder below.
                         <iframe
+                          // Fully sandboxed (no allow-scripts) — static
+                          // HTML/CSS preview, never scripts (review M5).
+                          sandbox=""
                           className="b-artifact-doc-frame"
                           srcDoc={builderPreviewHtml}
                           style={{

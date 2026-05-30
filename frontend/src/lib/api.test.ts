@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import {
   startWorkspaceAnalysisJob,
+  uploadJobDescriptionFile,
   TierLimitExceededError,
 } from "@/lib/api";
 import type { WorkspaceAnalysisRequest } from "@/lib/api-types";
@@ -88,5 +89,24 @@ describe("api request() contract", () => {
     expect(error).toBeInstanceOf(Error);
     expect(error).not.toBeInstanceOf(TierLimitExceededError);
     expect(error.message).toBe("Bad request.");
+  });
+
+  it("threads the abort signal through uploadJobDescriptionFile to fetch (M16)", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({}, 200) as Response);
+    const controller = new AbortController();
+    // jsdom's File has no arrayBuffer(); fileToUploadPayload only needs
+    // name / type / arrayBuffer, so a minimal fake suffices.
+    const file = {
+      name: "pasted.txt",
+      type: "text/plain",
+      arrayBuffer: async () =>
+        new TextEncoder().encode("a job description").buffer,
+    } as unknown as File;
+
+    await uploadJobDescriptionFile(file, controller.signal);
+
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    // The signal reaches fetch, so a superseded parse actually aborts.
+    expect(init?.signal).toBe(controller.signal);
   });
 });

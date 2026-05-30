@@ -47,6 +47,7 @@ import {
   clearAuthQueryParams,
   clearLegacyAuthTokens,
 } from "@/lib/auth-session";
+import { safeRedirect } from "@/lib/redirectAllowlist";
 
 type Notice =
   | { level: "info" | "success" | "warning"; message: string }
@@ -253,7 +254,8 @@ export function useWorkspaceSession({
       const response = await startGoogleSignIn(
         buildAuthRedirectUrl("/workspace"),
       );
-      window.location.href = response.url;
+      // Validate the backend-returned OAuth URL before navigating (M7).
+      safeRedirect(response.url, buildAuthRedirectUrl("/workspace"));
     } catch (error) {
       const message = humanizeApiError(
         error,

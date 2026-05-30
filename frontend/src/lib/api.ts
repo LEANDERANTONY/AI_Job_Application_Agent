@@ -404,7 +404,10 @@ export async function previewResumeBuilderArtifact(
   );
 }
 
-export async function uploadJobDescriptionFile(file: File) {
+export async function uploadJobDescriptionFile(
+  file: File,
+  signal?: AbortSignal,
+) {
   const payload = await fileToUploadPayload(file);
   return request<WorkspaceJobDescriptionUploadResponse>(
     "/workspace/job-description/upload",
@@ -414,6 +417,10 @@ export async function uploadJobDescriptionFile(file: File) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
+      // Thread the debounced auto-parse's abort signal so a superseded
+      // parse actually cancels the in-flight fetch (M16) — previously the
+      // request ran to completion and still billed LLM tokens.
+      signal,
     },
   );
 }

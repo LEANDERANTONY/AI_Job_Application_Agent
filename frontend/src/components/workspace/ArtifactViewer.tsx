@@ -191,6 +191,11 @@ export function ArtifactViewer({
             </div>
           ) : previewHtml ? (
             <iframe
+              // Fully sandboxed (no allow-scripts): the preview is static
+              // HTML/CSS assembled from LLM/user content, so a future
+              // escaping regression can't become same-origin script
+              // execution (review M5).
+              sandbox=""
               className="b-artifact-doc-frame"
               srcDoc={previewHtml}
               title={`${TAB_LABELS[tab]} preview`}
