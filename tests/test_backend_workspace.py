@@ -2353,8 +2353,12 @@ def test_workspace_analyze_job_start_returns_job_handle(monkeypatch):
 
 def test_workspace_analyze_job_status_returns_completed_result(monkeypatch):
     monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "owner-1",
+    )
+    monkeypatch.setattr(
         "backend.routers.workspace.get_workspace_analysis_job",
-        lambda job_id: {
+        lambda job_id, owner_user_id=None: {
             "job_id": job_id,
             "status": "completed",
             "stage_title": "Workflow crew",
@@ -2513,8 +2517,12 @@ def test_workspace_analyze_job_status_returns_actionable_404_when_job_missing(mo
     explain the cause and prompt a re-run, not return a bare
     'not found' that the hook surfaces unchanged."""
     monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "owner-1",
+    )
+    monkeypatch.setattr(
         "backend.routers.workspace.get_workspace_analysis_job",
-        lambda job_id: None,
+        lambda job_id, owner_user_id=None: None,
     )
 
     response = client.get("/api/workspace/analyze-jobs/missing-job-id")
@@ -2531,8 +2539,9 @@ def test_workspace_analyze_job_cancel_route_returns_job_state(monkeypatch):
     stage boundary — so the frontend keeps polling until 'cancelled'."""
     captured = {}
 
-    def _cancel(job_id):
+    def _cancel(job_id, owner_user_id=None):
         captured["job_id"] = job_id
+        captured["owner_user_id"] = owner_user_id
         return {
             "job_id": job_id,
             "status": "running",
@@ -2544,6 +2553,10 @@ def test_workspace_analyze_job_cancel_route_returns_job_state(monkeypatch):
         }
 
     monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "owner-1",
+    )
+    monkeypatch.setattr(
         "backend.routers.workspace.cancel_workspace_analysis_job",
         _cancel,
     )
@@ -2552,6 +2565,8 @@ def test_workspace_analyze_job_cancel_route_returns_job_state(monkeypatch):
 
     assert response.status_code == 200
     assert captured["job_id"] == "job-xyz"
+    # The route resolves the caller and scopes the cancel to them.
+    assert captured["owner_user_id"] == "owner-1"
     payload = response.json()
     assert payload["job_id"] == "job-xyz"
     assert payload["status"] == "running"
@@ -2561,8 +2576,12 @@ def test_workspace_analyze_job_cancel_route_404_when_missing(monkeypatch):
     """An already-finished / pruned / wrong job id returns an
     actionable 404 the polling hook can surface verbatim."""
     monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "owner-1",
+    )
+    monkeypatch.setattr(
         "backend.routers.workspace.cancel_workspace_analysis_job",
-        lambda job_id: None,
+        lambda job_id, owner_user_id=None: None,
     )
 
     response = client.post("/api/workspace/analyze-jobs/gone/cancel")

@@ -30,7 +30,7 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def _satisfy_llm_route_auth():
+def _satisfy_llm_route_auth(monkeypatch):
     """The token-meter migration (T5) made every LLM route require
     login. These error-handling scenarios predate that gate and
     exercise route ERROR behaviour (bad payloads, unknown sessions,
@@ -43,6 +43,17 @@ def _satisfy_llm_route_auth():
     401, so a file-wide override masks nothing. The 401 gate itself
     is covered by ``tests/backend/test_llm_route_login_required.py``."""
     app.dependency_overrides[get_required_auth_tokens] = get_optional_auth_tokens
+    # SECURITY-1 added object-level ownership to the analyze-jobs status
+    # /cancel routes: their body resolves the caller's user_id and 401s
+    # when it can't. The missing-job scenario here exercises that route's
+    # actionable 404 COPY, not the auth gate, so resolve to a stable
+    # signed-in id — same spirit as the dependency override above. The
+    # ownership 401/404 matrix is covered by
+    # ``tests/backend/test_analyze_jobs_ownership.py``.
+    monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "scenario-user",
+    )
     yield
     app.dependency_overrides.pop(get_required_auth_tokens, None)
 

@@ -61,6 +61,14 @@ class WorkspaceRunJob:
     progress_percent: int = 3
     result: dict[str, Any] | None = None
     error_message: str | None = None
+    # Identity that created this job, captured from the authenticated
+    # request in `start_workspace_analysis_job`. The status / cancel
+    # routes pass the *caller's* resolved user_id; a mismatch is treated
+    # as 404 (never 403 — we don't confirm the job exists). The job_id is
+    # a uuid4 carried in the URL and leaks via access logs / Referer /
+    # telemetry, so it is NOT an authorization token on its own. Closes
+    # the unauthenticated BOLA (review SECURITY-1).
+    owner_user_id: str | None = None
     # Set by `cancel_workspace_analysis_job`; observed by the worker at
     # the next stage boundary (begin_stage → progress callback →
     # `_update_job_progress`). Cooperative because a Python thread
@@ -232,6 +240,7 @@ def start_workspace_analysis_job(
     premium: bool = False,
     access_token: str,
     refresh_token: str,
+    owner_user_id: str | None = None,
 ) -> dict[str, Any]:
     # Non-blocking acquire so a saturated server fast-fails the request
     # rather than queueing it behind an opaque thread-spawn delay. The
@@ -245,7 +254,7 @@ def start_workspace_analysis_job(
         with _LOCK:
             _prune_jobs()
             job_id = uuid.uuid4().hex
-            job = WorkspaceRunJob(job_id=job_id)
+            job = WorkspaceRunJob(job_id=job_id, owner_user_id=owner_user_id)
             _JOBS[job_id] = job
 
         worker = threading.Thread(
@@ -276,21 +285,33 @@ def start_workspace_analysis_job(
         return _serialize_job(_JOBS[job_id])
 
 
-def get_workspace_analysis_job(job_id: str) -> dict[str, Any] | None:
+def get_workspace_analysis_job(
+    job_id: str, owner_user_id: str | None = None
+) -> dict[str, Any] | None:
     with _LOCK:
         _prune_jobs()
         job = _JOBS.get(job_id)
         if job is None:
             return None
+        if owner_user_id is not None and job.owner_user_id != owner_user_id:
+            # The caller is authenticated but is not the job's owner.
+            # Return None so the route emits the SAME 404 it gives for an
+            # unknown id — never reveal that the job exists (SECURITY-1).
+            return None
         return _serialize_job(job)
 
 
-def cancel_workspace_analysis_job(job_id: str) -> dict[str, Any] | None:
+def cancel_workspace_analysis_job(
+    job_id: str, owner_user_id: str | None = None
+) -> dict[str, Any] | None:
     """Request cooperative cancellation of an in-flight analysis job.
 
     Returns the serialized job, or ``None`` when ``job_id`` is unknown
     (pruned past TTL, wrong id, or the single-worker process restarted
     and lost the in-memory registry — the caller maps this to a 404).
+    When ``owner_user_id`` is provided and does not match the job's
+    owner, also returns ``None`` (same 404) so a non-owner can neither
+    confirm the job exists nor cancel a stranger's run (SECURITY-1).
 
     Idempotent by design: cancelling an already-terminal job
     (completed / failed / cancelled) just returns its current state. A
@@ -308,6 +329,9 @@ def cancel_workspace_analysis_job(job_id: str) -> dict[str, Any] | None:
         _prune_jobs()
         job = _JOBS.get(job_id)
         if job is None:
+            return None
+        if owner_user_id is not None and job.owner_user_id != owner_user_id:
+            # Not the owner — same 404 as an unknown id (SECURITY-1).
             return None
         if job.status not in _TERMINAL_JOB_STATUSES:
             job.cancel_requested = True

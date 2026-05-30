@@ -148,6 +148,46 @@ def _event_identity(access_token: str, refresh_token: str) -> tuple[str, str]:
     return (str(getattr(app_user, "id", "") or ""), resolve_user_tier(app_user))
 
 
+def _require_user_id(access_token: str, refresh_token: str) -> str:
+    """Resolve the authenticated caller's ``user_id`` or raise 401.
+
+    Used by the analysis-job status / cancel routes to enforce
+    object-level ownership. The ``job_id`` in the URL is a uuid4 that
+    leaks via access logs / Referer / telemetry and is NOT an
+    authorization token on its own (this was an unauthenticated BOLA —
+    SECURITY-1). Resolving STRICTLY (a 401 on any failure, never an
+    empty id) guarantees the downstream ownership comparison can never
+    be skipped fail-open — a best-effort empty id would match a job with
+    no owner and re-open the hole.
+    """
+    try:
+        auth_context = resolve_authenticated_context(
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+    except InputValidationError:
+        raise HTTPException(
+            status_code=401,
+            detail="Your session has expired. Sign in again to continue.",
+        )
+    except AppError as error:
+        # Non-credential AppError (backend integration, etc.) → canonical
+        # status code instead of a generic 500.
+        _raise_http_error(error)
+    if auth_context is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Couldn't resolve your session. Sign in again to continue.",
+        )
+    user_id = str(getattr(getattr(auth_context, "app_user", None), "id", "") or "")
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="No user identity available for this session.",
+        )
+    return user_id
+
+
 def _file_extension(filename: str | None) -> str:
     """Lower-cased file extension without the dot, or "" when absent."""
     name = str(filename or "")
@@ -754,6 +794,12 @@ def start_workspace_analysis_job_route(
     auth_tokens=Depends(get_required_auth_tokens),
 ):
     access_token, refresh_token = auth_tokens
+    # Resolve the caller once: the user_id binds OWNERSHIP onto the job
+    # (so only this user can later poll / cancel it — SECURITY-1) and
+    # also identifies the funnel event. Best-effort here (never raises);
+    # an unresolvable caller binds owner=None, which fails CLOSED on the
+    # status/cancel routes (no one can read a job with no owner).
+    user_id, tier = _event_identity(access_token or "", refresh_token or "")
     try:
         result = start_workspace_analysis_job(
             resume_text=payload.resume_text,
@@ -764,10 +810,10 @@ def start_workspace_analysis_job_route(
             premium=payload.premium,
             access_token=access_token or "",
             refresh_token=refresh_token or "",
+            owner_user_id=user_id or None,
         )
         # PostHog funnel event — async variant of the supervised
         # pipeline. Emitted once the job is accepted onto the queue.
-        user_id, tier = _event_identity(access_token or "", refresh_token or "")
         capture_event(
             distinct_id=user_id,
             event="analysis_started",
@@ -951,8 +997,16 @@ def get_workspace_quota_route(auth_tokens=Depends(get_optional_auth_tokens)):
     "/analyze-jobs/{job_id}",
     response_model=WorkspaceAnalyzeJobStatusResponseModel,
 )
-def get_workspace_analysis_job_route(job_id: str):
-    payload = get_workspace_analysis_job(job_id)
+def get_workspace_analysis_job_route(
+    job_id: str,
+    auth_tokens=Depends(get_required_auth_tokens),
+):
+    # Object-level authorization (SECURITY-1): the job_id is a uuid4 in
+    # the URL, not a secret. Require login and only return a job to its
+    # owner; a non-owner gets the same 404 as an unknown id.
+    access_token, refresh_token = auth_tokens
+    user_id = _require_user_id(access_token or "", refresh_token or "")
+    payload = get_workspace_analysis_job(job_id, owner_user_id=user_id)
     if payload is None:
         # `_JOBS` is process-local, so a container restart mid-run drops
         # the job state permanently. The frontend polling hook surfaces
@@ -973,15 +1027,25 @@ def get_workspace_analysis_job_route(job_id: str):
     "/analyze-jobs/{job_id}/cancel",
     response_model=WorkspaceAnalyzeJobStatusResponseModel,
 )
-def cancel_workspace_analysis_job_route(job_id: str):
+def cancel_workspace_analysis_job_route(
+    job_id: str,
+    auth_tokens=Depends(get_required_auth_tokens),
+):
     # Cooperative cancel: sets the flag and returns immediately. The
     # job typically comes back still "running" (the worker observes
     # the flag at its next stage boundary); the frontend keeps polling
     # GET /analyze-jobs/{job_id} until it sees the terminal
-    # "cancelled". Idempotent for already-terminal jobs. Same
-    # job_id-scoped access model as the status route (the id is an
-    # unguessable uuid4 hex; no extra auth surface added).
-    payload = cancel_workspace_analysis_job(job_id)
+    # "cancelled". Idempotent for already-terminal jobs.
+    #
+    # Object-level authorization (SECURITY-1): require login and scope
+    # the cancel to the job's owner. The job_id is a uuid4 in the URL
+    # that leaks via logs / Referer / telemetry, so it is NOT an
+    # authorization token — a non-owner must not be able to stop a
+    # stranger's in-flight run. A mismatch returns the same 404 as an
+    # unknown id.
+    access_token, refresh_token = auth_tokens
+    user_id = _require_user_id(access_token or "", refresh_token or "")
+    payload = cancel_workspace_analysis_job(job_id, owner_user_id=user_id)
     if payload is None:
         raise HTTPException(
             status_code=404,

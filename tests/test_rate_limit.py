@@ -201,6 +201,15 @@ def test_analyze_jobs_polling_endpoint_is_not_rate_limited(
     never 429)."""
     client = _reload_app(monkeypatch, override="2/minute")
 
+    # SECURITY-1: the status route now resolves the caller's identity
+    # (401 if it can't). This test is about RATE LIMITING, not auth, so
+    # resolve to a stable id — each poll then reaches the real
+    # (missing-job) 404 path and we assert it is never 429.
+    monkeypatch.setattr(
+        "backend.routers.workspace._require_user_id",
+        lambda *args, **kwargs: "poller",
+    )
+
     statuses = []
     for _ in range(5):
         response = client.get("/api/workspace/analyze-jobs/nonexistent-job-id")
