@@ -33,6 +33,38 @@ to authenticated
 using (auth.uid() = id)
 with check (auth.uid() = id);
 
+-- Column-scoped entitlement guard (review M1 / OWASP API3). RLS is
+-- row-level only, so the UPDATE policy above still lets a user touch ANY
+-- column on their own row — including plan_tier / account_status, which a
+-- user must never set (a JWT PATCH to plan_tier='business' would raise the
+-- legacy daily-quota allowance). This trigger enforces the column rule:
+-- any change to plan_tier / account_status that does NOT come from the
+-- service role (the Lemon Squeezy webhook / admin path) is rejected.
+-- The normal user_store upsert re-writes the SAME default value on
+-- conflict, so it is a no-op change and passes; a malicious PATCH to a
+-- different value is rejected.
+create or replace function public.reject_app_user_entitlement_change()
+returns trigger
+language plpgsql
+as $$
+begin
+  if (new.plan_tier is distinct from old.plan_tier
+      or new.account_status is distinct from old.account_status)
+     and coalesce(auth.role(), '') <> 'service_role' then
+    raise exception
+      'plan_tier and account_status are managed server-side and cannot be changed by the client'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists app_users_guard_entitlement on public.app_users;
+create trigger app_users_guard_entitlement
+  before update on public.app_users
+  for each row
+  execute function public.reject_app_user_entitlement_change();
+
 create table if not exists public.usage_events (
     id bigint generated always as identity primary key,
     user_id uuid not null references auth.users (id) on delete cascade,
