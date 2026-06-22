@@ -4172,3 +4172,63 @@ Live smoke post-deploy: `GET /health/sentry-debug` no auth → **401**
 `GET /workspace/analyze-jobs/<fake>` no auth → 401 (SECURITY-1 still
 enforced), security headers still healthy on both subdomains, 31/31
 hermetic new cleanup tests pass locally.
+
+## Day 81: cached_jobs storage — lean/full switch, PERFDB-4 base DDL, VACUUM
+
+A storage-management pass on `cached_jobs`, prompted by the question
+"can we drop to the Supabase free tier when we can't pay for Pro, and
+flip back when we can?" Two commits + one operational action.
+
+**The switch (commit `a39804f`).** Most of it already existed from the
+Tier 1→2 work: the `JOB_SEARCH_HYBRID_ENABLED` flag already gates BOTH
+the search path (`search_cached_jobs_hybrid` vs `…_ranked`) and the
+embed-on-write path, and self-degrades to lexical on error. What was
+missing was the *downgrade* DDL + a runbook. Added
+`docs/sql/supabase-cached-jobs-lean-mode.sql` (drop HNSW index → drop
+hybrid RPC → drop embedding column → VACUUM FULL; idempotent) and a
+"Hybrid-search lean/full switch" runbook in `docs/deployment.md`. The
+upgrade-back half is the existing `…-pgvector.sql` + `…-hybrid.sql` +
+`scripts/backfill_job_embeddings.py`. Lean mode keeps all ~20k jobs —
+it only drops the embeddings, falling back to synonym-expanded lexical
+search (loses concept-matching like "ML engineer" ↔ "machine learning
+specialist").
+
+**PERFDB-4 resolved (commit `07eec13`).** The `cached_jobs` base-table
+DDL lived ONLY in the prod DB (the largest reproducibility gap from the
+launch audit). Captured it verbatim from the live catalog
+(`pg_get_indexdef` + `pg_attribute` + `pg_get_expr` +
+`pg_get_constraintdef`) into the tracked
+`docs/sql/supabase-cached-jobs-base.sql`. The catalog caught things
+reconstruction-from-memory would have missed — **two `pg_trgm` GIN
+indexes** (title + company fuzzy match) and the exact CASE expressions
+of all three GENERATED STORED columns (`search_tsv`, `work_mode`,
+`employment_type_norm`). base.sql is the complete Tier 1 *lean* schema;
+the embedding column + HNSW stay in pgvector.sql so the column has one
+source of truth and base.sql doubles as the free-tier rebuild file.
+
+**The VACUUM (operational, 2026-06-23).** Live check found the DB at
+**504 MB**, with `cached_jobs` 96% of it. heap+TOAST (335 MB) far
+exceeded live column data (~220 MB) — ~115 MB of dead-tuple bloat from
+the 4-hourly refresh churn (autovacuum reclaims-for-reuse but never
+shrinks the file; only VACUUM FULL rewrites compactly + returns pages to
+the OS). Ran `VACUUM FULL public.cached_jobs`: **504 → 381 MB** (−123
+MB; heap+TOAST 335→241, indexes 150→121). No data lost, semantic search
+intact.
+
+**The framing correction.** Discovered via `get_organization` that the
+jobagent org `Job_Application_Copilot` is on the **Supabase Pro plan**
+(8 GB DB, daily backups, no idle auto-pause) — so 504 MB was never a
+live emergency (the "over the cap" language is the *free*-tier number,
+for the hypothetical future downgrade). Also corrected AGENT.md §3,
+which mislabeled the Supabase region as "EU" — `get_project` confirms
+**`ap-south-1`** (Mumbai); the EU label belongs to Sentry/PostHog, not
+the DB. Verified the project is free-downgrade-eligible (DB 381/500 MB,
+storage 0/1 GB, MAU 0/50k, 1 project/org) but flagged that downgrading
+*at launch* is penny-wise: free tier auto-pauses after 7d idle and has
+no backups. Supabase billing changes are dashboard-only (no
+management-API capability), so the actual Pro→free flip is the owner's
+to click — the docs leave it downgrade-ready.
+
+No application code changed this day — the flag wiring was already in
+`src/cached_jobs_store.py` + `src/config.py`; everything else is SQL +
+docs + one maintenance command.

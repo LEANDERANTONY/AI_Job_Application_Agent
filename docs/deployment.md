@@ -273,19 +273,46 @@ botched drop can't lose the exact index config. The lean-mode script
 only ever drops the *semantic* add-ons (embedding column + HNSW); it
 never touches the base table or the lexical indexes.
 
-**Live storage check (jobagent prod, 2026-06-22):** the DB was **504
-MB — already over the free-tier 500 MB cap.** `cached_jobs` is 485 MB of
-that (14,085 rows, all embedded): heap+TOAST 335 MB, indexes 150 MB.
-The semantic layer alone = the `embedding` column (83 MB live) + the
-HNSW index (110 MB) = **193 MB**. Lean mode therefore takes the DB to
-**~300 MB**, comfortably under the cap. Note the heap+TOAST (335 MB) far
-exceeds the live column data (~220 MB) — the 4-hourly refresh churn
-leaves ~100 MB of dead-tuple bloat, so a plain `VACUUM FULL
-public.cached_jobs` *without* dropping embeddings is a cheaper immediate
-lever that may by itself bring the DB back under 500 MB while keeping
-semantic search. Use lean mode when you need the headroom long-term on
-the free tier; use a standalone VACUUM FULL when you just need to duck
-back under the cap for a while.
+**IMPORTANT — the 500 MB cap is NOT a current constraint.** The
+jobagent Supabase org (`Job_Application_Copilot`) is on the **Pro plan
+(8 GB database, daily backups, no idle auto-pause)**. So none of the
+"over the cap" framing below is a live emergency — it all describes the
+*future* scenario where the org is downgraded **Pro → free** to save the
+~$25/mo (no users yet). The lean/full switch + the VACUUM lever exist to
+make that downgrade possible and survivable, not to rescue a current
+overage.
+
+**Live storage check + VACUUM (jobagent prod, 2026-06-23):** the DB was
+**504 MB** (fine on Pro's 8 GB, but over the *free*-tier 500 MB number).
+`cached_jobs` was 485 MB of that (14,085 rows, all embedded): heap+TOAST
+335 MB, indexes 150 MB; the semantic layer alone = the `embedding`
+column (83 MB live) + the HNSW index (110 MB) = **193 MB**. The
+heap+TOAST (335 MB) far exceeded the live column data (~220 MB) — ~115
+MB of dead-tuple bloat from the 4-hourly refresh churn (autovacuum
+reclaims-for-reuse but never shrinks the file). A **`VACUUM FULL
+public.cached_jobs` was run** to reclaim it: **504 → 381 MB** (−123 MB;
+heap+TOAST 335→241, indexes 150→121). No data lost, semantic search
+intact. This made the project **free-downgrade-eligible** (free limits
+all clear: DB 381/500 MB, storage 0/1 GB, MAU 0/50k, 1 project/org).
+
+Two levers, two purposes:
+- **Standalone `VACUUM FULL`** (what was run) — reclaims churn bloat,
+  keeps semantic search. ~2-min ACCESS EXCLUSIVE lock. The churn
+  re-accumulates ~30-60 MB/month, so it's a periodic reset (re-run
+  when the DB nears ~480 MB), not a permanent fix.
+- **Lean mode** (the switch above) — drops embeddings + HNSW to ~300 MB
+  durably; loses semantic concept-matching. The fallback for staying
+  under 500 MB long-term without re-VACUUMing or paying for Pro.
+
+**Downgrade-at-launch caveat:** free tier (a) **auto-pauses a project
+after 7 days of inactivity** — a launched-but-quiet app sleeps and the
+next visitor hits a cold backend, and (b) has **no automated backups**
+(Pro includes daily + 7-day PITR). For a launching product with real
+user data, $25/mo Pro buys backups + always-on; downgrading is sound
+*pre*-launch (no users, no risk) but penny-wise at launch. If you do
+downgrade, set up a self-managed `pg_dump` backup routine FIRST, then
+flip the plan in the dashboard (Organization → Billing → Change plan;
+the management API/MCP cannot change billing — it's dashboard-only).
 
 ## Operational gotchas (the runbook entries that cost real time)
 
