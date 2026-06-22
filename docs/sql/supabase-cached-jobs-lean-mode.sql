@@ -1,0 +1,90 @@
+-- ---------------------------------------------------------------------------
+-- supabase-cached-jobs-lean-mode — DOWNGRADE Tier 2 → Tier 1 (reclaim storage)
+-- ---------------------------------------------------------------------------
+-- THE "LEAN MODE" HALF OF THE HYBRID-SEARCH ON/OFF SWITCH.
+--
+-- Purpose: when the project must fit the Supabase FREE tier (500 MB database
+-- cap), this file strips the Tier 2 semantic layer off `cached_jobs` and
+-- reclaims the storage it occupies — the `embedding vector(1536)` column and
+-- its HNSW index, which together are the bulk of the table's footprint
+-- (the ~20k rows of job TEXT are cheap; the per-row 1536-dim vectors + the
+-- HNSW graph are what blow past 500 MB). Search degrades to Tier 1 lexical
+-- (synonym-expanded full-text), which is exactly what the product ran before
+-- the Tier 2 upgrade (ADR-033).
+--
+-- This is REVERSIBLE. The "full mode" half is the existing pair
+-- `supabase-cached-jobs-pgvector.sql` (re-adds the column + HNSW index) +
+-- `scripts/backfill_job_embeddings.py` (re-embeds every row, ~20k rows ≈
+-- ~200 embedding API calls ≈ a few cents + a few minutes). See the runbook
+-- in `docs/deployment.md` ("Hybrid-search lean/full switch") for the exact
+-- flip order both directions.
+--
+-- WHAT THE APP DOES WHILE LEAN (no code change needed — already wired):
+--   * Set `JOB_SEARCH_HYBRID_ENABLED=false` (env). The store's `search()`
+--     stays on the Tier 1 `search_cached_jobs_ranked` RPC and NEVER calls
+--     the hybrid RPC (src/cached_jobs_store.py), and `_embed_new_rows`
+--     early-returns so the 4-hourly refresh stops embedding new rows (zero
+--     OpenAI embedding spend while lean). The hybrid RPC also self-degrades
+--     to lexical on any error, so even a stale flag can't 500 the search.
+--   * Flip the flag FIRST, redeploy the API, THEN apply this file. That
+--     ordering means no request is ever routed at the hybrid RPC after its
+--     backing column is gone.
+--
+-- ORDER OF OPERATIONS (operator):
+--   1. Set JOB_SEARCH_HYBRID_ENABLED=false in the VPS `.env`; redeploy api.
+--   2. Apply statements 1–3 below (drop index → drop RPC → drop column).
+--   3. Run statement 4 (VACUUM FULL) as a SEPARATE standalone statement —
+--      it cannot run inside a transaction block and takes a brief
+--      ACCESS EXCLUSIVE lock (~seconds on ~20k rows; search is unavailable
+--      for that window — acceptable for a deliberate downgrade).
+--   4. Confirm `pg_database_size` is back under the free-tier cap.
+--
+-- IDEMPOTENT: every statement is `IF EXISTS`, so re-applying is a no-op and
+-- safe to run even if you're already lean.
+--
+-- WHAT THIS DELIBERATELY DOES NOT TOUCH:
+--   * The `vector` extension stays enabled — it occupies ~0 storage (just
+--     type/operator definitions) and leaving it makes the upgrade-back path
+--     one step shorter. Re-adding the column later needs the extension.
+--   * The GIN index on `search_tsv`, the `unique (source, job_id)`, the
+--     generated `work_mode`/`employment_type_norm` columns + their partial
+--     indexes, and the recency btree — all are Tier 1 lexical/filter
+--     infrastructure and MUST survive. Only the embedding column + its HNSW
+--     index are semantic-only and safe to drop.
+--
+-- SECURITY: only touches schema on `public.cached_jobs` (RLS-enabled, no
+-- policies — service-role-only). Dropping a column / index / function does
+-- not change that posture.
+-- ---------------------------------------------------------------------------
+
+-- 1. Drop the HNSW semantic index. This alone reclaims the single largest
+--    chunk (the HNSW graph) immediately — index space is returned on drop
+--    with no VACUUM needed. (DROP COLUMN below would cascade-drop it anyway;
+--    we drop it explicitly first so the intent is legible and so a partial
+--    re-run is still correct.)
+DROP INDEX IF EXISTS public.cached_jobs_embedding_hnsw_idx;
+
+-- 2. Drop the hybrid RPC. It references `cached_jobs.embedding`, so once the
+--    column is gone it would error at call time (plpgsql late-binds, so the
+--    drop in step 3 wouldn't block, but an orphaned function that 500s if
+--    ever called is worse than no function). The flag is already off so
+--    nothing calls it; `supabase-cached-jobs-hybrid.sql` re-creates it on
+--    the way back to full mode. The signature must match exactly.
+DROP FUNCTION IF EXISTS public.search_cached_jobs_hybrid(text,text,text[],boolean,integer,integer,text[],text[],text,integer,vector);
+
+-- 3. Drop the embedding column. Reclaims the per-row vector payload (1536-dim
+--    float4 ≈ 6 KB/row, TOASTed). The heap pages aren't physically shrunk
+--    until VACUUM FULL (step 4) — DROP COLUMN only marks the attribute
+--    dropped on existing rows.
+ALTER TABLE public.cached_jobs
+    DROP COLUMN IF EXISTS embedding;
+
+-- 4. Reclaim the freed heap/TOAST pages back to the OS so pg_database_size
+--    actually drops under the free-tier cap. RUN THIS SEPARATELY — VACUUM
+--    FULL cannot run inside a transaction block (so it can't go through a
+--    migration wrapper; run it via a plain SQL statement in the SQL editor
+--    or psql), and it takes an ACCESS EXCLUSIVE lock for its duration.
+--      VACUUM FULL public.cached_jobs;
+--
+--    (Left commented so applying statements 1–3 via apply_migration doesn't
+--    choke on the in-transaction restriction. Uncomment + run on its own.)

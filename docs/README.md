@@ -52,6 +52,7 @@ The `docs/sql/*.sql` files are reference copies of the Supabase migrations appli
 | `docs/sql/supabase-cached-jobs-search.sql` | `search_cached_jobs_ranked` RPC: text-search + filters + sort + `LIMIT`/`OFFSET` pagination over `cached_jobs` (Tier 1 lexical search). **service_role-only** EXECUTE — the REVOKEs are part of the canonical definition |
 | `docs/sql/supabase-cached-jobs-pgvector.sql` | Tier 2 semantic-search schema: the `vector` extension, the `cached_jobs.embedding vector(1536)` column, and the HNSW cosine index |
 | `docs/sql/supabase-cached-jobs-hybrid.sql` | `search_cached_jobs_hybrid` RPC: Reciprocal Rank Fusion of the Tier 1 lexical ranking and a pgvector semantic ranking (HNSW candidate pools). **service_role-only** EXECUTE |
+| `docs/sql/supabase-cached-jobs-lean-mode.sql` | **The downgrade half of the hybrid-search on/off switch.** Drops the Tier 2 semantic add-ons (HNSW index + hybrid RPC + `embedding` column) and reclaims their storage so the project fits the Supabase free-tier 500 MB cap; the pgvector + hybrid files above are the upgrade-back half. Idempotent. See the "Hybrid-search lean/full switch" runbook in `deployment.md` |
 | `docs/sql/job_cache_cron_setup.sql` | **Template, not source of truth.** The `cached_jobs` refresh pg_cron schedule. Defaults to `*/30`; production runs `0 */4`. `SELECT jobname, schedule FROM cron.job;` is authoritative |
 
 Update trigger: only when a new migration lands. Old `.sql` files are append-only.

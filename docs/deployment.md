@@ -202,6 +202,80 @@ spend. A row with no corresponding user request is the signature of a
 stuck retry or a forgotten manual eval, not a rogue cron (there is no
 LLM-spending cron — see the inventory at the top).
 
+## Hybrid-search lean/full switch (fit the Supabase free tier on demand)
+
+Job search runs in one of two modes, toggled without a code change. The
+**full** mode is the current production state: Tier 2 hybrid search
+(lexical + pgvector semantic, fused by RRF). The **lean** mode is the
+pre-Tier-2 state: Tier 1 lexical-only (synonym-expanded full-text). The
+ONLY reason to go lean is **storage**: the `embedding vector(1536)`
+column + its HNSW index are the bulk of `cached_jobs`'s footprint (the
+~20k rows of job *text* are cheap — the per-row 1536-dim vectors and the
+HNSW graph are what push the database past the Supabase **free-tier 500
+MB** cap). Going lean reclaims that space so the project fits the free
+plan; going full restores semantic search when a paid plan is in place.
+
+**This is NOT a row-count change.** Lean mode hosts the *same* ~20k
+jobs — it just drops the embeddings. Lexical search (exact-keyword +
+synonym/abbreviation expansion) keeps working; what you lose is
+concept-level matching (e.g. "ML engineer" ↔ "machine learning
+specialist" with no shared keyword).
+
+**The pieces (most already exist):**
+- Env flag `JOB_SEARCH_HYBRID_ENABLED` — gates BOTH the search path
+  (`search_cached_jobs_hybrid` vs `search_cached_jobs_ranked`) and the
+  embed-on-write path in the 4-hourly refresh. Off = lexical-only +
+  zero embedding spend. The hybrid RPC also self-degrades to lexical on
+  any error, so a stale flag can never 500 the search.
+- `docs/sql/supabase-cached-jobs-lean-mode.sql` — the downgrade DDL
+  (drop HNSW index → drop hybrid RPC → drop embedding column → VACUUM
+  FULL). Idempotent.
+- `docs/sql/supabase-cached-jobs-pgvector.sql` + `…-hybrid.sql` — the
+  upgrade DDL (re-add column + HNSW, re-create hybrid RPC). Idempotent
+  (`IF NOT EXISTS` / `CREATE OR REPLACE`).
+- `scripts/backfill_job_embeddings.py` — re-embeds every row on the way
+  back to full. Idempotent + resumable (`embedding IS NULL` only).
+  ~20k rows ≈ ~200 embedding API calls ≈ a few cents, a few minutes.
+
+**FULL → LEAN (downgrade to the free tier):**
+1. Set `JOB_SEARCH_HYBRID_ENABLED=false` in the VPS `.env`; redeploy api
+   (`docker compose -p ai_job_application_agent up -d --force-recreate api`).
+   Flip the flag FIRST so no request hits the hybrid RPC after its
+   backing column is gone.
+2. Apply statements 1–3 of `supabase-cached-jobs-lean-mode.sql` (drop
+   index → drop RPC → drop column) via the Supabase SQL editor.
+3. Run `VACUUM FULL public.cached_jobs;` as its OWN statement (can't run
+   in a transaction; brief ACCESS EXCLUSIVE lock, ~seconds on ~20k rows
+   — search is unavailable for that window). This is what actually
+   returns the freed pages to the OS so `pg_database_size` drops.
+4. Confirm: `SELECT pg_size_pretty(pg_database_size(current_database()));`
+   is under the free-tier cap.
+
+**LEAN → FULL (upgrade after a paid plan is in place):**
+1. Apply `supabase-cached-jobs-pgvector.sql` (re-adds `embedding` +
+   HNSW; the `vector` extension was left enabled so this is one step).
+2. Run `python -m scripts.backfill_job_embeddings` (or `docker exec
+   ai-job-application-agent-api python -m scripts.backfill_job_embeddings`)
+   to embed all rows. Resumable — re-run if interrupted.
+3. Apply `supabase-cached-jobs-hybrid.sql` (re-creates the hybrid RPC
+   the lean-mode drop removed).
+4. Set `JOB_SEARCH_HYBRID_ENABLED=true`; redeploy api. Embed-on-write
+   resumes for new rows from the next refresh.
+
+**Prerequisite — do this BEFORE the first downgrade:** the full
+`cached_jobs` base-table DDL (the table, the `search_tsv` generated
+tsvector, the GIN index, the `unique (source, job_id)`, the
+`work_mode`/`employment_type_norm` generated columns + partial indexes,
+the recency btree) currently lives ONLY in the prod DB — it is NOT in a
+tracked migration (the parked **PERFDB-4** finding in `report.md`).
+Capture it first with `pg_dump --schema-only -t cached_jobs` into a
+tracked `docs/sql/supabase-cached-jobs-base.sql`, so "restore to full"
+is reproducible and a botched drop can't lose the exact index config.
+The lean-mode script only ever drops the *semantic* add-ons (embedding
+column + HNSW); it never touches the base table or the lexical indexes —
+but pinning the base DDL is the safety net that makes the whole switch
+safe to operate.
+
 ## Operational gotchas (the runbook entries that cost real time)
 
 1. **Docker Compose project-name is load-bearing.** The VPS runs
