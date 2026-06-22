@@ -262,19 +262,30 @@ specialist" with no shared keyword).
 4. Set `JOB_SEARCH_HYBRID_ENABLED=true`; redeploy api. Embed-on-write
    resumes for new rows from the next refresh.
 
-**Prerequisite — do this BEFORE the first downgrade:** the full
+**Safety net (DONE — PERFDB-4 resolved 2026-06-22):** the full
 `cached_jobs` base-table DDL (the table, the `search_tsv` generated
-tsvector, the GIN index, the `unique (source, job_id)`, the
+tsvector, the GIN/trgm indexes, the `unique (source, job_id)`, the
 `work_mode`/`employment_type_norm` generated columns + partial indexes,
-the recency btree) currently lives ONLY in the prod DB — it is NOT in a
-tracked migration (the parked **PERFDB-4** finding in `report.md`).
-Capture it first with `pg_dump --schema-only -t cached_jobs` into a
-tracked `docs/sql/supabase-cached-jobs-base.sql`, so "restore to full"
-is reproducible and a botched drop can't lose the exact index config.
-The lean-mode script only ever drops the *semantic* add-ons (embedding
-column + HNSW); it never touches the base table or the lexical indexes —
-but pinning the base DDL is the safety net that makes the whole switch
-safe to operate.
+the recency btree) is now captured verbatim from the prod catalog into
+the tracked `docs/sql/supabase-cached-jobs-base.sql`, so "restore to
+full" — or a full disaster-recovery rebuild — is reproducible and a
+botched drop can't lose the exact index config. The lean-mode script
+only ever drops the *semantic* add-ons (embedding column + HNSW); it
+never touches the base table or the lexical indexes.
+
+**Live storage check (jobagent prod, 2026-06-22):** the DB was **504
+MB — already over the free-tier 500 MB cap.** `cached_jobs` is 485 MB of
+that (14,085 rows, all embedded): heap+TOAST 335 MB, indexes 150 MB.
+The semantic layer alone = the `embedding` column (83 MB live) + the
+HNSW index (110 MB) = **193 MB**. Lean mode therefore takes the DB to
+**~300 MB**, comfortably under the cap. Note the heap+TOAST (335 MB) far
+exceeds the live column data (~220 MB) — the 4-hourly refresh churn
+leaves ~100 MB of dead-tuple bloat, so a plain `VACUUM FULL
+public.cached_jobs` *without* dropping embeddings is a cheaper immediate
+lever that may by itself bring the DB back under 500 MB while keeping
+semantic search. Use lean mode when you need the headroom long-term on
+the free tier; use a standalone VACUUM FULL when you just need to duck
+back under the cap for a while.
 
 ## Operational gotchas (the runbook entries that cost real time)
 

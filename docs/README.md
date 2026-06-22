@@ -49,6 +49,7 @@ The `docs/sql/*.sql` files are reference copies of the Supabase migrations appli
 | `docs/sql/supabase-subscriptions.sql` | `aijobagent_subscriptions` table for the Lemon Squeezy integration |
 | `docs/sql/supabase-run-traces.sql` | `aijobagent_run_traces` cost-attribution table (prompt/completion tokens + USD cost) |
 | `docs/sql/supabase-feedback.sql` | `aijobagent_feedback` artifact thumbs-up/down table + RLS |
+| `docs/sql/supabase-cached-jobs-base.sql` | **The `cached_jobs` base table itself** — columns, the 3 GENERATED STORED columns (`search_tsv`, `work_mode`, `employment_type_norm`), the GIN/trgm/partial/recency indexes, the `unique (source, job_id)`, RLS-enabled-no-policies. Captured verbatim from the prod catalog (closes PERFDB-4 — the table used to live only in prod). This is the complete Tier 1 *lean* schema; the embedding column + HNSW are the separate pgvector add-on below |
 | `docs/sql/supabase-cached-jobs-search.sql` | `search_cached_jobs_ranked` RPC: text-search + filters + sort + `LIMIT`/`OFFSET` pagination over `cached_jobs` (Tier 1 lexical search). **service_role-only** EXECUTE — the REVOKEs are part of the canonical definition |
 | `docs/sql/supabase-cached-jobs-pgvector.sql` | Tier 2 semantic-search schema: the `vector` extension, the `cached_jobs.embedding vector(1536)` column, and the HNSW cosine index |
 | `docs/sql/supabase-cached-jobs-hybrid.sql` | `search_cached_jobs_hybrid` RPC: Reciprocal Rank Fusion of the Tier 1 lexical ranking and a pgvector semantic ranking (HNSW candidate pools). **service_role-only** EXECUTE |
