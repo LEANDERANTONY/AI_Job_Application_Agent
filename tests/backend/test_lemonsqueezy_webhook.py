@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -45,6 +45,20 @@ from backend.webhooks.lemonsqueezy import (
 _WEBHOOK_SECRET = "test_webhook_secret_value"
 _PRO_VARIANT = "1001"
 _BUSINESS_VARIANT = "1002"
+
+# The default `renews_at` for an ACTIVE subscription becomes its
+# `current_period_end`, and `resolve_user_tier` only grants the paid
+# tier while `current_period_end > now` (the LS dunning/access window).
+# This MUST be computed relative to "now", not a hardcoded literal:
+# a fixed future date silently becomes a past date once wall-clock
+# time passes it, at which point the "active" subscription reads as
+# already-expired and `test_resolve_user_tier_picks_up_webhook_write`
+# flips pro->free. (That is exactly what happened on 2026-06-15 when
+# the old hardcoded "2026-06-14" default went stale.) Computed once at
+# import; +30d is comfortably beyond any single test run.
+_FUTURE_RENEWS_AT = (datetime.now(timezone.utc) + timedelta(days=30)).strftime(
+    "%Y-%m-%dT%H:%M:%S.000000Z"
+)
 _USER_ID = "00000000-0000-4000-8000-000000000001"
 
 
@@ -92,7 +106,7 @@ def _build_payload(
     subscription_id: str = "sub-12345",
     customer_id: str = "cust-67890",
     status: str = "active",
-    renews_at: str = "2026-06-14T19:14:21.000000Z",
+    renews_at: str = _FUTURE_RENEWS_AT,
     ends_at: str | None = None,
     cancelled: bool = False,
     webhook_id: str = "evt-aaa",
