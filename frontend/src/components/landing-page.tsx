@@ -484,7 +484,7 @@ function LandingHero({
           >
             <li>Smart resume reader</li>
             <li>12k+ live jobs</li>
-            <li>Semantic job search</li>
+            <li>Synonym-aware search</li>
             <li>Tailored Word + PDF</li>
             <li>Built-in AI assistant</li>
           </ul>
@@ -905,8 +905,10 @@ function BentoSection() {
             <p className="l-bento-body">
               Live listings from 130+ companies including Stripe, Pinterest,
               Anthropic, Notion, Walmart, and Disney — refreshed several
-              times a day. Hybrid lexical + semantic search understands
-              what you mean, not just what you type.
+              times a day. Synonym-aware search maps the terms you&rsquo;d
+              actually type — &ldquo;SWE&rdquo; finds &ldquo;software
+              engineer,&rdquo; &ldquo;PM&rdquo; finds &ldquo;product
+              manager.&rdquo;
             </p>
             <div className="l-bento-providers">
               <span className="l-bento-provider">greenhouse</span>
