@@ -4232,3 +4232,53 @@ to click — the docs leave it downgrade-ready.
 No application code changed this day — the flag wiring was already in
 `src/cached_jobs_store.py` + `src/config.py`; everything else is SQL +
 docs + one maintenance command.
+
+## Day 82: downgraded to free + executed lean mode + cron-log purge
+
+The Day 81 framing ("on Pro, 504 MB is fine, lean mode is hypothetical")
+flipped to reality: the org was downgraded **Pro → free** to cut the
+~$25/mo pre-revenue, and lean mode was executed for real.
+
+**The VACUUM-isn't-durable lesson.** The Day 81 VACUUM dipped the DB
+504 → 381 MB, but within ONE day the 4-hourly refresh churn refilled it
+to **470 MB** (row count flat at 14k, dead_tuples 0 — the file
+high-water-mark just re-grew, ~90 MB/day back toward its ~485 MB natural
+size). So the Day 81 estimate of "2-4 months runway / ~30-60 MB per
+month" was wrong by an order of magnitude. On a table that churns 6×/day
+with embeddings, a plain VACUUM buys ~2 days, not months. Corrected the
+deployment.md runbook accordingly.
+
+**Lean mode, executed (jobagent prod):** flipped
+`JOB_SEARCH_HYBRID_ENABLED=false` in the VPS `.env` + recreated the api
+container (embed-on-write off, search degrades to the lexical
+`search_cached_jobs_ranked` RPC) → applied migration
+`cached_jobs_lean_mode_drop_semantic_layer` (drop HNSW index + hybrid
+RPC + `embedding` column) → `VACUUM FULL`. Result: **470 → 171 MB**
+(`cached_jobs` 451 → 151 MB), all 14,083 jobs intact, **330 MB under the
+500 MB cap**, live lexical search verified returning real results. This
+is durable where the VACUUM wasn't: no embed-on-write churn + no HNSW
+bloat means the DB stays ~150-200 MB instead of re-climbing. Reversible
+back to semantic on a future Pro upgrade (pgvector.sql + backfill (~2¢) +
+hybrid.sql + flag on).
+
+**Landing copy corrected (commit `470e62f`).** Search is lexical-only
+now, but the landing still advertised "Semantic job search" / "Hybrid
+lexical + semantic search understands what you mean" — false at launch.
+Swapped to accurate copy for the real Tier 1 feature: the hero pill is
+now "Synonym-aware search" and the bento describes the genuine
+synonym/abbreviation expansion ("SWE" finds "software engineer", "PM"
+finds "product manager", via `src/job_search_synonyms.py`). tsc + eslint
+clean.
+
+**New cron `purge-cron-run-history` (daily `30 3 * * *`).** pg_cron's
+own `cron.job_run_details` run-history table grows unboundedly — the
+5-min resume-builder cleanup alone adds ~288 rows/day — and had reached
+~30k stale rows (5.6 MB). Added a daily `DELETE ... WHERE end_time <
+now() - interval '7 days'` pg_cron job to bound it; a one-time backfill
+purge cleared **29,156** rows. Recorded in the deployment.md scheduled-
+jobs inventory + AGENT.md §6.
+
+Net: jobagent now launches on Supabase free (500 MB cap, NO automated
+backups, 7-day idle auto-pause — all three are real launch risks, see
+AGENT.md §3), at 171 MB, lexical search, $0 Supabase. Revisit Pro +
+semantic search once there's revenue.

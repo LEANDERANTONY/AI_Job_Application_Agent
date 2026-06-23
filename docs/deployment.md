@@ -9,13 +9,14 @@ into `architecture.md` or an ADR lives here.
 
 This is the authoritative list of everything that runs on a schedule
 in production. **No scheduled job runs a chat / completion model.**
-The cache refresh does spend a small amount on *embeddings* — see the
-`cached_jobs_refresh` row. Audited 2026-05-22.
+Audited 2026-05-22; updated 2026-06-23 (lean-mode downgrade + the new
+`purge-cron-run-history` job).
 
 | Job | Where | Schedule | What it does | LLM cost |
 | --- | --- | --- | --- | --- |
-| `cached_jobs_refresh` | Supabase `pg_cron` + `pg_net` | every 4h (`0 */4 * * *`, six runs/day) | POSTs `/api/admin/refresh-cache` so the backend re-polls the Greenhouse/Lever/Ashby/Workday boards into `cached_jobs` | **~\$0** — job-board APIs are free; embeds only *newly-cached* jobs with `text-embedding-3-small` when `JOB_SEARCH_HYBRID_ENABLED` is on (a few cents/day). No chat-model call |
+| `cached_jobs_refresh` | Supabase `pg_cron` + `pg_net` | every 4h (`0 */4 * * *`, six runs/day) | POSTs `/api/admin/refresh-cache` so the backend re-polls the Greenhouse/Lever/Ashby/Workday boards into `cached_jobs` | **\$0** now — job-board APIs are free, and **embed-on-write is OFF since the 2026-06-23 lean-mode downgrade** (`JOB_SEARCH_HYBRID_ENABLED=false`, embedding column dropped). When the project is back on Pro + hybrid is re-enabled, this row embeds newly-cached jobs with `text-embedding-3-small` (a few ¢/day). No chat-model call either way |
 | `cleanup-expired-resume-builder-sessions` | Supabase `pg_cron` | every 5 min (`*/5 * * * *`) | Hard-deletes `resume_builder_sessions` rows past their 7-day TTL | **\$0** — plain SQL `DELETE`, no LLM |
+| `purge-cron-run-history` | Supabase `pg_cron` | daily (`30 3 * * *`) | `DELETE FROM cron.job_run_details WHERE end_time < now() - interval '7 days'`. Bounds pg_cron's own run-history table, which grows unboundedly (the 5-min resume-builder cleanup alone adds ~288 rows/day). Added 2026-06-23 after it had reached ~30k stale rows | **\$0** — plain SQL `DELETE`, no LLM |
 | `backend.maintenance` (saved-workspace retention sweep) | VPS host crontab — **verify against prod** | daily (`0 3 * * *` assumed) | Runs `python -m backend.maintenance` → `sweep_expired_workspaces`: deletes saved workspaces past their per-tier retention (Free > 7d, Pro > 30d). Now check-ins to the `saved-workspaces-retention` Sentry cron monitor (M22) | **\$0** — plain `DELETE`, no LLM |
 | `backend.nightly_eval` | VPS host crontab | **NOT INSTALLED** | Would run the LLM quality eval; deliberately not scheduled | would be ~\$0.25/run if enabled |
 
@@ -273,36 +274,38 @@ botched drop can't lose the exact index config. The lean-mode script
 only ever drops the *semantic* add-ons (embedding column + HNSW); it
 never touches the base table or the lexical indexes.
 
-**IMPORTANT — the 500 MB cap is NOT a current constraint.** The
-jobagent Supabase org (`Job_Application_Copilot`) is on the **Pro plan
-(8 GB database, daily backups, no idle auto-pause)**. So none of the
-"over the cap" framing below is a live emergency — it all describes the
-*future* scenario where the org is downgraded **Pro → free** to save the
-~$25/mo (no users yet). The lean/full switch + the VACUUM lever exist to
-make that downgrade possible and survivable, not to rescue a current
-overage.
+**CURRENT STATE (2026-06-23): on the FREE plan, LEAN MODE ACTIVE.** The
+jobagent Supabase org was downgraded **Pro → free** to cut the ~$25/mo
+pre-revenue, and lean mode was executed to fit the 500 MB cap. So job
+search is **lexical-only right now** — the "full / hybrid" half below is
+the *restore* path for if/when the project goes back to Pro, not the
+live config.
 
-**Live storage check + VACUUM (jobagent prod, 2026-06-23):** the DB was
-**504 MB** (fine on Pro's 8 GB, but over the *free*-tier 500 MB number).
-`cached_jobs` was 485 MB of that (14,085 rows, all embedded): heap+TOAST
-335 MB, indexes 150 MB; the semantic layer alone = the `embedding`
-column (83 MB live) + the HNSW index (110 MB) = **193 MB**. The
-heap+TOAST (335 MB) far exceeded the live column data (~220 MB) — ~115
-MB of dead-tuple bloat from the 4-hourly refresh churn (autovacuum
-reclaims-for-reuse but never shrinks the file). A **`VACUUM FULL
-public.cached_jobs` was run** to reclaim it: **504 → 381 MB** (−123 MB;
-heap+TOAST 335→241, indexes 150→121). No data lost, semantic search
-intact. This made the project **free-downgrade-eligible** (free limits
-all clear: DB 381/500 MB, storage 0/1 GB, MAU 0/50k, 1 project/org).
+**What happened (chronological, jobagent prod 2026-06-23):**
+1. Live check found the DB at **470 MB** (climbing — a VACUUM the day
+   before had dipped it to 381 MB but the 4-hourly refresh churn refilled
+   it within a day; **a plain VACUUM is NOT a durable lever on this
+   table** — it re-bloats to its ~485 MB natural high-water-mark in days).
+2. Downgraded the org to free.
+3. Executed lean mode: `JOB_SEARCH_HYBRID_ENABLED=false` + redeployed api
+   (embed-on-write off, search → lexical) → dropped the HNSW index +
+   hybrid RPC + `embedding` column (migration
+   `cached_jobs_lean_mode_drop_semantic_layer`) → `VACUUM FULL`.
+4. Result: **470 → 171 MB** (cached_jobs 451 → 151 MB), all 14,083 jobs
+   intact, lexical `search_cached_jobs_ranked` serving live results.
+   **330 MB under the cap.**
 
-Two levers, two purposes:
-- **Standalone `VACUUM FULL`** (what was run) — reclaims churn bloat,
-  keeps semantic search. ~2-min ACCESS EXCLUSIVE lock. The churn
-  re-accumulates ~30-60 MB/month, so it's a periodic reset (re-run
-  when the DB nears ~480 MB), not a permanent fix.
-- **Lean mode** (the switch above) — drops embeddings + HNSW to ~300 MB
-  durably; loses semantic concept-matching. The fallback for staying
-  under 500 MB long-term without re-VACUUMing or paying for Pro.
+**Why lean mode holds where VACUUM didn't:** with embed-on-write off and
+no HNSW index, the refresh now only touches cheap text columns — there's
+no per-row 1536-dim vector churn and no HNSW graph to bloat. The DB sits
+at ~150-200 MB and *stays* there. That is the whole point of lean vs a
+VACUUM (which the churn undoes in days).
+
+Also corrected: the prior version of this runbook claimed the churn
+re-accumulates "~30-60 MB/month" and that a periodic VACUUM is a lever.
+**Both were wrong** — re-bloat is ~90 MB/*day* back to the ~485 MB
+high-water-mark, so VACUUM buys ~2 days, not months. Lean mode (or Pro)
+is the only durable answer.
 
 **Downgrade-at-launch caveat:** free tier (a) **auto-pauses a project
 after 7 days of inactivity** — a launched-but-quiet app sleeps and the
