@@ -183,6 +183,11 @@ cython_debug/
 # if it's lost. The tracked docs-governance file is docs/README.md.
 AGENT.md
 
+# Parked-work register + launch-audit deferrals — local-only working
+# backlog carrying file:line internals, "why parked", and revisit
+# triggers. Not a public artifact; rebuild from DEVLOG + commit history.
+report.md
+
 # Local-only scratch images (exploration / draft diagrams not wired
 # into any tracked doc — the README uses docs/images/*.svg + landing_*.png)
 docs/images/architecture.png
@@ -286,3 +291,6 @@ reports/
 
 # Design system reference material — local-only handoff/specs/screens
 design_system/
+
+# Cross-chat session handoffs — distilled transcripts + throwaway tooling
+_chat_handoffs/
