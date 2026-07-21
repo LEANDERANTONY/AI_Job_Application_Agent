@@ -4282,3 +4282,74 @@ Net: jobagent now launches on Supabase free (500 MB cap, NO automated
 backups, 7-day idle auto-pause — all three are real launch risks, see
 AGENT.md §3), at 171 MB, lexical search, $0 Supabase. Revisit Pro +
 semantic search once there's revenue.
+
+## Day 83: the lean-mode landmine — a dropped column broke the healthcheck for four weeks
+
+A Sentry alert surfaced two unresolved backend issues, both tracing to
+one bug that had been failing silently-but-loudly every single day since
+the lean-mode downgrade.
+
+**The symptom.** `JOBAGENT-BACKEND-7` — 28 occurrences of a 503 from
+`/admin/refresh-healthcheck`, culprit `backend.routers.jobs.refresh_healthcheck`
+— plus `JOBAGENT-BACKEND-8`, the `cached-jobs-healthcheck` Sentry cron
+monitor reporting a missed check-in. Same root cause, two surfaces: the
+route 503s, so the cron never checks in. Zero users impacted (it's an
+admin-only endpoint), first seen **2026-06-24 06:00 UTC**, last seen
+2026-07-21 06:00 UTC — one failure per day, exactly on the healthcheck's
+`0 6 * * *` schedule.
+
+**The root cause.** The innermost frame told the whole story:
+
+```
+APIError: column cj.embedding does not exist
+  → AppError: Failed to query cached_jobs health stats.
+    → RuntimeError → HTTPException(503)
+```
+
+Day 82's lean mode dropped `cached_jobs.embedding` to fit the Supabase
+free-tier 500 MB cap. `supabase-cached-jobs-lean-mode.sql` correctly
+dropped the *hybrid RPC* because it references that column — but
+`cached_jobs_health_stats` **also** referenced it, via
+`count(*) FILTER (WHERE cj.embedding IS NULL)`, and nothing dropped or
+rewrote it. Because that function was `LANGUAGE sql`, the reference is
+resolved at call time, so it didn't fail at migration time — it failed at
+the next 06:00 healthcheck, and every one after. First failure was
+2026-06-24, the very next healthcheck after the 2026-06-23 downgrade.
+
+**Why it went unnoticed for four weeks.** This is the honest part. The
+Day 82 lean-mode runbook had no post-flip verification step, so nothing
+ever called the RPC to prove it still worked. The monitoring *did* fire
+correctly the whole time — the alert just wasn't read until now. The
+system worked; the human loop didn't.
+
+**The fix (migration `cached_jobs_health_stats_lean_mode_compat`).**
+Rewrote the RPC as `plpgsql` that probes `information_schema.columns` for
+`embedding` and reads the NULL count through dynamic SQL, so the body
+**parses in both modes**. `null_embedding_count` is a real count in full
+mode and JSON `null` in lean mode. No backend change was needed: the
+service already skips its `embeddings_healthy` check entirely when
+`JOB_SEARCH_HYBRID_ENABLED=false`, and `_as_int(None)` coerces to 0. The
+one function is now valid in both modes, so neither the lean downgrade
+nor the restore-to-Pro upgrade has to swap it. Grant posture re-verified
+after the DROP+CREATE: EXECUTE only to `postgres` + `service_role`.
+
+**Verified live.** The RPC now returns a real snapshot and all five
+healthcheck invariants pass: 13,972 active rows (floor 1000), 0 stale
+(threshold 20%), newest row re-seen 3.2h ago (threshold 5h), all four
+boards present (greenhouse 9241 · workday 2462 · ashby 1856 · lever 413),
+embeddings check skipped as designed. Supabase project itself is
+`ACTIVE_HEALTHY` — no pause, no degradation.
+
+**The durable lesson, written into the docs.** A plain-SQL reference to
+`cached_jobs.embedding` is a lean-mode landmine. Recorded in three places
+so the next downgrade can't repeat it: the lean-mode SQL file now carries
+a referrer-check query (`pg_get_functiondef(...) ILIKE '%embedding%'`) and
+names the health RPC explicitly; `deployment.md`'s lean/full runbook gained
+that warning **plus a step 5 that smokes the healthcheck after flipping**;
+and the health RPC file documents why it is plpgsql rather than plain SQL.
+
+Also closed a docs-governance gap found on the way: `docs/README.md`
+catalogued 13 of the 15 files in `docs/sql/` — both
+`supabase-cached-jobs-health.sql` and `job_cache_healthcheck_cron_setup.sql`
+were missing, i.e. the very file whose RPC broke was the one not in the
+index. Both now listed.

@@ -237,6 +237,23 @@ specialist" with no shared keyword).
 - `scripts/backfill_job_embeddings.py` — re-embeds every row on the way
   back to full. Idempotent + resumable (`embedding IS NULL` only).
   ~20k rows ≈ ~200 embedding API calls ≈ a few cents, a few minutes.
+- `docs/sql/supabase-cached-jobs-health.sql` — the daily healthcheck's
+  stats RPC. **Mode-agnostic since 2026-07-21**: it probes for the
+  `embedding` column and reports `null_embedding_count` as JSON null when
+  lean, so it needs NO step in either direction. It did not used to be —
+  see the warning below.
+
+> ⚠️ **Dropping `embedding` breaks anything that references it.** The
+> first lean-mode run (2026-06-23) dropped the column but missed
+> `cached_jobs_health_stats`, whose plain-SQL body referenced it. Every
+> daily healthcheck then 503'd with `column cj.embedding does not exist`
+> for four weeks (Sentry JOBAGENT-BACKEND-7/-8, fixed DEVLOG Day 83).
+> The health RPC is now probe-based and safe, but **before dropping the
+> column, re-check for other referrers**:
+> ```sql
+> SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+> WHERE n.nspname = 'public' AND pg_get_functiondef(p.oid) ILIKE '%embedding%';
+> ```
 
 **FULL → LEAN (downgrade to the free tier):**
 1. Set `JOB_SEARCH_HYBRID_ENABLED=false` in the VPS `.env`; redeploy api
@@ -251,6 +268,11 @@ specialist" with no shared keyword).
    returns the freed pages to the OS so `pg_database_size` drops.
 4. Confirm: `SELECT pg_size_pretty(pg_database_size(current_database()));`
    is under the free-tier cap.
+5. **Smoke the healthcheck** (the step whose absence cost four weeks of
+   blind daily failures): `SELECT public.cached_jobs_health_stats(5);`
+   must return a jsonb object — not an error. Then confirm no new
+   `jobagent-backend` Sentry issue appears after the next 06:00 UTC
+   healthcheck run.
 
 **LEAN → FULL (upgrade after a paid plan is in place):**
 1. Apply `supabase-cached-jobs-pgvector.sql` (re-adds `embedding` +

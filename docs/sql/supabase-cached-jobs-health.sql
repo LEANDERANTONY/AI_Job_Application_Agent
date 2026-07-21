@@ -22,7 +22,8 @@
 --     "oldest_last_seen_at":  timestamptz,  -- min(last_seen_at)
 --     "stale_count":          integer,      -- active rows not re-seen
 --                                           --   within p_stale_after_hours
---     "null_embedding_count": integer,      -- active rows, embedding IS NULL
+--     "null_embedding_count": integer|null, -- active rows, embedding IS NULL
+--                                           --   JSON null in LEAN MODE (see below)
 --     "per_source":           { "<source>": <active row count>, ... }
 --   }
 -- max/min are JSON null when the table is empty — the caller treats a
@@ -32,6 +33,37 @@
 --   p_stale_after_hours integer DEFAULT 5 — a row whose last_seen_at is
 --     older than this counts toward stale_count. The refresh runs every
 --     4h, so 5h means "missed at least one refresh". Floored at 1.
+--
+-- ---------------------------------------------------------------------------
+-- LEAN/FULL MODE COMPATIBILITY — why this is plpgsql and not plain SQL
+-- ---------------------------------------------------------------------------
+-- `cached_jobs.embedding` is the Tier 2 semantic column: it EXISTS in full
+-- mode and is DROPPED in lean mode (supabase-cached-jobs-lean-mode.sql).
+-- The original version of this function was `LANGUAGE sql` with a literal
+-- `count(*) FILTER (WHERE cj.embedding IS NULL)`. When lean mode dropped
+-- the column on 2026-06-23, that reference became unresolvable and EVERY
+-- daily healthcheck failed with:
+--
+--     APIError: column cj.embedding does not exist
+--   → AppError: Failed to query cached_jobs health stats.
+--   → HTTP 503 from /admin/refresh-healthcheck
+--
+-- ...which is Sentry JOBAGENT-BACKEND-7 (the 503) and -8 (the missed cron
+-- check-in), failing daily from 2026-06-24 until 2026-07-21. See DEVLOG
+-- Day 83.
+--
+-- The fix: probe `information_schema.columns` for the column and read the
+-- NULL count through DYNAMIC SQL, so the function body PARSES in both
+-- modes. `null_embedding_count` is a real count in full mode and JSON
+-- null in lean mode. The backend already tolerates this — its
+-- `embeddings_healthy` check is skipped entirely when
+-- JOB_SEARCH_HYBRID_ENABLED=false, and `_as_int(None)` coerces to 0.
+--
+-- CONSEQUENCE: this ONE function is valid in BOTH modes, so neither the
+-- lean-mode downgrade nor the restore-to-Pro upgrade needs to swap it.
+-- Any FUTURE function that references `cached_jobs.embedding` must either
+-- follow this probe pattern or be added to the lean-mode drop/recreate
+-- pair — a plain-SQL reference to that column is a lean-mode landmine.
 --
 -- READ-ONLY: this function only SELECTs. It never mutates cached_jobs.
 --
@@ -51,10 +83,29 @@ CREATE OR REPLACE FUNCTION public.cached_jobs_health_stats(
     p_stale_after_hours integer DEFAULT 5
 )
  RETURNS jsonb
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
+DECLARE
+    v_null_embedding_count bigint := NULL;
+    v_result jsonb;
+BEGIN
+    -- Tier 2 is optional: the embedding column exists in full mode and
+    -- is dropped in lean mode. Only count NULL embeddings when present
+    -- (dynamic SQL so this function parses in both modes).
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'cached_jobs'
+          AND column_name = 'embedding'
+    ) THEN
+        EXECUTE 'SELECT count(*) FROM public.cached_jobs
+                 WHERE removed_at IS NULL AND embedding IS NULL'
+        INTO v_null_embedding_count;
+    END IF;
+
     SELECT jsonb_build_object(
         'checked_at',           now(),
         'stale_after_hours',    GREATEST(1, COALESCE(p_stale_after_hours, 5)),
@@ -68,8 +119,9 @@ AS $function$
             WHERE cj.last_seen_at < now()
                   - (GREATEST(1, COALESCE(p_stale_after_hours, 5)) || ' hours')::interval
         ),
-        'null_embedding_count', count(*) FILTER (WHERE cj.embedding IS NULL),
-        -- per-source active row counts -> { "greenhouse": 9123, ... }.
+        -- NULL (not 0) in lean mode — "not measured", not "none missing".
+        'null_embedding_count', v_null_embedding_count,
+        -- per-source active row counts -> { "greenhouse": 9241, ... }.
         -- COALESCE so an empty table yields {} rather than JSON null.
         'per_source',           COALESCE(
             (
@@ -84,8 +136,12 @@ AS $function$
             '{}'::jsonb
         )
     )
+    INTO v_result
     FROM public.cached_jobs cj
     WHERE cj.removed_at IS NULL;
+
+    RETURN v_result;
+END;
 $function$;
 
 -- service_role-only execute posture (mandatory — see header).

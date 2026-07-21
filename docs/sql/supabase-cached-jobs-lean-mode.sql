@@ -52,6 +52,26 @@
 --     infrastructure and MUST survive. Only the embedding column + its HNSW
 --     index are semantic-only and safe to drop.
 --
+-- OTHER OBJECTS THAT REFERENCE `cached_jobs.embedding` (CHECK BEFORE DROPPING):
+--   Dropping the column breaks ANY function whose body references it. The
+--   hybrid RPC (step 2) is dropped here for exactly that reason — but it is
+--   NOT the only referrer, and the first lean-mode run missed the other one:
+--
+--     * `cached_jobs_health_stats` (docs/sql/supabase-cached-jobs-health.sql)
+--       — counts NULL embeddings for the daily healthcheck. The original
+--       plain-SQL version broke the moment this file ran, 503-ing every
+--       daily healthcheck from 2026-06-24 to 2026-07-21 (Sentry
+--       JOBAGENT-BACKEND-7/-8; DEVLOG Day 83). It has since been rewritten
+--       as plpgsql that PROBES for the column, so it is now valid in BOTH
+--       modes and needs NO action here. Do not "fix" it by dropping it.
+--
+--   RULE going forward: a plain-SQL reference to `cached_jobs.embedding` is
+--   a lean-mode landmine. Any new function touching that column must either
+--   use the probe pattern from the health RPC, or be added to step 2 below
+--   AND to the upgrade-back file. Before running this, re-check referrers:
+--     SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+--     WHERE n.nspname='public' AND pg_get_functiondef(p.oid) ILIKE '%embedding%';
+--
 -- SECURITY: only touches schema on `public.cached_jobs` (RLS-enabled, no
 -- policies — service-role-only). Dropping a column / index / function does
 -- not change that posture.
