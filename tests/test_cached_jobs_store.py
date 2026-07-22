@@ -29,16 +29,19 @@ class _FakeQuery:
         self.calls.append(("select", fields, count))
         return self
 
-    def upsert(self, rows, on_conflict=None):
-        self.calls.append(("upsert", rows, on_conflict))
+    # `returning` mirrors the real postgrest API (it defaults to
+    # ReturnMethod.representation there). Recorded so tests can assert we
+    # pass "minimal" — echoing rows back is what blew the egress cap.
+    def upsert(self, rows, on_conflict=None, returning=None):
+        self.calls.append(("upsert", rows, on_conflict, returning))
         return self
 
-    def update(self, payload):
-        self.calls.append(("update", payload))
+    def update(self, payload, returning=None):
+        self.calls.append(("update", payload, returning))
         return self
 
-    def delete(self):
-        self.calls.append(("delete",))
+    def delete(self, returning=None):
+        self.calls.append(("delete", returning))
         return self
 
     def in_(self, field, values):
@@ -1106,3 +1109,95 @@ def test_health_stats_wraps_rpc_errors_in_apperror(monkeypatch):
 
     with pytest.raises(AppError):
         store.health_stats()
+
+
+def test_bulk_writes_request_minimal_return_to_bound_egress(monkeypatch):
+    """Bulk cached_jobs writes must NOT echo rows back (egress guard).
+
+    PostgREST defaults to `Prefer: return=representation`, so an upsert
+    replies with every row it touched -- including `description`, the
+    fattest column. At ~14k rows that is ~80 MB per refresh; the refresh
+    runs 6x/day, which is ~14 GB/month of Supabase egress for a payload
+    whose only use was `len()`. That default is what pushed the project
+    to 11.34 GB against the free tier's 5 GB egress cap (DEVLOG Day 84).
+
+    `touched` is derived from the local batch length, so requesting
+    "minimal" is behaviour-preserving. This test pins the kwarg so the
+    default can't quietly come back.
+    """
+    monkeypatch.setattr(
+        "src.cached_jobs_store.is_job_search_hybrid_enabled", lambda: False
+    )
+    client = _FakeClient({"cached_jobs": [SimpleNamespace(data=[])]})
+    store = _make_store(client)
+
+    posting = SimpleNamespace(
+        id="gh-999",
+        source="greenhouse",
+        title="Staff Engineer",
+        company="Vercel",
+        location="Remote",
+        employment_type="Full-time",
+        url="https://boards.greenhouse.io/vercel/jobs/999",
+        summary="Ship the edge runtime.",
+        description_text="<p>" + ("x" * 5000) + "</p>",
+        posted_at="2026-04-01T12:00:00Z",
+        scraped_at="2026-05-07T18:00:00Z",
+        metadata={},
+    )
+
+    touched = store.upsert_postings("greenhouse", [posting])
+
+    upsert_call = next(c for c in client.queries[0].calls if c[0] == "upsert")
+    assert upsert_call[3] == "minimal", (
+        "cached_jobs upsert must pass returning='minimal' -- the default "
+        "return=representation echoes every row and blows the egress cap"
+    )
+    # Still reports rows touched, sourced from the batch rather than the
+    # (now empty) response body.
+    assert touched == 1
+
+
+def test_cleanup_missing_writes_request_minimal_return(monkeypatch):
+    """The tombstone UPDATE and the hard DELETE must also not echo rows.
+
+    Same egress class as the upsert above: both discard their response
+    (`tombstoned`/`deleted` come from the local id lists), so returning
+    representation is pure waste.
+    """
+    monkeypatch.setattr(
+        "src.cached_jobs_store.is_job_search_hybrid_enabled", lambda: False
+    )
+    client = _FakeClient(
+        {
+            "saved_jobs": [
+                SimpleNamespace(data=[{"source": "greenhouse", "job_id": "keep-1"}])
+            ],
+            "cached_jobs": [
+                # missing-row enumeration -> one saved (tombstone), one not (delete)
+                SimpleNamespace(
+                    data=[
+                        {"id": 1, "source": "greenhouse", "job_id": "keep-1"},
+                        {"id": 2, "source": "greenhouse", "job_id": "drop-1"},
+                    ]
+                ),
+                SimpleNamespace(data=[]),  # the UPDATE
+                SimpleNamespace(data=[]),  # the DELETE
+            ],
+        }
+    )
+    store = _make_store(client)
+
+    tombstoned, deleted = store.cleanup_missing(
+        sources_refreshed=["greenhouse"], cutoff_iso="2026-05-07T18:00:00Z"
+    )
+    assert (tombstoned, deleted) == (1, 1)
+
+    all_calls = [c for q in client.queries for c in q.calls]
+    update_call = next((c for c in all_calls if c[0] == "update"), None)
+    delete_call = next((c for c in all_calls if c[0] == "delete"), None)
+
+    assert update_call is not None, "expected a tombstone UPDATE"
+    assert update_call[2] == "minimal", "tombstone UPDATE must not echo rows"
+    assert delete_call is not None, "expected a hard DELETE"
+    assert delete_call[1] == "minimal", "hard DELETE must not echo rows"

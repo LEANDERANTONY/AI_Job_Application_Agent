@@ -4353,3 +4353,72 @@ catalogued 13 of the 15 files in `docs/sql/` — both
 `supabase-cached-jobs-health.sql` and `job_cache_healthcheck_cron_setup.sql`
 were missing, i.e. the very file whose RPC broke was the one not in the
 index. Both now listed.
+
+## Day 84: 11.34 GB of egress from one unused HTTP response body
+
+Supabase sent two quota warnings (2026-07-08, then an "[Action Required]"
+escalation on 2026-07-21): **Egress 11.34 GB against the free tier's 5.5
+GB cap**, with a hard deadline of 2026-07-24 before the Fair Use Policy
+kicks in and every project starts returning 402.
+
+**First, the framing correction.** The instinct was "didn't we already
+build automatic pruning for this?" — no. Days 81–82 pruned **database
+size** (the 500 MB disk cap): lean mode, VACUUM FULL, the cron-log purge.
+That worked, and the DB sits at ~171 MB. **Egress is bandwidth — bytes
+leaving Supabase — and nothing in that work touches it.** Two different
+quotas; the pruning was never going to help. Worth writing down because
+the conflation cost real time.
+
+**Finding it.** With ~zero users, user traffic can't produce 11 GB, so
+something automated had to be reading the corpus on a loop. Every read
+path in `cached_jobs_store.py` turned out to be a narrow column select
+(`job_id`, `source,job_id`) — far too small. The culprit was a *write*:
+
+```python
+response = client.table(self._table).upsert(batch, on_conflict="source,job_id").execute()
+touched += len(self._extract_rows(response))
+```
+
+**PostgREST defaults to `Prefer: return=representation`**, so an upsert
+replies with every row it touched — including `description`, the fattest
+column. The 4-hourly refresh upserts the whole corpus, so each run pulled
+the entire table back out over the wire… and the only use of that payload
+was `len()`.
+
+**The arithmetic, measured against prod:**
+
+| | |
+|---|---|
+| rows | 14,206 |
+| `description` alone | 70 MB |
+| JSON payload echoed per refresh | **80 MB** |
+| × 6 refreshes/day × 30 days | **~14 GB/month** |
+| Supabase billed | **11.34 GB** |
+
+14 GB projected vs 11.34 GB billed — the gap is gzip on the wire plus
+boards that intermittently return fewer rows. Close enough that this one
+default accounts for essentially the entire bill.
+
+**The fix.** `returning="minimal"` on the bulk upsert, with `touched`
+sourced from `len(batch)` (the upsert touches every row in the batch, so
+the number is identical). Same treatment for the two other bulk writes in
+`cleanup_missing` — the tombstone UPDATE and the hard DELETE — both of
+which already computed their counts from local id lists and were echoing
+rows for nothing. Every other `.insert()`/`.upsert()` in the codebase is
+a single-row per-user write; audited, left alone.
+
+Two regression tests pin the kwarg on all three call sites, and the fake
+client's `upsert`/`update`/`delete` now mirror the real postgrest
+signature so the default can't quietly return. Verification: **980 passed**
+(one network-dependent nightly-eval test deselected — it hangs on a live
+call, which is TEST-2's known gap; and one retention test fails only
+locally because the dev `.env` carries real service-role creds, so the
+sweeper reaches the live DB instead of the intended no-client path).
+
+**The honest lesson.** This is a *client-library default*, not a logic
+bug — the code read perfectly naturally and did the wrong thing at scale.
+The tell was that a response was fetched and never used beyond a count.
+Any client call whose result is only measured, not read, is worth checking
+for a `returning`/`select` default. It ran for a month at ~480 MB/day
+before a billing email surfaced it; nothing in the app could have noticed,
+because from the app's side everything worked.

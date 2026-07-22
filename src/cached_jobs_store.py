@@ -254,12 +254,22 @@ class CachedJobsStore:
             for batch in (without_embedding, with_embedding):
                 if not batch:
                     continue
-                response = (
-                    client.table(self._table)
-                    .upsert(batch, on_conflict="source,job_id")
-                    .execute()
-                )
-                touched += len(self._extract_rows(response))
+                # `returning="minimal"` is LOAD-BEARING FOR COST, not style.
+                # PostgREST defaults to `Prefer: return=representation`, so
+                # without this every upserted row is echoed back in full —
+                # including `description`, the fattest column. At ~14k rows
+                # that is ~80 MB of response body per refresh, 6 refreshes a
+                # day => ~14 GB/month of Supabase EGRESS, for a payload whose
+                # only use was `len()`. That single default blew the free
+                # tier's 5 GB egress cap (11.34 GB billed; DEVLOG Day 84).
+                # The upsert touches every row in `batch`, so `len(batch)` is
+                # the same number the echoed rows were being counted for.
+                client.table(self._table).upsert(
+                    batch,
+                    on_conflict="source,job_id",
+                    returning="minimal",
+                ).execute()
+                touched += len(batch)
         except Exception as exc:
             raise AppError(
                 "Failed to upsert cached jobs.",
@@ -493,9 +503,12 @@ class CachedJobsStore:
 
         if tombstone_ids:
             try:
+                # returning="minimal" — same egress reason as the upsert
+                # above: the echoed rows were never read (`tombstoned` is
+                # computed from the local id list).
                 (
                     client.table(self._table)
-                    .update({"removed_at": now})
+                    .update({"removed_at": now}, returning="minimal")
                     .in_("id", tombstone_ids)
                     .execute()
                 )
@@ -508,9 +521,11 @@ class CachedJobsStore:
 
         if delete_ids:
             try:
+                # returning="minimal" — as above; `deleted` comes from the
+                # local id list, so the echoed rows were pure egress.
                 (
                     client.table(self._table)
-                    .delete()
+                    .delete(returning="minimal")
                     .in_("id", delete_ids)
                     .execute()
                 )
