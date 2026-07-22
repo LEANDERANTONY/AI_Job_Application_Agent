@@ -181,6 +181,18 @@ Sentry Uptime monitor pings `https://api.job-application-copilot.xyz/health`
 every 5 min from the EU region. Configured in the Sentry dashboard
 (not in code), so a fresh-project rebuild needs to recreate it manually.
 
+> ⚠️ **Verify this target (flagged 2026-07-22).** Live probing shows bare
+> `/health` returns **404** — the real health route is **`/api/health`**,
+> which returns `{"status":"ok", ...}` plus per-provider board counts.
+> Either the monitor already points at `/api/health` and the line above is
+> stale, or it is pinging the 404 and only passes because it treats any
+> HTTP response as "up" — which would make the uptime signal meaningless.
+> Confirm in the Sentry dashboard and fix whichever is wrong. The
+> smoke-test command is:
+> ```bash
+> curl -fsS https://api.job-application-copilot.xyz/api/health
+> ```
+
 ## Cost tracking (`aijobagent_run_traces`)
 
 Every successful LLM call records a row in `aijobagent_run_traces` with
