@@ -34,7 +34,6 @@ import {
   SendIcon,
   SparkleIcon,
 } from "@/components/workspace/icons";
-import { FeedbackButtons } from "@/components/workspace/FeedbackButtons";
 import { VoiceInputButton } from "@/components/workspace/VoiceInputButton";
 import { useAccessibleDialog } from "@/lib/useAccessibleDialog";
 import type { WorkspaceAssistantResponse } from "@/lib/api-types";
@@ -271,13 +270,13 @@ export function AssistantPanel({
                     <div className="rd-bubble rd-bubble-assistant">
                       {turn.response.answer}
                     </div>
-                    {/* Per-turn feedback so we can correlate satisfaction
-                        with the assistant scope (product help vs
-                        workspace QA) in aggregate. */}
-                    <FeedbackButtons
-                      surface="assistant_turn"
-                      prompt="Was this answer helpful?"
-                    />
+                    {/* No per-turn feedback widget here: a "Was this answer
+                        helpful?" prompt under every single reply broke the
+                        conversational flow. Artifact-level feedback (on the
+                        tailored resume / cover letter) still lives in
+                        ArtifactViewer, the natural place to rate an output.
+                        The `assistant_turn` feedback surface stays valid
+                        server-side; it's just no longer solicited per turn. */}
                   </div>
                 ))}
                 {streamingTurn ? (
